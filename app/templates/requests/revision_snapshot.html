@@ -210,6 +210,7 @@
             <th style="width: 10%;">Priority</th>
             <th style="width: 24%;">Reason</th>
             <th style="width: 10%;">Requested</th>
+            <th style="width: 10%;">Approved</th>
             <th style="width: 22%;">Reviews <span class="muted">(per group)</span></th>
           </tr>
         </thead>
@@ -265,14 +266,23 @@
                 {% endif %}
               </td>
 
-              <td>${{ "{:,.0f}".format(line.requested_amount or 0) }}</td>
+            <td>${{ "{:,.0f}".format(line.requested_amount or 0) }}</td>
+            <td>
+              {% set reviews = reviews_by_line_id.get(line.id, []) %}
+              {% set approved_amounts = reviews | selectattr("approved_amount", "ne", None) | map(attribute="approved_amount") | list %}
+              {% if approved_amounts %}
+                ${{ "{:,.0f}".format(approved_amounts|first) }}
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
 
-              <td>
-                {% set reviews = reviews_by_line_id.get(line.id, []) %}
-                {% if reviews %}
-                  {% for r in reviews %}
-                    {% set g = groups_by_id.get(r.approval_group_id) %}
-                    {% set st = (r.status or "PENDING")|upper %}
+            <td>
+              {% set reviews = reviews_by_line_id.get(line.id, []) %}
+              {% if reviews %}
+                {% for r in reviews %}
+                  {% set g = groups_by_id.get(r.approval_group_id) %}
+                  {% set st = (r.status or "PENDING")|upper %}
 
                     {% set tag_class =
                       "pill-approved" if st == "APPROVED"
@@ -290,16 +300,18 @@
                         <div class="muted" style="margin-top: 6px;">{{ r.external_admin_note }}</div>
                       {% endif %}
 
-                      {% if is_mine and st == "PENDING" %}
-                        <form method="post" action="{{ url_for('lines.approve_line_review', line_review_id=r.id) }}" style="margin-top:8px;">
-                          <div style="display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:center;">
-                            <input type="text" name="note" placeholder="Approval note (required)" required>
-                            <button type="submit" class="btn"
-                                    onclick="this.disabled=true; this.form.submit();">
-                              Approve
-                            </button>
-                          </div>
-                        </form>
+                  {% if is_mine and st == "PENDING" %}
+                    <form method="post" action="{{ url_for('lines.approve_line_review', line_review_id=r.id) }}" style="margin-top:8px;">
+                      <div style="display:grid; grid-template-columns: 1fr 120px auto; gap:8px; align-items:center;">
+                        <input type="text" name="note" placeholder="Approval note (required)" required>
+                        <input type="number" name="approved_amount" min="0"
+                               value="{{ r.approved_amount if r.approved_amount is not none else line.requested_amount }}">
+                        <button type="submit" class="btn"
+                                onclick="this.disabled=true; this.form.submit();">
+                          Approve
+                        </button>
+                      </div>
+                    </form>
 
                         <form method="post" action="{{ url_for('lines.kickback_line_review', line_review_id=r.id) }}" style="margin-top:8px;">
                           <div style="display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:center;">
@@ -310,13 +322,14 @@
                             </button>
                           </div>
                         </form>
-                      {% elif is_mine and st == "APPROVED" %}
-                        <div class="muted" style="margin-top: 6px;">
-                          Approved{% if r.updated_at %} · {{ r.updated_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}
-                        </div>
-                      {% endif %}
+                  {% elif is_mine and st == "APPROVED" %}
+                    <div class="muted" style="margin-top: 6px;">
+                      Approved{% if r.approved_amount is not none %} · ${{ "{:,.0f}".format(r.approved_amount) }}{% endif %}
+                      {% if r.updated_at %} · {{ r.updated_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}
                     </div>
-                  {% endfor %}
+                  {% endif %}
+                </div>
+              {% endfor %}
                 {% else %}
                   <div class="muted">No reviews</div>
                 {% endif %}

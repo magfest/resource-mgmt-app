@@ -34,6 +34,15 @@
         </div>
 
         <div class="card">
+            <div><strong>Approved</strong></div>
+            {% if line_review and line_review.approved_amount is not none %}
+                <div>${{ line_review.approved_amount }}</div>
+            {% else %}
+                <div class="muted">—</div>
+            {% endif %}
+        </div>
+
+        <div class="card">
             <div><strong>Status</strong></div>
             {% if line_review %}
                 {% set s = line_review.status %}
@@ -114,6 +123,25 @@
                         </div>
                     </form>
 
+                    {% if st == "APPROVED" %}
+                        <form method="post"
+                              action="{{ url_for('lines.transition_line_review', request_id=req.id, line_id=line.id) }}"
+                              style="margin-top:12px;">
+                            <input type="hidden" name="action" value="UPDATE_APPROVED_AMOUNT">
+                            <div class="muted" style="margin-bottom:6px;">
+                                Update approved amount (note required if different from requested)
+                            </div>
+                            <div style="display:grid; grid-template-columns: 1fr; gap:8px;">
+                                <input type="number" name="approved_amount" min="0"
+                                       value="{{ line_review.approved_amount if line_review.approved_amount is not none else line.requested_amount }}">
+                                <textarea name="note" rows="2" placeholder="Approval note (required if amount differs)"></textarea>
+                            </div>
+                            <div style="margin-top:8px;">
+                                <button type="submit">Update approved amount</button>
+                            </div>
+                        </form>
+                    {% endif %}
+
                     <form method="post"
                           action="{{ url_for('lines.transition_line_review', request_id=req.id, line_id=line.id) }}"
                           style="margin-top:12px;">
@@ -147,7 +175,10 @@
                           action="{{ url_for('lines.transition_line_review', request_id=req.id, line_id=line.id) }}"
                           style="margin-top:12px;">
                         <input type="hidden" name="action" value="APPROVE">
-                        <div class="muted" style="margin-bottom:6px;">Approve this line (requires a public note)</div>
+                        <div class="muted" style="margin-bottom:6px;">
+                            Approve this line (note required, and required if amount differs)
+                        </div>
+                        <input type="number" name="approved_amount" min="0" value="{{ line.requested_amount }}">
                         <textarea name="note" rows="2" placeholder="Approval note (required)" required></textarea>
                         <div style="margin-top:8px;">
                             <button type="submit">Approve line</button>

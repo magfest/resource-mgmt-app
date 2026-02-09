@@ -322,6 +322,8 @@ class LineReview(db.Model):
 
     updated_by_user_id = db.Column(db.String(64), nullable=True)
 
+    approved_amount = db.Column(db.Integer, nullable=True)
+
     __table_args__ = (
         db.UniqueConstraint("request_line_id", "approval_group_id", name="uq_line_review_once"),
     )

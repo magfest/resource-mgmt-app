@@ -236,7 +236,7 @@ def transition_line_review(request_id: int, line_id: int):
     """
     Canonical line-review transition endpoint.
     """
-    from ..models import Request, RequestLine, LineReview
+    from ..models import Request, RequestLine, LineReview, LineAuditEvent
 
     req = get_request_or_404(request_id)
     require_can_view(req)
@@ -284,13 +284,99 @@ def transition_line_review(request_id: int, line_id: int):
 
     action = (request.form.get("action") or "").strip().upper()
     note = (request.form.get("note") or "").strip()
+    approved_amount_raw = (request.form.get("approved_amount") or "").strip()
 
-    allowed_actions = {"APPROVE", "REJECT", "REQUEST_INFO", "MARK_PENDING"}
+    def _parse_amount(raw_value: str | None):
+        if raw_value is None:
+            return None
+        if raw_value == "":
+            return None
+        try:
+            amount = int(raw_value)
+        except ValueError:
+            return None
+        return amount if amount >= 0 else None
+
+    approved_amount = _parse_amount(approved_amount_raw)
+    if approved_amount_raw and approved_amount is None:
+        return "Invalid approved amount.", 400
+
+    allowed_actions = {"APPROVE", "REJECT", "REQUEST_INFO", "MARK_PENDING", "UPDATE_DECISION_NOTE", "UPDATE_APPROVED_AMOUNT"}
     if action not in allowed_actions:
         abort(400)
 
     internal_note = (request.form.get("internal_note") or "").strip() or None
+
+    if action == "UPDATE_DECISION_NOTE":
+        if lr.status not in ("APPROVED", "REJECTED"):
+            return "Decision note updates are only allowed after approval/rejection.", 400
+        if not note:
+            return "Decision note is required.", 400
+        lr.final_decision_note = note
+        lr.final_decision_at = datetime.utcnow()
+        lr.final_decision_by_user_id = h.get_active_user_id()
+        db.session.add(LineAuditEvent(
+            request_line_id=lr.request_line_id,
+            event_type="FINAL_NOTE_UPDATED",
+            old_value="",
+            new_value=note,
+            created_by_user_id=h.get_active_user_id(),
+        ))
+        db.session.commit()
+        rev_id = lr.request_line.revision_id
+        return redirect(url_for("lines.revision_snapshot", revision_id=rev_id))
+
+    if action == "UPDATE_APPROVED_AMOUNT":
+        if lr.status != "APPROVED":
+            return "Approved amount can only be updated for approved lines.", 400
+        if approved_amount is None:
+            return "Approved amount is required.", 400
+        requested_amount = lr.request_line.requested_amount or 0
+        if approved_amount != requested_amount and not note:
+            return "Approval note is required when approved amount differs from requested.", 400
+        old_amount = lr.approved_amount
+        if old_amount != approved_amount:
+            lr.approved_amount = approved_amount
+            db.session.add(LineAuditEvent(
+                request_line_id=lr.request_line_id,
+                event_type="APPROVED_AMOUNT_CHANGE",
+                old_value=str(old_amount) if old_amount is not None else "",
+                new_value=f"{approved_amount} :: {note}" if note else str(approved_amount),
+                created_by_user_id=h.get_active_user_id(),
+            ))
+        if note and note != (lr.final_decision_note or ""):
+            lr.final_decision_note = note
+            lr.final_decision_at = datetime.utcnow()
+            lr.final_decision_by_user_id = h.get_active_user_id()
+            db.session.add(LineAuditEvent(
+                request_line_id=lr.request_line_id,
+                event_type="FINAL_NOTE_UPDATED",
+                old_value="",
+                new_value=note,
+                created_by_user_id=h.get_active_user_id(),
+            ))
+        db.session.commit()
+        rev_id = lr.request_line.revision_id
+        return redirect(url_for("lines.revision_snapshot", revision_id=rev_id))
+
+    if action == "APPROVE":
+        if approved_amount is None:
+            approved_amount = lr.request_line.requested_amount or 0
+        if approved_amount != (lr.request_line.requested_amount or 0) and not note:
+            return "Approval note is required when approved amount differs from requested.", 400
+
     _apply_line_review_transition(lr=lr, action=action, note=note, internal_note=internal_note)
+
+    if action == "APPROVE":
+        old_amount = lr.approved_amount
+        lr.approved_amount = approved_amount
+        db.session.add(LineAuditEvent(
+            request_line_id=lr.request_line_id,
+            event_type="APPROVED_AMOUNT_CHANGE",
+            old_value=str(old_amount) if old_amount is not None else "",
+            new_value=str(approved_amount),
+            created_by_user_id=h.get_active_user_id(),
+        ))
 
     # Keep request status in sync
     if lr.request_line and lr.request_line.revision:
@@ -372,7 +458,7 @@ def requester_respond_to_needs_info(request_id: int, line_id: int):
 
 @lines_bp.post("/line-reviews/<int:line_review_id>/approve")
 def approve_line_review(line_review_id: int):
-    from ..models import LineReview
+    from ..models import LineReview, LineAuditEvent
 
     lr = db.session.get(LineReview, line_review_id)
     if not lr:
@@ -398,8 +484,31 @@ def approve_line_review(line_review_id: int):
             abort(403)
 
     note = (request.form.get("note") or "").strip()
+    approved_amount_raw = (request.form.get("approved_amount") or "").strip()
+    try:
+        approved_amount = int(approved_amount_raw) if approved_amount_raw != "" else None
+    except ValueError:
+        return "Invalid approved amount.", 400
+    if approved_amount is not None and approved_amount < 0:
+        return "Invalid approved amount.", 400
 
     _apply_line_review_transition(lr=lr, action="APPROVE", note=note)
+
+    if approved_amount is None:
+        approved_amount = lr.request_line.requested_amount or 0
+
+    if approved_amount != (lr.request_line.requested_amount or 0) and not note:
+        return "Approval note is required when approved amount differs from requested.", 400
+
+    old_amount = lr.approved_amount
+    lr.approved_amount = approved_amount
+    db.session.add(LineAuditEvent(
+        request_line_id=lr.request_line_id,
+        event_type="APPROVED_AMOUNT_CHANGE",
+        old_value=str(old_amount) if old_amount is not None else "",
+        new_value=str(approved_amount),
+        created_by_user_id=h.get_active_user_id(),
+    ))
 
     # Keep request status in sync
     if lr.request_line and lr.request_line.revision:
@@ -585,7 +694,7 @@ def revision_snapshot(revision_id: int):
 
 @lines_bp.post("/revisions/<int:revision_id>/approve-my-lines")
 def approve_my_lines_for_revision(revision_id: int):
-    from ..models import LineReview, RequestRevision
+    from ..models import LineReview, RequestRevision, LineAuditEvent
 
     revision = db.session.get(RequestRevision, revision_id)
     if not revision:
@@ -627,6 +736,15 @@ def approve_my_lines_for_revision(revision_id: int):
         if (r.status or "PENDING").upper() != "PENDING":
             continue
         _apply_line_review_transition(lr=r, action="APPROVE", note=bulk_note)
+        old_amount = r.approved_amount
+        r.approved_amount = r.request_line.requested_amount or 0
+        db.session.add(LineAuditEvent(
+            request_line_id=r.request_line_id,
+            event_type="APPROVED_AMOUNT_CHANGE",
+            old_value=str(old_amount) if old_amount is not None else "",
+            new_value=str(r.approved_amount),
+            created_by_user_id=h.get_active_user_id(),
+        ))
 
     db.session.commit()
 

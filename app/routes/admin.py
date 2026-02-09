@@ -30,8 +30,13 @@ def admin_demo_approval_summary():
                 "pending_amount"),
             func.sum(case((LineReview.status == "NEEDS_INFO", RequestLine.requested_amount), else_=0)).label(
                 "needs_info_amount"),
-            func.sum(case((LineReview.status == "APPROVED", RequestLine.requested_amount), else_=0)).label(
-                "approved_amount"),
+            func.sum(
+                case(
+                    (LineReview.status == "APPROVED",
+                     func.coalesce(LineReview.approved_amount, RequestLine.requested_amount)),
+                    else_=0,
+                )
+            ).label("approved_amount"),
             func.sum(case((LineReview.status == "REJECTED", RequestLine.requested_amount), else_=0)).label(
                 "rejected_amount"),
 
