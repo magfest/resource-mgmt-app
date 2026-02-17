@@ -1,0 +1,97 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Expense Accounts - Admin{% endblock %}
+
+{% block content %}
+<h1>Expense Accounts</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  Manage the chart of accounts for budget requests. Each expense account routes to an approval group.
+</div>
+
+<div class="row" style="margin-bottom: 16px;">
+  <a class="btn btn-primary" href="{{ url_for('admin_config.expense_accounts.new_expense_account') }}">+ New Account</a>
+
+  <form method="get" action="{{ url_for('admin_config.expense_accounts.list_expense_accounts') }}" class="row" style="margin: 0; gap: 8px;">
+    <input type="text" name="q" value="{{ q or '' }}" placeholder="Search code, name..." style="width: 200px;" />
+
+    <select name="approval_group" style="width: 200px;">
+      <option value="">All approval groups</option>
+      {% for g in approval_groups %}
+        <option value="{{ g.id }}" {% if approval_group_filter == g.id|string %}selected{% endif %}>{{ g.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="muted" style="display: flex; gap: 6px; align-items: center;">
+      <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
+      show inactive
+    </label>
+
+    <button class="btn" type="submit">Filter</button>
+    {% if q or approval_group_id or show_inactive %}
+      <a class="btn" href="{{ url_for('admin_config.expense_accounts.list_expense_accounts') }}">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 200px;">Internal Code</th>
+      <th style="width: 200px;">Public Name</th>
+      <th>Description</th>
+      <th style="width: 200px;">Visibility</th>
+      <th style="width: 130px;">Approval Group</th>
+      <th style="width: 100px;">Spend Type</th>
+      <th style="width: 80px;">Fixed</th>
+      <th style="width: 70px;">Status</th>
+      <th style="width: 140px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for acct in accounts %}
+      <tr>
+        <td class="num">{{ acct.code }}</td>
+        <td>{{ acct.name }}</td>
+        <td class="muted small">{{ acct.description or '—' }}</td>
+      <td class="muted small">{{ acct.visibility_mode or '—' }}</td>
+        <td>{{ acct.approval_group.name if acct.approval_group else '—' }}</td>
+        <td>
+          {% if acct.spend_type_mode == 'SINGLE_LOCKED' and acct.default_spend_type %}
+            {{ acct.default_spend_type.name }}
+          {% elif acct.spend_type_mode == 'ALLOW_LIST' %}
+            <span class="muted small">Multiple</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if acct.is_fixed_cost %}
+            <span class="pill" style="background: #fff4e5; border-color: #ffd7a8;">Fixed</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if acct.is_active %}
+            <span class="pill" style="background: #e9f7ef;">Active</span>
+          {% else %}
+            <span class="pill" style="background: #fbeaea;">Inactive</span>
+          {% endif %}
+        </td>
+        <td class="btn-row">
+          <a class="btn" href="{{ url_for('admin_config.expense_accounts.edit_expense_account', account_id=acct.id) }}">Edit</a>
+          <a class="btn" href="{{ url_for('admin_config.expense_accounts.list_overrides', account_id=acct.id) }}">Overrides</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="8" class="muted">No expense accounts found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ accounts|length }} account(s) shown
+</div>
+{% endblock %}

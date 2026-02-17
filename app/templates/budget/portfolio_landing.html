@@ -1,0 +1,83 @@
+{# templates/budget/portfolio_landing.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}{{ ctx.department.name }} Budget - {{ ctx.event_cycle.code }}{% endblock %}
+
+{% block content %}
+
+  {# Portfolio header with totals #}
+  {% include "components/_portfolio_header.html" %}
+
+  {# Primary Request Section #}
+  <section style="margin-bottom: 24px;">
+    <h2>Primary Budget Request</h2>
+
+    {% if primary %}
+      {# Show primary work item card #}
+      {% set item = primary %}
+      {% set item_totals = primary_totals %}
+      {% include "components/_work_item_card.html" %}
+
+    {% elif perms.can_create_primary %}
+      {# Show create button #}
+      <div class="card">
+        <div class="muted" style="margin-bottom: 12px;">
+          No primary budget request has been created yet for this portfolio.
+        </div>
+        <a class="btn btn-primary" href="{{ url_for('budget.primary_new', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+          Create Primary Budget Request
+        </a>
+      </div>
+
+    {% else %}
+      {# User cannot create #}
+      <div class="card">
+        <div class="muted">
+          No primary budget request exists. You do not have permission to create one.
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  {# Supplementary Requests Section #}
+  <section>
+    <h2>Supplementary Requests</h2>
+
+    {% if supplementary %}
+      {% for item in supplementary %}
+        {% set item_totals = supplementary_totals.get(item.id) %}
+        {% include "components/_work_item_card.html" %}
+      {% endfor %}
+
+    {% elif primary and primary.status == "FINALIZED" and perms.can_create_supplementary %}
+      <div class="card">
+        <div class="muted" style="margin-bottom: 12px;">
+          No supplementary requests yet.
+        </div>
+        <a class="btn" href="{{ url_for('budget.supplementary_new', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+          Create Supplementary Request
+        </a>
+      </div>
+
+    {% elif primary and primary.status != "FINALIZED" %}
+      <div class="card">
+        <div class="muted">
+          Supplementary requests can only be created after the primary budget is finalized.
+        </div>
+      </div>
+
+    {% else %}
+      <div class="card">
+        <div class="muted">
+          No supplementary requests.
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  {# Navigation #}
+  <div class="btn-row" style="margin-top: 24px;">
+    <a class="btn" href="{{ url_for('requests.home') }}">Back to Home</a>
+  </div>
+
+{% endblock %}

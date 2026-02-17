@@ -1,0 +1,187 @@
+{# templates/budget/line_form.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Budget Line{% endblock %}
+
+{% block content %}
+
+  <h1>{% if is_edit %}Edit{% else %}Add{% endif %} Budget Line</h1>
+
+  <div class="muted" style="margin-bottom: 16px;">
+    Adding line to <strong>{{ work_item.public_id }}</strong>
+    ({{ ctx.department.name }} - {{ ctx.event_cycle.code }})
+  </div>
+
+  <form method="post" action="{{ url_for('budget.line_create', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+    <section class="card">
+      <h3 style="margin:0 0 16px 0;">Line Details</h3>
+
+      {# Expense Account #}
+      <div style="margin-bottom: 16px;">
+        <label for="expense_account_id"><strong>Expense Account</strong> <span style="color: red;">*</span></label>
+        <select name="expense_account_id" id="expense_account_id" required style="margin-top: 4px;">
+          <option value="">(Select expense account)</option>
+          {% for acc in expense_accounts %}
+            <option value="{{ acc.id }}"
+                    data-spend-type-mode="{{ acc.spend_type_mode }}"
+                    data-default-spend-type-id="{{ acc.default_spend_type_id or '' }}"
+                    {% if form_data and form_data.expense_account_id == acc.id|string %}selected{% endif %}>
+              {{ acc.name }}{% if acc.description %} - {{ acc.description[:50] }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# Spend Type #}
+      <div style="margin-bottom: 16px;" id="spend_type_container">
+        <label for="spend_type_id"><strong>Spend Type</strong> <span style="color: red;">*</span></label>
+        <select name="spend_type_id" id="spend_type_id" style="margin-top: 4px;">
+          <option value="">(Select expense account first)</option>
+        </select>
+        <div class="muted small" id="spend_type_hint" style="margin-top: 4px;"></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        {# Quantity #}
+        <div>
+          <label for="quantity"><strong>Quantity</strong> <span style="color: red;">*</span></label>
+          <input type="number" name="quantity" id="quantity" step="0.001" min="0.001"
+                 value="{{ form_data.quantity if form_data else '1' }}"
+                 required style="margin-top: 4px;">
+        </div>
+
+        {# Unit Price #}
+        <div>
+          <label for="unit_price"><strong>Unit Price ($)</strong> <span style="color: red;">*</span></label>
+          <input type="number" name="unit_price" id="unit_price" step="0.01" min="0"
+                 value="{{ form_data.unit_price if form_data else '' }}"
+                 placeholder="0.00" required style="margin-top: 4px;">
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px;">
+        {# Priority #}
+        <div>
+          <label for="priority_id"><strong>Priority</strong></label>
+          <select name="priority_id" id="priority_id" style="margin-top: 4px;">
+            <option value="">(Optional)</option>
+            {% for p in priority_levels %}
+              <option value="{{ p.id }}"
+                      {% if form_data and form_data.priority_id == p.id|string %}selected{% endif %}>
+                {{ p.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Confidence Level #}
+        <div>
+          <label for="confidence_level_id"><strong>Confidence</strong></label>
+          <select name="confidence_level_id" id="confidence_level_id" style="margin-top: 4px;">
+            <option value="">(Optional)</option>
+            {% for c in confidence_levels %}
+              <option value="{{ c.id }}"
+                      {% if form_data and form_data.confidence_level_id == c.id|string %}selected{% endif %}>
+                {{ c.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Frequency #}
+        <div>
+          <label for="frequency_id"><strong>Frequency</strong></label>
+          <select name="frequency_id" id="frequency_id" style="margin-top: 4px;">
+            <option value="">(Optional)</option>
+            {% for f in frequency_options %}
+              <option value="{{ f.id }}"
+                      {% if form_data and form_data.frequency_id == f.id|string %}selected{% endif %}>
+                {{ f.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      {# Warehouse Flag #}
+      <div style="margin-top: 16px;">
+        <label>
+          <input type="checkbox" name="warehouse_flag" id="warehouse_flag"
+                 {% if form_data and form_data.warehouse_flag %}checked{% endif %}>
+          <strong>Warehouse</strong>
+          <span class="muted">(Check if this item will be stored in warehouse)</span>
+        </label>
+      </div>
+
+      {# Description #}
+      <div style="margin-top: 16px;">
+        <label for="description"><strong>Description</strong></label>
+        <textarea name="description" id="description" rows="3" style="margin-top: 4px;"
+                  placeholder="Describe what this line item is for...">{{ form_data.description if form_data else '' }}</textarea>
+      </div>
+
+      {# Actions #}
+      <div class="btn-row" style="margin-top: 20px;">
+        <button type="submit" class="btn btn-primary">{% if is_edit %}Save Changes{% else %}Add Line{% endif %}</button>
+        <a class="btn" href="{{ url_for('budget.work_item_edit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">Cancel</a>
+      </div>
+    </section>
+  </form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Spend types data from server
+  const spendTypesByAccount = {{ spend_types_by_account | tojson | safe }};
+
+  const expenseAccountSelect = document.getElementById('expense_account_id');
+  const spendTypeSelect = document.getElementById('spend_type_id');
+  const spendTypeHint = document.getElementById('spend_type_hint');
+  const spendTypeContainer = document.getElementById('spend_type_container');
+
+  function updateSpendTypes() {
+    const accountId = expenseAccountSelect.value;
+    spendTypeSelect.innerHTML = '';
+
+    if (!accountId || !spendTypesByAccount[accountId]) {
+      spendTypeSelect.innerHTML = '<option value="">(Select expense account first)</option>';
+      spendTypeHint.textContent = '';
+      spendTypeSelect.disabled = false;
+      return;
+    }
+
+    const data = spendTypesByAccount[accountId];
+
+    if (data.mode === 'SINGLE_LOCKED') {
+      // Auto-select the single spend type
+      if (data.types.length > 0) {
+        const st = data.types[0];
+        spendTypeSelect.innerHTML = `<option value="${st.id}" selected>${st.name}</option>`;
+        spendTypeHint.textContent = 'Spend type is locked for this expense account.';
+        spendTypeSelect.disabled = true;
+      } else {
+        spendTypeSelect.innerHTML = '<option value="">(No spend type configured)</option>';
+        spendTypeHint.textContent = 'Error: No default spend type configured for this account.';
+        spendTypeSelect.disabled = true;
+      }
+    } else {
+      // ALLOW_LIST mode - show dropdown
+      spendTypeSelect.innerHTML = '<option value="">(Select spend type)</option>';
+      for (const st of data.types) {
+        const option = document.createElement('option');
+        option.value = st.id;
+        option.textContent = st.name;
+        spendTypeSelect.appendChild(option);
+      }
+      spendTypeHint.textContent = '';
+      spendTypeSelect.disabled = false;
+    }
+  }
+
+  expenseAccountSelect.addEventListener('change', updateSpendTypes);
+
+  // Initialize on page load
+  updateSpendTypes();
+</script>
+{% endblock %}

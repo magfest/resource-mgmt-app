@@ -1,0 +1,264 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Test Chunk C Features{% endblock %}
+
+{% block content %}
+<h1>Test Chunk C Features</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  Test supplementary requests, checkout system, admin locks, and NEEDS_INFO flow.
+</div>
+
+{# Quick Login Section #}
+<section class="card" style="margin-bottom: 24px;">
+  <h3 style="margin:0 0 12px 0;">Quick Login</h3>
+  <div class="muted small" style="margin-bottom: 12px;">
+    Current user: <strong>{{ current_user_id }}</strong>
+  </div>
+  <div class="btn-row">
+    {% for user in users %}
+      <form method="post" action="{{ url_for('dev.dev_login_post') }}" style="display: inline;">
+        <input type="hidden" name="user_id" value="{{ user.id }}">
+        <button type="submit" class="btn {% if user.id == current_user_id %}btn-primary{% endif %}">
+          {{ user.display_name }}
+        </button>
+      </form>
+    {% endfor %}
+    <a class="btn" href="{{ url_for('dev.dev_login') }}">All Users</a>
+  </div>
+  <div class="muted small" style="margin-top: 8px;">
+    <strong>dev:alex</strong> = Arcades editor |
+    <strong>dev:admin</strong> = Super admin |
+    <strong>dev:tech_approver</strong> = Tech approver
+  </div>
+</section>
+
+{# Test Setup Section #}
+<section class="card" style="margin-bottom: 24px;">
+  <h3 style="margin:0 0 12px 0;">1. Test Setup (ARCADE / SMF2026)</h3>
+
+  <div style="margin-bottom: 16px;">
+    <strong>Portfolio:</strong>
+    {% if portfolio %}
+      <span class="pill" style="background: #e9f7ef;">EXISTS</span>
+    {% else %}
+      <span class="pill" style="background: #fbeaea;">NOT CREATED</span>
+    {% endif %}
+  </div>
+
+  <div style="margin-bottom: 16px;">
+    <strong>Primary Request:</strong>
+    {% if primary_item %}
+      <a href="{{ url_for('budget.work_item_detail', event='SMF2026', dept='ARCADE', public_id=primary_item.public_id) }}">
+        {{ primary_item.public_id }}
+      </a>
+      <span class="pill
+        {% if primary_item.status == 'FINALIZED' %}pill-approved
+        {% elif primary_item.status == 'SUBMITTED' %}pill-submitted
+        {% elif primary_item.status == 'NEEDS_INFO' %}pill-needs
+        {% else %}pill-draft{% endif %}">
+        {{ primary_item.status }}
+      </span>
+      {% if primary_item.checked_out_by_user_id %}
+        <span class="pill" style="background: #fff3cd;">Checked out: {{ primary_item.checked_out_by_user_id }}</span>
+      {% endif %}
+    {% else %}
+      <span class="muted">None</span>
+    {% endif %}
+  </div>
+
+  <div style="margin-bottom: 16px;">
+    <strong>Supplementary Requests:</strong>
+    {% if supplementary_items %}
+      {% for supp in supplementary_items %}
+        <a href="{{ url_for('budget.work_item_detail', event='SMF2026', dept='ARCADE', public_id=supp.public_id) }}">
+          {{ supp.public_id }}
+        </a>
+        <span class="pill
+          {% if supp.status == 'FINALIZED' %}pill-approved
+          {% elif supp.status == 'SUBMITTED' %}pill-submitted
+          {% elif supp.status == 'NEEDS_INFO' %}pill-needs
+          {% else %}pill-draft{% endif %}">
+          {{ supp.status }}
+        </span>
+        {% if not loop.last %} | {% endif %}
+      {% endfor %}
+    {% else %}
+      <span class="muted">None</span>
+    {% endif %}
+  </div>
+
+  <div class="btn-row" style="flex-wrap: wrap;">
+    <form method="post" action="{{ url_for('dev.test_create_primary_with_lines') }}" style="display: inline;">
+      <button type="submit" class="btn btn-primary" {% if primary_item %}disabled{% endif %}>
+        Create PRIMARY with Lines
+      </button>
+    </form>
+
+    <form method="post" action="{{ url_for('dev.test_submit_primary') }}" style="display: inline;">
+      <button type="submit" class="btn" {% if not primary_item or primary_item.status != 'DRAFT' %}disabled{% endif %}>
+        Submit PRIMARY
+      </button>
+    </form>
+
+    <form method="post" action="{{ url_for('dev.test_finalize_primary') }}" style="display: inline;">
+      <button type="submit" class="btn" {% if not primary_item or primary_item.status == 'FINALIZED' %}disabled{% endif %}>
+        Finalize PRIMARY (skip review)
+      </button>
+    </form>
+
+    <form method="post" action="{{ url_for('dev.test_reset_all') }}" style="display: inline;">
+      <button type="submit" class="btn" onclick="return confirm('Delete all test work items?');" style="background: #fbeaea;">
+        Reset All
+      </button>
+    </form>
+  </div>
+</section>
+
+{# Test Scenarios Section #}
+<section class="card" style="margin-bottom: 24px;">
+  <h3 style="margin:0 0 12px 0;">2. Test Scenarios</h3>
+
+  <div style="margin-bottom: 24px; padding: 16px; background: #f8f9fa; border-radius: 4px;">
+    <h4 style="margin:0 0 8px 0;">Scenario A: Supplementary Request Flow</h4>
+    <ol class="muted small" style="margin: 0; padding-left: 20px;">
+      <li>Create PRIMARY with lines (button above)</li>
+      <li>Submit PRIMARY</li>
+      <li>Finalize PRIMARY (skip review for testing)</li>
+      <li>
+        {% if primary_item and primary_item.status == 'FINALIZED' %}
+          <a href="{{ url_for('budget.supplementary_new', event='SMF2026', dept='ARCADE') }}" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px;">
+            Create Supplementary
+          </a>
+        {% else %}
+          Create Supplementary (need finalized PRIMARY first)
+        {% endif %}
+      </li>
+    </ol>
+  </div>
+
+  <div style="margin-bottom: 24px; padding: 16px; background: #f8f9fa; border-radius: 4px;">
+    <h4 style="margin:0 0 8px 0;">Scenario B: Checkout System</h4>
+    <ol class="muted small" style="margin: 0; padding-left: 20px;">
+      <li>Submit PRIMARY (should be SUBMITTED status)</li>
+      <li>Login as <strong>dev:admin</strong> or <strong>dev:tech_approver</strong></li>
+      <li>
+        {% if primary_item and primary_item.status == 'SUBMITTED' %}
+          <form method="post" action="{{ url_for('dev.test_checkout_item', public_id=primary_item.public_id) }}" style="display: inline;">
+            <button type="submit" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px;">
+              Checkout {{ primary_item.public_id }}
+            </button>
+          </form>
+          or use "Checkout for Review" on the
+          <a href="{{ url_for('budget.work_item_detail', event='SMF2026', dept='ARCADE', public_id=primary_item.public_id) }}">work item page</a>
+        {% else %}
+          Checkout button (need SUBMITTED PRIMARY first)
+        {% endif %}
+      </li>
+      <li>View <a href="{{ url_for('admin_config.locks.list_locks') }}">Admin Locks Page</a></li>
+      <li>Release lock from work item or admin page</li>
+    </ol>
+  </div>
+
+  <div style="padding: 16px; background: #f8f9fa; border-radius: 4px;">
+    <h4 style="margin:0 0 8px 0;">Scenario C: NEEDS_INFO Flow</h4>
+    <ol class="muted small" style="margin: 0; padding-left: 20px;">
+      <li>Have a SUBMITTED work item checked out</li>
+      <li>
+        {% if primary_item and primary_item.status == 'SUBMITTED' %}
+          <form method="post" action="{{ url_for('dev.test_set_needs_info', public_id=primary_item.public_id) }}" style="display: inline;">
+            <button type="submit" class="btn" style="padding: 4px 8px; font-size: 12px;">
+              Set {{ primary_item.public_id }} to NEEDS_INFO
+            </button>
+          </form>
+          or use "Request Information" form on the work item page
+        {% else %}
+          Set to NEEDS_INFO (need SUBMITTED PRIMARY first)
+        {% endif %}
+      </li>
+      <li>Login as <strong>dev:alex</strong> (requester)</li>
+      <li>View work item - should see response form</li>
+      <li>Submit response - status returns to SUBMITTED</li>
+    </ol>
+  </div>
+</section>
+
+{# Current State Section #}
+<section class="card" style="margin-bottom: 24px;">
+  <h3 style="margin:0 0 12px 0;">3. Current System State</h3>
+
+  <h4 style="margin:16px 0 8px 0;">Active Checkouts ({{ checked_out_items|length }})</h4>
+  {% if checked_out_items %}
+    <table>
+      <thead>
+        <tr>
+          <th>Request ID</th>
+          <th>Status</th>
+          <th>Checked Out By</th>
+          <th>Expires At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in checked_out_items %}
+          <tr>
+            <td>{{ item.public_id }}</td>
+            <td><span class="pill">{{ item.status }}</span></td>
+            <td>{{ item.checked_out_by_user_id }}</td>
+            <td>{{ item.checked_out_expires_at.strftime('%H:%M:%S') if item.checked_out_expires_at else '-' }}</td>
+            <td>
+              <a class="btn" href="{{ url_for('admin_config.locks.list_locks') }}">Manage</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted">No active checkouts</div>
+  {% endif %}
+
+  <h4 style="margin:16px 0 8px 0;">NEEDS_INFO Items ({{ needs_info_items|length }})</h4>
+  {% if needs_info_items %}
+    <table>
+      <thead>
+        <tr>
+          <th>Request ID</th>
+          <th>Requested At</th>
+          <th>Requested By</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in needs_info_items %}
+          <tr>
+            <td>{{ item.public_id }}</td>
+            <td>{{ item.needs_info_requested_at.strftime('%Y-%m-%d %H:%M') if item.needs_info_requested_at else '-' }}</td>
+            <td>{{ item.needs_info_requested_by_user_id or '-' }}</td>
+            <td>
+              <a class="btn" href="{{ url_for('budget.work_item_detail', event='SMF2026', dept='ARCADE', public_id=item.public_id) }}">View</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted">No items awaiting info</div>
+  {% endif %}
+</section>
+
+{# Quick Links #}
+<section class="card">
+  <h3 style="margin:0 0 12px 0;">Quick Links</h3>
+  <div class="btn-row">
+    <a class="btn" href="{{ url_for('budget.portfolio_landing', event='SMF2026', dept='ARCADE') }}">
+      ARCADE Portfolio
+    </a>
+    <a class="btn" href="{{ url_for('admin_config.locks.list_locks') }}">
+      Admin Locks
+    </a>
+    <a class="btn" href="{{ url_for('dev.dev_login') }}">
+      User Switcher
+    </a>
+  </div>
+</section>
+
+{% endblock %}

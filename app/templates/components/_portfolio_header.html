@@ -1,0 +1,32 @@
+{# templates/components/_portfolio_header.html #}
+{# Portfolio header with event/department info and totals #}
+
+<section class="card" style="margin-bottom: 16px;">
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap;">
+    <div>
+      <h1 style="margin:0;">
+        {{ ctx.department.name }} Budget
+      </h1>
+      <div class="muted" style="margin-top:4px; line-height:1.5;">
+        <strong>Event:</strong> {{ ctx.event_cycle.name }} ({{ ctx.event_cycle.code }})
+      </div>
+    </div>
+
+    <div style="text-align:right;">
+      {% if totals %}
+        <div class="summary-row" style="padding: 0; border: 0;">
+          <div class="muted">Requested</div>
+          <div class="summary-amount" style="font-weight:700;">{{ format_currency(totals.requested) }}</div>
+        </div>
+        <div class="summary-row" style="padding: 0; border: 0;">
+          <div class="muted">Approved</div>
+          <div class="summary-amount">{{ format_currency(totals.approved) }}</div>
+        </div>
+        <div class="summary-row" style="padding: 0; border: 0;">
+          <div class="muted">Pending</div>
+          <div class="summary-amount">{{ format_currency(totals.pending) }}</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>

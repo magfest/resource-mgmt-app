@@ -1,0 +1,256 @@
+{# templates/budget/work_item_detail.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}{{ work_item.public_id }} - Budget Request{% endblock %}
+
+{% block content %}
+
+  {% set status = work_item.status | upper %}
+  {% set status_pill_class =
+    "pill-approved" if status == "FINALIZED"
+    else "pill-submitted" if status == "SUBMITTED"
+    else "pill-needs" if status in ["UNDER_REVIEW", "NEEDS_INFO"]
+    else "pill-draft" %}
+
+  {# Header #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">
+        {{ work_item.public_id }}
+        <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
+      </h1>
+      <div class="muted" style="margin-top:4px; line-height:1.5;">
+        <strong>{{ work_item.request_kind }}</strong> &middot;
+        {{ ctx.department.name }} &middot;
+        {{ ctx.event_cycle.name }}
+      </div>
+      <div class="muted" style="margin-top:4px;">
+        Created {{ work_item.created_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if work_item.submitted_at %}
+          &middot; Submitted {{ work_item.submitted_at.strftime('%Y-%m-%d %H:%M') }}
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="text-align:right;">
+      <div style="font-size: 24px; font-weight:700;">{{ format_currency(totals.requested) }}</div>
+      <div class="muted">{{ totals.line_count }} line{% if totals.line_count != 1 %}s{% endif %}</div>
+      {% if totals.approved > 0 %}
+        <div class="muted" style="margin-top: 4px;">Approved: {{ format_currency(totals.approved) }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Checkout Status Banner #}
+  {% if perms.is_checked_out %}
+    {% if perms.is_checked_out_by_current_user %}
+      <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
+        <strong>You have this item checked out</strong>
+        <div class="muted" style="margin-top:4px;">
+          {% if work_item.checked_out_expires_at %}
+            Lock expires {{ work_item.checked_out_expires_at.strftime('%Y-%m-%d %H:%M') }}
+          {% endif %}
+        </div>
+      </div>
+    {% elif perms.is_admin %}
+      <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
+        <strong>Under Review by Another Reviewer</strong>
+        <div class="muted" style="margin-top:4px;">
+          Checked out by <strong>{{ work_item.checked_out_by_user_id }}</strong>
+          {% if work_item.checked_out_expires_at %}
+            &middot; Expires {{ work_item.checked_out_expires_at.strftime('%Y-%m-%d %H:%M') }}
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
+        <strong>Under Active Review</strong>
+        <div class="muted" style="margin-top:4px;">
+          This request is currently being reviewed by an approver.
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {# Actions #}
+  <div class="btn-row" style="margin-bottom: 16px;">
+    {% if perms.is_draft and perms.can_edit %}
+      <a class="btn btn-primary" href="{{ url_for('budget.work_item_edit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        Edit Draft
+      </a>
+    {% endif %}
+
+    {% if perms.can_submit %}
+      <form method="post" action="{{ url_for('budget.work_item_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+        <button type="submit" class="btn btn-primary" onclick="return confirm('Submit this request for review?');">
+          Submit for Review
+        </button>
+      </form>
+    {% endif %}
+
+    {# Checkout button for reviewers #}
+    {% if perms.can_checkout %}
+      <form method="post" action="{{ url_for('budget.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+        <button type="submit" class="btn btn-primary">
+          Checkout for Review
+        </button>
+      </form>
+    {% endif %}
+
+    {# Checkin button #}
+    {% if perms.can_checkin %}
+      <form method="post" action="{{ url_for('budget.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+        <button type="submit" class="btn" onclick="return confirm('Release your checkout lock?');">
+          {% if perms.is_checked_out_by_current_user %}
+            Release Lock
+          {% else %}
+            Force Release Lock
+          {% endif %}
+        </button>
+      </form>
+    {% endif %}
+
+    <a class="btn" href="{{ url_for('budget.portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+      Back to Portfolio
+    </a>
+  </div>
+
+  {# Status-specific callouts #}
+  {% if status == "NEEDS_INFO" %}
+    <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
+      <strong>Information Requested</strong>
+      <div class="muted" style="margin-top:4px;">
+        A reviewer has requested additional information about this request.
+        {% if work_item.needs_info_requested_at %}
+          Requested {{ work_item.needs_info_requested_at.strftime('%Y-%m-%d %H:%M') }}
+        {% endif %}
+      </div>
+
+      {# Response form for requester #}
+      {% if perms.can_respond_to_info %}
+        <form method="post" action="{{ url_for('budget.work_item_respond_info', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="margin-top: 12px;">
+          <div style="margin-bottom: 8px;">
+            <label for="response"><strong>Your Response:</strong></label>
+            <textarea name="response" id="response" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Provide the requested information..." required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">Submit Response</button>
+        </form>
+      {% endif %}
+    </div>
+  {% elif status == "SUBMITTED" and not perms.is_checked_out %}
+    <div class="callout callout-info" style="margin-bottom: 16px;">
+      <strong>Under Review</strong>
+      <div class="muted" style="margin-top:4px;">
+        This request has been submitted and is awaiting approval group review.
+      </div>
+    </div>
+  {% elif status == "FINALIZED" %}
+    <div class="callout callout-success" style="margin-bottom: 16px;">
+      <strong>Finalized</strong>
+      <div class="muted" style="margin-top:4px;">
+        This request has been finalized.
+        {% if work_item.finalized_at %}
+          Finalized {{ work_item.finalized_at.strftime('%Y-%m-%d %H:%M') }}
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# Request Information Form (for reviewers with checkout) #}
+  {% if perms.can_request_info %}
+    <div class="card" style="margin-bottom: 16px; background: #f8f9fa;">
+      <h4 style="margin:0 0 12px 0;">Request Information</h4>
+      <form method="post" action="{{ url_for('budget.work_item_request_info', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        <div style="margin-bottom: 8px;">
+          <label for="message"><strong>What information do you need?</strong></label>
+          <textarea name="message" id="message" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Describe what additional information you need from the requester..." required></textarea>
+        </div>
+        <button type="submit" class="btn" onclick="return confirm('Request information? This will change the status to NEEDS_INFO and release your lock.');">
+          Request Information
+        </button>
+      </form>
+    </div>
+  {% endif %}
+
+  {# Lines Table #}
+  <section class="card">
+    <h3 style="margin:0 0 12px 0;">Budget Lines</h3>
+
+    {% if lines %}
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 60px;">#</th>
+            <th>Expense Account</th>
+            <th>Description</th>
+            <th style="width: 80px;" class="right">Qty</th>
+            <th style="width: 100px;" class="right">Unit Price</th>
+            <th style="width: 120px;" class="right">Total</th>
+            <th style="width: 100px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+            {% set detail = line.budget_detail %}
+            {% set line_total = (detail.unit_price_cents * detail.quantity) if detail else 0 %}
+            <tr>
+              <td>{{ line.line_number }}</td>
+              <td>
+                {% if detail and detail.expense_account %}
+                  <strong>{{ detail.expense_account.name }}</strong>
+                  {% if detail.spend_type %}
+                    <div class="muted small">{{ detail.spend_type.name }}</div>
+                  {% endif %}
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if detail and detail.description %}
+                  {{ detail.description }}
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+                {% if detail %}
+                  <div class="muted small" style="margin-top: 4px;">
+                    {% if detail.priority %}Priority: {{ detail.priority.name }}{% endif %}
+                    {% if detail.confidence_level %} &middot; Confidence: {{ detail.confidence_level.name }}{% endif %}
+                    {% if detail.frequency %} &middot; {{ detail.frequency.name }}{% endif %}
+                    {% if detail.warehouse_flag %} &middot; Warehouse{% endif %}
+                  </div>
+                {% endif %}
+              </td>
+              <td class="right num">{{ detail.quantity if detail else '-' }}</td>
+              <td class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
+              <td class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
+              <td>
+                {% set line_status = line.status | upper %}
+                {% set line_pill_class =
+                  "pill-approved" if line_status == "APPROVED"
+                  else "pill-needs" if line_status in ["NEEDS_INFO", "NEEDS_ADJUSTMENT"]
+                  else "tag-kicked" if line_status == "REJECTED"
+                  else "" %}
+                <span class="pill {{ line_pill_class }}">{{ line_status }}</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight: 700;">
+            <td colspan="5" class="right">Total Requested:</td>
+            <td class="right num">{{ format_currency(totals.requested) }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    {% else %}
+      <div class="muted" style="text-align: center; padding: 24px;">
+        No budget lines yet.
+        {% if perms.can_add_lines %}
+          <a href="{{ url_for('budget.line_new', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">Add one now</a>.
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+{% endblock %}

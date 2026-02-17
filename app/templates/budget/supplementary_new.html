@@ -1,0 +1,48 @@
+{# templates/budget/supplementary_new.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Create Supplementary Budget Request{% endblock %}
+
+{% block content %}
+
+  <h1>Create Supplementary Budget Request</h1>
+
+  <div class="card" style="margin-top: 16px;">
+    <h3 style="margin:0 0 12px 0;">Confirm Creation</h3>
+
+    <div class="summary-row">
+      <div class="muted">Event</div>
+      <div class="summary-amount">{{ ctx.event_cycle.name }} ({{ ctx.event_cycle.code }})</div>
+    </div>
+
+    <div class="summary-row">
+      <div class="muted">Department</div>
+      <div class="summary-amount">{{ ctx.department.name }} ({{ ctx.department.code }})</div>
+    </div>
+
+    <div class="summary-row">
+      <div class="muted">Supplementary #</div>
+      <div class="summary-amount">{{ supplementary_number }}</div>
+    </div>
+
+    <div style="margin-top: 16px;">
+      <p>
+        You are about to create <strong>Supplementary Budget Request #{{ supplementary_number }}</strong> for
+        <strong>{{ ctx.department.name }}</strong> for the
+        <strong>{{ ctx.event_cycle.name }}</strong> event cycle.
+      </p>
+      <p class="muted">
+        Supplementary requests are used for additional budget needs after the primary request has been finalized.
+        You can add budget lines after creating it.
+      </p>
+    </div>
+
+    <form method="post" action="{{ url_for('budget.supplementary_create', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+      <div class="btn-row" style="margin-top: 16px;">
+        <button type="submit" class="btn btn-primary">Create Supplementary Budget Request</button>
+        <a class="btn" href="{{ url_for('budget.portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+{% endblock %}

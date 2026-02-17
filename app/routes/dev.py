@@ -1,7 +1,9 @@
 """
 Development routes for testing and debugging.
 """
-from flask import Blueprint, render_template, redirect, url_for, request, session
+from datetime import datetime, timedelta
+
+from flask import Blueprint, render_template, redirect, url_for, request, session, flash
 
 from .. import db
 from . import h
@@ -310,6 +312,401 @@ def dev_users():
         "requests/dev_users.html",
         users=users,
     )
+
+
+# ============================================================
+# Chunk C Test Routes - Supplementary, Checkout, NEEDS_INFO
+# ============================================================
+
+@dev_bp.get("/dev/test-chunk-c")
+def test_chunk_c():
+    """Test dashboard for Chunk C features."""
+    from ..models import (
+        WorkItem, WorkPortfolio, Department, EventCycle, User,
+        WORK_ITEM_STATUS_DRAFT, WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_FINALIZED,
+        WORK_ITEM_STATUS_NEEDS_INFO, REQUEST_KIND_PRIMARY, REQUEST_KIND_SUPPLEMENTARY,
+    )
+
+    h.ensure_demo_users()
+
+    # Get test data
+    event = db.session.query(EventCycle).filter_by(code="SMF2026").first()
+    dept = db.session.query(Department).filter_by(code="ARCADE").first()
+
+    portfolio = None
+    primary_item = None
+    supplementary_items = []
+    checked_out_items = []
+    needs_info_items = []
+
+    if event and dept:
+        from ..models import WorkType
+        work_type = db.session.query(WorkType).filter_by(code="BUDGET").first()
+        if work_type:
+            portfolio = db.session.query(WorkPortfolio).filter_by(
+                work_type_id=work_type.id,
+                event_cycle_id=event.id,
+                department_id=dept.id,
+                is_archived=False,
+            ).first()
+
+            if portfolio:
+                primary_item = db.session.query(WorkItem).filter_by(
+                    portfolio_id=portfolio.id,
+                    request_kind=REQUEST_KIND_PRIMARY,
+                    is_archived=False,
+                ).first()
+
+                supplementary_items = db.session.query(WorkItem).filter_by(
+                    portfolio_id=portfolio.id,
+                    request_kind=REQUEST_KIND_SUPPLEMENTARY,
+                    is_archived=False,
+                ).all()
+
+        # Get all checked out items
+        now = datetime.utcnow()
+        checked_out_items = db.session.query(WorkItem).filter(
+            WorkItem.checked_out_by_user_id.isnot(None),
+            WorkItem.checked_out_expires_at > now,
+        ).all()
+
+        # Get all NEEDS_INFO items
+        needs_info_items = db.session.query(WorkItem).filter_by(
+            status=WORK_ITEM_STATUS_NEEDS_INFO,
+        ).all()
+
+    # Get users for quick login
+    users = db.session.query(User).filter(
+        User.is_active == True,
+        User.id.in_(['dev:alex', 'dev:admin', 'dev:tech_approver'])
+    ).all()
+
+    return render_template(
+        "dev/test_chunk_c.html",
+        event=event,
+        dept=dept,
+        portfolio=portfolio,
+        primary_item=primary_item,
+        supplementary_items=supplementary_items,
+        checked_out_items=checked_out_items,
+        needs_info_items=needs_info_items,
+        users=users,
+        current_user_id=h.get_active_user_id(),
+    )
+
+
+@dev_bp.post("/dev/test-chunk-c/create-primary-with-lines")
+def test_create_primary_with_lines():
+    """Create a PRIMARY work item with budget lines for testing."""
+    from ..models import (
+        WorkItem, WorkLine, WorkPortfolio, Department, EventCycle, WorkType,
+        BudgetLineDetail, ExpenseAccount, SpendType,
+        WORK_ITEM_STATUS_DRAFT, REQUEST_KIND_PRIMARY, WORK_LINE_STATUS_PENDING,
+    )
+
+    h.ensure_demo_users()
+    h.ensure_demo_budget_data()
+
+    event = db.session.query(EventCycle).filter_by(code="SMF2026").first()
+    dept = db.session.query(Department).filter_by(code="ARCADE").first()
+    work_type = db.session.query(WorkType).filter_by(code="BUDGET").first()
+
+    if not event or not dept or not work_type:
+        flash("Missing demo data (event, dept, or work type)", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    # Get or create portfolio
+    portfolio = db.session.query(WorkPortfolio).filter_by(
+        work_type_id=work_type.id,
+        event_cycle_id=event.id,
+        department_id=dept.id,
+        is_archived=False,
+    ).first()
+
+    if not portfolio:
+        portfolio = WorkPortfolio(
+            work_type_id=work_type.id,
+            event_cycle_id=event.id,
+            department_id=dept.id,
+            created_by_user_id=h.get_active_user_id(),
+        )
+        db.session.add(portfolio)
+        db.session.flush()
+
+    # Check for existing PRIMARY
+    existing = db.session.query(WorkItem).filter_by(
+        portfolio_id=portfolio.id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        is_archived=False,
+    ).first()
+
+    if existing:
+        flash(f"PRIMARY already exists: {existing.public_id}", "warning")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    # Generate public ID
+    import secrets
+    public_id = f"BUD-{''.join(secrets.token_urlsafe(4).upper().replace('-', '').replace('_', '')[:6])}"
+
+    # Create work item
+    work_item = WorkItem(
+        portfolio_id=portfolio.id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        status=WORK_ITEM_STATUS_DRAFT,
+        public_id=public_id,
+        created_by_user_id=h.get_active_user_id(),
+    )
+    db.session.add(work_item)
+    db.session.flush()
+
+    # Get expense accounts and spend types
+    expense_accounts = db.session.query(ExpenseAccount).filter_by(is_active=True).limit(3).all()
+    default_spend_type = db.session.query(SpendType).filter_by(code="DIVVY").first()
+
+    if not expense_accounts:
+        flash("No expense accounts found. Run demo data seed.", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    # Create sample lines
+    for i, acc in enumerate(expense_accounts, start=1):
+        line = WorkLine(
+            work_item_id=work_item.id,
+            line_number=i,
+            status=WORK_LINE_STATUS_PENDING,
+            updated_by_user_id=h.get_active_user_id(),
+        )
+        db.session.add(line)
+        db.session.flush()
+
+        spend_type = acc.default_spend_type or default_spend_type
+        detail = BudgetLineDetail(
+            work_line_id=line.id,
+            expense_account_id=acc.id,
+            spend_type_id=spend_type.id if spend_type else None,
+            unit_price_cents=acc.default_unit_price_cents or (1000 * (i + 1)),
+            quantity=i * 2,
+            description=f"Test line {i} - {acc.name}",
+        )
+        db.session.add(detail)
+
+    db.session.commit()
+    flash(f"Created PRIMARY {public_id} with {len(expense_accounts)} lines", "success")
+    return redirect(url_for("dev.test_chunk_c"))
+
+
+@dev_bp.post("/dev/test-chunk-c/submit-primary")
+def test_submit_primary():
+    """Submit the PRIMARY work item."""
+    from ..models import (
+        WorkItem, WorkPortfolio, Department, EventCycle, WorkType,
+        WORK_ITEM_STATUS_DRAFT, WORK_ITEM_STATUS_SUBMITTED, REQUEST_KIND_PRIMARY,
+        REVIEW_STAGE_APPROVAL_GROUP,
+    )
+
+    event = db.session.query(EventCycle).filter_by(code="SMF2026").first()
+    dept = db.session.query(Department).filter_by(code="ARCADE").first()
+    work_type = db.session.query(WorkType).filter_by(code="BUDGET").first()
+
+    if not event or not dept or not work_type:
+        flash("Missing demo data", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    portfolio = db.session.query(WorkPortfolio).filter_by(
+        work_type_id=work_type.id,
+        event_cycle_id=event.id,
+        department_id=dept.id,
+        is_archived=False,
+    ).first()
+
+    if not portfolio:
+        flash("No portfolio found", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    primary = db.session.query(WorkItem).filter_by(
+        portfolio_id=portfolio.id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        is_archived=False,
+    ).first()
+
+    if not primary:
+        flash("No PRIMARY found", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    if primary.status != WORK_ITEM_STATUS_DRAFT:
+        flash(f"PRIMARY is not DRAFT (status: {primary.status})", "warning")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    # Submit it
+    primary.status = WORK_ITEM_STATUS_SUBMITTED
+    primary.submitted_at = datetime.utcnow()
+    primary.submitted_by_user_id = h.get_active_user_id()
+
+    # Snapshot routing
+    for line in primary.lines:
+        if line.budget_detail:
+            detail = line.budget_detail
+            if detail.expense_account and detail.expense_account.approval_group_id:
+                detail.routed_approval_group_id = detail.expense_account.approval_group_id
+            line.current_review_stage = REVIEW_STAGE_APPROVAL_GROUP
+
+    db.session.commit()
+    flash(f"Submitted PRIMARY {primary.public_id}", "success")
+    return redirect(url_for("dev.test_chunk_c"))
+
+
+@dev_bp.post("/dev/test-chunk-c/finalize-primary")
+def test_finalize_primary():
+    """Finalize the PRIMARY work item (skip review for testing)."""
+    from ..models import (
+        WorkItem, WorkPortfolio, Department, EventCycle, WorkType,
+        WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_FINALIZED, REQUEST_KIND_PRIMARY,
+    )
+
+    event = db.session.query(EventCycle).filter_by(code="SMF2026").first()
+    dept = db.session.query(Department).filter_by(code="ARCADE").first()
+    work_type = db.session.query(WorkType).filter_by(code="BUDGET").first()
+
+    if not event or not dept or not work_type:
+        flash("Missing demo data", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    portfolio = db.session.query(WorkPortfolio).filter_by(
+        work_type_id=work_type.id,
+        event_cycle_id=event.id,
+        department_id=dept.id,
+        is_archived=False,
+    ).first()
+
+    if not portfolio:
+        flash("No portfolio found", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    primary = db.session.query(WorkItem).filter_by(
+        portfolio_id=portfolio.id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        is_archived=False,
+    ).first()
+
+    if not primary:
+        flash("No PRIMARY found", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    if primary.status == WORK_ITEM_STATUS_FINALIZED:
+        flash("PRIMARY is already FINALIZED", "warning")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    # Finalize it (skip review for testing)
+    primary.status = WORK_ITEM_STATUS_FINALIZED
+    primary.finalized_at = datetime.utcnow()
+    primary.finalized_by_user_id = h.get_active_user_id()
+
+    db.session.commit()
+    flash(f"Finalized PRIMARY {primary.public_id} (test mode - skipped review)", "success")
+    return redirect(url_for("dev.test_chunk_c"))
+
+
+@dev_bp.post("/dev/test-chunk-c/checkout-item/<public_id>")
+def test_checkout_item(public_id: str):
+    """Checkout a work item for testing."""
+    from ..models import WorkItem, WORK_ITEM_STATUS_SUBMITTED
+    from .budget.helpers import get_checkout_timeout_minutes
+    from . import get_user_ctx
+
+    work_item = db.session.query(WorkItem).filter_by(public_id=public_id).first()
+    if not work_item:
+        flash(f"Work item not found: {public_id}", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    if work_item.status != WORK_ITEM_STATUS_SUBMITTED:
+        flash(f"Work item must be SUBMITTED (status: {work_item.status})", "warning")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    if work_item.checked_out_by_user_id:
+        flash(f"Already checked out by {work_item.checked_out_by_user_id}", "warning")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    user_ctx = get_user_ctx()
+    timeout_minutes = get_checkout_timeout_minutes(user_ctx)
+    now = datetime.utcnow()
+
+    work_item.checked_out_by_user_id = user_ctx.user_id
+    work_item.checked_out_at = now
+    work_item.checked_out_expires_at = now + timedelta(minutes=timeout_minutes)
+
+    db.session.commit()
+    flash(f"Checked out {public_id} (expires in {timeout_minutes} minutes)", "success")
+    return redirect(url_for("dev.test_chunk_c"))
+
+
+@dev_bp.post("/dev/test-chunk-c/set-needs-info/<public_id>")
+def test_set_needs_info(public_id: str):
+    """Set a work item to NEEDS_INFO for testing."""
+    from ..models import WorkItem, WorkLineComment, WORK_ITEM_STATUS_NEEDS_INFO, COMMENT_VISIBILITY_PUBLIC
+
+    work_item = db.session.query(WorkItem).filter_by(public_id=public_id).first()
+    if not work_item:
+        flash(f"Work item not found: {public_id}", "error")
+        return redirect(url_for("dev.test_chunk_c"))
+
+    # Add a test comment
+    if work_item.lines:
+        comment = WorkLineComment(
+            work_line_id=work_item.lines[0].id,
+            visibility=COMMENT_VISIBILITY_PUBLIC,
+            body="[INFO REQUESTED] Test info request - please provide vendor quotes.",
+            created_by_user_id=h.get_active_user_id(),
+        )
+        db.session.add(comment)
+
+    work_item.status = WORK_ITEM_STATUS_NEEDS_INFO
+    work_item.needs_info_requested_at = datetime.utcnow()
+    work_item.needs_info_requested_by_user_id = h.get_active_user_id()
+
+    # Clear checkout
+    work_item.checked_out_by_user_id = None
+    work_item.checked_out_at = None
+    work_item.checked_out_expires_at = None
+
+    db.session.commit()
+    flash(f"Set {public_id} to NEEDS_INFO", "success")
+    return redirect(url_for("dev.test_chunk_c"))
+
+
+@dev_bp.post("/dev/test-chunk-c/reset-all")
+def test_reset_all():
+    """Reset all test data for Chunk C."""
+    from ..models import WorkItem, WorkLine, BudgetLineDetail, WorkPortfolio, Department, EventCycle, WorkType
+
+    event = db.session.query(EventCycle).filter_by(code="SMF2026").first()
+    dept = db.session.query(Department).filter_by(code="ARCADE").first()
+    work_type = db.session.query(WorkType).filter_by(code="BUDGET").first()
+
+    if event and dept and work_type:
+        portfolio = db.session.query(WorkPortfolio).filter_by(
+            work_type_id=work_type.id,
+            event_cycle_id=event.id,
+            department_id=dept.id,
+        ).first()
+
+        if portfolio:
+            # Delete all work items in this portfolio
+            items = db.session.query(WorkItem).filter_by(portfolio_id=portfolio.id).all()
+            for item in items:
+                for line in item.lines:
+                    if line.budget_detail:
+                        db.session.delete(line.budget_detail)
+                    for comment in line.comments:
+                        db.session.delete(comment)
+                    db.session.delete(line)
+                db.session.delete(item)
+            db.session.commit()
+            flash(f"Deleted {len(items)} work item(s) from test portfolio", "success")
+        else:
+            flash("No portfolio found to reset", "info")
+    else:
+        flash("Missing demo data", "error")
+
+    return redirect(url_for("dev.test_chunk_c"))
 
 
 

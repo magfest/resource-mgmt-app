@@ -1,0 +1,51 @@
+{# templates/components/_work_item_card.html #}
+{# Card displaying a work item summary #}
+{# Expects: item, item_totals, ctx, format_currency #}
+
+{% set status = item.status | upper %}
+{% set status_pill_class =
+  "pill-approved" if status == "FINALIZED"
+  else "pill-submitted" if status == "SUBMITTED"
+  else "pill-needs" if status == "UNDER_REVIEW"
+  else "pill-draft" %}
+
+<div class="card" style="margin-bottom: 12px;">
+  <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+    <div>
+      <h3 style="margin:0;">
+        <a href="{{ url_for('budget.work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=item.public_id) }}"
+           style="text-decoration: none; color: inherit;">
+          {{ item.public_id }}
+        </a>
+        <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
+      </h3>
+
+      <div class="muted" style="margin-top:4px;">
+        {{ item.request_kind }}
+        {% if item.submitted_at %}
+          &middot; Submitted {{ item.submitted_at.strftime('%Y-%m-%d') }}
+        {% else %}
+          &middot; Created {{ item.created_at.strftime('%Y-%m-%d') }}
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="text-align:right;">
+      {% if item_totals %}
+        <div style="font-weight:700;">{{ format_currency(item_totals.requested) }}</div>
+        <div class="muted small">{{ item_totals.line_count }} line{% if item_totals.line_count != 1 %}s{% endif %}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="btn-row" style="margin-top: 10px;">
+    <a class="btn" href="{{ url_for('budget.work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=item.public_id) }}">
+      View
+    </a>
+    {% if status == "DRAFT" and perms and perms.can_edit %}
+      <a class="btn" href="{{ url_for('budget.work_item_edit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=item.public_id) }}">
+        Edit
+      </a>
+    {% endif %}
+  </div>
+</div>

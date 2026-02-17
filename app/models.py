@@ -19,6 +19,7 @@ WORK_ITEM_STATUS_SUBMITTED = "SUBMITTED"
 WORK_ITEM_STATUS_UNDER_REVIEW = "UNDER_REVIEW"
 WORK_ITEM_STATUS_FINALIZED = "FINALIZED"
 WORK_ITEM_STATUS_UNAPPROVED = "UNAPPROVED"  # reopened after finalize
+WORK_ITEM_STATUS_NEEDS_INFO = "NEEDS_INFO"  # awaiting requester response
 
 # Work line statuses (overall current state)
 WORK_LINE_STATUS_PENDING = "PENDING"
@@ -369,6 +370,10 @@ class WorkItem(db.Model):
     checked_out_by_user_id = db.Column(db.String(64), nullable=True, index=True)
     checked_out_at = db.Column(db.DateTime, nullable=True, index=True)
     checked_out_expires_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    # NEEDS_INFO tracking
+    needs_info_requested_at = db.Column(db.DateTime, nullable=True, index=True)
+    needs_info_requested_by_user_id = db.Column(db.String(64), nullable=True, index=True)
 
     # Email batching flag
     pending_notification = db.Column(db.Boolean, nullable=False, default=False)

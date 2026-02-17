@@ -1,0 +1,86 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Event Overrides - {{ account.name }} - Admin{% endblock %}
+
+{% block content %}
+<h1>Event Overrides</h1>
+<div class="muted" style="margin-bottom: 8px;">
+  Account: <strong>{{ account.code }}</strong> - {{ account.name }}
+</div>
+<div class="muted small" style="margin-bottom: 16px;">
+  Override account settings for specific event cycles. Useful for changing unit costs or labels per-event.
+</div>
+
+<div class="row" style="margin-bottom: 16px;">
+  <a class="btn btn-primary" href="{{ url_for('admin_config.expense_accounts.new_override', account_id=account.id) }}">+ New Override</a>
+  <a class="btn" href="{{ url_for('admin_config.expense_accounts.edit_expense_account', account_id=account.id) }}">Back to Account</a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 150px;">Event Cycle</th>
+      <th style="width: 100px;">Fixed Cost</th>
+      <th style="width: 120px;">Unit Price</th>
+      <th style="width: 80px;">Locked</th>
+      <th style="width: 120px;">Spend Type</th>
+      <th>UI Group</th>
+      <th style="width: 100px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for override in overrides %}
+      <tr>
+        <td>
+          {{ override.event_cycle.name if override.event_cycle else '—' }}
+          <div class="muted small">{{ override.event_cycle.code if override.event_cycle else '' }}</div>
+        </td>
+        <td>
+          {% if override.is_fixed_cost is not none %}
+            {% if override.is_fixed_cost %}Yes{% else %}No{% endif %}
+          {% else %}
+            <span class="muted">inherit</span>
+          {% endif %}
+        </td>
+        <td class="num">
+          {% if override.default_unit_price_cents is not none %}
+            ${{ '%.2f'|format(override.default_unit_price_cents / 100) }}
+          {% else %}
+            <span class="muted">inherit</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if override.unit_price_locked is not none %}
+            {% if override.unit_price_locked %}Yes{% else %}No{% endif %}
+          {% else %}
+            <span class="muted">inherit</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if override.default_spend_type %}
+            {{ override.default_spend_type.name }}
+          {% else %}
+            <span class="muted">inherit</span>
+          {% endif %}
+        </td>
+        <td class="muted small">{{ override.ui_display_group or 'inherit' }}</td>
+        <td>
+          <a class="btn" href="{{ url_for('admin_config.expense_accounts.edit_override', account_id=account.id, override_id=override.id) }}">Edit</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="7" class="muted">No overrides configured for this account.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="callout" style="margin-top: 20px; max-width: 600px;">
+  <strong>How Overrides Work</strong>
+  <div class="muted small" style="margin-top: 6px;">
+    When a budget line uses this expense account for a specific event cycle, the override values
+    (if set) will take precedence over the base account settings. Leave fields blank to use the base account value.
+  </div>
+</div>
+{% endblock %}

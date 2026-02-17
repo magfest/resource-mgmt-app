@@ -1,0 +1,88 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Active Locks - Admin{% endblock %}
+
+{% block content %}
+<h1>Active Locks</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  View and manage work items that are currently checked out for review.
+</div>
+
+<div class="row" style="margin-bottom: 16px; gap: 8px;">
+  {% if expired_count > 0 %}
+    <form method="post" action="{{ url_for('admin_config.locks.release_expired') }}" style="display: inline;">
+      <button type="submit" class="btn btn-primary" onclick="return confirm('Release all {{ expired_count }} expired lock(s)?');">
+        Release {{ expired_count }} Expired Lock(s)
+      </button>
+    </form>
+  {% endif %}
+</div>
+
+{% if locks %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 120px;">Request ID</th>
+        <th style="width: 120px;">Department</th>
+        <th style="width: 120px;">Event</th>
+        <th style="width: 150px;">Checked Out By</th>
+        <th style="width: 160px;">Checked Out At</th>
+        <th style="width: 120px;">Time Remaining</th>
+        <th style="width: 80px;">Status</th>
+        <th style="width: 100px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lock in locks %}
+        <tr>
+          <td>
+            <a href="{{ url_for('budget.work_item_detail', event=lock.event_cycle.code if lock.event_cycle else 'UNKNOWN', dept=lock.department.code if lock.department else 'UNKNOWN', public_id=lock.work_item.public_id) }}">
+              {{ lock.work_item.public_id }}
+            </a>
+          </td>
+          <td>{{ lock.department.name if lock.department else '—' }}</td>
+          <td>{{ lock.event_cycle.code if lock.event_cycle else '—' }}</td>
+          <td>
+            {% if lock.user %}
+              {{ lock.user.display_name }}
+              <div class="muted small">{{ lock.user.email }}</div>
+            {% else %}
+              {{ lock.work_item.checked_out_by_user_id }}
+            {% endif %}
+          </td>
+          <td class="muted">
+            {{ lock.work_item.checked_out_at.strftime('%Y-%m-%d %H:%M') if lock.work_item.checked_out_at else '—' }}
+          </td>
+          <td>
+            {% if lock.is_expired %}
+              <span class="pill" style="background: #fbeaea;">Expired</span>
+            {% else %}
+              <span class="num">{{ lock.minutes_remaining }} min</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if lock.is_expired %}
+              <span class="pill" style="background: #fbeaea;">Expired</span>
+            {% else %}
+              <span class="pill" style="background: #fff3cd;">Locked</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('admin_config.locks.release_lock', work_item_id=lock.work_item.id) }}" style="display: inline;">
+              <button type="submit" class="btn" onclick="return confirm('Release this lock?');">Release</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="card" style="text-align: center; padding: 32px;">
+    <div class="muted">No active or expired locks.</div>
+  </div>
+{% endif %}
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ active_count }} active lock(s), {{ expired_count }} expired lock(s)
+</div>
+{% endblock %}

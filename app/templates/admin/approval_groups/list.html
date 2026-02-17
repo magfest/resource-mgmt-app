@@ -1,0 +1,68 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Approval Groups - Admin{% endblock %}
+
+{% block content %}
+<h1>Approval Groups</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  Manage approval groups that review expense accounts. Each expense account routes to one approval group.
+</div>
+
+<div class="row" style="margin-bottom: 16px;">
+  <a class="btn btn-primary" href="{{ url_for('admin_config.approval_groups.new_approval_group') }}">+ New Approval Group</a>
+
+  <form method="get" action="{{ url_for('admin_config.approval_groups.list_approval_groups') }}" class="row" style="margin: 0; gap: 8px;">
+    <label class="muted" style="display: flex; gap: 6px; align-items: center;">
+      <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
+      show inactive
+    </label>
+    <button class="btn" type="submit">Filter</button>
+    {% if show_inactive %}
+      <a class="btn" href="{{ url_for('admin_config.approval_groups.list_approval_groups') }}">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 100px;">Code</th>
+      <th style="width: 200px;">Name</th>
+      <th>Description</th>
+      <th style="width: 100px;">Accounts</th>
+      <th style="width: 80px;">Order</th>
+      <th style="width: 70px;">Status</th>
+      <th style="width: 80px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for group in groups %}
+      <tr>
+        <td class="num">{{ group.code }}</td>
+        <td>{{ group.name }}</td>
+        <td class="muted small">{{ group.description or '—' }}</td>
+        <td class="num">{{ account_counts.get(group.id, 0) }}</td>
+        <td class="num">{{ group.sort_order }}</td>
+        <td>
+          {% if group.is_active %}
+            <span class="pill" style="background: #e9f7ef;">Active</span>
+          {% else %}
+            <span class="pill" style="background: #fbeaea;">Inactive</span>
+          {% endif %}
+        </td>
+        <td>
+          <a class="btn" href="{{ url_for('admin_config.approval_groups.edit_approval_group', group_id=group.id) }}">Edit</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="7" class="muted">No approval groups found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ groups|length }} group(s) shown
+</div>
+{% endblock %}

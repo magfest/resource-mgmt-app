@@ -1,0 +1,72 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Departments - Admin{% endblock %}
+
+{% block content %}
+<h1>Departments</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  Manage departments that can submit budget requests.
+</div>
+
+<div class="row" style="margin-bottom: 16px;">
+  <a class="btn btn-primary" href="{{ url_for('admin_config.departments.new_department') }}">+ New Department</a>
+
+  <form method="get" action="{{ url_for('admin_config.departments.list_departments') }}" class="row" style="margin: 0; gap: 8px;">
+    <label class="muted" style="display: flex; gap: 6px; align-items: center;">
+      <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
+      show inactive
+    </label>
+    <button class="btn" type="submit">Filter</button>
+    {% if show_inactive %}
+      <a class="btn" href="{{ url_for('admin_config.departments.list_departments') }}">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 100px;">Code</th>
+      <th style="width: 180px;">Name</th>
+      <th>Description</th>
+      <th style="width: 150px;">Mailing List</th>
+      <th style="width: 120px;">Slack</th>
+      <th style="width: 80px;">Members</th>
+      <th style="width: 80px;">Order</th>
+      <th style="width: 70px;">Status</th>
+      <th style="width: 80px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for dept in departments %}
+      <tr>
+        <td class="num">{{ dept.code }}</td>
+        <td>{{ dept.name }}</td>
+        <td class="muted small">{{ dept.description or '—' }}</td>
+        <td class="muted small">{{ dept.mailing_list or '—' }}</td>
+        <td class="muted small">{{ dept.slack_channel or '—' }}</td>
+        <td class="num">{{ member_counts.get(dept.id, 0) }}</td>
+        <td class="num">{{ dept.sort_order }}</td>
+        <td>
+          {% if dept.is_active %}
+            <span class="pill" style="background: #e9f7ef;">Active</span>
+          {% else %}
+            <span class="pill" style="background: #fbeaea;">Inactive</span>
+          {% endif %}
+        </td>
+        <td>
+          <a class="btn" href="{{ url_for('admin_config.departments.edit_department', dept_id=dept.id) }}">Edit</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="9" class="muted">No departments found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ departments|length }} department(s) shown
+</div>
+{% endblock %}

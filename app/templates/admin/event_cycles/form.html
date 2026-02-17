@@ -1,0 +1,78 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{% if cycle %}Edit Event Cycle{% else %}New Event Cycle{% endif %} - Admin{% endblock %}
+
+{% block content %}
+<h1>{% if cycle %}Edit Event Cycle{% else %}New Event Cycle{% endif %}</h1>
+<div class="muted" style="margin: 8px 0 16px;">
+  {% if cycle %}
+    Editing cycle: <strong>{{ cycle.code }}</strong>
+    {% if portfolio_count %}
+      <span class="pill" style="margin-left: 8px;">{{ portfolio_count }} portfolio(s)</span>
+    {% endif %}
+  {% else %}
+    Create a new event cycle for budget tracking.
+  {% endif %}
+</div>
+
+<div class="card" style="max-width: 700px;">
+  <form method="post"
+    action="{% if cycle %}{{ url_for('admin_config.event_cycles.update_event_cycle', cycle_id=cycle.id) }}{% else %}{{ url_for('admin_config.event_cycles.create_event_cycle') }}{% endif %}"
+  >
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+
+      <div>
+        <label for="code" style="display: block; font-weight: 600; margin-bottom: 6px;">Code</label>
+        <input id="code" name="code" type="text" required
+               value="{{ cycle.code if cycle else '' }}"
+               placeholder="e.g. SMF2026" />
+        <div class="muted small" style="margin-top: 4px;">Unique identifier. Will be uppercased.</div>
+      </div>
+
+      <div>
+        <label for="name" style="display: block; font-weight: 600; margin-bottom: 6px;">Name</label>
+        <input id="name" name="name" type="text" required
+               value="{{ cycle.name if cycle else '' }}"
+               placeholder="e.g. Super MAGFest 2026" />
+      </div>
+
+      <div>
+        <label for="sort_order" style="display: block; font-weight: 600; margin-bottom: 6px;">Sort Order</label>
+        <input id="sort_order" name="sort_order" type="number"
+               value="{{ cycle.sort_order if cycle else 0 }}" />
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 28px;">
+        <label style="display: flex; gap: 8px; align-items: center; font-weight: normal;">
+          <input type="checkbox" name="is_active" value="1"
+                 {% if not cycle or cycle.is_active %}checked{% endif %} />
+          Active
+        </label>
+
+        <label style="display: flex; gap: 8px; align-items: center; font-weight: normal;">
+          <input type="checkbox" name="is_default" value="1"
+                 {% if cycle and cycle.is_default %}checked{% endif %} />
+          Set as default cycle
+        </label>
+      </div>
+
+    </div>
+
+    <div class="btn-row" style="margin-top: 20px;">
+      <button class="btn btn-primary" type="submit">{% if cycle %}Save Changes{% else %}Create Cycle{% endif %}</button>
+      <a class="btn" href="{{ url_for('admin_config.event_cycles.list_event_cycles') }}">Cancel</a>
+      {% if cycle %}
+        {% if cycle.is_active %}
+          <form method="post" action="{{ url_for('admin_config.event_cycles.archive_event_cycle', cycle_id=cycle.id) }}" style="display: inline;">
+            <button class="btn" type="submit" onclick="return confirm('Archive this event cycle?')">Archive</button>
+          </form>
+        {% else %}
+          <form method="post" action="{{ url_for('admin_config.event_cycles.restore_event_cycle', cycle_id=cycle.id) }}" style="display: inline;">
+            <button class="btn" type="submit">Restore</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

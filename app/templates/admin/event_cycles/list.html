@@ -1,0 +1,87 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Event Cycles - Admin{% endblock %}
+
+{% block content %}
+<h1>Event Cycles</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  Manage event cycles (years/events) for budget tracking.
+</div>
+
+<div class="row" style="margin-bottom: 16px;">
+  <a class="btn btn-primary" href="{{ url_for('admin_config.event_cycles.new_event_cycle') }}">+ New Event Cycle</a>
+
+  <form method="get" action="{{ url_for('admin_config.event_cycles.list_event_cycles') }}" class="row" style="margin: 0; gap: 8px;">
+    <label class="muted" style="display: flex; gap: 6px; align-items: center;">
+      <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
+      show inactive
+    </label>
+    <button class="btn" type="submit">Filter</button>
+    {% if show_inactive %}
+      <a class="btn" href="{{ url_for('admin_config.event_cycles.list_event_cycles') }}">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 100px;">Code</th>
+      <th style="width: 200px;">Name</th>
+      <th style="width: 100px;">Portfolios</th>
+      <th style="width: 80px;">Order</th>
+      <th style="width: 80px;">Default</th>
+      <th style="width: 70px;">Status</th>
+      <th style="width: 140px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for cycle in cycles %}
+      <tr>
+        <td class="num">{{ cycle.code }}</td>
+        <td>{{ cycle.name }}</td>
+        <td class="num">{{ portfolio_counts.get(cycle.id, 0) }}</td>
+        <td class="num">{{ cycle.sort_order }}</td>
+        <td>
+          {% if cycle.is_default %}
+            <span class="pill" style="background: #eef5ff; border-color: #b7d3ff;">Default</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if cycle.is_active %}
+            <span class="pill" style="background: #e9f7ef;">Active</span>
+          {% else %}
+            <span class="pill" style="background: #fbeaea;">Inactive</span>
+          {% endif %}
+        </td>
+        <td class="btn-row">
+          <a class="btn" href="{{ url_for('admin_config.event_cycles.edit_event_cycle', cycle_id=cycle.id) }}">Edit</a>
+          {% if cycle.is_active and not cycle.is_default %}
+            <form method="post" action="{{ url_for('admin_config.event_cycles.set_default_event_cycle', cycle_id=cycle.id) }}" style="display: inline;">
+              <button class="btn" type="submit">Set Default</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="7" class="muted">No event cycles found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ cycles|length }} cycle(s) shown
+</div>
+
+<div class="callout" style="margin-top: 20px; max-width: 500px;">
+  <strong>Default Event Cycle</strong>
+  <div class="muted small" style="margin-top: 6px;">
+    The default cycle is used when creating new portfolios or budget requests.
+    Only one cycle can be the default at a time.
+  </div>
+</div>
+{% endblock %}

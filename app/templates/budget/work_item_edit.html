@@ -1,0 +1,259 @@
+{# templates/budget/work_item_edit.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Edit {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+
+  {% set status = work_item.status | upper %}
+
+  {# Header #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">
+        Edit {{ work_item.public_id }}
+        <span class="pill pill-draft" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
+      </h1>
+      <div class="muted" style="margin-top:4px; line-height:1.5;">
+        <strong>{{ work_item.request_kind }}</strong> &middot;
+        {{ ctx.department.name }} &middot;
+        {{ ctx.event_cycle.name }}
+      </div>
+    </div>
+
+    <div style="text-align:right;">
+      <div style="font-size: 24px; font-weight:700;">{{ format_currency(totals.requested) }}</div>
+      <div class="muted">{{ totals.line_count }} line{% if totals.line_count != 1 %}s{% endif %}</div>
+    </div>
+  </div>
+
+  {# Actions #}
+  <div class="btn-row" style="margin-bottom: 16px;">
+    <a class="btn btn-primary" href="{{ url_for('budget.line_new', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+      Add Line
+    </a>
+
+    {% if perms.can_submit %}
+      <form method="post" action="{{ url_for('budget.work_item_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+        <button type="submit" class="btn btn-primary" onclick="return confirm('Submit this request for review?');">
+          Submit for Review
+        </button>
+      </form>
+    {% endif %}
+
+    <a class="btn" href="{{ url_for('budget.work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+      View Details
+    </a>
+
+    <a class="btn" href="{{ url_for('budget.portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+      Back to Portfolio
+    </a>
+  </div>
+
+  {# Fixed-Cost Items Section #}
+  {% if fixed_cost_data %}
+  <form method="post" action="{{ url_for('budget.work_item_fixed_costs_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+    <section class="card" style="margin-bottom: 16px;">
+      <h3 style="margin:0 0 8px 0;">Fixed-Cost Items</h3>
+      <div class="muted" style="margin-bottom: 12px;">
+        Enter quantities for standard items with predetermined pricing. Leave blank or enter 0 if not needed.
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th style="width: 120px;" class="right">Unit Price</th>
+            <th style="width: 100px;">Quantity</th>
+            <th style="width: 120px;" class="right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in fixed_cost_data %}
+            {% set acc = item.account %}
+            {% set unit_price = item.unit_price_cents %}
+            {% set existing_qty = item.existing_quantity %}
+            <tr>
+              <td>
+                <strong>{{ acc.name }}</strong>
+                {% if acc.description %}
+                  <div class="muted small">{{ acc.description }}</div>
+                {% endif %}
+              </td>
+              <td class="right num">{{ format_currency(unit_price) }}</td>
+              <td>
+                <input type="number"
+                       name="fixed_qty_{{ acc.id }}"
+                       value="{{ existing_qty if existing_qty else '' }}"
+                       min="0"
+                       step="1"
+                       placeholder="0"
+                       style="width: 80px;"
+                       data-unit-price="{{ unit_price }}"
+                       class="fixed-qty-input">
+              </td>
+              <td class="right num fixed-line-total" data-account-id="{{ acc.id }}">
+                {% if existing_qty %}
+                  {{ format_currency((unit_price * existing_qty) | int) }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight: 700;">
+            <td colspan="3" class="right">Fixed-Cost Subtotal:</td>
+            <td class="right num" id="fixed-cost-subtotal">
+              {% set fixed_subtotal = namespace(total=0) %}
+              {% for item in fixed_cost_data %}
+                {% if item.existing_quantity %}
+                  {% set fixed_subtotal.total = fixed_subtotal.total + (item.unit_price_cents * item.existing_quantity) | int %}
+                {% endif %}
+              {% endfor %}
+              {{ format_currency(fixed_subtotal.total) }}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div class="btn-row" style="margin-top: 16px;">
+        <button type="submit" class="btn btn-primary">Save Fixed-Cost Items</button>
+      </div>
+    </section>
+  </form>
+  {% endif %}
+
+  {# Regular Budget Lines Table with Delete Checkboxes #}
+  <form method="post" action="{{ url_for('budget.work_item_edit_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">Other Budget Lines</h3>
+      <div class="muted" style="margin-bottom: 12px;">
+        Check lines to delete, then click "Save Changes".
+      </div>
+
+      {% if lines %}
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 50px;">Del</th>
+              <th style="width: 50px;">#</th>
+              <th>Expense Account</th>
+              <th>Description</th>
+              <th style="width: 80px;" class="right">Qty</th>
+              <th style="width: 100px;" class="right">Unit Price</th>
+              <th style="width: 120px;" class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in lines %}
+              {% set detail = line.budget_detail %}
+              {% set line_total = (detail.unit_price_cents * detail.quantity) if detail else 0 %}
+              <tr>
+                <td style="text-align: center;">
+                  <input type="checkbox" name="delete_line" value="{{ line.id }}">
+                </td>
+                <td>{{ line.line_number }}</td>
+                <td>
+                  {% if detail and detail.expense_account %}
+                    <strong>{{ detail.expense_account.name }}</strong>
+                    {% if detail.spend_type %}
+                      <div class="muted small">{{ detail.spend_type.name }}</div>
+                    {% endif %}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if detail and detail.description %}
+                    {{ detail.description }}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                  {% if detail %}
+                    <div class="muted small" style="margin-top: 4px;">
+                      {% if detail.priority %}Priority: {{ detail.priority.name }}{% endif %}
+                      {% if detail.confidence_level %} &middot; Confidence: {{ detail.confidence_level.name }}{% endif %}
+                      {% if detail.frequency %} &middot; {{ detail.frequency.name }}{% endif %}
+                      {% if detail.warehouse_flag %} &middot; Warehouse{% endif %}
+                    </div>
+                  {% endif %}
+                </td>
+                <td class="right num">{{ detail.quantity if detail else '-' }}</td>
+                <td class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
+                <td class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr style="font-weight: 700;">
+              <td colspan="6" class="right">Other Lines Subtotal:</td>
+              <td class="right num">
+                {% set other_subtotal = namespace(total=0) %}
+                {% for line in lines %}
+                  {% if line.budget_detail %}
+                    {% set other_subtotal.total = other_subtotal.total + (line.budget_detail.unit_price_cents * line.budget_detail.quantity) | int %}
+                  {% endif %}
+                {% endfor %}
+                {{ format_currency(other_subtotal.total) }}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div class="btn-row" style="margin-top: 16px;">
+          <button type="submit" class="btn">Save Changes</button>
+        </div>
+      {% else %}
+        <div class="muted" style="text-align: center; padding: 24px;">
+          No other budget lines yet.
+          <a href="{{ url_for('budget.line_new', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">Add one now</a>.
+        </div>
+      {% endif %}
+    </section>
+  </form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Update line totals and subtotal when quantity changes
+  document.querySelectorAll('.fixed-qty-input').forEach(function(input) {
+    input.addEventListener('input', function() {
+      const unitPrice = parseInt(this.dataset.unitPrice) || 0;
+      const qty = parseInt(this.value) || 0;
+      const total = unitPrice * qty;
+
+      // Find the total cell in this row
+      const row = this.closest('tr');
+      const totalCell = row.querySelector('.fixed-line-total');
+      if (totalCell) {
+        totalCell.textContent = qty > 0 ? formatCurrency(total) : '-';
+      }
+
+      // Update subtotal
+      updateFixedCostSubtotal();
+    });
+  });
+
+  function updateFixedCostSubtotal() {
+    let subtotal = 0;
+    document.querySelectorAll('.fixed-qty-input').forEach(function(input) {
+      const unitPrice = parseInt(input.dataset.unitPrice) || 0;
+      const qty = parseInt(input.value) || 0;
+      subtotal += unitPrice * qty;
+    });
+
+    const subtotalCell = document.getElementById('fixed-cost-subtotal');
+    if (subtotalCell) {
+      subtotalCell.textContent = formatCurrency(subtotal);
+    }
+  }
+
+  function formatCurrency(cents) {
+    const dollars = cents / 100;
+    return '$' + dollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+</script>
+{% endblock %}

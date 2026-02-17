@@ -1,0 +1,43 @@
+{# templates/budget/primary_new.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Create Primary Budget Request{% endblock %}
+
+{% block content %}
+
+  <h1>Create Primary Budget Request</h1>
+
+  <div class="card" style="margin-top: 16px;">
+    <h3 style="margin:0 0 12px 0;">Confirm Creation</h3>
+
+    <div class="summary-row">
+      <div class="muted">Event</div>
+      <div class="summary-amount">{{ ctx.event_cycle.name }} ({{ ctx.event_cycle.code }})</div>
+    </div>
+
+    <div class="summary-row">
+      <div class="muted">Department</div>
+      <div class="summary-amount">{{ ctx.department.name }} ({{ ctx.department.code }})</div>
+    </div>
+
+    <div style="margin-top: 16px;">
+      <p>
+        You are about to create the <strong>Primary Budget Request</strong> for
+        <strong>{{ ctx.department.name }}</strong> for the
+        <strong>{{ ctx.event_cycle.name }}</strong> event cycle.
+      </p>
+      <p class="muted">
+        The primary budget request is your main budget submission for this event.
+        You can add budget lines after creating it.
+      </p>
+    </div>
+
+    <form method="post" action="{{ url_for('budget.primary_create', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+      <div class="btn-row" style="margin-top: 16px;">
+        <button type="submit" class="btn btn-primary">Create Primary Budget Request</button>
+        <a class="btn" href="{{ url_for('budget.portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+{% endblock %}
