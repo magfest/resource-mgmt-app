@@ -11,7 +11,7 @@ dev_bp = Blueprint('dev', __name__)
 
 @dev_bp.get("/dev/login")
 def dev_login():
-    from ..models import User
+    from ..models_old import User
 
     h.ensure_demo_users()
 
@@ -31,7 +31,7 @@ def dev_login():
 
 @dev_bp.post("/dev/login")
 def dev_login_post():
-    from ..models import User
+    from ..models_old import User
 
     h.ensure_demo_users()
 
@@ -49,7 +49,7 @@ def dev_login_post():
 
 @dev_bp.post("/dev/create-sample-request")
 def dev_create_sample_request():
-    from ..models import Request
+    from ..models_old import Request
 
     r = Request(
         event_cycle="Super MAGFest 2026",
@@ -63,7 +63,7 @@ def dev_create_sample_request():
 
 @dev_bp.post("/dev/create-sample-request-with-revision")
 def dev_create_sample_request_with_revision():
-    from ..models import Request, RequestRevision
+    from ..models_old import Request, RequestRevision
 
     r = Request(
         event_cycle="Super MAGFest 2026",
@@ -97,7 +97,7 @@ def dev_create_sample_request_with_revision():
 
 @dev_bp.post("/dev/create-techops-sample-v1")
 def dev_create_techops_sample_v1():
-    from ..models import Request, RequestRevision, RequestLine
+    from ..models_old import Request, RequestRevision, RequestLine
 
     r = Request(
         event_cycle="Super MAGFest 2026",
@@ -172,7 +172,7 @@ def dev_request_debug(request_id: int):
         except Exception:
             return default
 
-    from ..models import (
+    from ..models_old import (
         Request,
         RequestDraft,
         DraftLine,
@@ -188,7 +188,7 @@ def dev_request_debug(request_id: int):
     Department = None
     EventCycle = None
     try:
-        from ..models import Department, EventCycle  # type: ignore
+        from ..models_old import Department, EventCycle  # type: ignore
     except Exception:
         pass
 
@@ -298,7 +298,7 @@ def dev_request_debug(request_id: int):
 
 @dev_bp.get("/dev/users")
 def dev_users():
-    from ..models import User
+    from ..models_old import User
 
     users = (
         db.session.query(User)

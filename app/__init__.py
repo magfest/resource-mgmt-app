@@ -28,14 +28,14 @@ def create_app() -> Flask:
     migrate.init_app(app, db)
 
     # Import models so migrations can detect them
-    from . import models  # noqa: F401
+    from . import models_old  # noqa: F401
 
     # -----------------------------
     # Helpers (demo auth + scoping)
     # -----------------------------
 
     def ensure_demo_budget_data():
-        from .models import ApprovalGroup, BudgetItemType
+        from .models_old import ApprovalGroup, BudgetItemType
 
         any_group = db.session.query(ApprovalGroup).first()
 
@@ -81,7 +81,7 @@ def create_app() -> Flask:
         db.session.commit()
 
     def ensure_demo_users():
-        from .models import User, UserRole, ApprovalGroup
+        from .models_old import User, UserRole, ApprovalGroup
 
         ensure_demo_budget_data()
         ensure_demo_org_data()
@@ -146,8 +146,8 @@ def create_app() -> Flask:
         ensure_demo_department_memberships()
 
     def ensure_demo_org_data():
-        # Requires Department + EventCycle models to exist in models.py
-        from .models import Department, EventCycle
+        # Requires Department + EventCycle models to exist in models_old.py
+        from .models_old import Department, EventCycle
 
         # Seed EventCycles if empty
         any_cycle = db.session.query(EventCycle).first()
@@ -197,7 +197,7 @@ def create_app() -> Flask:
         db.session.commit()
 
     def ensure_demo_department_memberships():
-        from .models import (
+        from .models_old import (
             User,
             Department,
             EventCycle,
@@ -291,11 +291,11 @@ def create_app() -> Flask:
         return session.get("active_user_id") or "dev:alex"
 
     def get_active_user():
-        from .models import User
+        from .models_old import User
         return db.session.get(User, get_active_user_id())
 
     def active_user_roles() -> list[str]:
-        from .models import UserRole
+        from .models_old import UserRole
         uid = get_active_user_id()
         rows = db.session.query(UserRole.role_code).filter(UserRole.user_id == uid).all()
         return [r[0] for r in rows]
@@ -310,7 +310,7 @@ def create_app() -> Flask:
         return has_role("FINANCE")
 
     def active_user_approval_group_ids() -> set[int]:
-        from .models import UserRole
+        from .models_old import UserRole
         uid = get_active_user_id()
         rows = (
             db.session.query(UserRole.approval_group_id)
@@ -346,7 +346,7 @@ def create_app() -> Flask:
         - Do not auto-downgrade APPROVED.
         - Otherwise, request stays SUBMITTED while any line review exists (regardless of mix).
         """
-        from .models import LineReview, Request
+        from .models_old import LineReview, Request
 
         reviews = (
             db.session.query(LineReview.status)

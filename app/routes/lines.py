@@ -25,7 +25,7 @@ lines_bp = Blueprint('lines', __name__)
 
 @lines_bp.get("/requests/<int:request_id>/lines/<int:line_id>")
 def line_detail(request_id: int, line_id: int):
-    from ..models import (
+    from ..models_old import (
         RequestLine,
         LineReview,
         LineComment,
@@ -173,7 +173,7 @@ def line_detail(request_id: int, line_id: int):
 
 @lines_bp.post("/requests/<int:request_id>/lines/<int:line_id>/comment")
 def add_line_comment(request_id: int, line_id: int):
-    from ..models import Request, RequestLine, LineComment, LineAuditEvent
+    from ..models_old import Request, RequestLine, LineComment, LineAuditEvent
 
     req = get_request_or_404(request_id)
     require_can_view(req)
@@ -197,7 +197,7 @@ def add_line_comment(request_id: int, line_id: int):
     # Determine reviewer capability for this line (admin OR can review owning group)
     approval_group_id = None
     if line.budget_item_type_id:
-        from ..models import BudgetItemType
+        from ..models_old import BudgetItemType
         bit = db.session.get(BudgetItemType, line.budget_item_type_id)
         approval_group_id = bit.approval_group_id if bit else None
 
@@ -236,7 +236,7 @@ def transition_line_review(request_id: int, line_id: int):
     """
     Canonical line-review transition endpoint.
     """
-    from ..models import Request, RequestLine, LineReview, LineAuditEvent
+    from ..models_old import Request, RequestLine, LineReview, LineAuditEvent
 
     req = get_request_or_404(request_id)
     require_can_view(req)
@@ -255,7 +255,7 @@ def transition_line_review(request_id: int, line_id: int):
     # Identify the owning approval group for this line (canonical)
     approval_group_id = None
     if line.budget_item_type_id:
-        from ..models import BudgetItemType
+        from ..models_old import BudgetItemType
         bit = db.session.get(BudgetItemType, line.budget_item_type_id)
         approval_group_id = bit.approval_group_id if bit else None
 
@@ -389,7 +389,7 @@ def transition_line_review(request_id: int, line_id: int):
 
 @lines_bp.post("/requests/<int:request_id>/lines/<int:line_id>/requester-respond")
 def requester_respond_to_needs_info(request_id: int, line_id: int):
-    from ..models import RequestLine, LineReview, LineComment, LineAuditEvent
+    from ..models_old import RequestLine, LineReview, LineComment, LineAuditEvent
 
     req = get_request_or_404(request_id)
     require_can_view(req)
@@ -458,7 +458,7 @@ def requester_respond_to_needs_info(request_id: int, line_id: int):
 
 @lines_bp.post("/line-reviews/<int:line_review_id>/approve")
 def approve_line_review(line_review_id: int):
-    from ..models import LineReview, LineAuditEvent
+    from ..models_old import LineReview, LineAuditEvent
 
     lr = db.session.get(LineReview, line_review_id)
     if not lr:
@@ -521,7 +521,7 @@ def approve_line_review(line_review_id: int):
 
 @lines_bp.post("/line-reviews/<int:line_review_id>/kickback")
 def kickback_line_review(line_review_id: int):
-    from ..models import LineReview
+    from ..models_old import LineReview
 
     lr = db.session.get(LineReview, line_review_id)
     if not lr:
@@ -563,7 +563,7 @@ def kickback_line_review(line_review_id: int):
 
 @lines_bp.get("/revisions/<int:revision_id>")
 def revision_snapshot(revision_id: int):
-    from ..models import RequestRevision, Request, RequestLine, LineReview, ApprovalGroup
+    from ..models_old import RequestRevision, Request, RequestLine, LineReview, ApprovalGroup
 
     revision = db.session.get(RequestRevision, revision_id)
     if not revision:
@@ -694,7 +694,7 @@ def revision_snapshot(revision_id: int):
 
 @lines_bp.post("/revisions/<int:revision_id>/approve-my-lines")
 def approve_my_lines_for_revision(revision_id: int):
-    from ..models import LineReview, RequestRevision, LineAuditEvent
+    from ..models_old import LineReview, RequestRevision, LineAuditEvent
 
     revision = db.session.get(RequestRevision, revision_id)
     if not revision:

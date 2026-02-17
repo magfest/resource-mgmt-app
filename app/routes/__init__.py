@@ -101,7 +101,7 @@ def _get_membership_for_request(req, *, user_ctx: UserContext):
     Returns a DepartmentMembership row for this user + (dept, cycle), or None.
     MVP: exact match only.
     """
-    from ..models import DepartmentMembership
+    from ..models_old import DepartmentMembership
 
     dept_id = getattr(req, "department_id", None)
     cycle_id = getattr(req, "event_cycle_id", None)
@@ -229,7 +229,7 @@ def _apply_line_review_transition(*, lr, action: str, note: str | None, internal
     Canonical line review transition implementation.
     """
     from datetime import datetime
-    from ..models import LineAuditEvent, LineComment
+    from ..models_old import LineAuditEvent, LineComment
 
     uid = h.get_active_user_id()
 
@@ -285,7 +285,7 @@ def _get_or_create_line_review_for_line(line):
     """
     Returns (LineReview, created_bool).
     """
-    from ..models import LineReview, BudgetItemType, ApprovalGroup
+    from ..models_old import LineReview, BudgetItemType, ApprovalGroup
 
     if not getattr(line, "id", None):
         raise RuntimeError("RequestLine must be flushed before creating LineReview.")
@@ -330,7 +330,7 @@ def _ensure_line_reviews_for_revision(revision_id: int) -> int:
     Ensures each RequestLine in the revision has the required LineReview row.
     Returns number of newly created LineReview rows.
     """
-    from ..models import RequestLine
+    from ..models_old import RequestLine
 
     lines = (
         db.session.query(RequestLine)
@@ -384,7 +384,7 @@ def register_all_routes(app: Flask, helpers: RouteHelpers) -> None:
     app.register_blueprint(dashboard_bp)
 
 def get_request_or_404(request_id: int):
-    from ..models import Request
+    from ..models_old import Request
 
     req = db.session.get(Request, request_id)
     if not req:
@@ -445,7 +445,7 @@ def get_dept_perms_for_user(*, user_id: str, department_id: int, event_cycle_id:
     Returns DeptPerms for an exact department + event_cycle membership.
     For MVP, we do exact match only (no global rows).
     """
-    from ..models import DepartmentMembership
+    from ..models_old import DepartmentMembership
 
     row = (
         db.session.query(DepartmentMembership)
@@ -467,7 +467,7 @@ def get_editable_departments_for_user(*, user_id: str, event_cycle_id: int) -> l
     """
     Returns Department rows the user can edit for a specific cycle.
     """
-    from ..models import DepartmentMembership, Department
+    from ..models_old import DepartmentMembership, Department
 
     rows = (
         db.session.query(Department)
@@ -485,7 +485,7 @@ def get_editable_departments_for_user(*, user_id: str, event_cycle_id: int) -> l
 def can_user_create_main_request(*, user_ctx: UserContext, department_id: int, event_cycle_id: int) -> bool:
     if user_ctx.is_admin:
         return True
-    from ..models import DepartmentMembership
+    from ..models_old import DepartmentMembership
     row = (
         db.session.query(DepartmentMembership.id)
         .filter(DepartmentMembership.user_id == user_ctx.user_id)
@@ -497,7 +497,7 @@ def can_user_create_main_request(*, user_ctx: UserContext, department_id: int, e
     return bool(row)
 
 def get_editable_departments(*, user_ctx: UserContext, event_cycle_id: int):
-    from ..models import Department, DepartmentMembership
+    from ..models_old import Department, DepartmentMembership
     q = db.session.query(Department).filter(Department.is_active.is_(True))
     if not user_ctx.is_admin:
         q = (

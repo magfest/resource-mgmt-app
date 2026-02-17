@@ -12,7 +12,7 @@ admin_bp = Blueprint('admin', __name__)
 
 @admin_bp.get("/admin/demo/approval-summary")
 def admin_demo_approval_summary():
-    from ..models import ApprovalGroup, LineReview, RequestLine, RequestRevision, Request
+    from ..models_old import ApprovalGroup, LineReview, RequestLine, RequestRevision, Request
 
     _require_admin_or_finance()
 
@@ -94,7 +94,7 @@ def admin_demo_approval_summary():
 
 @admin_bp.get("/admin/demo/spend-summary")
 def admin_demo_spend_summary():
-    from ..models import Request, RequestRevision, RequestLine, BudgetItemType
+    from ..models_old import Request, RequestRevision, RequestLine, BudgetItemType
 
     _require_admin_or_finance()
 
@@ -143,7 +143,7 @@ def admin_demo_spend_summary():
 
 @admin_bp.get("/admin/budget-items")
 def admin_budget_items():
-    from ..models import BudgetItemType, ApprovalGroup
+    from ..models_old import BudgetItemType, ApprovalGroup
 
     _require_admin_or_finance()
 
@@ -174,7 +174,7 @@ def admin_budget_items():
 
 @admin_bp.get("/admin/budget-items/new")
 def admin_budget_items_new():
-    from ..models import ApprovalGroup
+    from ..models_old import ApprovalGroup
     _require_admin_or_finance()
 
     groups = (
@@ -188,7 +188,7 @@ def admin_budget_items_new():
 
 @admin_bp.post("/admin/budget-items/new")
 def admin_budget_items_new_post():
-    from ..models import BudgetItemType, ApprovalGroup
+    from ..models_old import BudgetItemType, ApprovalGroup
     _require_admin_or_finance()
 
     item_id = (request.form.get("item_id") or "").strip()
@@ -225,7 +225,7 @@ def admin_budget_items_new_post():
 
 @admin_bp.get("/admin/budget-items/<int:item_type_id>/edit")
 def admin_budget_items_edit(item_type_id: int):
-    from ..models import BudgetItemType, ApprovalGroup
+    from ..models_old import BudgetItemType, ApprovalGroup
     _require_admin_or_finance()
 
     item = db.session.get(BudgetItemType, item_type_id)
@@ -243,7 +243,7 @@ def admin_budget_items_edit(item_type_id: int):
 
 @admin_bp.post("/admin/budget-items/<int:item_type_id>/edit")
 def admin_budget_items_edit_post(item_type_id: int):
-    from ..models import BudgetItemType, ApprovalGroup
+    from ..models_old import BudgetItemType, ApprovalGroup
     _require_admin_or_finance()
 
     item = db.session.get(BudgetItemType, item_type_id)

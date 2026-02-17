@@ -13,7 +13,7 @@ dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.get("/dashboard/approvals")
 def approvals_dashboard():
-    from ..models import (
+    from ..models_old import (
         ApprovalGroup,
         LineReview,
         RequestLine,

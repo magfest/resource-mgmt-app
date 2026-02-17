@@ -20,7 +20,7 @@ requests_bp = Blueprint('requests', __name__)
 
 @requests_bp.get("/")
 def home():
-    from ..models import Request, DepartmentMembership
+    from ..models_old import Request, DepartmentMembership
     from sqlalchemy import and_, or_
 
     uid = h.get_active_user_id()
@@ -70,7 +70,7 @@ def home():
 
 @requests_bp.get("/requests/new")
 def new_request():
-    from ..models import EventCycle
+    from ..models_old import EventCycle
 
     user_ctx = get_user_ctx()
 
@@ -118,7 +118,7 @@ def new_request():
 
 @requests_bp.post("/requests/new")
 def new_request_post():
-    from ..models import Request, Department, EventCycle
+    from ..models_old import Request, Department, EventCycle
 
     user_ctx = get_user_ctx()
 
@@ -163,7 +163,7 @@ def new_request_post():
 
 @requests_bp.get("/requests/<int:request_id>")
 def request_detail(request_id: int):
-    from ..models import (
+    from ..models_old import (
         Request,
         RequestRevision,
         RequestLine,
@@ -320,7 +320,7 @@ def edit_request_draft(request_id: int):
     Editing is blocked for finalized requests and enforced centrally via
     require_can_edit().
     """
-    from ..models import Request, RequestDraft, DraftLine, RequestLine, BudgetItemType
+    from ..models_old import Request, RequestDraft, DraftLine, RequestLine, BudgetItemType
 
     h.ensure_demo_budget_data()
     req = db.session.get(Request, request_id)
@@ -428,7 +428,7 @@ def save_request_draft(request_id: int):
     - Centralized enforcement is via require_can_edit().
     """
 
-    from ..models import Request, RequestDraft, DraftLine, RequestLine, BudgetItemType
+    from ..models_old import Request, RequestDraft, DraftLine, RequestLine, BudgetItemType
 
 
     # Load request
@@ -603,7 +603,7 @@ def submit_request_draft(request_id: int):
     Permissions are enforced centrally (membership-aware) via require_can_submit().
     """
 
-    from ..models import (
+    from ..models_old import (
         Request, RequestDraft, DraftLine,
         RequestRevision, RequestLine,
         BudgetItemType,
@@ -763,7 +763,7 @@ def submit_request_draft(request_id: int):
 
 @requests_bp.post("/requests/<int:request_id>/kickback")
 def kickback_request(request_id: int):
-    from ..models import Request, RequestAuditEvent
+    from ..models_old import Request, RequestAuditEvent
 
     req = db.session.get(Request, request_id)
     if not req:
@@ -799,7 +799,7 @@ def kickback_request(request_id: int):
 @requests_bp.post("/requests/<int:request_id>/approve")
 def approve_request(request_id: int):
     from datetime import datetime
-    from ..models import Request, RequestLine, LineReview
+    from ..models_old import Request, RequestLine, LineReview
 
     req = db.session.get(Request, request_id)
     if not req:

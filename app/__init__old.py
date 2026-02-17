@@ -44,12 +44,12 @@ def create_app() -> Flask:
         }
 
     # Import models so migrations can detect them
-    from . import models  # noqa: F401
+    from . import models_old  # noqa: F401
 
     #---Helpers
     def ensure_demo_users():
         """Create a small set of demo users/roles if none exist yet."""
-        from .models import User, UserRole, ApprovalGroup
+        from .models_old import User, UserRole, ApprovalGroup
 
         ensure_demo_budget_data()
 
@@ -85,12 +85,12 @@ def create_app() -> Flask:
         return session.get("active_user_id") or "dev:alex"
 
     def get_active_user():
-        from .models import User
+        from .models_old import User
         uid = get_active_user_id()
         return db.session.get(User, uid)
 
     def active_user_roles() -> list[str]:
-        from .models import UserRole
+        from .models_old import UserRole
         uid = get_active_user_id()
         rows = (
             db.session.query(UserRole.role_code)
@@ -110,7 +110,7 @@ def create_app() -> Flask:
 
     def ensure_demo_budget_data():
         """Create approval groups + a few budget item types if none exist yet."""
-        from .models import ApprovalGroup, BudgetItemType
+        from .models_old import ApprovalGroup, BudgetItemType
 
         any_group = db.session.query(ApprovalGroup).first()
         if not any_group:
@@ -160,7 +160,7 @@ def create_app() -> Flask:
         db.session.commit()
 
     def active_user_approval_group_ids() -> set[int]:
-        from .models import UserRole
+        from .models_old import UserRole
         uid = get_active_user_id()
         rows = (
             db.session.query(UserRole.approval_group_id)
@@ -177,7 +177,7 @@ def create_app() -> Flask:
         return approval_group_id in active_user_approval_group_ids()
 
     def _recalculate_request_status_from_lines(revision):
-        from .models import LineReview, Request
+        from .models_old import LineReview, Request
 
         reviews = (
             db.session.query(LineReview.status)
