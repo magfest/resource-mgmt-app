@@ -112,6 +112,12 @@ class EventCycle(db.Model):
     is_default = db.Column(db.Boolean, nullable=False, default=False)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
 
+    # Key dates for the budget cycle
+    event_start_date = db.Column(db.Date, nullable=True)          # When the event starts
+    submission_deadline = db.Column(db.Date, nullable=True)       # Budget submission deadline
+    approval_target_date = db.Column(db.Date, nullable=True)      # Target for completing approvals
+    finalization_date = db.Column(db.Date, nullable=True)         # When budgets are locked/finalized
+
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by_user_id = db.Column(db.String(64), nullable=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -892,6 +898,7 @@ class ExpenseAccount(db.Model):
 
     code = db.Column(db.String(64), unique=True, nullable=False, index=True)
     name = db.Column(db.String(128), nullable=False)
+    quickbooks_account_name = db.Column(db.String(128), nullable=True)
     description = db.Column(db.Text, nullable=True)
 
     is_active = db.Column(db.Boolean, nullable=False, default=True)

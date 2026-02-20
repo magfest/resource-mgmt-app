@@ -1,12 +1,16 @@
 {# templates/components/_work_item_card.html #}
 {# Card displaying a work item summary #}
-{# Expects: item, item_totals, ctx, format_currency #}
+{# Expects: item, item_totals, line_summary (optional), ctx, format_currency #}
 
-{% set status = item.status | upper %}
+{# Use effective status from line_summary if available, otherwise fall back to item status #}
+{% set status = line_summary.effective_status | upper if line_summary else item.status | upper %}
 {% set status_pill_class =
   "pill-approved" if status == "FINALIZED"
   else "pill-submitted" if status == "SUBMITTED"
-  else "pill-needs" if status == "UNDER_REVIEW"
+  else "pill-submitted" if status == "UNDER_REVIEW"
+  else "pill-needs" if status == "NEEDS_INFO"
+  else "pill-needs" if status == "NEEDS_ADJUSTMENT"
+  else "pill-needs" if status == "NEEDS_RESPONSE"
   else "pill-needs" if status == "PAUSED"
   else "pill-draft" %}
 
@@ -19,6 +23,17 @@
           {{ item.public_id }}
         </a>
         <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
+        {# Show approval stage breakdown if there are approved lines #}
+        {% if line_summary and line_summary.approved_count > 0 and status != "FINALIZED" %}
+          {% if line_summary.final_approved_count > 0 and line_summary.ag_approved_count == 0 %}
+            <span class="pill pill-approved" style="margin-left: 4px; font-weight: normal;">{{ line_summary.final_approved_count }} APPROVED</span>
+          {% elif line_summary.ag_approved_count > 0 and line_summary.final_approved_count == 0 %}
+            <span class="pill" style="margin-left: 4px; font-weight: normal; background: #dbeafe; color: #1e40af;">{{ line_summary.ag_approved_count }} AG APPROVED</span>
+          {% elif line_summary.ag_approved_count > 0 and line_summary.final_approved_count > 0 %}
+            <span class="pill" style="margin-left: 4px; font-weight: normal; background: #dbeafe; color: #1e40af;">{{ line_summary.ag_approved_count }} AG</span>
+            <span class="pill pill-approved" style="margin-left: 2px; font-weight: normal;">{{ line_summary.final_approved_count }} FINAL</span>
+          {% endif %}
+        {% endif %}
       </h3>
 
       <div class="muted" style="margin-top:4px;">
@@ -29,6 +44,19 @@
           &middot; Created {{ item.created_at.strftime('%Y-%m-%d') }}
         {% endif %}
       </div>
+
+      {# Show line issue breakdown if there are any #}
+      {% if line_summary and line_summary.has_issues %}
+        <div style="margin-top:6px; font-size: 0.9em; color: #b45309;">
+          {% if line_summary.needs_info_count > 0 %}
+            {{ line_summary.needs_info_count }} line{% if line_summary.needs_info_count != 1 %}s{% endif %} need{% if line_summary.needs_info_count == 1 %}s{% endif %} info
+          {% endif %}
+          {% if line_summary.needs_info_count > 0 and line_summary.needs_adjustment_count > 0 %}, {% endif %}
+          {% if line_summary.needs_adjustment_count > 0 %}
+            {{ line_summary.needs_adjustment_count }} line{% if line_summary.needs_adjustment_count != 1 %}s{% endif %} need{% if line_summary.needs_adjustment_count == 1 %}s{% endif %} adjustment
+          {% endif %}
+        </div>
+      {% endif %}
     </div>
 
     <div style="text-align:right;">

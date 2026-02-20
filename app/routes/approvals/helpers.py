@@ -242,12 +242,13 @@ def validate_review_transition(
         # Verify user is actually the requester (owner or editor)
         work_item = line.work_item
         is_owner = work_item.created_by_user_id == user_ctx.user_id
-        # Check portfolio membership for edit rights
+        # Check department membership for edit rights
         has_edit_membership = False
         if work_item.portfolio:
-            from app.models import PortfolioMembership
-            membership = PortfolioMembership.query.filter_by(
-                portfolio_id=work_item.portfolio_id,
+            from app.models import DepartmentMembership
+            membership = DepartmentMembership.query.filter_by(
+                department_id=work_item.portfolio.department_id,
+                event_cycle_id=work_item.portfolio.event_cycle_id,
                 user_id=user_ctx.user_id,
             ).first()
             has_edit_membership = membership and membership.can_edit

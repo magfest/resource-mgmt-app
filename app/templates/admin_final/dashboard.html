@@ -121,7 +121,16 @@
               <td class="right num">{{ format_currency(item.line_total_cents) }}</td>
               <td class="right num">
                 {% if item.recommended_amount_cents is not none %}
-                  {{ format_currency(item.recommended_amount_cents) }}
+                  {% set differs = item.recommended_amount_cents != item.line_total_cents %}
+                  <span {% if differs %}class="amount-changed" style="display: inline-block;"{% endif %}>
+                    {{ format_currency(item.recommended_amount_cents) }}
+                    {% if differs %}
+                      {% set diff = item.recommended_amount_cents - item.line_total_cents %}
+                      <span class="diff {% if diff < 0 %}negative{% else %}positive{% endif %}" style="font-size: 11px;">
+                        ({% if diff >= 0 %}+{% endif %}{{ format_currency(diff) }})
+                      </span>
+                    {% endif %}
+                  </span>
                 {% else %}
                   <span class="muted">-</span>
                 {% endif %}

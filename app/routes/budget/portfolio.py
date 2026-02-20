@@ -15,6 +15,7 @@ from .helpers import (
     build_portfolio_perms,
     compute_portfolio_totals,
     compute_work_item_totals,
+    compute_line_status_summary,
     format_currency,
 )
 
@@ -51,10 +52,14 @@ def portfolio_landing(event: str, dept: str):
     # Compute totals
     totals = compute_portfolio_totals(ctx.portfolio)
 
-    # Compute work item totals for cards
+    # Compute work item totals and line status summaries for cards
     primary_totals = compute_work_item_totals(primary) if primary else None
+    primary_line_summary = compute_line_status_summary(primary) if primary else None
     supplementary_totals = {
         item.id: compute_work_item_totals(item) for item in supplementary
+    }
+    supplementary_line_summaries = {
+        item.id: compute_line_status_summary(item) for item in supplementary
     }
 
     return render_template(
@@ -63,8 +68,10 @@ def portfolio_landing(event: str, dept: str):
         perms=perms,
         primary=primary,
         primary_totals=primary_totals,
+        primary_line_summary=primary_line_summary,
         supplementary=supplementary,
         supplementary_totals=supplementary_totals,
+        supplementary_line_summaries=supplementary_line_summaries,
         totals=totals,
         format_currency=format_currency,
     )

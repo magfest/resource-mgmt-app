@@ -127,6 +127,7 @@ def _account_to_dict(account: ExpenseAccount) -> dict:
     return {
         "code": account.code,
         "name": account.name,
+        "quickbooks_account_name": account.quickbooks_account_name,
         "description": account.description,
         "is_active": account.is_active,
         "is_contract_eligible": account.is_contract_eligible,
@@ -228,6 +229,7 @@ def create_expense_account():
     account = ExpenseAccount(
         code=code,
         name=name,
+        quickbooks_account_name=(request.form.get("quickbooks_account_name") or "").strip() or None,
         description=(request.form.get("description") or "").strip() or None,
         is_active=request.form.get("is_active") == "1",
         is_contract_eligible=request.form.get("is_contract_eligible") == "1",
@@ -329,6 +331,7 @@ def update_expense_account(account_id: int):
 
     account.code = code
     account.name = name
+    account.quickbooks_account_name = (request.form.get("quickbooks_account_name") or "").strip() or None
     account.description = (request.form.get("description") or "").strip() or None
     account.is_active = request.form.get("is_active") == "1"
     account.is_contract_eligible = request.form.get("is_contract_eligible") == "1"

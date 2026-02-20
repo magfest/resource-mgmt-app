@@ -290,11 +290,11 @@
         <thead>
           <tr>
             <th style="width: 60px;">#</th>
-            <th>Expense Account</th>
-            <th>Description</th>
-            <th style="width: 80px;" class="right">Qty</th>
-            <th style="width: 100px;" class="right">Unit Price</th>
-            <th style="width: 120px;" class="right">Requested</th>
+            <th>Expense</th>
+            <th>Details</th>
+            <th style="width: 80px;" class="right">Qty.</th>
+            <th style="width: 100px;" class="right">Unit Cost</th>
+            <th style="width: 120px;" class="right">Total Requested</th>
             {% if show_approved_column %}
               <th style="width: 120px;" class="right">Approved</th>
             {% endif %}
@@ -399,7 +399,7 @@
         </tbody>
         <tfoot>
           <tr style="font-weight: 700;">
-            <td colspan="5" class="right">Total Requested:</td>
+            <td colspan="5" class="right">Grand Total Requested:</td>
             <td class="right num">{{ format_currency(totals.requested) }}</td>
             {% if show_approved_column %}
               <td class="right num" style="color: #059669;">{{ format_currency(totals.approved) }}</td>

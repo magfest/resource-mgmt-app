@@ -18,6 +18,7 @@ from app.models import (
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     COMMENT_VISIBILITY_PUBLIC,
+    COMMENT_VISIBILITY_ADMIN,
 )
 from app.routes import get_user_ctx
 from app.routes.budget.helpers import (
@@ -112,8 +113,10 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
     detail = line.budget_detail
     line_total = detail.unit_price_cents * int(detail.quantity) if detail else 0
 
-    # Get comments for this line
+    # Get comments for this line (filter admin-only for non-admins)
     comments = line.comments
+    if not user_ctx.is_admin:
+        comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
 
     # Get audit events for this line
     audit_events = line.audit_events
@@ -239,9 +242,12 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
                 REVIEW_ACTION_NEEDS_ADJUSTMENT: "[ADJUSTMENT REQUESTED]",
                 REVIEW_ACTION_RESET: "[RESET]",
             }
+            # Check if admin-only note
+            admin_only = request.form.get("admin_only") == "1" and user_ctx.is_admin
+            visibility = COMMENT_VISIBILITY_ADMIN if admin_only else COMMENT_VISIBILITY_PUBLIC
             comment = WorkLineComment(
                 work_line_id=line.id,
-                visibility=COMMENT_VISIBILITY_PUBLIC,
+                visibility=visibility,
                 body=f"{prefix_map.get(action, '[REVIEW]')} {note}",
                 created_by_user_id=user_ctx.user_id,
             )
@@ -322,9 +328,12 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int):
         flash("Response submitted. The line is back in review.", "success")
 
         # Add comment with the response
+        # Check if admin-only note
+        admin_only = request.form.get("admin_only") == "1" and user_ctx.is_admin
+        visibility = COMMENT_VISIBILITY_ADMIN if admin_only else COMMENT_VISIBILITY_PUBLIC
         comment = WorkLineComment(
             work_line_id=line.id,
-            visibility=COMMENT_VISIBILITY_PUBLIC,
+            visibility=visibility,
             body=f"[RESPONSE] {response_text}",
             created_by_user_id=user_ctx.user_id,
         )
@@ -489,9 +498,12 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
         changes_text = ", ".join(changes) if changes else "No field changes"
         comment_body = f"[ADJUSTMENT] {changes_text}\n\n{response_text}"
 
+        # Check if admin-only note
+        admin_only = request.form.get("admin_only") == "1" and user_ctx.is_admin
+        visibility = COMMENT_VISIBILITY_ADMIN if admin_only else COMMENT_VISIBILITY_PUBLIC
         comment = WorkLineComment(
             work_line_id=line.id,
-            visibility=COMMENT_VISIBILITY_PUBLIC,
+            visibility=visibility,
             body=comment_body,
             created_by_user_id=user_ctx.user_id,
         )

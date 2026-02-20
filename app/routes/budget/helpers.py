@@ -33,7 +33,11 @@ from app.models import (
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_NEEDS_INFO,
+    WORK_LINE_STATUS_PENDING,
+    WORK_LINE_STATUS_NEEDS_INFO,
+    WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
     WORK_LINE_STATUS_APPROVED,
+    WORK_LINE_STATUS_REJECTED,
     SPEND_TYPE_MODE_SINGLE_LOCKED,
     SPEND_TYPE_MODE_ALLOW_LIST,
     VISIBILITY_MODE_ALL,
@@ -41,6 +45,7 @@ from app.models import (
     ROLE_SUPER_ADMIN,
     ROLE_WORKTYPE_ADMIN,
     ROLE_APPROVER,
+    REVIEW_STAGE_ADMIN_FINAL,
 )
 from app.routes import get_user_ctx, UserContext
 
@@ -767,6 +772,94 @@ def compute_work_item_totals(item: WorkItem) -> dict:
         "approved": approved,
         "line_count": line_count,
     }
+
+
+# ============================================================
+# Line Status Summary
+# ============================================================
+
+@dataclass
+class LineStatusSummary:
+    """Summary of line statuses for a work item."""
+    line_count: int
+    pending_count: int
+    needs_info_count: int
+    needs_adjustment_count: int
+    approved_count: int
+    rejected_count: int
+    ag_approved_count: int  # Lines approved at Approval Group stage only
+    final_approved_count: int  # Lines approved at Admin Final stage
+    effective_status: str  # The effective status label considering line issues
+    has_issues: bool  # True if any lines need attention
+
+
+def compute_line_status_summary(item: WorkItem) -> LineStatusSummary:
+    """
+    Compute a summary of line statuses for a work item.
+
+    Returns a LineStatusSummary with counts for each status type
+    and an effective_status that reflects if any lines are blocked.
+    """
+    pending = 0
+    needs_info = 0
+    needs_adjustment = 0
+    approved = 0
+    rejected = 0
+    ag_approved = 0
+    final_approved = 0
+
+    for line in item.lines:
+        if line.status == WORK_LINE_STATUS_PENDING:
+            pending += 1
+        elif line.status == WORK_LINE_STATUS_NEEDS_INFO:
+            needs_info += 1
+        elif line.status == WORK_LINE_STATUS_NEEDS_ADJUSTMENT:
+            needs_adjustment += 1
+        elif line.status == WORK_LINE_STATUS_APPROVED:
+            approved += 1
+            # Track approval stage
+            if line.current_review_stage == REVIEW_STAGE_ADMIN_FINAL:
+                final_approved += 1
+            else:
+                ag_approved += 1
+        elif line.status == WORK_LINE_STATUS_REJECTED:
+            rejected += 1
+
+    line_count = len(item.lines)
+    has_issues = needs_info > 0 or needs_adjustment > 0
+
+    # Determine effective status
+    # Priority: NEEDS_INFO/NEEDS_ADJUSTMENT > base item status
+    if item.status == WORK_ITEM_STATUS_DRAFT:
+        effective_status = "DRAFT"
+    elif item.status == WORK_ITEM_STATUS_FINALIZED:
+        effective_status = "FINALIZED"
+    elif needs_info > 0 and needs_adjustment > 0:
+        effective_status = "NEEDS_RESPONSE"
+    elif needs_info > 0:
+        effective_status = "NEEDS_INFO"
+    elif needs_adjustment > 0:
+        effective_status = "NEEDS_ADJUSTMENT"
+    elif item.status == WORK_ITEM_STATUS_SUBMITTED:
+        if pending > 0:
+            effective_status = "UNDER_REVIEW"
+        else:
+            effective_status = "SUBMITTED"
+    else:
+        effective_status = item.status
+
+    return LineStatusSummary(
+        line_count=line_count,
+        pending_count=pending,
+        needs_info_count=needs_info,
+        needs_adjustment_count=needs_adjustment,
+        approved_count=approved,
+        rejected_count=rejected,
+        ag_approved_count=ag_approved,
+        final_approved_count=final_approved,
+        effective_status=effective_status,
+        has_issues=has_issues,
+    )
 
 
 # ============================================================

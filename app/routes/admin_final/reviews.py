@@ -13,6 +13,7 @@ from app.models import (
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_RESET,
     COMMENT_VISIBILITY_PUBLIC,
+    COMMENT_VISIBILITY_ADMIN,
 )
 from app.routes import get_user_ctx
 from app.routes.budget.helpers import (
@@ -194,9 +195,12 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
                 REVIEW_ACTION_REJECT: "[ADMIN REJECTED]",
                 REVIEW_ACTION_NEEDS_INFO: "[ADMIN INFO REQUESTED]",
             }
+            # Check if admin-only note (admin users only)
+            admin_only = request.form.get("admin_only") == "1"
+            visibility = COMMENT_VISIBILITY_ADMIN if admin_only else COMMENT_VISIBILITY_PUBLIC
             comment = WorkLineComment(
                 work_line_id=line.id,
-                visibility=COMMENT_VISIBILITY_PUBLIC,
+                visibility=visibility,
                 body=f"{prefix_map.get(action, '[ADMIN]')} {note}",
                 created_by_user_id=user_ctx.user_id,
             )

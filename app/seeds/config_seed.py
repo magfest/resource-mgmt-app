@@ -108,8 +108,8 @@ def seed_reference_data():
     # Frequency options
     if not db.session.query(FrequencyOption).first():
         frequencies = [
-            ("ONE_TIME", "One Time", "Single purchase for this event", 10),
-            ("RECURRING", "Recurring", "Recurring expense across events", 20),
+            ("ONE_TIME", "One Time / Infrastructure Purchase", "Single purchase for this event", 10),
+            ("RECURRING", "Yearly Operating Cost", "Recurring that have to happen every event", 20),
         ]
         for code, name, desc, sort in frequencies:
             db.session.add(FrequencyOption(

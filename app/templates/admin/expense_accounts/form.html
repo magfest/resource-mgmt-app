@@ -47,6 +47,15 @@
       </div>
 
       <div style="grid-column: 1 / -1;">
+        <label for="quickbooks_account_name" style="display: block; font-weight: 600; margin-bottom: 6px;">Quickbooks Account Name</label>
+        <input id="quickbooks_account_name" name="quickbooks_account_name" type="text"
+               value="{{ account.quickbooks_account_name if account else '' }}"
+               placeholder="e.g. Hotel Rooms"
+               {% if not can_modify %}disabled{% endif %} />
+        <div class="muted small" style="margin-top: 4px;">Exact name matching Quickbooks. Multiple accounts can share the same QB name.</div>
+      </div>
+
+      <div style="grid-column: 1 / -1;">
         <label for="description" style="display: block; font-weight: 600; margin-bottom: 6px;">Description</label>
         <textarea id="description" name="description" rows="3"
                   placeholder="Optional notes for requesters..."

@@ -58,6 +58,43 @@
 
     </div>
 
+    <div style="border-top: 1px solid #eee; margin-top: 20px; padding-top: 20px;">
+      <h3 style="margin: 0 0 16px 0; font-size: 1rem;">Key Dates</h3>
+      <div class="muted small" style="margin-bottom: 16px;">
+        These dates are shown on the homepage to help everyone track the budget timeline.
+      </div>
+
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="event_start_date" style="display: block; font-weight: 600; margin-bottom: 6px;">Event Start Date</label>
+          <input id="event_start_date" name="event_start_date" type="date"
+                 value="{{ cycle.event_start_date.isoformat() if cycle and cycle.event_start_date else '' }}" />
+          <div class="muted small" style="margin-top: 4px;">When the event begins</div>
+        </div>
+
+        <div>
+          <label for="submission_deadline" style="display: block; font-weight: 600; margin-bottom: 6px;">Submission Deadline</label>
+          <input id="submission_deadline" name="submission_deadline" type="date"
+                 value="{{ cycle.submission_deadline.isoformat() if cycle and cycle.submission_deadline else '' }}" />
+          <div class="muted small" style="margin-top: 4px;">When departments should submit budgets</div>
+        </div>
+
+        <div>
+          <label for="approval_target_date" style="display: block; font-weight: 600; margin-bottom: 6px;">Approval Target</label>
+          <input id="approval_target_date" name="approval_target_date" type="date"
+                 value="{{ cycle.approval_target_date.isoformat() if cycle and cycle.approval_target_date else '' }}" />
+          <div class="muted small" style="margin-top: 4px;">Target for completing all approvals</div>
+        </div>
+
+        <div>
+          <label for="finalization_date" style="display: block; font-weight: 600; margin-bottom: 6px;">Finalization Date</label>
+          <input id="finalization_date" name="finalization_date" type="date"
+                 value="{{ cycle.finalization_date.isoformat() if cycle and cycle.finalization_date else '' }}" />
+          <div class="muted small" style="margin-top: 4px;">When budgets are locked</div>
+        </div>
+      </div>
+    </div>
+
     <div class="btn-row" style="margin-top: 20px;">
       <button class="btn btn-primary" type="submit">{% if cycle %}Save Changes{% else %}Create Cycle{% endif %}</button>
       <a class="btn" href="{{ url_for('admin_config.event_cycles.list_event_cycles') }}">Cancel</a>

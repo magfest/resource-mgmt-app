@@ -38,6 +38,7 @@
     <tr>
       <th style="width: 125px;">Internal Code</th>
       <th style="width: 200px;">Public Name</th>
+      <th style="width: 150px;">QB Account</th>
       <th>Description</th>
       <th style="width: 125px;">Visibility</th>
       <th style="width: 125px;">Approval Group</th>
@@ -52,6 +53,7 @@
       <tr>
         <td class="num">{{ acct.code }}</td>
         <td>{{ acct.name }}</td>
+        <td class="muted small">{{ acct.quickbooks_account_name or '—' }}</td>
         <td class="muted small">{{ acct.description or '—' }}</td>
       <td class="muted small">{{ acct.visibility_mode or '—' }}</td>
         <td>{{ acct.approval_group.name if acct.approval_group else '—' }}</td>
@@ -85,7 +87,7 @@
       </tr>
     {% else %}
       <tr>
-        <td colspan="8" class="muted">No expense accounts found.</td>
+        <td colspan="9" class="muted">No expense accounts found.</td>
       </tr>
     {% endfor %}
   </tbody>

@@ -16,6 +16,7 @@
       {# Show primary work item card #}
       {% set item = primary %}
       {% set item_totals = primary_totals %}
+      {% set line_summary = primary_line_summary %}
       {% include "components/_work_item_card.html" %}
 
     {% elif perms.can_create_primary %}
@@ -46,6 +47,7 @@
     {% if supplementary %}
       {% for item in supplementary %}
         {% set item_totals = supplementary_totals.get(item.id) %}
+        {% set line_summary = supplementary_line_summaries.get(item.id) %}
         {% include "components/_work_item_card.html" %}
       {% endfor %}
 
@@ -77,7 +79,7 @@
 
   {# Navigation #}
   <div class="btn-row" style="margin-top: 24px;">
-    <a class="btn" href="{{ url_for('requests.home') }}">Back to Home</a>
+    <a class="btn" href="{{ url_for('home.index') }}">Back to Home</a>
   </div>
 
 {% endblock %}

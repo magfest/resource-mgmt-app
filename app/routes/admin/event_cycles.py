@@ -3,6 +3,7 @@ Admin routes for event cycle management.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from flask import Blueprint, redirect, url_for, request, abort, flash
 
 from app import db
@@ -43,7 +44,21 @@ def _cycle_to_dict(cycle: EventCycle) -> dict:
         "is_active": cycle.is_active,
         "is_default": cycle.is_default,
         "sort_order": cycle.sort_order,
+        "event_start_date": cycle.event_start_date.isoformat() if cycle.event_start_date else None,
+        "submission_deadline": cycle.submission_deadline.isoformat() if cycle.submission_deadline else None,
+        "approval_target_date": cycle.approval_target_date.isoformat() if cycle.approval_target_date else None,
+        "finalization_date": cycle.finalization_date.isoformat() if cycle.finalization_date else None,
     }
+
+
+def _parse_date(value: str | None):
+    """Parse a date string (YYYY-MM-DD) into a date object."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 @event_cycles_bp.get("/")
@@ -119,6 +134,10 @@ def create_event_cycle():
         is_active=request.form.get("is_active") == "1",
         is_default=is_default,
         sort_order=int(request.form.get("sort_order") or 0),
+        event_start_date=_parse_date(request.form.get("event_start_date")),
+        submission_deadline=_parse_date(request.form.get("submission_deadline")),
+        approval_target_date=_parse_date(request.form.get("approval_target_date")),
+        finalization_date=_parse_date(request.form.get("finalization_date")),
         created_by_user_id=h.get_active_user_id(),
         updated_by_user_id=h.get_active_user_id(),
     )
@@ -195,6 +214,10 @@ def update_event_cycle(cycle_id: int):
     cycle.is_active = request.form.get("is_active") == "1"
     cycle.is_default = is_default
     cycle.sort_order = int(request.form.get("sort_order") or 0)
+    cycle.event_start_date = _parse_date(request.form.get("event_start_date"))
+    cycle.submission_deadline = _parse_date(request.form.get("submission_deadline"))
+    cycle.approval_target_date = _parse_date(request.form.get("approval_target_date"))
+    cycle.finalization_date = _parse_date(request.form.get("finalization_date"))
     cycle.updated_by_user_id = h.get_active_user_id()
 
     new_values = _cycle_to_dict(cycle)

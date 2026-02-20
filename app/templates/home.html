@@ -21,6 +21,36 @@
   {% endif %}
 </div>
 
+{# Timeline / Milestones - shown to everyone #}
+{% if milestones %}
+<section class="card" style="margin-bottom: 24px;">
+  <h3 style="margin:0 0 16px 0;">Key Dates</h3>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+    {% for m in milestones %}
+      <div style="padding: 12px 16px; background: {% if m.is_past %}#f8fafc{% elif m.is_today %}#fef3c7{% elif m.is_soon %}#fffbeb{% else %}#f8fafc{% endif %}; border-radius: 6px; border-left: 3px solid {% if m.is_past %}#94a3b8{% elif m.is_today %}#f59e0b{% elif m.is_soon %}#fbbf24{% else %}#cbd5e1{% endif %};">
+        <div style="font-weight: 600; font-size: 0.9rem; {% if m.is_past %}color: #94a3b8;{% endif %}">
+          {{ m.label }}
+        </div>
+        <div style="font-size: 0.85rem; color: #64748b; margin: 4px 0;">
+          {{ m.date.strftime('%b %d, %Y') }}
+        </div>
+        <div style="font-size: 0.8rem; {% if m.is_past %}color: #94a3b8;{% elif m.is_today %}color: #d97706; font-weight: 600;{% elif m.is_soon %}color: #b45309;{% else %}color: #64748b;{% endif %}">
+          {% if m.is_today %}
+            Today!
+          {% elif m.is_past %}
+            {{ (-m.days_until) }} days ago
+          {% elif m.days_until == 1 %}
+            Tomorrow
+          {% else %}
+            {{ m.days_until }} days
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% if not has_any_access %}
 {# No Access State #}
 <div class="card" style="text-align: center; padding: 48px; max-width: 600px; margin: 48px auto;">
@@ -87,94 +117,165 @@
   </div>
 </section>
 {% endif %}
-
-{# Division Access Section #}
-{% if div_memberships %}
+{# How It Works Guide #}
 <section class="card" style="margin-bottom: 24px;">
-  <h3 style="margin:0 0 16px 0;">Your Divisions</h3>
-  <p class="muted" style="margin-bottom: 16px;">
-    You have division-level access to all departments in these divisions.
-  </p>
+  <details>
+    <summary style="cursor: pointer; font-weight: 600; font-size: 1rem; padding: 4px 0;">
+      How the Budget Process Works
+    </summary>
+    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
 
-  <table>
-    <thead>
-      <tr>
-        <th>Division</th>
-        <th style="width: 100px;">Access</th>
-        <th style="width: 120px;">Role</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for dm in div_memberships %}
-        <tr>
-          <td>
-            <strong>{{ dm.division.name }}</strong>
-            <span class="muted small">({{ dm.division.code }})</span>
-          </td>
-          <td>
-            {% if dm.can_edit %}
-              <span class="pill" style="background: #e9f7ef;">Edit</span>
-            {% elif dm.can_view %}
-              <span class="pill" style="background: #dbeafe;">View</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if dm.is_division_head %}
-              <span class="pill" style="background: #fef3c7; color: #92400e;">Division Head</span>
-            {% else %}
-              <span class="muted">Member</span>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+        <div style="padding: 12px; background: #f8fafc; border-radius: 6px;">
+          <div style="font-weight: 600; color: #3b82f6; margin-bottom: 8px;">1. Draft Your Budget</div>
+          <div class="muted small">
+            Add line items for everything your department needs. Include quantities, costs, and notes to help reviewers understand your requests.
+          </div>
+        </div>
+
+        <div style="padding: 12px; background: #f8fafc; border-radius: 6px;">
+          <div style="font-weight: 600; color: #8b5cf6; margin-bottom: 8px;">2. Submit for Review</div>
+          <div class="muted small">
+            Once your budget is ready, submit it. Your lines will go to the appropriate approval groups based on expense type.
+          </div>
+        </div>
+
+        <div style="padding: 12px; background: #f8fafc; border-radius: 6px;">
+          <div style="font-weight: 600; color: #f59e0b; margin-bottom: 8px;">3. Respond to Feedback</div>
+          <div class="muted small">
+            Reviewers may ask questions or request changes. Check back for "Needs Info" or "Needs Adjustment" items and respond promptly.
+          </div>
+        </div>
+
+        <div style="padding: 12px; background: #f8fafc; border-radius: 6px;">
+          <div style="font-weight: 600; color: #059669; margin-bottom: 8px;">4. Final Approval</div>
+          <div class="muted small">
+            Lines are approved at the approval group level, then finalized by admins. Once finalized, your budget is locked and ready for the event.
+          </div>
+        </div>
+
+      </div>
+
+      <div class="muted small" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+        Questions? Reach out to your division head or the budget team.
+      </div>
+    </div>
+  </details>
 </section>
-{% endif %}
 
-{# Department Access Section #}
-{% if dept_memberships %}
+{# Department Access Section - includes both direct and division-derived access #}
+{% if accessible_depts %}
 <section class="card" style="margin-bottom: 24px;">
   <h3 style="margin:0 0 16px 0;">Your Departments</h3>
+
+  {% if div_memberships %}
+  <p class="muted" style="margin-bottom: 16px;">
+    Includes departments from your division access:
+    {% for dm in div_memberships %}
+      <span class="pill" style="background: #f3e8ff; color: #7c3aed; font-size: 0.75rem;">{{ dm.division.name }}</span>
+    {% endfor %}
+  </p>
+  {% endif %}
 
   <table>
     <thead>
       <tr>
         <th>Department</th>
         <th style="width: 120px;">Division</th>
+        <th style="width: 150px;">Budget Status</th>
         <th style="width: 100px;">Access</th>
-        <th style="width: 120px;">Role</th>
-        <th style="width: 120px;">Actions</th>
+        <th style="width: 140px;">Role</th>
+        <th style="width: 80px;"></th>
       </tr>
     </thead>
     <tbody>
-      {% for dm in dept_memberships %}
+      {% set current_division = namespace(name='') %}
+      {% for dept_info in accessible_depts %}
+        {% set dept = dept_info.department %}
+        {% set budget_status = dept_budget_status.get(dept.id) %}
+        {% set div_name = dept.division.name if dept.division else 'No Division' %}
+
+        {# Division header row when division changes #}
+        {% if div_name != current_division.name %}
+          {% set current_division.name = div_name %}
+          <tr style="background: #f8fafc;">
+            <td colspan="6" style="padding: 8px 12px; font-weight: 600; color: #64748b; font-size: 0.85rem;">
+              {{ div_name }}
+            </td>
+          </tr>
+        {% endif %}
+
         <tr>
-          <td>
-            <strong>{{ dm.department.name }}</strong>
-            <span class="muted small">({{ dm.department.code }})</span>
+          <td style="padding-left: 24px;">
+            <strong>{{ dept.name }}</strong>
           </td>
           <td class="muted small">
-            {{ dm.department.division.name if dm.department.division else '-' }}
+            {% if dept_info.access_source == 'division' %}
+              <span style="color: #7c3aed;">via division</span>
+            {% else %}
+              direct
+            {% endif %}
           </td>
           <td>
-            {% if dm.can_edit %}
+            {% if budget_status %}
+              {% set status = budget_status.effective_status %}
+              {% if status == "FINALIZED" %}
+                <span class="pill pill-approved">Finalized</span>
+              {% elif status == "DRAFT" %}
+                <span class="pill pill-draft">Draft</span>
+              {% elif status == "NEEDS_INFO" or status == "NEEDS_ADJUSTMENT" or status == "NEEDS_RESPONSE" %}
+                <span class="pill pill-needs">{{ status | replace('_', ' ') | title }}</span>
+                {% if budget_status.has_issues %}
+                  <div class="muted small" style="margin-top:2px;">
+                    {% if budget_status.needs_info_count > 0 %}{{ budget_status.needs_info_count }} info{% endif %}
+                    {% if budget_status.needs_info_count > 0 and budget_status.needs_adjustment_count > 0 %}, {% endif %}
+                    {% if budget_status.needs_adjustment_count > 0 %}{{ budget_status.needs_adjustment_count }} adjust{% endif %}
+                  </div>
+                {% endif %}
+              {% elif status == "UNDER_REVIEW" %}
+                <span class="pill pill-submitted">Under Review</span>
+                {% if budget_status.approved_count > 0 %}
+                  <div class="muted small" style="margin-top:2px;">
+                    {% if budget_status.ag_approved_count > 0 %}
+                      {{ budget_status.ag_approved_count }} AG approved
+                    {% endif %}
+                    {% if budget_status.ag_approved_count > 0 and budget_status.final_approved_count > 0 %}, {% endif %}
+                    {% if budget_status.final_approved_count > 0 %}
+                      {{ budget_status.final_approved_count }} final
+                    {% endif %}
+                  </div>
+                {% endif %}
+              {% elif status == "SUBMITTED" %}
+                <span class="pill pill-submitted">Submitted</span>
+              {% else %}
+                <span class="pill">{{ status | replace('_', ' ') | title }}</span>
+              {% endif %}
+            {% else %}
+              <span class="muted small">Not started</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if dept_info.can_edit %}
               <span class="pill" style="background: #e9f7ef;">Edit</span>
-            {% elif dm.can_view %}
+            {% elif dept_info.can_view %}
               <span class="pill" style="background: #dbeafe;">View</span>
             {% endif %}
           </td>
           <td>
-            {% if dm.is_department_head %}
-              <span class="pill" style="background: #fef3c7; color: #92400e;">Dept Head</span>
+            {% if dept_info.is_head %}
+              {% if dept_info.access_source == 'division' %}
+                <span class="pill" style="background: #f3e8ff; color: #7c3aed;">Division Head</span>
+              {% else %}
+                <span class="pill" style="background: #fef3c7; color: #92400e;">Dept Head</span>
+              {% endif %}
             {% else %}
               <span class="muted">Member</span>
             {% endif %}
           </td>
           <td>
             {% if default_cycle %}
-              <a class="btn" href="{{ url_for('budget.portfolio', event=default_cycle.code, dept=dm.department.code) }}">
-                View Budget
+              <a class="btn" href="{{ url_for('budget.portfolio_landing', event=default_cycle.code, dept=dept.code) }}">
+                View
               </a>
             {% endif %}
           </td>
@@ -184,6 +285,8 @@
   </table>
 </section>
 {% endif %}
+
+
 
 {# Quick Links #}
 <section class="card">

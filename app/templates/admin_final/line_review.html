@@ -48,16 +48,12 @@
     <div style="text-align:right;">
       <div style="font-size: 24px; font-weight:700;">{{ format_currency(line_total) }}</div>
       <div class="muted">Requested</div>
-      {% if recommended_amount is not none %}
-        <div style="margin-top: 4px;">
-          <strong>{{ format_currency(recommended_amount) }}</strong>
-          <div class="muted small">AG Recommended</div>
-        </div>
-      {% endif %}
-      {% if line.approved_amount_cents is not none %}
-        <div style="margin-top: 4px; color: #059669;">
-          <strong>{{ format_currency(line.approved_amount_cents) }}</strong>
-          <div class="muted small">Final Approved</div>
+      {% set requested_cents = line_total %}
+      {% set recommended_cents = recommended_amount %}
+      {% set approved_cents = line.approved_amount_cents if line.approved_amount_cents is not none else none %}
+      {% if recommended_cents is not none or approved_cents is not none %}
+        <div style="margin-top: 8px;">
+          {% include "components/_amount_comparison.html" %}
         </div>
       {% endif %}
     </div>
@@ -224,12 +220,17 @@
               Note (required for reject/needs-info/amount changes)
             </label>
             <textarea name="note" id="admin_note" rows="3" style="width: 100%;" placeholder="Enter your review notes..."></textarea>
+            <label style="display: block; margin-top: 6px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" name="admin_only" value="1" id="admin_only_checkbox" style="margin-right: 4px;" />
+              Admin-only note (not visible to requesters)
+            </label>
           </div>
 
           <div class="btn-row">
             <form method="post" action="{{ url_for('admin_final.line_approve', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
               <input type="hidden" name="approved_amount" class="amount-field" />
               <input type="hidden" name="note" class="note-field" />
+              <input type="hidden" name="admin_only" class="admin-only-field" />
               <button type="submit" class="btn btn-primary" onclick="return confirmAdminAction(this, 'Approve this line?')">
                 Approve
               </button>
@@ -237,6 +238,7 @@
 
             <form method="post" action="{{ url_for('admin_final.line_reject', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
               <input type="hidden" name="note" class="note-field" />
+              <input type="hidden" name="admin_only" class="admin-only-field" />
               <button type="submit" class="btn" style="border-color: #dc3545; color: #dc3545;" onclick="return confirmAdminAction(this, 'Reject this line?', true)">
                 Reject
               </button>
@@ -244,6 +246,7 @@
 
             <form method="post" action="{{ url_for('admin_final.line_needs_info', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
               <input type="hidden" name="note" class="note-field" />
+              <input type="hidden" name="admin_only" class="admin-only-field" />
               <button type="submit" class="btn" onclick="return confirmAdminAction(this, 'Request more info?', true)">
                 Need Info
               </button>
@@ -286,8 +289,10 @@
 function confirmAdminAction(button, message, requireNote) {
   const noteField = document.getElementById('admin_note');
   const amountField = document.getElementById('approved_amount');
+  const adminOnlyField = document.getElementById('admin_only_checkbox');
   const note = noteField ? noteField.value.trim() : '';
   const amount = amountField ? amountField.value.trim() : '';
+  const adminOnly = adminOnlyField && adminOnlyField.checked ? '1' : '';
 
   if (requireNote && !note) {
     alert('A note is required for this action.');
@@ -302,9 +307,11 @@ function confirmAdminAction(button, message, requireNote) {
   const form = button.closest('form');
   const noteHidden = form.querySelector('.note-field');
   const amountHidden = form.querySelector('.amount-field');
+  const adminOnlyHidden = form.querySelector('.admin-only-field');
 
   if (noteHidden) noteHidden.value = note;
   if (amountHidden) amountHidden.value = amount;
+  if (adminOnlyHidden) adminOnlyHidden.value = adminOnly;
 
   return true;
 }

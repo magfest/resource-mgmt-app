@@ -18,9 +18,9 @@
 
       {# Expense Account #}
       <div style="margin-bottom: 16px;">
-        <label for="expense_account_id"><strong>Expense Account</strong> <span style="color: red;">*</span></label>
+        <label for="expense_account_id"><strong>Expense</strong> <span style="color: red;">*</span></label>
         <select name="expense_account_id" id="expense_account_id" required style="margin-top: 4px;">
-          <option value="">(Select expense account)</option>
+          <option value="">(Select expense)</option>
           {% for acc in expense_accounts %}
             <option value="{{ acc.id }}"
                     data-spend-type-mode="{{ acc.spend_type_mode }}"
@@ -36,7 +36,7 @@
       <div style="margin-bottom: 16px;" id="spend_type_container">
         <label for="spend_type_id"><strong>Spend Type</strong> <span style="color: red;">*</span></label>
         <select name="spend_type_id" id="spend_type_id" style="margin-top: 4px;">
-          <option value="">(Select expense account first)</option>
+          <option value="">(Select expense first)</option>
         </select>
         <div class="muted small" id="spend_type_hint" style="margin-top: 4px;"></div>
       </div>
@@ -45,15 +45,15 @@
         {# Quantity #}
         <div>
           <label for="quantity"><strong>Quantity</strong> <span style="color: red;">*</span></label>
-          <input type="number" name="quantity" id="quantity" step="0.001" min="0.001"
+          <input type="number" name="quantity" id="quantity" step="1" min="1"
                  value="{{ form_data.quantity if form_data else '1' }}"
                  required style="margin-top: 4px;">
         </div>
 
-        {# Unit Price #}
+        {# Unit Cost #}
         <div>
-          <label for="unit_price"><strong>Unit Price ($)</strong> <span style="color: red;">*</span></label>
-          <input type="number" name="unit_price" id="unit_price" step="0.01" min="0"
+          <label for="unit_price"><strong>Unit Cost ($)</strong> <span style="color: red;">*</span></label>
+          <input type="number" name="unit_price" id="unit_price" step="0" min="0"
                  value="{{ form_data.unit_price if form_data else '' }}"
                  placeholder="0.00" required style="margin-top: 4px;">
         </div>
@@ -76,7 +76,7 @@
 
         {# Confidence Level #}
         <div>
-          <label for="confidence_level_id"><strong>Confidence</strong></label>
+          <label for="confidence_level_id"><strong>Unit Cost Confidence</strong></label>
           <select name="confidence_level_id" id="confidence_level_id" style="margin-top: 4px;">
             <option value="">(Optional)</option>
             {% for c in confidence_levels %}
@@ -115,9 +115,9 @@
 
       {# Description #}
       <div style="margin-top: 16px;">
-        <label for="description"><strong>Description</strong></label>
+        <label for="description"><strong>Details</strong></label>
         <textarea name="description" id="description" rows="3" style="margin-top: 4px;"
-                  placeholder="Describe what this line item is for...">{{ form_data.description if form_data else '' }}</textarea>
+                  placeholder="Please provide a detailed explanation what this line item is for...">{{ form_data.description if form_data else '' }}</textarea>
       </div>
 
       {# Actions #}
@@ -145,7 +145,7 @@
     spendTypeSelect.innerHTML = '';
 
     if (!accountId || !spendTypesByAccount[accountId]) {
-      spendTypeSelect.innerHTML = '<option value="">(Select expense account first)</option>';
+      spendTypeSelect.innerHTML = '<option value="">(Select expense first)</option>';
       spendTypeHint.textContent = '';
       spendTypeSelect.disabled = false;
       return;
@@ -158,11 +158,11 @@
       if (data.types.length > 0) {
         const st = data.types[0];
         spendTypeSelect.innerHTML = `<option value="${st.id}" selected>${st.name}</option>`;
-        spendTypeHint.textContent = 'Spend type is locked for this expense account.';
+        spendTypeHint.textContent = 'Spend type is locked for this expense.';
         spendTypeSelect.disabled = true;
       } else {
         spendTypeSelect.innerHTML = '<option value="">(No spend type configured)</option>';
-        spendTypeHint.textContent = 'Error: No default spend type configured for this account.';
+        spendTypeHint.textContent = 'Error: No default spend type configured for this expense.';
         spendTypeSelect.disabled = true;
       }
     } else {
