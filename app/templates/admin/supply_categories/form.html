@@ -1,0 +1,77 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{% if category %}Edit Supply Category{% else %}New Supply Category{% endif %} - Admin{% endblock %}
+
+{% block content %}
+<h1>{% if category %}Edit Supply Category{% else %}New Supply Category{% endif %}</h1>
+<div class="muted" style="margin: 8px 0 16px;">
+  {% if category %}
+    Editing category: <strong>{{ category.code }}</strong>
+  {% else %}
+    Create a new supply category for warehouse items.
+  {% endif %}
+</div>
+
+<div class="card" style="max-width: 700px;">
+  <form method="post"
+    action="{% if category %}{{ url_for('admin_config.supply_categories.update_supply_category', cat_id=category.id) }}{% else %}{{ url_for('admin_config.supply_categories.create_supply_category') }}{% endif %}"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+
+      <div>
+        <label for="code" style="display: block; font-weight: 600; margin-bottom: 6px;">Code</label>
+        <input id="code" name="code" type="text" required maxlength="32"
+               value="{{ category.code if category else '' }}"
+               placeholder="e.g. OFFICE" />
+        <div class="muted small" style="margin-top: 4px;">Unique identifier. Will be uppercased.</div>
+      </div>
+
+      <div>
+        <label for="name" style="display: block; font-weight: 600; margin-bottom: 6px;">Name</label>
+        <input id="name" name="name" type="text" required
+               value="{{ category.name if category else '' }}"
+               placeholder="e.g. Office Supplies" />
+      </div>
+
+      <div style="grid-column: 1 / -1;">
+        <label for="description" style="display: block; font-weight: 600; margin-bottom: 6px;">Description</label>
+        <textarea id="description" name="description" rows="3"
+                  placeholder="Optional description...">{{ category.description if category else '' }}</textarea>
+      </div>
+
+      <div>
+        <label for="approval_group_id" style="display: block; font-weight: 600; margin-bottom: 6px;">Approval Group</label>
+        <select id="approval_group_id" name="approval_group_id">
+          <option value="">— None —</option>
+          {% for ag in approval_groups %}
+            <option value="{{ ag.id }}" {% if category and category.approval_group_id == ag.id %}selected{% endif %}>
+              {{ ag.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="sort_order" style="display: block; font-weight: 600; margin-bottom: 6px;">Sort Order</label>
+        <input id="sort_order" name="sort_order" type="number"
+               value="{{ category.sort_order if category else 0 }}" />
+      </div>
+
+      <div>
+        <label style="display: flex; gap: 8px; align-items: center; font-weight: normal; margin-top: 28px;">
+          <input type="checkbox" name="is_active" value="1"
+                 {% if not category or category.is_active %}checked{% endif %} />
+          Active
+        </label>
+      </div>
+
+    </div>
+
+    <div class="btn-row" style="margin-top: 20px;">
+      <button class="btn btn-primary" type="submit">{% if category %}Save Changes{% else %}Create Category{% endif %}</button>
+      <a class="btn" href="{{ url_for('admin_config.supply_categories.list_supply_categories') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

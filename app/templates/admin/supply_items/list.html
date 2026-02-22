@@ -1,0 +1,69 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Supply Items - Admin{% endblock %}
+
+{% block content %}
+<div class="muted" style="margin-bottom: 12px;">
+  <a href="{{ url_for('admin_final.admin_home') }}">&larr; Back to Admin</a>
+</div>
+
+<h1>Supply Items Catalog</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  Manage warehouse/supply items available for ordering.
+</div>
+
+<div class="row" style="margin-bottom: 16px;">
+  <a class="btn btn-primary" href="{{ url_for('admin_config.supply_items.new_supply_item') }}">+ New Item</a>
+  <a class="btn" href="{{ url_for('admin_config.supply_categories.list_supply_categories') }}">Manage Categories</a>
+</div>
+
+{% for cat_name, cat_items in items_by_category.items() %}
+<section style="margin-bottom: 24px;">
+  <h3 style="margin-bottom: 8px;">{{ cat_name }}</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Item Name</th>
+        <th style="width: 80px;">Unit</th>
+        <th style="width: 100px;">Cost</th>
+        <th style="width: 80px;">On Hand</th>
+        <th style="width: 100px;">Location</th>
+        <th style="width: 70px;">Status</th>
+        <th style="width: 80px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in cat_items %}
+        <tr>
+          <td>
+            {{ item.item_name }}
+            {% if item.is_popular %}<span class="pill" style="background: #fef3c7; color: #92400e; font-size: 0.7rem;">Popular</span>{% endif %}
+            {% if item.is_limited %}<span class="pill" style="background: #fee2e2; color: #b91c1c; font-size: 0.7rem;">Limited</span>{% endif %}
+          </td>
+          <td class="muted">{{ item.unit }}</td>
+          <td class="num">{% if item.unit_cost_cents %}${{ '{:.2f}'.format(item.unit_cost_cents / 100) }}{% else %}—{% endif %}</td>
+          <td class="num">{{ item.qty_on_hand if item.qty_on_hand is not none else '—' }}</td>
+          <td class="muted small">{{ item.location_zone or '' }}{% if item.location_zone and item.bin_location %}/{% endif %}{{ item.bin_location or '' }}</td>
+          <td>
+            {% if item.is_active %}
+              <span class="pill" style="background: #e9f7ef;">Active</span>
+            {% else %}
+              <span class="pill" style="background: #fbeaea;">Inactive</span>
+            {% endif %}
+          </td>
+          <td>
+            <a class="btn" href="{{ url_for('admin_config.supply_items.edit_supply_item', item_id=item.id) }}">Edit</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<div class="card muted">No supply items found. Create a category first, then add items.</div>
+{% endfor %}
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ items|length }} item(s) shown across {{ items_by_category|length }} category(ies)
+</div>
+{% endblock %}

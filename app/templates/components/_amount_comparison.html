@@ -1,0 +1,49 @@
+{# templates/components/_amount_comparison.html #}
+{# Reusable component showing Requested/Recommended/Approved amounts with visual highlighting #}
+{# Expects: requested_cents, recommended_cents (optional), approved_cents (optional), format_currency #}
+
+{% set has_recommended = recommended_cents is not none %}
+{% set has_approved = approved_cents is not none %}
+{% set recommended_differs = has_recommended and recommended_cents != requested_cents %}
+{% set approved_differs = has_approved and (approved_cents != (recommended_cents if has_recommended else requested_cents)) %}
+
+<div class="amount-comparison">
+  {# Requested Amount #}
+  <div class="amount-row">
+    <span class="amount-label muted">Requested:</span>
+    <span class="amount-value num">{{ format_currency(requested_cents) }}</span>
+  </div>
+
+  {# Recommended Amount (AG) #}
+  {% if has_recommended %}
+  <div class="amount-row {% if recommended_differs %}amount-changed{% endif %}">
+    <span class="amount-label muted">Recommended:</span>
+    <span class="amount-value num">
+      {{ format_currency(recommended_cents) }}
+      {% if recommended_differs %}
+        {% set diff = recommended_cents - requested_cents %}
+        <span class="diff {% if diff < 0 %}negative{% else %}positive{% endif %}">
+          ({% if diff >= 0 %}+{% endif %}{{ format_currency(diff) }})
+        </span>
+      {% endif %}
+    </span>
+  </div>
+  {% endif %}
+
+  {# Final Approved Amount #}
+  {% if has_approved %}
+  <div class="amount-row {% if approved_differs %}amount-changed{% endif %}">
+    <span class="amount-label muted">Approved:</span>
+    <span class="amount-value num" style="color: #059669; font-weight: 700;">
+      {{ format_currency(approved_cents) }}
+      {% if approved_differs %}
+        {% set compare_to = recommended_cents if has_recommended else requested_cents %}
+        {% set diff = approved_cents - compare_to %}
+        <span class="diff {% if diff < 0 %}negative{% else %}positive{% endif %}">
+          ({% if diff >= 0 %}+{% endif %}{{ format_currency(diff) }})
+        </span>
+      {% endif %}
+    </span>
+  </div>
+  {% endif %}
+</div>

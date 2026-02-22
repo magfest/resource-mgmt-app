@@ -1,0 +1,32 @@
+{# templates/errors/503.html - Service Unavailable (Database errors, etc.) #}
+{% extends "layout/base.html" %}
+
+{% block title %}Service Unavailable{% endblock %}
+
+{% block content %}
+<div style="max-width: 500px; margin: 80px auto; text-align: center;">
+  <h1 style="color: #dc3545; margin-bottom: 16px;">Service Unavailable</h1>
+
+  <div class="card" style="padding: 24px;">
+    <p style="margin-bottom: 16px;">
+      We're having trouble connecting to a required service.
+    </p>
+
+    <p class="muted" style="margin-bottom: 24px;">
+      This is usually temporary. Please try again in a few moments.
+    </p>
+
+    <div class="btn-row" style="justify-content: center;">
+      <a href="javascript:location.reload()" class="btn btn-primary">Try Again</a>
+      <a href="{{ url_for('home.index') }}" class="btn">Go to Home</a>
+    </div>
+  </div>
+
+  {% if config.DEBUG and error %}
+  <div class="card" style="margin-top: 24px; padding: 16px; text-align: left;">
+    <strong>Debug Info:</strong>
+    <pre style="margin-top: 8px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">{{ error }}</pre>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

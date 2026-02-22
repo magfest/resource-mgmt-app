@@ -1,0 +1,31 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Dev Login (View As){% endblock %}
+
+{% block content %}
+  <div style="padding: 16px; max-width: 720px;">
+    <h1 style="margin: 0 0 12px 0;">Dev Login (View As)</h1>
+
+    <form method="post"
+          action="{{ url_for('dev.dev_login_post') }}"
+          style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="user_id"><strong>Active user:</strong></label>
+
+      <select name="user_id" id="user_id" style="padding: 6px 8px;">
+        {% for u in users %}
+          <option value="{{ u.id }}" {% if u.id == current_user_id %}selected{% endif %}>
+            {{ u.display_name }} ({{ u.id }})
+          </option>
+        {% endfor %}
+      </select>
+
+      <button type="submit" class="btn">Switch</button>
+    </form>
+
+    <div class="callout" style="border-color:#e5e5e5; background:#fafafa;">
+      <strong>Demo only</strong>
+      <div class="small muted">This is a demo “view as” switch using Flask session. No real auth yet.</div>
+    </div>
+  </div>
+{% endblock %}

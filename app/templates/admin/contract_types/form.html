@@ -1,0 +1,77 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{% if contract_type %}Edit Contract Type{% else %}New Contract Type{% endif %} - Admin{% endblock %}
+
+{% block content %}
+<h1>{% if contract_type %}Edit Contract Type{% else %}New Contract Type{% endif %}</h1>
+<div class="muted" style="margin: 8px 0 16px;">
+  {% if contract_type %}
+    Editing contract type: <strong>{{ contract_type.code }}</strong>
+  {% else %}
+    Create a new contract type for categorization and routing.
+  {% endif %}
+</div>
+
+<div class="card" style="max-width: 700px;">
+  <form method="post"
+    action="{% if contract_type %}{{ url_for('admin_config.contract_types.update_contract_type', ct_id=contract_type.id) }}{% else %}{{ url_for('admin_config.contract_types.create_contract_type') }}{% endif %}"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+
+      <div>
+        <label for="code" style="display: block; font-weight: 600; margin-bottom: 6px;">Code</label>
+        <input id="code" name="code" type="text" required maxlength="32"
+               value="{{ contract_type.code if contract_type else '' }}"
+               placeholder="e.g. PERFORMER" />
+        <div class="muted small" style="margin-top: 4px;">Unique identifier. Will be uppercased.</div>
+      </div>
+
+      <div>
+        <label for="name" style="display: block; font-weight: 600; margin-bottom: 6px;">Name</label>
+        <input id="name" name="name" type="text" required
+               value="{{ contract_type.name if contract_type else '' }}"
+               placeholder="e.g. Performer/Artist" />
+      </div>
+
+      <div style="grid-column: 1 / -1;">
+        <label for="description" style="display: block; font-weight: 600; margin-bottom: 6px;">Description</label>
+        <textarea id="description" name="description" rows="3"
+                  placeholder="Optional description...">{{ contract_type.description if contract_type else '' }}</textarea>
+      </div>
+
+      <div>
+        <label for="approval_group_id" style="display: block; font-weight: 600; margin-bottom: 6px;">Approval Group</label>
+        <select id="approval_group_id" name="approval_group_id">
+          <option value="">— None —</option>
+          {% for ag in approval_groups %}
+            <option value="{{ ag.id }}" {% if contract_type and contract_type.approval_group_id == ag.id %}selected{% endif %}>
+              {{ ag.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="sort_order" style="display: block; font-weight: 600; margin-bottom: 6px;">Sort Order</label>
+        <input id="sort_order" name="sort_order" type="number"
+               value="{{ contract_type.sort_order if contract_type else 0 }}" />
+      </div>
+
+      <div>
+        <label style="display: flex; gap: 8px; align-items: center; font-weight: normal; margin-top: 28px;">
+          <input type="checkbox" name="is_active" value="1"
+                 {% if not contract_type or contract_type.is_active %}checked{% endif %} />
+          Active
+        </label>
+      </div>
+
+    </div>
+
+    <div class="btn-row" style="margin-top: 20px;">
+      <button class="btn btn-primary" type="submit">{% if contract_type %}Save Changes{% else %}Create Contract Type{% endif %}</button>
+      <a class="btn" href="{{ url_for('admin_config.contract_types.list_contract_types') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

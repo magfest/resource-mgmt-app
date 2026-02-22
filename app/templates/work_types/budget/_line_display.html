@@ -1,0 +1,6 @@
+{# Budget line display partial - shows budget-specific fields in tables #}
+<td>{{ line.budget_detail.expense_account.name if line.budget_detail and line.budget_detail.expense_account else '-' }}</td>
+<td class="text-right">{{ line.budget_detail.quantity if line.budget_detail else '-' }}</td>
+<td class="text-right">${{ '{:,.2f}'.format((line.budget_detail.unit_price_cents or 0) / 100) if line.budget_detail else '-' }}</td>
+<td class="text-right">${{ '{:,.2f}'.format((line.budget_detail.unit_price_cents or 0) * (line.budget_detail.quantity or 0) / 100) if line.budget_detail else '-' }}</td>
+<td>{{ line.budget_detail.spend_type.name if line.budget_detail and line.budget_detail.spend_type else '-' }}</td>

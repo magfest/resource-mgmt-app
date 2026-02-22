@@ -1,0 +1,166 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ department.name }} - {{ event_cycle.code }}{% endblock %}
+
+{% block content %}
+<div class="muted" style="margin-bottom: 12px;">
+  <a href="{{ url_for('home.index') }}">&larr; Back to Home</a>
+</div>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
+  <div>
+    <h1 style="margin: 0;">{{ department.name }}</h1>
+    <div class="muted" style="margin-top: 4px;">
+      {{ event_cycle.name }}
+      {% if department.division %}
+        <span style="margin: 0 8px;">|</span>
+        {{ department.division.name }}
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 8px; align-items: center;">
+    {% if dept_membership %}
+      {% if dept_membership.is_department_head %}
+        <span class="pill" style="background: #fef3c7; color: #92400e;">Department Head</span>
+      {% endif %}
+    {% elif div_membership %}
+      {% if div_membership.is_division_head %}
+        <span class="pill" style="background: #f3e8ff; color: #7c3aed;">Division Head</span>
+      {% endif %}
+      <span class="muted small">via {{ div_membership.division.name }}</span>
+    {% endif %}
+  </div>
+</div>
+
+{# Work Type Cards #}
+{% if work_type_cards %}
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+  {% for card in work_type_cards %}
+    <div class="card" style="{% if card.status_summary and card.status_summary.has_issues %}border-left: 4px solid #f59e0b;{% elif card.status_summary and card.status_summary.effective_status == 'FINALIZED' %}border-left: 4px solid #059669;{% endif %}">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+        <h3 style="margin: 0;">{{ card.name }}</h3>
+        {% if card.status_summary %}
+          {% set status = card.status_summary.effective_status %}
+          {% if status == "FINALIZED" %}
+            <span class="pill pill-approved">Finalized</span>
+          {% elif status == "DRAFT" %}
+            <span class="pill pill-draft">Draft</span>
+          {% elif status == "NEEDS_INFO" or status == "NEEDS_ADJUSTMENT" or status == "NEEDS_RESPONSE" %}
+            <span class="pill pill-needs">{{ status | replace('_', ' ') | title }}</span>
+          {% elif status == "UNDER_REVIEW" or status == "SUBMITTED" %}
+            <span class="pill pill-submitted">{{ status | replace('_', ' ') | title }}</span>
+          {% else %}
+            <span class="pill">{{ status | replace('_', ' ') | title }}</span>
+          {% endif %}
+        {% else %}
+          <span class="muted small">Not started</span>
+        {% endif %}
+      </div>
+
+      {% if card.totals %}
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <div class="muted small">Requested</div>
+            <div style="font-size: 1.25rem; font-weight: 600;">${{ '{:,.0f}'.format(card.totals.requested / 100) }}</div>
+          </div>
+          <div>
+            <div class="muted small">Approved</div>
+            <div style="font-size: 1.25rem; font-weight: 600; color: #059669;">${{ '{:,.0f}'.format(card.totals.approved / 100) }}</div>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if card.status_summary %}
+        <div style="margin-bottom: 16px;">
+          <div class="muted small" style="margin-bottom: 4px;">{{ card.status_summary.line_count }} {{ card.config.line_plural if card.config else 'lines' }}</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            {% if card.status_summary.pending_count > 0 %}
+              <span class="muted small">{{ card.status_summary.pending_count }} pending</span>
+            {% endif %}
+            {% if card.status_summary.approved_count > 0 %}
+              <span style="color: #059669; font-size: 0.85rem;">{{ card.status_summary.approved_count }} approved</span>
+            {% endif %}
+            {% if card.status_summary.needs_info_count > 0 %}
+              <span style="color: #d97706; font-size: 0.85rem;">{{ card.status_summary.needs_info_count }} needs info</span>
+            {% endif %}
+            {% if card.status_summary.needs_adjustment_count > 0 %}
+              <span style="color: #d97706; font-size: 0.85rem;">{{ card.status_summary.needs_adjustment_count }} needs adjust</span>
+            {% endif %}
+            {% if card.status_summary.rejected_count > 0 %}
+              <span style="color: #dc2626; font-size: 0.85rem;">{{ card.status_summary.rejected_count }} rejected</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
+      <div style="display: flex; gap: 8px;">
+        {# Build the correct URL based on work type slug #}
+        {% set url_slug = card.url_slug %}
+        {% if url_slug == 'budget' %}
+          {% set card_url = url_for('work.portfolio_landing', event=event_cycle.code, dept=department.code) %}
+        {% elif url_slug == 'contracts' %}
+          {% set card_url = url_for('work.contracts_placeholder', event=event_cycle.code, dept=department.code) %}
+        {% elif url_slug == 'supply' %}
+          {% set card_url = url_for('work.supply_placeholder', event=event_cycle.code, dept=department.code) %}
+        {% else %}
+          {% set card_url = url_for('work.department_home', event=event_cycle.code, dept=department.code) %}
+        {% endif %}
+
+        <a class="btn btn-primary" href="{{ card_url }}">
+          {% if card.can_edit and not card.primary_item %}
+            Start {{ card.singular_name }}
+          {% elif card.can_edit %}
+            Edit
+          {% else %}
+            View
+          {% endif %}
+        </a>
+        {% if card.primary_item and url_slug == 'budget' %}
+          <a class="btn" href="{{ url_for('work.work_item_detail', event=event_cycle.code, dept=department.code, public_id=card.primary_item.public_id) }}">
+            Details
+          </a>
+        {% endif %}
+      </div>
+
+      <div class="muted small" style="margin-top: 12px;">
+        {% if card.can_edit %}
+          <span class="pill" style="background: #e9f7ef; font-size: 0.7rem;">Can Edit</span>
+        {% elif card.can_view %}
+          <span class="pill" style="background: #dbeafe; font-size: 0.7rem;">View Only</span>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card" style="text-align: center; padding: 48px;">
+  <div class="muted">No work types available for this department.</div>
+</div>
+{% endif %}
+
+{# Department Info #}
+{% if department.description or department.mailing_list or department.slack_channel %}
+<section class="card" style="margin-top: 24px;">
+  <h4 style="margin: 0 0 12px 0;">Department Info</h4>
+  {% if department.description %}
+    <p style="margin: 0 0 12px 0;">{{ department.description }}</p>
+  {% endif %}
+  <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+    {% if department.mailing_list %}
+      <div>
+        <span class="muted small">Mailing List:</span>
+        <a href="mailto:{{ department.mailing_list }}">{{ department.mailing_list }}</a>
+      </div>
+    {% endif %}
+    {% if department.slack_channel %}
+      <div>
+        <span class="muted small">Slack:</span>
+        {{ department.slack_channel }}
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

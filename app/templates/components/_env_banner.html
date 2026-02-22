@@ -1,0 +1,47 @@
+{# Environment warning banner for non-production environments #}
+{% if env_banner_enabled %}
+<div style="
+  background: linear-gradient(90deg, #dc2626 0%, #ea580c 50%, #dc2626 100%);
+  color: white;
+  padding: 8px 16px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.9em;
+  letter-spacing: 0.02em;
+">
+  {{ env_banner_message }}
+</div>
+{% endif %}
+
+{# Impersonation banner - shown when viewing as another user #}
+{% if is_impersonating %}
+<div style="
+  background: #7c3aed;
+  color: white;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9em;
+">
+  <div>
+    <strong>Impersonating:</strong>
+    {{ active_user.display_name if active_user else 'Unknown User' }}
+    ({{ active_user.email if active_user else active_user_id }})
+  </div>
+  <form method="post" action="{{ url_for('dev.exit_impersonation') }}" style="margin: 0;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" style="
+      background: white;
+      color: #7c3aed;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+    ">
+      Exit Impersonation
+    </button>
+  </form>
+</div>
+{% endif %}

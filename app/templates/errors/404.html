@@ -1,0 +1,27 @@
+{# templates/errors/404.html - Not Found #}
+{% extends "layout/base.html" %}
+
+{% block title %}Page Not Found{% endblock %}
+
+{% block content %}
+<div style="max-width: 500px; margin: 80px auto; text-align: center;">
+  <h1 style="color: #6c757d; margin-bottom: 16px;">Page Not Found</h1>
+
+  <div class="card" style="padding: 24px;">
+    <p style="margin-bottom: 16px;">
+      The page you're looking for doesn't exist or has been moved.
+    </p>
+
+    {% if error and error.description and error.description != 'Not Found' %}
+      <p class="muted" style="margin-bottom: 24px;">
+        <strong>Details:</strong> {{ error.description }}
+      </p>
+    {% endif %}
+
+    <div class="btn-row" style="justify-content: center;">
+      <a href="{{ url_for('home.index') }}" class="btn btn-primary">Go to Home</a>
+      <a href="javascript:history.back()" class="btn">Go Back</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

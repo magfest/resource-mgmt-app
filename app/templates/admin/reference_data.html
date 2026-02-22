@@ -1,0 +1,306 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Reference Data Editor - Backend Tools{% endblock %}
+
+{% block content %}
+<style>
+  /* Distinct backend tools styling */
+  .backend-tools {
+    font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Mono", "Droid Sans Mono", "Source Code Pro", monospace;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 24px;
+    margin: -20px;
+    min-height: calc(100vh - 60px);
+  }
+
+  .backend-tools h1 {
+    color: #00d4aa;
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .backend-tools h1::before {
+    content: ">";
+    color: #ff6b6b;
+  }
+
+  .backend-warning {
+    background: #2d1f1f;
+    border: 1px solid #ff6b6b;
+    color: #ffaaaa;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    font-size: 0.85rem;
+  }
+
+  .backend-warning strong {
+    color: #ff6b6b;
+  }
+
+  .ref-section {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    margin-bottom: 24px;
+    scroll-margin-top: 20px;
+  }
+
+  .ref-section-header {
+    background: #0f3460;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .ref-section-header h2 {
+    color: #00d4aa;
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  .ref-section-header .desc {
+    color: #888;
+    font-size: 0.8rem;
+  }
+
+  .ref-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+
+  .ref-table th {
+    background: #1a1a2e;
+    color: #888;
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: normal;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #0f3460;
+  }
+
+  .ref-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #0f3460;
+    vertical-align: middle;
+  }
+
+  .ref-table tr:hover {
+    background: #1f2b47;
+  }
+
+  .ref-table input[type="text"],
+  .ref-table input[type="number"],
+  .ref-table textarea {
+    background: #1a1a2e;
+    border: 1px solid #0f3460;
+    color: #e0e0e0;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .ref-table input[type="text"]:focus,
+  .ref-table input[type="number"]:focus,
+  .ref-table textarea:focus {
+    border-color: #00d4aa;
+    outline: none;
+  }
+
+  .ref-table textarea {
+    resize: vertical;
+    min-height: 32px;
+  }
+
+  .ref-table input[type="number"] {
+    width: 60px;
+  }
+
+  .ref-table .code-cell {
+    color: #ffd93d;
+    font-weight: 600;
+  }
+
+  .ref-table .inactive-row {
+    opacity: 0.5;
+  }
+
+  .backend-btn {
+    background: #0f3460;
+    border: 1px solid #00d4aa;
+    color: #00d4aa;
+    padding: 6px 14px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .backend-btn:hover {
+    background: #00d4aa;
+    color: #1a1a2e;
+  }
+
+  .backend-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: #00d4aa;
+  }
+
+  .backend-nav {
+    margin-bottom: 20px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .backend-nav a {
+    color: #888;
+    text-decoration: none;
+    padding: 4px 10px;
+    border: 1px solid #0f3460;
+    font-size: 0.8rem;
+  }
+
+  .backend-nav a:hover {
+    border-color: #00d4aa;
+    color: #00d4aa;
+  }
+
+  .backend-link {
+    color: #888;
+    text-decoration: none;
+    font-size: 0.85rem;
+  }
+
+  .backend-link:hover {
+    color: #00d4aa;
+  }
+
+  /* Flash messages in backend style */
+  .backend-tools .flash-messages {
+    margin-bottom: 16px;
+  }
+
+  .backend-tools .flash {
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+  }
+
+  .backend-tools .flash.success {
+    background: #1f3d2d;
+    border: 1px solid #00d4aa;
+    color: #00d4aa;
+  }
+
+  .backend-tools .flash.error {
+    background: #3d1f1f;
+    border: 1px solid #ff6b6b;
+    color: #ff6b6b;
+  }
+
+  .backend-tools .flash.info {
+    background: #1f2d3d;
+    border: 1px solid #4da8da;
+    color: #4da8da;
+  }
+</style>
+
+<div class="backend-tools">
+  <h1>Reference Data Editor</h1>
+
+  <div class="backend-warning">
+    <strong>BACKEND TOOL</strong> &mdash; This page edits core system lookup tables.
+    Changes here affect dropdown menus across the application.
+    Code values cannot be changed (they are used in database relationships).
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-messages">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="backend-nav">
+    <span style="color: #888; padding: 4px 0;">Jump to:</span>
+    {% for table_key, table in tables.items() %}
+      <a href="#{{ table_key }}">{{ table.label }}</a>
+    {% endfor %}
+    <span style="flex-grow: 1;"></span>
+    <a href="{{ url_for('admin_final.admin_home') }}" class="backend-link">&larr; Back to Admin</a>
+  </div>
+
+  {% for table_key, table in tables.items() %}
+    <div class="ref-section" id="{{ table_key }}">
+      <div class="ref-section-header">
+        <h2>{{ table.label }}</h2>
+        <span class="desc">{{ table.description }}</span>
+      </div>
+
+      <table class="ref-table">
+        <thead>
+          <tr>
+            <th style="width: 100px;">Code</th>
+            <th style="width: 180px;">Name</th>
+            <th>Description</th>
+            <th style="width: 60px;">Order</th>
+            <th style="width: 60px;">Active</th>
+            <th style="width: 80px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in table.records %}
+            <tr class="{% if not record.is_active %}inactive-row{% endif %}">
+              <form method="post" action="{{ url_for('admin_config.reference_data.update_record', table_key=table_key, record_id=record.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <td class="code-cell">{{ record.code }}</td>
+                <td>
+                  <input type="text" name="name" value="{{ record.name }}" required />
+                </td>
+                <td>
+                  <input type="text" name="description" value="{{ record.description or '' }}" placeholder="Optional description..." />
+                </td>
+                <td>
+                  <input type="number" name="sort_order" value="{{ record.sort_order }}" />
+                </td>
+                <td style="text-align: center;">
+                  <input type="checkbox" name="is_active" value="1" class="backend-checkbox"
+                         {% if record.is_active %}checked{% endif %} />
+                </td>
+                <td>
+                  <button type="submit" class="backend-btn">Save</button>
+                </td>
+              </form>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="6" style="color: #888; text-align: center; padding: 20px;">
+                No records found
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+
+  <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #0f3460; color: #555; font-size: 0.75rem;">
+    Reference data is seeded on initial deployment. This tool allows editing labels and descriptions
+    without direct database access. To add new reference values, update the seed file and coordinate
+    with the development team.
+  </div>
+</div>
+{% endblock %}

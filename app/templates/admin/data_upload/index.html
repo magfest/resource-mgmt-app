@@ -1,0 +1,67 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Data Upload - Admin{% endblock %}
+
+{% block content %}
+<div class="muted" style="margin-bottom: 12px;">
+  <a href="{{ url_for('admin_final.admin_home') }}">&larr; Back to Admin</a>
+</div>
+
+<h1>Bulk Data Upload</h1>
+<div class="muted" style="margin-bottom: 24px;">
+  Upload CSV or Excel files to bulk import or update reference data.
+</div>
+
+<h2 style="margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 8px;">Organization Structure</h2>
+<div style="display: grid; gap: 16px; max-width: 600px;">
+  <div style="border: 1px solid #ddd; padding: 16px; background: #fafafa;">
+    <h3 style="margin-top: 0;">1. Divisions</h3>
+    <p class="muted small">Upload divisions (organizational groupings of departments). Upload these first.</p>
+    <a class="btn btn-primary" href="{{ url_for('admin_config.data_upload.divisions_form') }}">Upload Divisions</a>
+  </div>
+
+  <div style="border: 1px solid #ddd; padding: 16px; background: #fafafa;">
+    <h3 style="margin-top: 0;">2. Departments</h3>
+    <p class="muted small">Upload departments that can submit budget requests. Can include division assignment.</p>
+    <a class="btn btn-primary" href="{{ url_for('admin_config.data_upload.departments_form') }}">Upload Departments</a>
+  </div>
+
+  <div style="border: 1px solid #ddd; padding: 16px; background: #fafafa;">
+    <h3 style="margin-top: 0;">3. Expense Accounts</h3>
+    <p class="muted small">Upload expense account categories for budget line items.</p>
+    <a class="btn btn-primary" href="{{ url_for('admin_config.data_upload.expense_accounts_form') }}">Upload Expense Accounts</a>
+  </div>
+</div>
+
+<h2 style="margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 8px;">Users & Permissions</h2>
+<div style="display: grid; gap: 16px; max-width: 600px;">
+  <div style="border: 1px solid #ddd; padding: 16px; background: #fafafa;">
+    <h3 style="margin-top: 0;">1. Users</h3>
+    <p class="muted small">Upload user accounts (email, display name). Upload users before memberships.</p>
+    <a class="btn btn-primary" href="{{ url_for('admin_config.data_upload.users_form') }}">Upload Users</a>
+  </div>
+
+  <div style="border: 1px solid #ddd; padding: 16px; background: #fafafa;">
+    <h3 style="margin-top: 0;">2. Department Memberships</h3>
+    <p class="muted small">Assign users to departments with view/edit/head permissions for an event cycle.</p>
+    <a class="btn btn-primary" href="{{ url_for('admin_config.data_upload.department_memberships_form') }}">Upload Department Memberships</a>
+  </div>
+
+  <div style="border: 1px solid #ddd; padding: 16px; background: #fafafa;">
+    <h3 style="margin-top: 0;">3. Division Memberships</h3>
+    <p class="muted small">Assign division-level access (for division heads who oversee multiple departments).</p>
+    <a class="btn btn-primary" href="{{ url_for('admin_config.data_upload.division_memberships_form') }}">Upload Division Memberships</a>
+  </div>
+
+  <div style="border: 1px solid #ddd; padding: 16px; background: #fafafa;">
+    <h3 style="margin-top: 0;">4. User Roles</h3>
+    <p class="muted small">Assign system roles (Super Admin, Approvers for specific approval groups).</p>
+    <a class="btn btn-primary" href="{{ url_for('admin_config.data_upload.user_roles_form') }}">Upload User Roles</a>
+  </div>
+</div>
+
+<div class="muted small" style="margin-top: 24px;">
+  <strong>File formats:</strong> CSV (.csv) or Excel (.xlsx, .xls)<br>
+  <strong>Behavior:</strong> Existing records (matched by code or email) will be updated. New records will be created.
+</div>
+{% endblock %}

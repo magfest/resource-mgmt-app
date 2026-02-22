@@ -1,0 +1,12 @@
+{# Contract line display partial - shows contract-specific fields in tables #}
+<td>{{ line.contract_detail.contract_type.name if line.contract_detail and line.contract_detail.contract_type else '-' }}</td>
+<td>{{ line.contract_detail.vendor_name if line.contract_detail else '-' }}</td>
+<td class="text-right">${{ '{:,.2f}'.format((line.contract_detail.contract_amount_cents or 0) / 100) if line.contract_detail else '-' }}</td>
+<td>
+  {% if line.contract_detail and line.contract_detail.start_date %}
+    {{ line.contract_detail.start_date.strftime('%m/%d/%Y') }}
+    {% if line.contract_detail.end_date %} - {{ line.contract_detail.end_date.strftime('%m/%d/%Y') }}{% endif %}
+  {% else %}
+    -
+  {% endif %}
+</td>

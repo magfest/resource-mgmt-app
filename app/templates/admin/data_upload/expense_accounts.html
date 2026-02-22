@@ -1,0 +1,239 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Upload Expense Accounts - Admin{% endblock %}
+
+{% block content %}
+<h1>Upload Expense Accounts</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  <a href="{{ url_for('admin_config.data_upload.index') }}">&larr; Back to Data Upload</a>
+</div>
+
+<div style="margin-bottom: 24px; padding: 12px 16px; background: #e8f5e9; border: 1px solid #4caf50; max-width: 800px;">
+  <strong>Download Template:</strong>
+  <a href="{{ url_for('admin_config.data_upload.download_expense_accounts_template') }}" class="btn" style="margin-left: 8px;">expense_accounts_template.csv</a>
+</div>
+
+<form method="post" enctype="multipart/form-data" style="max-width: 800px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div style="margin-bottom: 16px;">
+    <label for="file"><strong>Select File</strong></label>
+    <div style="margin-top: 8px;">
+      <input type="file" name="file" id="file" accept=".csv,.xlsx,.xls" required>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Upload</button>
+  <a href="{{ url_for('admin_config.data_upload.index') }}" class="btn">Cancel</a>
+</form>
+
+<div style="margin-top: 32px; padding: 16px; background: #f5f5f5; border: 1px solid #ddd;">
+  <h3 style="margin-top: 0;">Expected Columns</h3>
+  <p class="muted small">Column names are case-insensitive. Optional columns can be omitted.</p>
+
+  <h4 style="margin-top: 16px;">Basic Information</h4>
+  <table style="font-size: 0.85rem;">
+    <thead>
+      <tr>
+        <th style="width: 140px;">Column</th>
+        <th style="width: 60px;">Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Name</strong></td>
+        <td>Yes</td>
+        <td><code>name</code>, <code>account_name</code>, <code>expense_account</code></td>
+        <td>Display name</td>
+      </tr>
+      <tr>
+        <td><strong>Code</strong></td>
+        <td>No</td>
+        <td><code>code</code>, <code>account_code</code></td>
+        <td>Auto-generated from name if not provided (max 64 chars)</td>
+      </tr>
+      <tr>
+        <td><strong>Description</strong></td>
+        <td>No</td>
+        <td><code>description</code>, <code>desc</code>, <code>notes</code></td>
+        <td>Description text</td>
+      </tr>
+      <tr>
+        <td><strong>QuickBooks Account</strong></td>
+        <td>No</td>
+        <td><code>quickbooks</code>, <code>quickbooks_account</code>, <code>qb_account</code></td>
+        <td>QuickBooks account mapping</td>
+      </tr>
+      <tr>
+        <td><strong>Sort Order</strong></td>
+        <td>No</td>
+        <td><code>sort_order</code>, <code>sort</code>, <code>order</code></td>
+        <td>Display order (number, default 0)</td>
+      </tr>
+      <tr>
+        <td><strong>Is Active</strong></td>
+        <td>No</td>
+        <td><code>is_active</code>, <code>active</code></td>
+        <td>yes/no (default yes)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top: 24px;">Approval & Routing</h4>
+  <table style="font-size: 0.85rem;">
+    <thead>
+      <tr>
+        <th style="width: 140px;">Column</th>
+        <th style="width: 60px;">Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Approval Group</strong></td>
+        <td>No</td>
+        <td><code>approval_group</code>, <code>group</code></td>
+        <td>Code or name of approval group (e.g., TECH, HOTEL)</td>
+      </tr>
+      <tr>
+        <td><strong>Visibility Mode</strong></td>
+        <td>No</td>
+        <td><code>visibility_mode</code>, <code>visibility</code></td>
+        <td><code>ALL</code> (all depts) or <code>RESTRICTED</code> (default ALL)</td>
+      </tr>
+      <tr>
+        <td><strong>Contract Eligible</strong></td>
+        <td>No</td>
+        <td><code>is_contract_eligible</code>, <code>contract_eligible</code></td>
+        <td>yes/no - counts toward contract budget (default no)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top: 24px;">Spend Type Settings</h4>
+  <table style="font-size: 0.85rem;">
+    <thead>
+      <tr>
+        <th style="width: 140px;">Column</th>
+        <th style="width: 60px;">Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Default Spend Type</strong></td>
+        <td>No</td>
+        <td><code>spend_type</code>, <code>default_spend_type</code></td>
+        <td>Code or name (e.g., DIVVY, BANK, HOTEL_FEE)</td>
+      </tr>
+      <tr>
+        <td><strong>Spend Type Mode</strong></td>
+        <td>No</td>
+        <td><code>spend_type_mode</code>, <code>spend_mode</code></td>
+        <td><code>SINGLE_LOCKED</code> (one fixed type) or <code>ALLOW_LIST</code> (default)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top: 24px;">Fixed Cost Settings</h4>
+  <table style="font-size: 0.85rem;">
+    <thead>
+      <tr>
+        <th style="width: 140px;">Column</th>
+        <th style="width: 60px;">Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Is Fixed Cost</strong></td>
+        <td>No</td>
+        <td><code>is_fixed_cost</code>, <code>fixed_cost</code>, <code>fixed</code></td>
+        <td>yes/no - has standard unit pricing (default no)</td>
+      </tr>
+      <tr>
+        <td><strong>Unit Price</strong></td>
+        <td>No</td>
+        <td><code>unit_price</code>, <code>default_unit_price</code>, <code>price</code></td>
+        <td>Dollar amount (e.g., 50.00 or $50.00)</td>
+      </tr>
+      <tr>
+        <td><strong>Price Locked</strong></td>
+        <td>No</td>
+        <td><code>unit_price_locked</code>, <code>price_locked</code>, <code>locked</code></td>
+        <td>yes/no - prevent users from changing price (default no)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top: 24px;">Frequency Settings</h4>
+  <table style="font-size: 0.85rem;">
+    <thead>
+      <tr>
+        <th style="width: 140px;">Column</th>
+        <th style="width: 60px;">Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Default Frequency</strong></td>
+        <td>No</td>
+        <td><code>frequency</code>, <code>default_frequency</code></td>
+        <td>Code or name (e.g., ONE_TIME, RECURRING)</td>
+      </tr>
+      <tr>
+        <td><strong>Frequency Locked</strong></td>
+        <td>No</td>
+        <td><code>frequency_locked</code>, <code>freq_locked</code></td>
+        <td>yes/no - prevent users from changing (default no)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4 style="margin-top: 24px;">UI & Display</h4>
+  <table style="font-size: 0.85rem;">
+    <thead>
+      <tr>
+        <th style="width: 140px;">Column</th>
+        <th style="width: 60px;">Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>UI Display Group</strong></td>
+        <td>No</td>
+        <td><code>ui_display_group</code>, <code>ui_group</code></td>
+        <td>e.g., KNOWN_COSTS for grouping in UI</td>
+      </tr>
+      <tr>
+        <td><strong>Prompt Mode</strong></td>
+        <td>No</td>
+        <td><code>prompt_mode</code>, <code>prompt</code></td>
+        <td><code>NONE</code>, <code>SUGGEST</code>, or <code>REQUIRE</code> (default NONE)</td>
+      </tr>
+      <tr>
+        <td><strong>Warehouse Default</strong></td>
+        <td>No</td>
+        <td><code>warehouse_default</code>, <code>warehouse</code></td>
+        <td>yes/no (default no)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #fff8e1; border: 1px solid #ffcc02;">
+  <strong>Note:</strong> Records are matched by <code>code</code>. If an expense account with the same code already exists, it will be updated with all provided values. Otherwise, a new account will be created.
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #e3f2fd; border: 1px solid #2196f3;">
+  <strong>Tip:</strong> For a minimal upload, only <code>name</code> is required. All other fields have sensible defaults. Use the full template for complete control over all settings.
+</div>
+{% endblock %}

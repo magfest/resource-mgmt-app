@@ -1,0 +1,72 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Upload Users - Admin{% endblock %}
+
+{% block content %}
+<h1>Upload Users</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  <a href="{{ url_for('admin_config.data_upload.index') }}">&larr; Back to Data Upload</a>
+</div>
+
+<div style="margin-bottom: 24px; padding: 12px 16px; background: #e8f5e9; border: 1px solid #4caf50; max-width: 600px;">
+  <strong>Download Template:</strong>
+  <a href="{{ url_for('admin_config.data_upload.download_users_template') }}" class="btn" style="margin-left: 8px;">users_template.csv</a>
+</div>
+
+<form method="post" enctype="multipart/form-data" style="max-width: 600px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div style="margin-bottom: 16px;">
+    <label for="file"><strong>Select File</strong></label>
+    <div style="margin-top: 8px;">
+      <input type="file" name="file" id="file" accept=".csv,.xlsx,.xls" required>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Upload</button>
+  <a href="{{ url_for('admin_config.data_upload.index') }}" class="btn">Cancel</a>
+</form>
+
+<div style="margin-top: 32px; padding: 16px; background: #f5f5f5; border: 1px solid #ddd;">
+  <h3 style="margin-top: 0;">Expected Columns</h3>
+  <p class="muted small">Column names are case-insensitive. Optional columns can be omitted.</p>
+
+  <table style="font-size: 0.9rem;">
+    <thead>
+      <tr>
+        <th>Column</th>
+        <th>Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Email</strong></td>
+        <td>Yes</td>
+        <td><code>email</code>, <code>email_address</code>, <code>user_email</code></td>
+        <td>User's email address (used for matching)</td>
+      </tr>
+      <tr>
+        <td><strong>Name</strong></td>
+        <td>Yes</td>
+        <td><code>name</code>, <code>display_name</code>, <code>full_name</code>, <code>user_name</code></td>
+        <td>Display name shown in the app</td>
+      </tr>
+      <tr>
+        <td><strong>ID</strong></td>
+        <td>No</td>
+        <td><code>id</code>, <code>user_id</code>, <code>username</code></td>
+        <td>Auto-generated from email if not provided (e.g., <code>user:alice</code>)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #fff8e1; border: 1px solid #ffcc02;">
+  <strong>Note:</strong> Users are matched by <code>email</code>. If a user with the same email already exists, their display name will be updated. Otherwise, a new user will be created.
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #e3f2fd; border: 1px solid #2196f3;">
+  <strong>Tip:</strong> Upload users <em>before</em> uploading department memberships or roles.
+</div>
+{% endblock %}

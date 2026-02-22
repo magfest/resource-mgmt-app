@@ -1,0 +1,91 @@
+{# Budget line form fields partial - expense account, spend type, qty, price #}
+{# Expected context: expense_accounts, spend_types, frequencies, confidence_levels, priorities, line (optional for edit) #}
+
+<div class="form-group">
+  <label for="expense_account_id">Expense Account *</label>
+  <select name="expense_account_id" id="expense_account_id" required>
+    <option value="">Select expense account...</option>
+    {% for ea in expense_accounts %}
+      <option value="{{ ea.id }}" {% if line and line.budget_detail and line.budget_detail.expense_account_id == ea.id %}selected{% endif %}>
+        {{ ea.name }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label for="quantity">Quantity *</label>
+    <input type="number" name="quantity" id="quantity" min="0.001" step="0.001"
+           value="{{ line.budget_detail.quantity if line and line.budget_detail else '1' }}" required>
+  </div>
+
+  <div class="form-group">
+    <label for="unit_price">Unit Price ($) *</label>
+    <input type="number" name="unit_price" id="unit_price" min="0" step="0.01"
+           value="{{ '{:.2f}'.format((line.budget_detail.unit_price_cents or 0) / 100) if line and line.budget_detail else '' }}" required>
+  </div>
+</div>
+
+<div class="form-group">
+  <label for="spend_type_id">Spend Type *</label>
+  <select name="spend_type_id" id="spend_type_id" required>
+    <option value="">Select spend type...</option>
+    {% for st in spend_types %}
+      <option value="{{ st.id }}" {% if line and line.budget_detail and line.budget_detail.spend_type_id == st.id %}selected{% endif %}>
+        {{ st.name }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label for="frequency_id">Frequency</label>
+    <select name="frequency_id" id="frequency_id">
+      <option value="">Select...</option>
+      {% for freq in frequencies %}
+        <option value="{{ freq.id }}" {% if line and line.budget_detail and line.budget_detail.frequency_id == freq.id %}selected{% endif %}>
+          {{ freq.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="confidence_level_id">Confidence</label>
+    <select name="confidence_level_id" id="confidence_level_id">
+      <option value="">Select...</option>
+      {% for cl in confidence_levels %}
+        <option value="{{ cl.id }}" {% if line and line.budget_detail and line.budget_detail.confidence_level_id == cl.id %}selected{% endif %}>
+          {{ cl.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="priority_id">Priority</label>
+    <select name="priority_id" id="priority_id">
+      <option value="">Select...</option>
+      {% for p in priorities %}
+        <option value="{{ p.id }}" {% if line and line.budget_detail and line.budget_detail.priority_id == p.id %}selected{% endif %}>
+          {{ p.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+<div class="form-group">
+  <label>
+    <input type="checkbox" name="warehouse_flag" value="1"
+           {% if line and line.budget_detail and line.budget_detail.warehouse_flag %}checked{% endif %}>
+    Warehouse item
+  </label>
+</div>
+
+<div class="form-group">
+  <label for="description">Description / Notes</label>
+  <textarea name="description" id="description" rows="3">{{ line.budget_detail.description if line and line.budget_detail else '' }}</textarea>
+</div>

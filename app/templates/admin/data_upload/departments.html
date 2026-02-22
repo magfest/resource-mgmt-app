@@ -1,0 +1,86 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Upload Departments - Admin{% endblock %}
+
+{% block content %}
+<h1>Upload Departments</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  <a href="{{ url_for('admin_config.data_upload.index') }}">&larr; Back to Data Upload</a>
+</div>
+
+<div style="margin-bottom: 24px; padding: 12px 16px; background: #e8f5e9; border: 1px solid #4caf50; max-width: 600px;">
+  <strong>Download Template:</strong>
+  <a href="{{ url_for('admin_config.data_upload.download_departments_template') }}" class="btn" style="margin-left: 8px;">departments_template.csv</a>
+</div>
+
+<form method="post" enctype="multipart/form-data" style="max-width: 600px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div style="margin-bottom: 16px;">
+    <label for="file"><strong>Select File</strong></label>
+    <div style="margin-top: 8px;">
+      <input type="file" name="file" id="file" accept=".csv,.xlsx,.xls" required>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Upload</button>
+  <a href="{{ url_for('admin_config.data_upload.index') }}" class="btn">Cancel</a>
+</form>
+
+<div style="margin-top: 32px; padding: 16px; background: #f5f5f5; border: 1px solid #ddd;">
+  <h3 style="margin-top: 0;">Expected Columns</h3>
+  <p class="muted small">Column names are case-insensitive. Optional columns can be omitted.</p>
+
+  <table style="font-size: 0.9rem;">
+    <thead>
+      <tr>
+        <th>Column</th>
+        <th>Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Name</strong></td>
+        <td>Yes</td>
+        <td><code>name</code>, <code>department</code>, <code>department_name</code>, <code>department/team</code>, <code>team</code></td>
+        <td>Display name of the department</td>
+      </tr>
+      <tr>
+        <td><strong>Code</strong></td>
+        <td>No</td>
+        <td><code>code</code>, <code>dept_code</code>, <code>department_code</code></td>
+        <td>Auto-generated from name if not provided (max 16 chars, uppercase)</td>
+      </tr>
+      <tr>
+        <td><strong>Division</strong></td>
+        <td>No</td>
+        <td><code>division</code>, <code>division_name</code>, <code>division_code</code></td>
+        <td>Matched by code or name</td>
+      </tr>
+      <tr>
+        <td><strong>Description</strong></td>
+        <td>No</td>
+        <td><code>description</code>, <code>desc</code>, <code>notes</code></td>
+        <td>Optional description text</td>
+      </tr>
+      <tr>
+        <td><strong>Mailing List</strong></td>
+        <td>No</td>
+        <td><code>mailing_list</code>, <code>email</code>, <code>contact_email</code>, <code>group_email</code></td>
+        <td>Contact email for the department</td>
+      </tr>
+      <tr>
+        <td><strong>Slack Channel</strong></td>
+        <td>No</td>
+        <td><code>slack_channel</code>, <code>slack</code>, <code>channel</code></td>
+        <td>Slack channel name</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #fff8e1; border: 1px solid #ffcc02;">
+  <strong>Note:</strong> Records are matched by <code>code</code>. If a department with the same code already exists, it will be updated. Otherwise, a new department will be created.
+</div>
+{% endblock %}

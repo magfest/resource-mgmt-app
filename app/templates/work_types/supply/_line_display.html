@@ -1,0 +1,18 @@
+{# Supply order line display partial - shows supply-specific fields in tables #}
+<td>{{ line.supply_detail.item.category.name if line.supply_detail and line.supply_detail.item and line.supply_detail.item.category else '-' }}</td>
+<td>{{ line.supply_detail.item.item_name if line.supply_detail and line.supply_detail.item else '-' }}</td>
+<td class="text-right">{{ line.supply_detail.quantity_requested if line.supply_detail else '-' }}</td>
+<td class="text-right">
+  {% if line.supply_detail and line.supply_detail.item and line.supply_detail.item.unit_cost_cents %}
+    ${{ '{:,.2f}'.format((line.supply_detail.item.unit_cost_cents * line.supply_detail.quantity_requested) / 100) }}
+  {% else %}
+    -
+  {% endif %}
+</td>
+<td>
+  {% if line.supply_detail and line.supply_detail.needed_by_date %}
+    {{ line.supply_detail.needed_by_date.strftime('%m/%d/%Y') }}
+  {% else %}
+    -
+  {% endif %}
+</td>

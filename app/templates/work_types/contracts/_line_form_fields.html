@@ -1,0 +1,56 @@
+{# Contract line form fields partial - vendor, contract type, amount, dates #}
+{# Expected context: contract_types, line (optional for edit) #}
+
+<div class="form-group">
+  <label for="contract_type_id">Contract Type *</label>
+  <select name="contract_type_id" id="contract_type_id" required>
+    <option value="">Select contract type...</option>
+    {% for ct in contract_types %}
+      <option value="{{ ct.id }}" {% if line and line.contract_detail and line.contract_detail.contract_type_id == ct.id %}selected{% endif %}>
+        {{ ct.name }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
+
+<div class="form-group">
+  <label for="vendor_name">Vendor Name *</label>
+  <input type="text" name="vendor_name" id="vendor_name" maxlength="256"
+         value="{{ line.contract_detail.vendor_name if line and line.contract_detail else '' }}" required>
+</div>
+
+<div class="form-group">
+  <label for="vendor_contact">Vendor Contact</label>
+  <input type="text" name="vendor_contact" id="vendor_contact" maxlength="256"
+         value="{{ line.contract_detail.vendor_contact if line and line.contract_detail else '' }}">
+</div>
+
+<div class="form-group">
+  <label for="contract_amount">Contract Amount ($) *</label>
+  <input type="number" name="contract_amount" id="contract_amount" min="0" step="0.01"
+         value="{{ '{:.2f}'.format((line.contract_detail.contract_amount_cents or 0) / 100) if line and line.contract_detail else '' }}" required>
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label for="start_date">Start Date</label>
+    <input type="date" name="start_date" id="start_date"
+           value="{{ line.contract_detail.start_date.strftime('%Y-%m-%d') if line and line.contract_detail and line.contract_detail.start_date else '' }}">
+  </div>
+
+  <div class="form-group">
+    <label for="end_date">End Date</label>
+    <input type="date" name="end_date" id="end_date"
+           value="{{ line.contract_detail.end_date.strftime('%Y-%m-%d') if line and line.contract_detail and line.contract_detail.end_date else '' }}">
+  </div>
+</div>
+
+<div class="form-group">
+  <label for="terms_summary">Terms Summary</label>
+  <textarea name="terms_summary" id="terms_summary" rows="2">{{ line.contract_detail.terms_summary if line and line.contract_detail else '' }}</textarea>
+</div>
+
+<div class="form-group">
+  <label for="description">Description / Notes</label>
+  <textarea name="description" id="description" rows="3">{{ line.contract_detail.description if line and line.contract_detail else '' }}</textarea>
+</div>

@@ -1,0 +1,47 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Impersonate User - Testing{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto; padding: 24px;">
+  <h1>Impersonate User</h1>
+
+  <div class="callout" style="background: #fef3c7; border-color: #fcd34d; margin-bottom: 24px;">
+    <strong>Testing Tool</strong>
+    <div class="muted small" style="margin-top: 4px;">
+      View the app as another user to test their experience. You'll see their departments,
+      memberships, and permissions. Use "Exit Impersonation" to return to your account.
+    </div>
+  </div>
+
+  <div class="card">
+    <form method="post" action="{{ url_for('dev.impersonate_user') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div style="margin-bottom: 16px;">
+        <label for="user_id" style="display: block; font-weight: 600; margin-bottom: 8px;">
+          Select User to Impersonate
+        </label>
+        <select name="user_id" id="user_id" style="width: 100%; padding: 10px;">
+          <option value="">-- Select a user --</option>
+          {% for u in users %}
+            <option value="{{ u.id }}">
+              {{ u.display_name }} ({{ u.email }})
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">Start Impersonation</button>
+        <a href="{{ url_for('home.index') }}" class="btn">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="muted small" style="margin-top: 24px;">
+    <strong>Note:</strong> While impersonating, you'll have exactly the same access as the
+    selected user - no more, no less. This is useful for testing department-specific views
+    and verifying that permissions work correctly.
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "layout/base.html" %}
+
+{% block content %}
+<h1>Dev · Users</h1>
+<p style="color:#666;">
+  Sanity check of demo users, roles, and department memberships.
+</p>
+
+<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; width:100%; font-size:0.9em;">
+  <thead style="background:#f3f4f6;">
+    <tr>
+      <th>User ID</th>
+      <th>Name</th>
+      <th>Email</th>
+      <th>Auth subject</th>
+      <th>Roles</th>
+      <th>Department memberships</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+      <tr>
+        <td><code>{{ u.id }}</code></td>
+        <td>{{ u.display_name }}</td>
+        <td><code>{{ u.email }}</code></td>
+        <td>
+          {% if u.auth_subject %}
+            <code>{{ u.auth_subject }}</code>
+          {% else %}
+            <span style="color:#999;">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.roles %}
+            <ul style="margin:0; padding-left:16px;">
+              {% for r in u.roles %}
+                <li>
+                  {{ r.role_code }}
+                  {% if r.approval_group %}
+                    <span style="color:#666;">({{ r.approval_group.code }})</span>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <span style="color:#999;">None</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.department_memberships %}
+            <ul style="margin:0; padding-left:16px;">
+              {% for m in u.department_memberships %}
+                <li>
+                  {{ m.department.name }}
+                  <span style="color:#666;">
+                    ({{ m.event_cycle.code if m.event_cycle else "global" }})
+                  </span>
+                  —
+                  {% if m.is_department_head %}
+                    <strong>DH</strong>,
+                  {% endif %}
+                  {% if m.can_edit %}
+                    edit
+                  {% elif m.can_view %}
+                    view
+                  {% else %}
+                    no access
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <span style="color:#999;">None</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

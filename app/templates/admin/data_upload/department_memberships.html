@@ -1,0 +1,110 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Upload Department Memberships - Admin{% endblock %}
+
+{% block content %}
+<h1>Upload Department Memberships</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  <a href="{{ url_for('admin_config.data_upload.index') }}">&larr; Back to Data Upload</a>
+</div>
+
+<div style="margin-bottom: 24px; padding: 12px 16px; background: #e8f5e9; border: 1px solid #4caf50; max-width: 600px;">
+  <strong>Download Template:</strong>
+  <a href="{{ url_for('admin_config.data_upload.download_department_memberships_template') }}" class="btn" style="margin-left: 8px;">department_memberships_template.csv</a>
+</div>
+
+<form method="post" enctype="multipart/form-data" style="max-width: 600px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div style="margin-bottom: 16px;">
+    <label for="default_event_cycle"><strong>Default Event Cycle</strong></label>
+    <div class="muted small" style="margin-bottom: 6px;">
+      Used when the file doesn't specify an event_cycle column
+    </div>
+    <select name="default_event_cycle" id="default_event_cycle" style="width: 100%; padding: 8px;">
+      <option value="">-- Select --</option>
+      {% for cycle in event_cycles %}
+        <option value="{{ cycle.id }}" {% if cycle.is_default %}selected{% endif %}>
+          {{ cycle.name }} ({{ cycle.code }})
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div style="margin-bottom: 16px;">
+    <label for="file"><strong>Select File</strong></label>
+    <div style="margin-top: 8px;">
+      <input type="file" name="file" id="file" accept=".csv,.xlsx,.xls" required>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Upload</button>
+  <a href="{{ url_for('admin_config.data_upload.index') }}" class="btn">Cancel</a>
+</form>
+
+<div style="margin-top: 32px; padding: 16px; background: #f5f5f5; border: 1px solid #ddd;">
+  <h3 style="margin-top: 0;">Expected Columns</h3>
+  <p class="muted small">Column names are case-insensitive. Optional columns can be omitted.</p>
+
+  <table style="font-size: 0.9rem;">
+    <thead>
+      <tr>
+        <th>Column</th>
+        <th>Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>User</strong></td>
+        <td>Yes</td>
+        <td><code>email</code>, <code>user_email</code>, <code>user</code>, <code>user_id</code></td>
+        <td>User's email address or ID</td>
+      </tr>
+      <tr>
+        <td><strong>Department</strong></td>
+        <td>Yes</td>
+        <td><code>department</code>, <code>dept</code>, <code>department_code</code>, <code>dept_code</code></td>
+        <td>Department code or name</td>
+      </tr>
+      <tr>
+        <td><strong>Event Cycle</strong></td>
+        <td>No</td>
+        <td><code>event_cycle</code>, <code>cycle</code>, <code>event</code>, <code>event_code</code></td>
+        <td>Uses default above if not specified</td>
+      </tr>
+      <tr>
+        <td><strong>Can View</strong></td>
+        <td>No</td>
+        <td><code>can_view</code>, <code>view</code>, <code>viewer</code></td>
+        <td>yes/no/true/false/1/0 (defaults to yes)</td>
+      </tr>
+      <tr>
+        <td><strong>Can Edit</strong></td>
+        <td>No</td>
+        <td><code>can_edit</code>, <code>edit</code>, <code>editor</code></td>
+        <td>yes/no/true/false/1/0 (defaults to no)</td>
+      </tr>
+      <tr>
+        <td><strong>Department Head</strong></td>
+        <td>No</td>
+        <td><code>is_department_head</code>, <code>department_head</code>, <code>head</code>, <code>dh</code>, <code>is_head</code></td>
+        <td>yes/no/true/false/1/0 (defaults to no)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #fff8e1; border: 1px solid #ffcc02;">
+  <strong>Note:</strong> Memberships are matched by user + department + event cycle. Existing memberships will be updated with new permissions.
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #f3e5f5; border: 1px solid #9c27b0;">
+  <strong>Permission levels:</strong><br>
+  <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+    <li><strong>Viewer</strong>: can_view=yes, can_edit=no - Can see budget requests but not edit</li>
+    <li><strong>Editor</strong>: can_view=yes, can_edit=yes - Can create and edit budget requests</li>
+    <li><strong>Department Head</strong>: is_department_head=yes - Can submit requests for final approval</li>
+  </ul>
+</div>
+{% endblock %}

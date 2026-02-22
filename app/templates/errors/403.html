@@ -1,0 +1,32 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Access Denied{% endblock %}
+
+{% block content %}
+<div style="max-width: 500px; margin: 80px auto; text-align: center;">
+  <h1 style="color: #dc3545; margin-bottom: 16px;">Access Denied</h1>
+
+  <div class="card" style="padding: 24px;">
+    <p style="margin-bottom: 16px;">
+      You don't have permission to access this page.
+    </p>
+
+    {% if active_user %}
+      <p class="muted" style="margin-bottom: 24px;">
+        Logged in as: <strong>{{ active_user.display_name }}</strong>
+      </p>
+    {% endif %}
+
+    <div class="btn-row" style="justify-content: center;">
+      <a href="{{ url_for('home.index') }}" class="btn btn-primary">Go to Home</a>
+      {% if google_auth_enabled %}
+        <a href="{{ url_for('auth.logout') }}" class="btn">Sign Out</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <p class="muted small" style="margin-top: 24px;">
+    If you believe you should have access, contact your administrator.
+  </p>
+</div>
+{% endblock %}

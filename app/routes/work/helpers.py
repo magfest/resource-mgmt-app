@@ -1,0 +1,1028 @@
+"""
+Budget routes helpers - context, permissions, and utility functions.
+"""
+from __future__ import annotations
+
+import secrets
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Set
+
+from flask import abort
+from sqlalchemy import or_
+
+from app import db
+from app.models import (
+    EventCycle,
+    Department,
+    DepartmentMembership,
+    DivisionMembership,
+    WorkType,
+    WorkTypeConfig,
+    WorkPortfolio,
+    WorkItem,
+    WorkLine,
+    BudgetLineDetail,
+    ExpenseAccount,
+    SpendType,
+    ConfidenceLevel,
+    FrequencyOption,
+    PriorityLevel,
+    REQUEST_KIND_PRIMARY,
+    REQUEST_KIND_SUPPLEMENTARY,
+    WORK_ITEM_STATUS_DRAFT,
+    WORK_ITEM_STATUS_SUBMITTED,
+    WORK_ITEM_STATUS_FINALIZED,
+    WORK_ITEM_STATUS_NEEDS_INFO,
+    WORK_LINE_STATUS_PENDING,
+    WORK_LINE_STATUS_NEEDS_INFO,
+    WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
+    WORK_LINE_STATUS_APPROVED,
+    WORK_LINE_STATUS_REJECTED,
+    SPEND_TYPE_MODE_SINGLE_LOCKED,
+    SPEND_TYPE_MODE_ALLOW_LIST,
+    VISIBILITY_MODE_ALL,
+    VISIBILITY_MODE_RESTRICTED,
+    ROLE_WORKTYPE_ADMIN,
+    REVIEW_STAGE_ADMIN_FINAL,
+)
+from app.routes import get_user_ctx, UserContext
+from app.line_details import get_line_amount_cents, get_line_routing_approval_group
+
+
+# ============================================================
+# Checkout Configuration
+# ============================================================
+
+CHECKOUT_TIMEOUTS = {
+    "APPROVER": 30,      # 30 minutes for approvers
+    "SUPER_ADMIN": 120,  # 2 hours for super admins
+    "DEFAULT": 30,       # Default fallback
+}
+
+
+# ============================================================
+# Context and Permission Dataclasses
+# ============================================================
+
+@dataclass(frozen=True)
+class PortfolioContext:
+    """Context for a portfolio view/action."""
+    event_cycle: EventCycle
+    department: Department
+    portfolio: WorkPortfolio
+    work_type: WorkType
+    user_ctx: UserContext
+    membership: DepartmentMembership | None
+    division_membership: DivisionMembership | None  # Division-level access
+
+
+@dataclass(frozen=True)
+class PortfolioPerms:
+    """Permission flags for portfolio-level actions."""
+    can_view: bool
+    can_edit: bool
+    can_create_primary: bool
+    can_create_supplementary: bool
+    is_admin: bool
+
+
+@dataclass(frozen=True)
+class WorkItemPerms:
+    """Permission flags for work item actions."""
+    can_view: bool
+    can_edit: bool
+    can_submit: bool
+    can_add_lines: bool
+    can_delete: bool
+    can_checkout: bool
+    can_checkin: bool
+    can_request_info: bool
+    can_respond_to_info: bool
+    is_admin: bool
+    is_draft: bool
+    is_checked_out: bool
+    is_checked_out_by_current_user: bool
+
+
+# ============================================================
+# Context Building Functions
+# ============================================================
+
+def get_budget_work_type() -> WorkType:
+    """Get or create the BUDGET work type."""
+    work_type = WorkType.query.filter_by(code="BUDGET").first()
+    if not work_type:
+        work_type = WorkType(
+            code="BUDGET",
+            name="Budget",
+            is_active=True,
+            sort_order=0,
+        )
+        db.session.add(work_type)
+        db.session.flush()
+    return work_type
+
+
+def get_work_type_by_slug(url_slug: str) -> WorkType:
+    """
+    Get a work type by its URL slug.
+
+    Args:
+        url_slug: The URL slug (e.g., "budget", "contracts", "supply")
+
+    Returns:
+        The WorkType with matching config url_slug
+
+    Raises:
+        404 if not found
+    """
+    config = WorkTypeConfig.query.filter_by(url_slug=url_slug.lower()).first()
+    if not config:
+        abort(404, f"Work type not found: {url_slug}")
+    return config.work_type
+
+
+def get_work_type_by_code(code: str) -> WorkType:
+    """
+    Get a work type by its code.
+
+    Args:
+        code: The work type code (e.g., "BUDGET", "CONTRACT", "SUPPLY")
+
+    Returns:
+        The WorkType with matching code
+
+    Raises:
+        404 if not found
+    """
+    work_type = WorkType.query.filter_by(code=code.upper()).first()
+    if not work_type:
+        abort(404, f"Work type not found: {code}")
+    return work_type
+
+
+def get_active_work_types() -> list[WorkType]:
+    """Get all active work types with configs."""
+    return WorkType.query.join(WorkTypeConfig).filter(
+        WorkType.is_active == True
+    ).order_by(WorkType.sort_order.asc()).all()
+
+
+def get_portfolio_context(
+    event_code: str,
+    dept_code: str,
+    work_type_slug: str = "budget",
+) -> PortfolioContext:
+    """
+    Build context for a portfolio view.
+
+    Looks up event cycle and department by their codes.
+    Creates the portfolio if it doesn't exist.
+    Returns PortfolioContext with all needed objects.
+
+    Args:
+        event_code: Event cycle code (e.g., "SMF2027")
+        dept_code: Department code (e.g., "TECHOPS")
+        work_type_slug: Work type URL slug (e.g., "budget", "contracts", "supply")
+    """
+    user_ctx = get_user_ctx()
+
+    # Look up event cycle
+    event_cycle = EventCycle.query.filter_by(code=event_code.upper()).first()
+    if not event_cycle:
+        abort(404, f"Event cycle not found: {event_code}")
+
+    # Look up department
+    department = Department.query.filter_by(code=dept_code.upper()).first()
+    if not department:
+        abort(404, f"Department not found: {dept_code}")
+
+    # Get work type by slug (falls back to BUDGET for backward compatibility)
+    if work_type_slug == "budget":
+        work_type = get_budget_work_type()
+    else:
+        work_type = get_work_type_by_slug(work_type_slug)
+
+    # Get or create portfolio
+    portfolio = WorkPortfolio.query.filter_by(
+        work_type_id=work_type.id,
+        event_cycle_id=event_cycle.id,
+        department_id=department.id,
+        is_archived=False,
+    ).first()
+
+    if not portfolio:
+        portfolio = WorkPortfolio(
+            work_type_id=work_type.id,
+            event_cycle_id=event_cycle.id,
+            department_id=department.id,
+            created_by_user_id=user_ctx.user_id,
+        )
+        db.session.add(portfolio)
+        db.session.flush()
+
+    # Get user's membership for this department/cycle
+    membership = DepartmentMembership.query.filter_by(
+        user_id=user_ctx.user_id,
+        department_id=department.id,
+        event_cycle_id=event_cycle.id,
+    ).first()
+
+    # Get user's division membership (if department has a division)
+    division_membership = None
+    if department.division_id:
+        division_membership = DivisionMembership.query.filter_by(
+            user_id=user_ctx.user_id,
+            division_id=department.division_id,
+            event_cycle_id=event_cycle.id,
+        ).first()
+
+    return PortfolioContext(
+        event_cycle=event_cycle,
+        department=department,
+        portfolio=portfolio,
+        work_type=work_type,
+        user_ctx=user_ctx,
+        membership=membership,
+        division_membership=division_membership,
+    )
+
+
+# ============================================================
+# Permission Building Functions
+# ============================================================
+
+def is_budget_admin(user_ctx: UserContext, work_type_id: int | None = None) -> bool:
+    """Check if user is a budget admin (SUPER_ADMIN or WORKTYPE_ADMIN for BUDGET)."""
+    if user_ctx.is_admin:
+        return True
+
+    from app.models import UserRole
+    if work_type_id is None:
+        work_type = get_budget_work_type()
+        work_type_id = work_type.id
+
+    admin_role = UserRole.query.filter_by(
+        user_id=user_ctx.user_id,
+        role_code=ROLE_WORKTYPE_ADMIN,
+        work_type_id=work_type_id,
+    ).first()
+
+    return admin_role is not None
+
+
+def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:
+    """Build permission flags for a portfolio."""
+    is_admin = is_budget_admin(ctx.user_ctx, ctx.work_type.id)
+    work_type_id = ctx.work_type.id
+
+    # Department membership permissions - now scoped by work type
+    m_can_view = False
+    m_can_edit = False
+    if ctx.membership:
+        # Check work type-specific access
+        m_can_view = ctx.membership.can_view_work_type(work_type_id)
+        m_can_edit = ctx.membership.can_edit_work_type(work_type_id)
+
+    # Division membership permissions - also scoped by work type
+    dm = ctx.division_membership
+    dm_can_view = False
+    dm_can_edit = False
+    if dm:
+        dm_can_view = dm.can_view_work_type(work_type_id)
+        dm_can_edit = dm.can_edit_work_type(work_type_id)
+
+    # View: admin OR department membership OR division membership (with work type access)
+    can_view = is_admin or m_can_view or dm_can_view
+
+    # Edit: admin OR department membership OR division membership
+    can_edit = is_admin or m_can_edit or dm_can_edit
+
+    # Check for existing PRIMARY
+    existing_primary = WorkItem.query.filter_by(
+        portfolio_id=ctx.portfolio.id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        is_archived=False,
+    ).first()
+
+    # Can create PRIMARY: can_edit AND no existing PRIMARY
+    can_create_primary = can_edit and (existing_primary is None)
+
+    # Can create SUPPLEMENTARY: can_edit AND PRIMARY is FINALIZED
+    can_create_supplementary = can_edit and (
+        existing_primary is not None and
+        existing_primary.status == WORK_ITEM_STATUS_FINALIZED
+    )
+
+    return PortfolioPerms(
+        can_view=can_view,
+        can_edit=can_edit,
+        can_create_primary=can_create_primary,
+        can_create_supplementary=can_create_supplementary,
+        is_admin=is_admin,
+    )
+
+
+# ============================================================
+# Checkout Helper Functions
+# ============================================================
+
+def get_checkout_timeout_minutes(user_ctx: UserContext) -> int:
+    """Get checkout timeout in minutes based on user role (respects role override)."""
+    if user_ctx.is_admin:
+        return CHECKOUT_TIMEOUTS["SUPER_ADMIN"]
+    if user_ctx.approval_group_ids:
+        return CHECKOUT_TIMEOUTS["APPROVER"]
+    return CHECKOUT_TIMEOUTS["DEFAULT"]
+
+
+def is_checked_out(work_item: WorkItem) -> bool:
+    """Check if a work item is currently checked out (lock not expired)."""
+    if not work_item.checked_out_by_user_id:
+        return False
+    if not work_item.checked_out_expires_at:
+        return False
+    return work_item.checked_out_expires_at > datetime.utcnow()
+
+
+def get_checkout_info(work_item: WorkItem) -> dict | None:
+    """
+    Get checkout information for a work item.
+
+    Returns dict with:
+        - user_id: Who has checkout
+        - checked_out_at: When checkout started
+        - expires_at: When checkout expires
+        - is_expired: Whether checkout has expired
+
+    Returns None if not checked out.
+    """
+    if not work_item.checked_out_by_user_id:
+        return None
+
+    is_expired = (
+        work_item.checked_out_expires_at is None or
+        work_item.checked_out_expires_at <= datetime.utcnow()
+    )
+
+    return {
+        "user_id": work_item.checked_out_by_user_id,
+        "checked_out_at": work_item.checked_out_at,
+        "expires_at": work_item.checked_out_expires_at,
+        "is_expired": is_expired,
+    }
+
+
+def can_checkout(work_item: WorkItem, user_ctx: UserContext) -> tuple[bool, str]:
+    """
+    Check if user can checkout a work item.
+
+    Returns (can_checkout, reason) tuple.
+    """
+    # Must be SUBMITTED status
+    if work_item.status != WORK_ITEM_STATUS_SUBMITTED:
+        return False, "Only SUBMITTED requests can be checked out for review."
+
+    # Must be a reviewer (admin or approver) - respects role override
+    if not user_ctx.is_admin and not user_ctx.approval_group_ids:
+        return False, "Only reviewers can checkout work items."
+
+    # Cannot checkout if already checked out (unless expired)
+    if is_checked_out(work_item):
+        if work_item.checked_out_by_user_id == user_ctx.user_id:
+            return False, "You already have this item checked out."
+        return False, "This item is already checked out by another reviewer."
+
+    return True, "OK"
+
+
+def checkout_work_item(work_item: WorkItem, user_ctx: UserContext) -> bool:
+    """
+    Checkout a work item for review.
+
+    Returns True if checkout successful, False otherwise.
+    """
+    can_do, _reason = can_checkout(work_item, user_ctx)
+    if not can_do:
+        return False
+
+    timeout_minutes = get_checkout_timeout_minutes(user_ctx)
+    now = datetime.utcnow()
+
+    work_item.checked_out_by_user_id = user_ctx.user_id
+    work_item.checked_out_at = now
+    work_item.checked_out_expires_at = now + timedelta(minutes=timeout_minutes)
+
+    return True
+
+
+def checkin_work_item(work_item: WorkItem, user_ctx: UserContext, force: bool = False) -> bool:
+    """
+    Release checkout on a work item.
+
+    Args:
+        work_item: The work item to release
+        user_ctx: Current user context
+        force: If True, admin can force release any checkout
+
+    Returns True if checkin successful, False otherwise.
+    """
+    if not work_item.checked_out_by_user_id:
+        return False  # Nothing to release
+
+    # Check permission
+    is_current_holder = work_item.checked_out_by_user_id == user_ctx.user_id
+    is_admin = user_ctx.is_admin
+
+    if not is_current_holder and not (is_admin and force):
+        return False
+
+    work_item.checked_out_by_user_id = None
+    work_item.checked_out_at = None
+    work_item.checked_out_expires_at = None
+
+    return True
+
+
+def release_expired_checkouts() -> int:
+    """
+    Release all expired checkouts.
+
+    Returns count of checkouts released.
+    """
+    now = datetime.utcnow()
+    expired_items = WorkItem.query.filter(
+        WorkItem.checked_out_by_user_id.isnot(None),
+        WorkItem.checked_out_expires_at <= now,
+    ).all()
+
+    count = 0
+    for item in expired_items:
+        item.checked_out_by_user_id = None
+        item.checked_out_at = None
+        item.checked_out_expires_at = None
+        count += 1
+
+    return count
+
+
+def _is_approver_for_work_item(work_item: WorkItem, user_ctx: UserContext) -> bool:
+    """
+    Check if user is an approver who can review this work item.
+
+    Returns True if user has approval group access and is in an approval group
+    that has lines routed to it in this work item. Respects role override.
+    Works with any line detail type (budget, contract, supply).
+    """
+    # Check approval group IDs (already respects role override)
+    if not user_ctx.approval_group_ids:
+        return False
+
+    # Check if any lines in this work item are routed to user's approval groups
+    for line in work_item.lines:
+        routed_group = get_line_routing_approval_group(line)
+        if routed_group and routed_group.id in user_ctx.approval_group_ids:
+            return True
+
+    return False
+
+
+def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerms:
+    """Build permission flags for a work item."""
+    portfolio_perms = build_portfolio_perms(ctx)
+
+    is_draft = item.status == WORK_ITEM_STATUS_DRAFT
+    is_submitted = item.status == WORK_ITEM_STATUS_SUBMITTED
+    is_needs_info = item.status == WORK_ITEM_STATUS_NEEDS_INFO
+
+    # Check if user is a reviewer (admin or approver for lines in this item)
+    is_approver_for_item = _is_approver_for_work_item(item, ctx.user_ctx)
+    is_reviewer = portfolio_perms.is_admin or is_approver_for_item
+
+    # View: portfolio can_view OR is a reviewer for this item
+    can_view = portfolio_perms.can_view or is_reviewer
+
+    # Edit: (admin or membership.can_edit) AND status == DRAFT
+    can_edit = portfolio_perms.can_edit and is_draft
+
+    # Has lines?
+    has_lines = len(item.lines) > 0
+
+    # Submit: can_edit AND has_lines
+    can_submit = can_edit and has_lines
+
+    # Add lines: can_edit (implies DRAFT only)
+    can_add_lines = can_edit
+
+    # Delete: can_edit but PRIMARY is never deletable
+    can_delete = can_edit and (item.request_kind != REQUEST_KIND_PRIMARY)
+
+    # Checkout permissions
+    item_is_checked_out = is_checked_out(item)
+    is_checked_out_by_current_user = (
+        item_is_checked_out and
+        item.checked_out_by_user_id == ctx.user_ctx.user_id
+    )
+
+    # Can checkout: is a reviewer AND item is SUBMITTED AND not already checked out
+    can_checkout_item = is_reviewer and is_submitted and not item_is_checked_out
+
+    # Can checkin: current user has checkout OR admin can force release
+    can_checkin_item = is_checked_out_by_current_user or (portfolio_perms.is_admin and item_is_checked_out)
+
+    # Can request info: has checkout on item (current user)
+    can_request_info = is_checked_out_by_current_user and is_submitted
+
+    # Can respond to info: is requester/editor AND status is NEEDS_INFO
+    can_respond_to_info = portfolio_perms.can_edit and is_needs_info
+
+    return WorkItemPerms(
+        can_view=can_view,
+        can_edit=can_edit,
+        can_submit=can_submit,
+        can_add_lines=can_add_lines,
+        can_delete=can_delete,
+        can_checkout=can_checkout_item,
+        can_checkin=can_checkin_item,
+        can_request_info=can_request_info,
+        can_respond_to_info=can_respond_to_info,
+        is_admin=portfolio_perms.is_admin,
+        is_draft=is_draft,
+        is_checked_out=item_is_checked_out,
+        is_checked_out_by_current_user=is_checked_out_by_current_user,
+    )
+
+
+# ============================================================
+# Permission Enforcement Functions
+# ============================================================
+
+def require_portfolio_view(ctx: PortfolioContext) -> PortfolioPerms:
+    """Abort 403 if user cannot view the portfolio."""
+    perms = build_portfolio_perms(ctx)
+    if not perms.can_view:
+        abort(403, "You do not have permission to view this portfolio.")
+    return perms
+
+
+def require_portfolio_edit(ctx: PortfolioContext) -> PortfolioPerms:
+    """Abort 403 if user cannot edit the portfolio."""
+    perms = build_portfolio_perms(ctx)
+    if not perms.can_edit:
+        abort(403, "You do not have permission to edit this portfolio.")
+    return perms
+
+
+def require_work_item_view(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerms:
+    """Abort 403 if user cannot view the work item."""
+    perms = build_work_item_perms(item, ctx)
+    if not perms.can_view:
+        abort(403, "You do not have permission to view this work item.")
+    return perms
+
+
+def require_work_item_edit(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerms:
+    """Abort 403 if user cannot edit the work item."""
+    perms = build_work_item_perms(item, ctx)
+    if not perms.can_edit:
+        abort(403, "You do not have permission to edit this work item.")
+    return perms
+
+
+# ============================================================
+# Public ID Generation
+# ============================================================
+
+def generate_public_id(prefix: str = "BUD") -> str:
+    """Generate unique public ID like BUD-A3F9K2."""
+    while True:
+        # Generate 6 random alphanumeric characters
+        random_part = secrets.token_urlsafe(4).upper().replace("-", "").replace("_", "")[:6]
+        candidate = f"{prefix}-{random_part}"
+
+        # Check for uniqueness
+        exists = db.session.query(WorkItem.id).filter_by(public_id=candidate).first()
+        if not exists:
+            return candidate
+
+
+def generate_public_id_for_work_type(work_type: WorkType) -> str:
+    """
+    Generate a public ID using the work type's configured prefix.
+
+    Args:
+        work_type: The work type to generate an ID for
+
+    Returns:
+        A unique public ID like "BUD-A3F9K2" or "CON-X7Y8Z9"
+    """
+    prefix = "REQ"  # Default fallback
+    if work_type.config:
+        prefix = work_type.config.public_id_prefix
+    return generate_public_id(prefix)
+
+
+# ============================================================
+# Expense Account Helpers
+# ============================================================
+
+def get_visible_expense_accounts(
+    department_id: int,
+    event_cycle_id: int | None = None,
+    exclude_fixed: bool = True,
+) -> list[ExpenseAccount]:
+    """
+    Get expense accounts visible to a department.
+
+    Args:
+        department_id: Department to filter for
+        event_cycle_id: Optional event cycle for overrides (not used in Chunk A)
+        exclude_fixed: If True, excludes fixed-cost accounts (Chunk A only)
+    """
+    query = ExpenseAccount.query.filter(ExpenseAccount.is_active == True)
+
+    if exclude_fixed:
+        query = query.filter(ExpenseAccount.is_fixed_cost == False)
+
+    # Filter by visibility mode
+    query = query.filter(
+        or_(
+            ExpenseAccount.visibility_mode == VISIBILITY_MODE_ALL,
+            ExpenseAccount.visible_to_departments.any(id=department_id)
+        )
+    )
+
+    accounts = query.order_by(
+        ExpenseAccount.sort_order.asc(),
+        ExpenseAccount.name.asc()
+    ).all()
+
+    return accounts
+
+
+def get_fixed_cost_expense_accounts(
+    department_id: int,
+    event_cycle_id: int | None = None,
+) -> list[ExpenseAccount]:
+    """
+    Get fixed-cost expense accounts visible to a department.
+
+    These are accounts where is_fixed_cost=True, meaning the unit price
+    is predetermined and users only specify quantity.
+
+    Args:
+        department_id: Department to filter for
+        event_cycle_id: Optional event cycle for overrides
+    """
+    query = ExpenseAccount.query.filter(
+        ExpenseAccount.is_active == True,
+        ExpenseAccount.is_fixed_cost == True,
+    )
+
+    # Filter by visibility mode
+    query = query.filter(
+        or_(
+            ExpenseAccount.visibility_mode == VISIBILITY_MODE_ALL,
+            ExpenseAccount.visible_to_departments.any(id=department_id)
+        )
+    )
+
+    accounts = query.order_by(
+        ExpenseAccount.sort_order.asc(),
+        ExpenseAccount.name.asc()
+    ).all()
+
+    return accounts
+
+
+def get_effective_fixed_cost_settings(
+    expense_account: ExpenseAccount,
+    event_cycle_id: int | None = None,
+) -> dict:
+    """
+    Get effective fixed-cost settings for an expense account,
+    considering event-specific overrides.
+
+    Returns dict with:
+        - unit_price_cents: The locked unit price
+        - frequency_id: Default frequency (if any)
+        - warehouse_default: Default warehouse flag
+    """
+    # Start with base account settings
+    unit_price_cents = expense_account.default_unit_price_cents or 0
+    frequency_id = expense_account.default_frequency_id
+    warehouse_default = expense_account.warehouse_default
+
+    # Check for event-specific override
+    if event_cycle_id:
+        # Find override matching this event cycle
+        override = None
+        for o in expense_account.event_overrides:
+            if o.event_cycle_id == event_cycle_id:
+                override = o
+                break
+
+        if override:
+            if override.default_unit_price_cents is not None:
+                unit_price_cents = override.default_unit_price_cents
+            if override.default_frequency_id is not None:
+                frequency_id = override.default_frequency_id
+            if override.warehouse_default is not None:
+                warehouse_default = override.warehouse_default
+
+    return {
+        "unit_price_cents": unit_price_cents,
+        "frequency_id": frequency_id,
+        "warehouse_default": warehouse_default,
+    }
+
+
+def get_allowed_spend_types(expense_account: ExpenseAccount) -> list[SpendType]:
+    """
+    Get valid spend types for an expense account.
+
+    For SINGLE_LOCKED mode, returns only the default spend type.
+    For ALLOW_LIST mode, returns the allowed_spend_types list.
+    """
+    if expense_account.spend_type_mode == SPEND_TYPE_MODE_SINGLE_LOCKED:
+        if expense_account.default_spend_type:
+            return [expense_account.default_spend_type]
+        return []
+
+    # ALLOW_LIST mode
+    return list(expense_account.allowed_spend_types)
+
+
+# ============================================================
+# Dropdown Data Helpers
+# ============================================================
+
+def get_confidence_levels() -> list[ConfidenceLevel]:
+    """Get active confidence levels for dropdown."""
+    return ConfidenceLevel.query.filter_by(is_active=True).order_by(
+        ConfidenceLevel.sort_order.asc(),
+        ConfidenceLevel.name.asc()
+    ).all()
+
+
+def get_frequency_options() -> list[FrequencyOption]:
+    """Get active frequency options for dropdown."""
+    return FrequencyOption.query.filter_by(is_active=True).order_by(
+        FrequencyOption.sort_order.asc(),
+        FrequencyOption.name.asc()
+    ).all()
+
+
+def get_priority_levels() -> list[PriorityLevel]:
+    """Get active priority levels for dropdown."""
+    return PriorityLevel.query.filter_by(is_active=True).order_by(
+        PriorityLevel.sort_order.asc(),
+        PriorityLevel.name.asc()
+    ).all()
+
+
+def get_spend_types() -> list[SpendType]:
+    """Get active spend types for dropdown."""
+    return SpendType.query.filter_by(is_active=True).order_by(
+        SpendType.sort_order.asc(),
+        SpendType.name.asc()
+    ).all()
+
+
+# ============================================================
+# Totals Computation
+# ============================================================
+
+def compute_portfolio_totals(portfolio: WorkPortfolio) -> dict:
+    """
+    Compute totals for a portfolio.
+
+    Works with any line detail type (budget, contract, supply).
+
+    Returns dict with:
+        - requested: Total requested amount in cents
+        - approved: Total approved amount in cents
+        - pending: requested - approved
+    """
+    requested = 0
+    approved = 0
+
+    for item in portfolio.work_items:
+        if item.is_archived:
+            continue
+
+        for line in item.lines:
+            line_total = get_line_amount_cents(line)
+            requested += line_total
+
+            if line.status == WORK_LINE_STATUS_APPROVED:
+                approved += line.approved_amount_cents or 0
+
+    return {
+        "requested": requested,
+        "approved": approved,
+        "pending": requested - approved,
+    }
+
+
+def compute_work_item_totals(item: WorkItem) -> dict:
+    """
+    Compute totals for a single work item.
+
+    Works with any line detail type (budget, contract, supply).
+
+    Returns dict with:
+        - requested: Total requested amount in cents
+        - approved: Total approved amount in cents
+        - line_count: Number of lines
+    """
+    requested = 0
+    approved = 0
+    line_count = 0
+
+    for line in item.lines:
+        line_count += 1
+        line_total = get_line_amount_cents(line)
+        requested += line_total
+
+        if line.status == WORK_LINE_STATUS_APPROVED:
+            approved += line.approved_amount_cents or 0
+
+    return {
+        "requested": requested,
+        "approved": approved,
+        "line_count": line_count,
+    }
+
+
+# ============================================================
+# Line Status Summary
+# ============================================================
+
+@dataclass
+class LineStatusSummary:
+    """Summary of line statuses for a work item."""
+    line_count: int
+    pending_count: int
+    needs_info_count: int
+    needs_adjustment_count: int
+    approved_count: int
+    rejected_count: int
+    ag_approved_count: int  # Lines approved at Approval Group stage only
+    final_approved_count: int  # Lines approved at Admin Final stage
+    effective_status: str  # The effective status label considering line issues
+    has_issues: bool  # True if any lines need attention
+    # Portfolio-level fields (for home page display)
+    supplementary_count: int = 0  # Number of supplementary work items
+    supplementary_draft_count: int = 0  # Supplementary items in draft
+    supplementary_needs_attention: int = 0  # Supplementary items needing action
+
+
+def compute_line_status_summary(item: WorkItem) -> LineStatusSummary:
+    """
+    Compute a summary of line statuses for a work item.
+
+    Returns a LineStatusSummary with counts for each status type
+    and an effective_status that reflects if any lines are blocked.
+    """
+    pending = 0
+    needs_info = 0
+    needs_adjustment = 0
+    approved = 0
+    rejected = 0
+    ag_approved = 0
+    final_approved = 0
+
+    for line in item.lines:
+        if line.status == WORK_LINE_STATUS_PENDING:
+            pending += 1
+        elif line.status == WORK_LINE_STATUS_NEEDS_INFO:
+            needs_info += 1
+        elif line.status == WORK_LINE_STATUS_NEEDS_ADJUSTMENT:
+            needs_adjustment += 1
+        elif line.status == WORK_LINE_STATUS_APPROVED:
+            approved += 1
+            # Track approval stage
+            if line.current_review_stage == REVIEW_STAGE_ADMIN_FINAL:
+                final_approved += 1
+            else:
+                ag_approved += 1
+        elif line.status == WORK_LINE_STATUS_REJECTED:
+            rejected += 1
+
+    line_count = len(item.lines)
+    has_issues = needs_info > 0 or needs_adjustment > 0
+
+    # Determine effective status
+    # Priority: NEEDS_INFO/NEEDS_ADJUSTMENT > base item status
+    if item.status == WORK_ITEM_STATUS_DRAFT:
+        effective_status = "DRAFT"
+    elif item.status == WORK_ITEM_STATUS_FINALIZED:
+        effective_status = "FINALIZED"
+    elif needs_info > 0 and needs_adjustment > 0:
+        effective_status = "NEEDS_RESPONSE"
+    elif needs_info > 0:
+        effective_status = "NEEDS_INFO"
+    elif needs_adjustment > 0:
+        effective_status = "NEEDS_ADJUSTMENT"
+    elif item.status == WORK_ITEM_STATUS_SUBMITTED:
+        if pending > 0:
+            effective_status = "UNDER_REVIEW"
+        else:
+            effective_status = "SUBMITTED"
+    else:
+        effective_status = item.status
+
+    return LineStatusSummary(
+        line_count=line_count,
+        pending_count=pending,
+        needs_info_count=needs_info,
+        needs_adjustment_count=needs_adjustment,
+        approved_count=approved,
+        rejected_count=rejected,
+        ag_approved_count=ag_approved,
+        final_approved_count=final_approved,
+        effective_status=effective_status,
+        has_issues=has_issues,
+    )
+
+
+def compute_portfolio_status_summary(portfolio: "WorkPortfolio") -> LineStatusSummary | None:
+    """
+    Compute a status summary for an entire portfolio, including supplementary items.
+
+    Returns None if no primary work item exists.
+    The returned summary is based on the primary item but includes
+    supplementary_count and supplementary_needs_attention fields.
+    """
+    from app.models import WorkItem, REQUEST_KIND_PRIMARY, REQUEST_KIND_SUPPLEMENTARY
+
+    # Find the primary work item
+    primary = WorkItem.query.filter_by(
+        portfolio_id=portfolio.id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        is_archived=False,
+    ).first()
+
+    if not primary:
+        return None
+
+    # Compute primary status
+    summary = compute_line_status_summary(primary)
+
+    # Count supplementary items and their states
+    supplementary_items = WorkItem.query.filter_by(
+        portfolio_id=portfolio.id,
+        request_kind=REQUEST_KIND_SUPPLEMENTARY,
+        is_archived=False,
+    ).all()
+
+    supp_count = len(supplementary_items)
+    supp_draft = 0
+    supp_needs_attention = 0
+
+    for supp in supplementary_items:
+        if supp.status == WORK_ITEM_STATUS_DRAFT:
+            supp_draft += 1
+        elif supp.status in (WORK_ITEM_STATUS_NEEDS_INFO, WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_UNDER_REVIEW):
+            # Check if any lines need attention
+            supp_summary = compute_line_status_summary(supp)
+            if supp_summary.has_issues:
+                supp_needs_attention += 1
+
+    # Return updated summary with supplementary info
+    return LineStatusSummary(
+        line_count=summary.line_count,
+        pending_count=summary.pending_count,
+        needs_info_count=summary.needs_info_count,
+        needs_adjustment_count=summary.needs_adjustment_count,
+        approved_count=summary.approved_count,
+        rejected_count=summary.rejected_count,
+        ag_approved_count=summary.ag_approved_count,
+        final_approved_count=summary.final_approved_count,
+        effective_status=summary.effective_status,
+        has_issues=summary.has_issues,
+        supplementary_count=supp_count,
+        supplementary_draft_count=supp_draft,
+        supplementary_needs_attention=supp_needs_attention,
+    )
+
+
+# ============================================================
+# Formatting Helpers
+# ============================================================
+
+def format_currency(cents: int) -> str:
+    """Format cents as currency string."""
+    dollars = cents / 100
+    return f"${dollars:,.2f}"
+
+
+def get_next_line_number(work_item: WorkItem) -> int:
+    """Get the next available line number for a work item."""
+    if not work_item.lines:
+        return 1
+
+    max_num = max(line.line_number for line in work_item.lines)
+    return max_num + 1

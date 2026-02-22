@@ -1,0 +1,98 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Upload User Roles - Admin{% endblock %}
+
+{% block content %}
+<h1>Upload User Roles</h1>
+<div class="muted" style="margin-bottom: 16px;">
+  <a href="{{ url_for('admin_config.data_upload.index') }}">&larr; Back to Data Upload</a>
+</div>
+
+<div style="margin-bottom: 24px; padding: 12px 16px; background: #e8f5e9; border: 1px solid #4caf50; max-width: 600px;">
+  <strong>Download Template:</strong>
+  <a href="{{ url_for('admin_config.data_upload.download_user_roles_template') }}" class="btn" style="margin-left: 8px;">user_roles_template.csv</a>
+</div>
+
+<form method="post" enctype="multipart/form-data" style="max-width: 600px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div style="margin-bottom: 16px;">
+    <label for="file"><strong>Select File</strong></label>
+    <div style="margin-top: 8px;">
+      <input type="file" name="file" id="file" accept=".csv,.xlsx,.xls" required>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Upload</button>
+  <a href="{{ url_for('admin_config.data_upload.index') }}" class="btn">Cancel</a>
+</form>
+
+<div style="margin-top: 32px; padding: 16px; background: #f5f5f5; border: 1px solid #ddd;">
+  <h3 style="margin-top: 0;">Expected Columns</h3>
+  <p class="muted small">Column names are case-insensitive.</p>
+
+  <table style="font-size: 0.9rem;">
+    <thead>
+      <tr>
+        <th>Column</th>
+        <th>Required</th>
+        <th>Accepted Names</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>User</strong></td>
+        <td>Yes</td>
+        <td><code>email</code>, <code>user_email</code>, <code>user</code>, <code>user_id</code></td>
+        <td>User's email address or ID</td>
+      </tr>
+      <tr>
+        <td><strong>Role</strong></td>
+        <td>Yes</td>
+        <td><code>role</code>, <code>role_code</code>, <code>role_name</code></td>
+        <td>One of: SUPER_ADMIN, APPROVER, WORKTYPE_ADMIN</td>
+      </tr>
+      <tr>
+        <td><strong>Approval Group</strong></td>
+        <td>For APPROVER</td>
+        <td><code>approval_group</code>, <code>group</code>, <code>approval_group_code</code></td>
+        <td>Required for APPROVER role (e.g., TECH, HOTEL)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #f3e5f5; border: 1px solid #9c27b0;">
+  <h4 style="margin-top: 0;">Available Roles</h4>
+  <table style="font-size: 0.9rem; margin-top: 8px;">
+    <tr>
+      <td style="padding-right: 16px;"><strong>SUPER_ADMIN</strong></td>
+      <td>Full system access. Can manage all configuration, users, and approve any request.</td>
+    </tr>
+    <tr>
+      <td style="padding-right: 16px;"><strong>APPROVER</strong></td>
+      <td>Can approve budget requests routed to their approval group. Requires <code>approval_group</code>.</td>
+    </tr>
+    <tr>
+      <td style="padding-right: 16px;"><strong>WORKTYPE_ADMIN</strong></td>
+      <td>Admin for a specific work type (e.g., Budget module admin).</td>
+    </tr>
+  </table>
+</div>
+
+<div style="margin-top: 16px; padding: 16px; background: #fff8e1; border: 1px solid #ffcc02;">
+  <strong>Note:</strong> This upload only <em>adds</em> roles. Existing roles are not removed or modified. To remove a role, use the Users admin page.
+</div>
+
+{% if approval_groups %}
+<div style="margin-top: 16px; padding: 16px; background: #e8f5e9; border: 1px solid #4caf50;">
+  <h4 style="margin-top: 0;">Available Approval Groups</h4>
+  <p class="muted small">Use these codes in the <code>approval_group</code> column for APPROVER roles:</p>
+  <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+    {% for group in approval_groups %}
+      <li><code>{{ group.code }}</code> - {{ group.name }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

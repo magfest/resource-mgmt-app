@@ -1,0 +1,53 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ work_type_name }} - Coming Soon{% endblock %}
+
+{% block content %}
+<div class="muted" style="margin-bottom: 12px;">
+  <a href="{{ url_for('home.index') }}">&larr; Back to Home</a>
+  <span style="margin: 0 8px;">|</span>
+  <a href="{{ url_for('work.department_home', event=event_cycle.code, dept=department.code) }}">{{ department.name }}</a>
+</div>
+
+<div class="card" style="max-width: 600px; margin: 48px auto; text-align: center; padding: 48px;">
+  <div style="font-size: 48px; margin-bottom: 16px;">
+    {% if work_type_name == "Contracts" %}
+      &nbsp;
+    {% else %}
+      &nbsp;
+    {% endif %}
+  </div>
+
+  <h1 style="margin: 0 0 8px 0;">{{ work_type_name }}</h1>
+  <p class="muted" style="margin: 0 0 24px 0;">{{ work_type_description }}</p>
+
+  <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 24px; margin-bottom: 24px;">
+    <h3 style="margin: 0 0 8px 0; color: #92400e;">Coming Soon</h3>
+    <p style="margin: 0; color: #78350f;">
+      This feature is currently under development and will be available in a future release.
+    </p>
+  </div>
+
+  <p style="margin: 0;">
+    For questions about {{ work_type_name | lower }}, please contact {{ contact_team }}:
+  </p>
+  <p style="margin: 8px 0 0 0;">
+    <a href="mailto:{{ contact_email }}" class="btn btn-primary">{{ contact_email }}</a>
+  </p>
+</div>
+
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+  <h4 style="margin: 0 0 12px 0;">In the meantime...</h4>
+  <ul style="margin: 0; padding-left: 20px;">
+    <li style="margin-bottom: 8px;">
+      <a href="{{ url_for('work.portfolio_landing', event=event_cycle.code, dept=department.code) }}">Manage your department's budget</a>
+    </li>
+    <li style="margin-bottom: 8px;">
+      <a href="{{ url_for('work.department_home', event=event_cycle.code, dept=department.code) }}">View department overview</a>
+    </li>
+    <li>
+      <a href="{{ url_for('home.index') }}">Return to home</a>
+    </li>
+  </ul>
+</div>
+{% endblock %}
