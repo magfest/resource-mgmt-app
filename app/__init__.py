@@ -163,7 +163,12 @@ def create_app() -> Flask:
         # Content Security Policy - restrict resource loading
         # Scripts require a nonce; styles allow inline (industry-standard compromise)
         # See docs/security.md for developer guidance on CSP nonces
-        nonce = getattr(g, 'csp_nonce', '')
+        nonce = getattr(g, 'csp_nonce', None)
+        if not nonce:
+            # This should never happen - generate_csp_nonce runs before every request.
+            # If it does, fail loudly rather than silently disabling CSP protection.
+            app.logger.error("CSP nonce missing! generate_csp_nonce() may have failed.")
+            nonce = "MISSING-NONCE-CHECK-LOGS"  # Will break scripts, making issue obvious
         csp_directives = [
             "default-src 'self'",
             f"script-src 'self' 'nonce-{nonce}'",  # Nonce required for inline scripts

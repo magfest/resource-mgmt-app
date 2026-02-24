@@ -64,15 +64,17 @@ The `csp_nonce` variable is automatically available in all templates.
 
 ### Rule 2: No Inline Event Handlers
 
-Inline handlers like `onclick`, `onchange`, `onsubmit` are **blocked by CSP**.
+Inline handlers like `onclick="..."` won't work because they're blocked by our CSP policy (no `'unsafe-inline'` in script-src). The browser simply ignores them.
 
 ```html
-<!-- WRONG - blocked by CSP -->
+<!-- WON'T WORK - browser ignores onclick due to CSP -->
 <button onclick="doSomething()">Click</button>
 
-<!-- CORRECT - use data attributes -->
+<!-- CORRECT - use data attributes handled by base.html JS -->
 <button data-confirm="Are you sure?">Click</button>
 ```
+
+**How to test**: Open browser DevTools console. If you see "Refused to execute inline event handler" errors, you've used an inline handler.
 
 ### Rule 3: Use Data Attributes Instead
 

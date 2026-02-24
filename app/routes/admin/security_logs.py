@@ -40,18 +40,18 @@ SEVERITIES = [
     (SEVERITY_ALERT, "Alert"),
 ]
 
-# Severity colors for the template
-SEVERITY_COLORS = {
-    SEVERITY_INFO: ("background: #e0f2fe; color: #0369a1;", "Info"),
-    SEVERITY_WARNING: ("background: #fef3c7; color: #92400e;", "Warning"),
-    SEVERITY_ALERT: ("background: #fecaca; color: #991b1b;", "Alert"),
+# Display labels for categories and severities (colors are in CSS)
+SEVERITY_LABELS = {
+    SEVERITY_INFO: "Info",
+    SEVERITY_WARNING: "Warning",
+    SEVERITY_ALERT: "Alert",
 }
 
-CATEGORY_COLORS = {
-    CATEGORY_AUTH: ("background: #dbeafe; color: #1e40af;", "Auth"),
-    CATEGORY_ADMIN: ("background: #fef3c7; color: #92400e;", "Admin"),
-    CATEGORY_ACCESS: ("background: #e9f7ef; color: #166534;", "Access"),
-    CATEGORY_SECURITY: ("background: #fce7f3; color: #9d174d;", "Security"),
+CATEGORY_LABELS = {
+    CATEGORY_AUTH: "Auth",
+    CATEGORY_ADMIN: "Admin",
+    CATEGORY_ACCESS: "Access",
+    CATEGORY_SECURITY: "Security",
 }
 
 
@@ -147,9 +147,9 @@ def list_logs():
         selected_user_id=user_id,
         selected_date_from=date_from,
         selected_date_to=date_to,
-        # Display helpers
-        severity_colors=SEVERITY_COLORS,
-        category_colors=CATEGORY_COLORS,
+        # Display helpers (colors are in template CSS)
+        severity_labels=SEVERITY_LABELS,
+        category_labels=CATEGORY_LABELS,
         # Pagination
         page=page,
         total_pages=total_pages,

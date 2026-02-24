@@ -2,6 +2,19 @@
 
 {% block title %}Security Audit Logs - Admin{% endblock %}
 
+{% block head %}
+<style>
+  /* Security log pill colors - easier to maintain than Python dicts */
+  .pill-severity-INFO { background: #e0f2fe; color: #0369a1; }
+  .pill-severity-WARNING { background: #fef3c7; color: #92400e; }
+  .pill-severity-ALERT { background: #fecaca; color: #991b1b; }
+  .pill-category-AUTH { background: #dbeafe; color: #1e40af; }
+  .pill-category-ADMIN { background: #fef3c7; color: #92400e; }
+  .pill-category-ACCESS { background: #e9f7ef; color: #166534; }
+  .pill-category-SECURITY { background: #fce7f3; color: #9d174d; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="muted" style="margin-bottom: 12px;">
   <a href="{{ url_for('admin_final.admin_home') }}">&larr; Back to Admin</a>
@@ -112,15 +125,17 @@
           {% endif %}
         </td>
         <td>
-          {% set cat_style, cat_label = category_colors.get(log.event_category, ('', log.event_category)) %}
-          <span class="pill" style="{{ cat_style }}">{{ cat_label }}</span>
+          <span class="pill pill-category-{{ log.event_category }}">
+            {{ category_labels.get(log.event_category, log.event_category) }}
+          </span>
         </td>
         <td class="small">
           {{ log.event_type.replace('_', ' ').title() }}
         </td>
         <td>
-          {% set sev_style, sev_label = severity_colors.get(log.severity, ('', log.severity)) %}
-          <span class="pill" style="{{ sev_style }}">{{ sev_label }}</span>
+          <span class="pill pill-severity-{{ log.severity }}">
+            {{ severity_labels.get(log.severity, log.severity) }}
+          </span>
         </td>
         <td class="muted small">
           {{ log.ip_address or '-' }}

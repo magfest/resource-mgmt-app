@@ -490,15 +490,16 @@
   // Handle show/hide element toggles via data attributes
   // Usage: <button data-show="element-id" data-hide-self>Show form</button>
   //        <button data-hide="element-id" data-show-selector="#some > selector">Cancel</button>
+  // Note: Uses empty string for display to restore CSS default (not hardcoded block/inline-block)
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('[data-show], [data-hide]');
     if (!btn) return;
 
-    // Show element by ID
+    // Show element by ID (restore default display)
     var showId = btn.getAttribute('data-show');
     if (showId) {
       var showEl = document.getElementById(showId);
-      if (showEl) showEl.style.display = 'block';
+      if (showEl) showEl.style.display = '';  // Empty = use CSS default
     }
 
     // Hide element by ID
@@ -513,18 +514,19 @@
       btn.style.display = 'none';
     }
 
-    // Show element by selector
+    // Show element by selector (restore default display)
     var showSelector = btn.getAttribute('data-show-selector');
     if (showSelector) {
       var showEl = document.querySelector(showSelector);
-      if (showEl) showEl.style.display = 'inline-block';
+      if (showEl) showEl.style.display = '';  // Empty = use CSS default
     }
   });
 
   // Close modals on Escape key
+  // Looks for elements with data-modal attribute that are currently visible
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-      document.querySelectorAll('.modal[style*="flex"]').forEach(function(m) {
+      document.querySelectorAll('[data-modal][style*="flex"]').forEach(function(m) {
         m.style.display = 'none';
       });
     }
