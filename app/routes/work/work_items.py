@@ -354,11 +354,13 @@ def work_item_edit(event: str, dept: str, public_id: str):
         settings = get_effective_fixed_cost_settings(acc, ctx.event_cycle.id)
         existing_line = existing_fixed_by_account_id.get(acc.id)
 
-        # Get existing quantity if line exists with budget detail
+        # Get existing quantity and notes if line exists with budget detail
         if existing_line and existing_line.budget_detail:
             existing_quantity = existing_line.budget_detail.quantity
+            existing_notes = existing_line.budget_detail.description or ""
         else:
             existing_quantity = None
+            existing_notes = ""
 
         fixed_cost_data.append({
             "account": acc,
@@ -367,6 +369,7 @@ def work_item_edit(event: str, dept: str, public_id: str):
             "warehouse_default": settings["warehouse_default"],
             "existing_line": existing_line,
             "existing_quantity": existing_quantity,
+            "existing_notes": existing_notes,
         })
 
     # Build hotel data with effective settings and existing quantities
@@ -375,11 +378,13 @@ def work_item_edit(event: str, dept: str, public_id: str):
         settings = get_effective_fixed_cost_settings(acc, ctx.event_cycle.id)
         existing_line = existing_hotel_by_account_id.get(acc.id)
 
-        # Get existing quantity if line exists with budget detail
+        # Get existing quantity and notes if line exists with budget detail
         if existing_line and existing_line.budget_detail:
             existing_quantity = existing_line.budget_detail.quantity
+            existing_notes = existing_line.budget_detail.description or ""
         else:
             existing_quantity = None
+            existing_notes = ""
 
         hotel_data.append({
             "account": acc,
@@ -388,6 +393,7 @@ def work_item_edit(event: str, dept: str, public_id: str):
             "warehouse_default": settings["warehouse_default"],
             "existing_line": existing_line,
             "existing_quantity": existing_quantity,
+            "existing_notes": existing_notes,
         })
 
     # Calculate event nights for hotel calculator
@@ -528,6 +534,10 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
         except InvalidOperation:
             quantity = Decimal(0)
 
+        # Parse notes
+        notes_key = f"fixed_notes_{account_id}"
+        notes = (request.form.get(notes_key) or "").strip()
+
         # Get the expense account
         expense_account = ExpenseAccount.query.get(account_id)
         if not expense_account:
@@ -559,6 +569,7 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
                     if detail:
                         detail.quantity = quantity
                         detail.unit_price_cents = settings["unit_price_cents"]
+                        detail.description = notes if notes else expense_account.name
                     existing_line.updated_by_user_id = user_ctx.user_id
             else:
                 # Create new line
@@ -593,7 +604,7 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
                     quantity=quantity,
                     frequency_id=settings["frequency_id"],
                     warehouse_flag=settings["warehouse_default"],
-                    description=f"{expense_account.name}",
+                    description=notes if notes else expense_account.name,
                 )
                 db.session.add(budget_detail)
 

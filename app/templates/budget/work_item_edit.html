@@ -4,6 +4,18 @@
 {% block title %}Edit {{ work_item.public_id }}{% endblock %}
 
 {% block content %}
+<style>
+  /* Make notes rows visually connected to the item row above */
+  .notes-row td {
+    padding-top: 2px !important;
+    padding-bottom: 12px !important;
+    border-top: none !important;
+    background: #fafafa;
+  }
+  .notes-row + tr td {
+    border-top: 1px solid #e0e0e0;
+  }
+</style>
 
   {% set status = work_item.status | upper %}
 
@@ -164,7 +176,7 @@
       <section class="card">
         <h3 style="margin:0 0 8px 0;">Fixed-Cost Items</h3>
         <div class="muted" style="margin-bottom: 12px;">
-          Enter quantities for standard items with predetermined pricing. Leave blank or enter 0 if not needed.
+          Enter quantities for standard items with predetermined pricing. Include a note explaining what the item is for.
         </div>
 
         <table>
@@ -181,6 +193,7 @@
               {% set acc = item.account %}
               {% set unit_price = item.unit_price_cents %}
               {% set existing_qty = item.existing_quantity %}
+              {% set existing_notes = item.existing_notes %}
               <tr>
                 <td>
                   <strong>{{ acc.name }}</strong>
@@ -206,6 +219,15 @@
                   {% else %}
                     -
                   {% endif %}
+                </td>
+              </tr>
+              <tr class="notes-row">
+                <td colspan="4" style="padding-top: 0; border-top: none;">
+                  <input type="text"
+                         name="fixed_notes_{{ acc.id }}"
+                         value="{{ existing_notes }}"
+                         placeholder="Notes/reason (required if quantity > 0)"
+                         style="width: 100%; max-width: 500px; font-size: 13px;">
                 </td>
               </tr>
             {% endfor %}
@@ -300,7 +322,7 @@
       <section class="card">
         <h3 style="margin:0 0 8px 0;">Hotel &amp; Gaylord Services</h3>
         <div class="muted" style="margin-bottom: 12px;">
-          Per-night/per-day items. Use the calculator above to estimate quantities, or enter directly.
+          Per-night/per-day items. Use the calculator above to estimate quantities. Include a note explaining the purpose.
         </div>
 
         <table>
@@ -317,6 +339,7 @@
               {% set acc = item.account %}
               {% set unit_price = item.unit_price_cents %}
               {% set existing_qty = item.existing_quantity %}
+              {% set existing_notes = item.existing_notes %}
               <tr>
                 <td>
                   <strong>{{ acc.name }}</strong>
@@ -343,6 +366,15 @@
                   {% else %}
                     -
                   {% endif %}
+                </td>
+              </tr>
+              <tr class="notes-row">
+                <td colspan="4" style="padding-top: 0; border-top: none;">
+                  <input type="text"
+                         name="fixed_notes_{{ acc.id }}"
+                         value="{{ existing_notes }}"
+                         placeholder="Notes/reason (required if quantity > 0)"
+                         style="width: 100%; max-width: 500px; font-size: 13px;">
                 </td>
               </tr>
             {% endfor %}
