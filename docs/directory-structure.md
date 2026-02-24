@@ -144,7 +144,3 @@ In the appropriate blueprint under `app/routes/`. If it's a new functional area,
 - If it's route-specific: `app/routes/<area>/helpers.py`
 - If it's cross-cutting: `app/` root (like `line_details.py`)
 - If it's a template partial: `app/templates/components/`
-
-### "Why isn't there a services layer?"
-
-Flask apps typically keep business logic in route handlers or helper modules. We use `helpers.py` files for reusable logic. A services layer could be added if complexity grows.
