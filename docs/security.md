@@ -23,7 +23,7 @@ object-src 'none'
 | Directive | Value | What It Means |
 |-----------|-------|---------------|
 | `script-src` | `'self' 'nonce-...'` | Scripts require a nonce to execute |
-| `style-src` | `'self' 'unsafe-inline'` | Inline styles allowed (industry-standard compromise) |
+| `style-src` | `'self' 'unsafe-inline'` | Inline styles allowed |
 
 ### Why Nonces for Scripts?
 
