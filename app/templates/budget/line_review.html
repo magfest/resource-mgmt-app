@@ -6,6 +6,7 @@
 {% block content %}
 
   {% set status = line.status | upper %}
+  {% set status_label = friendly_status(status) if friendly_status else status %}
   {% set ag_status = review.status | upper if review else 'PENDING' %}
   {% set review_stage = line.current_review_stage | upper if line.current_review_stage else '' %}
   {% set status_pill_class =

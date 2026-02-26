@@ -19,7 +19,7 @@ from app.models import (
     REVIEW_STATUS_PENDING,
 )
 from app.routes import get_user_ctx
-from app.routes.work.helpers import format_currency
+from app.routes.work.helpers import format_currency, friendly_status
 from . import dispatch_bp
 from .helpers import (
     get_dispatch_queue,
@@ -85,6 +85,7 @@ def dashboard():
         selected_event=selected_event,
         selected_dept=selected_dept,
         format_currency=format_currency,
+        friendly_status=friendly_status,
     )
 
 
@@ -141,6 +142,7 @@ def dispatch_item(work_item_id: int):
         assigned_count=assigned_count,
         all_assigned=all_assigned,
         format_currency=format_currency,
+        friendly_status=friendly_status,
     )
 
 

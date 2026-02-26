@@ -1103,6 +1103,30 @@ def format_currency(cents: int) -> str:
     return f"${dollars:,.2f}"
 
 
+# User-friendly status label mapping
+STATUS_LABELS = {
+    "DRAFT": "Draft",
+    "AWAITING_DISPATCH": "Waiting for Assignment",
+    "SUBMITTED": "Under Review",
+    "UNDER_REVIEW": "Under Review",
+    "NEEDS_INFO": "Info Requested",
+    "NEEDS_ADJUSTMENT": "Adjustment Needed",
+    "NEEDS_RESPONSE": "Response Needed",
+    "APPROVED": "Approved",
+    "REJECTED": "Rejected",
+    "FINALIZED": "Finalized",
+    "PAUSED": "Paused",
+    "PENDING": "Pending",
+}
+
+
+def friendly_status(status: str) -> str:
+    """Convert a status code to a user-friendly label."""
+    if not status:
+        return ""
+    return STATUS_LABELS.get(status.upper(), status)
+
+
 def get_next_line_number(work_item: WorkItem) -> int:
     """Get the next available line number for a work item."""
     if not work_item.lines:

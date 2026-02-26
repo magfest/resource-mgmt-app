@@ -25,7 +25,7 @@
   </div>
   {% else %}
 
-  <form method="post" action="{{ url_for('work.line_create', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+  <form method="post" action="{% if is_edit %}{{ url_for('work.line_update', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}{% else %}{{ url_for('work.line_create', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}{% endif %}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <section class="card">
       <h3 style="margin:0 0 16px 0;">Line Details</h3>
@@ -150,13 +150,17 @@
   // Spend types data from server
   const spendTypesByAccount = {{ spend_types_by_account | tojson | safe }};
 
+  // Pre-selected values for edit mode
+  const preSelectedSpendTypeId = '{{ form_data.spend_type_id if form_data else "" }}';
+
   const expenseAccountSelect = document.getElementById('expense_account_id');
   const spendTypeSelect = document.getElementById('spend_type_id');
   const spendTypeHint = document.getElementById('spend_type_hint');
   const spendTypeContainer = document.getElementById('spend_type_container');
 
-  function updateSpendTypes() {
+  function updateSpendTypes(preserveSelection) {
     const accountId = expenseAccountSelect.value;
+    const currentValue = preserveSelection ? spendTypeSelect.value : preSelectedSpendTypeId;
     spendTypeSelect.innerHTML = '';
 
     if (!accountId || !spendTypesByAccount[accountId]) {
@@ -187,6 +191,10 @@
         const option = document.createElement('option');
         option.value = st.id;
         option.textContent = st.name;
+        // Pre-select if this matches the saved value
+        if (currentValue && st.id.toString() === currentValue) {
+          option.selected = true;
+        }
         spendTypeSelect.appendChild(option);
       }
       spendTypeHint.textContent = '';
@@ -194,9 +202,11 @@
     }
   }
 
-  expenseAccountSelect.addEventListener('change', updateSpendTypes);
+  expenseAccountSelect.addEventListener('change', function() {
+    updateSpendTypes(false);  // Don't preserve selection when changing account
+  });
 
-  // Initialize on page load
-  updateSpendTypes();
+  // Initialize on page load (use preselected value)
+  updateSpendTypes(false);
 </script>
 {% endblock %}

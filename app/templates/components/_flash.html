@@ -1,19 +1,38 @@
 {# templates/components/_flash.html #}
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
-    <div style="margin: 12px 0;">
+    <div class="flash-container" style="margin: 12px 0;">
       {% for category, message in messages %}
         {% set cat = (category or 'info')|lower %}
-        <div class="callout
+        {% set auto_dismiss = cat in ['success', 'info'] %}
+        <div class="flash-message callout
             {% if cat in ['error', 'danger'] %} callout-danger
             {% elif cat in ['success'] %} callout-success
             {% elif cat in ['warning'] %} callout-warning
             {% else %} callout-info
-            {% endif %}">
-          <strong>{{ category|default('Info')|capitalize }}</strong>
-          <div class="small muted">{{ message }}</div>
+            {% endif %}"
+            style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 14px;"
+            {% if auto_dismiss %}data-auto-dismiss="5000"{% endif %}>
+          <div style="flex: 1;">
+            <strong style="font-size: 13px;">{{ category|default('Info')|capitalize }}</strong>
+            <span class="muted" style="font-size: 13px; margin-left: 6px;">{{ message }}</span>
+          </div>
+          <button type="button" class="flash-close" aria-label="Dismiss"
+                  style="background: none; border: none; cursor: pointer; padding: 0; font-size: 18px; line-height: 1; color: #666; opacity: 0.7;"
+                  onclick="this.closest('.flash-message').remove()">×</button>
         </div>
       {% endfor %}
     </div>
+    <script nonce="{{ csp_nonce }}">
+      // Auto-dismiss flash messages after timeout
+      document.querySelectorAll('.flash-message[data-auto-dismiss]').forEach(function(el) {
+        var timeout = parseInt(el.getAttribute('data-auto-dismiss')) || 5000;
+        setTimeout(function() {
+          el.style.transition = 'opacity 0.3s ease-out';
+          el.style.opacity = '0';
+          setTimeout(function() { el.remove(); }, 300);
+        }, timeout);
+      });
+    </script>
   {% endif %}
 {% endwith %}

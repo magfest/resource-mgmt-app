@@ -22,6 +22,7 @@ from .helpers import (
     compute_work_item_totals,
     compute_line_status_summary,
     format_currency,
+    friendly_status,
 )
 
 
@@ -79,6 +80,7 @@ def portfolio_landing(event: str, dept: str):
         supplementary_line_summaries=supplementary_line_summaries,
         totals=totals,
         format_currency=format_currency,
+        friendly_status=friendly_status,
     )
 
 

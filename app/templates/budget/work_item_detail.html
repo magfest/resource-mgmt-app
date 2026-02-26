@@ -6,6 +6,7 @@
 {% block content %}
 
   {% set status = work_item.status | upper %}
+  {% set status_label = friendly_status(status) %}
   {% set status_pill_class =
     "pill-approved" if status == "FINALIZED"
     else "pill-submitted" if status == "SUBMITTED"
@@ -17,7 +18,7 @@
     <div>
       <h1 style="margin:0;">
         {{ work_item.public_id }}
-        <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
+        <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status_label }}</span>
       </h1>
       <div class="muted" style="margin-top:4px; line-height:1.5;">
         <strong>{{ work_item.request_kind }}</strong> &middot;
@@ -137,7 +138,7 @@
     {% endif %}
 
     <a class="btn" href="{{ url_for('work.portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
-      Back to Portfolio
+      Department Budget
     </a>
   </div>
 
@@ -250,28 +251,44 @@
         This request has been submitted and is waiting for a budget admin to assign approval groups and dispatch it for review.
       </div>
     </div>
-  {% elif status == "NEEDS_INFO" %}
+  {# Kicked-back lines callout - show for requester when lines need attention #}
+  {% if kicked_back_lines %}
     <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
-      <strong>Information Requested</strong>
+      <strong>Action Required</strong>
       <div class="muted" style="margin-top:4px;">
-        A reviewer has requested additional information about this request.
-        {% if work_item.needs_info_requested_at %}
-          Requested {{ work_item.needs_info_requested_at.strftime('%Y-%m-%d %H:%M') }}
-        {% endif %}
+        {{ kicked_back_lines | length }} line{% if kicked_back_lines | length != 1 %}s{% endif %} need{% if kicked_back_lines | length == 1 %}s{% endif %} your attention:
       </div>
 
-      {# Response form for requester #}
-      {% if perms.can_respond_to_info %}
-        <form method="post" action="{{ url_for('work.work_item_respond_info', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="margin-top: 12px;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div style="margin-bottom: 8px;">
-            <label for="response"><strong>Your Response:</strong></label>
-            <textarea name="response" id="response" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Provide the requested information..." required></textarea>
+      {# Show each kicked-back line with its details #}
+      <div style="margin-top: 12px;">
+        {% for kb in kicked_back_lines %}
+          <div style="background: #fff; border-radius: 6px; padding: 12px; margin-bottom: 8px; border: 1px solid #fde68a;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+              <div style="flex: 1;">
+                <strong>Line {{ kb.line_number }}</strong>
+                {% if kb.status == "NEEDS_INFO" %}
+                  <span class="pill pill-needs" style="margin-left: 8px;">Info Requested</span>
+                {% else %}
+                  <span class="pill pill-needs" style="margin-left: 8px;">Adjustment Needed</span>
+                {% endif %}
+                {% if kb.detail and kb.detail.expense_account %}
+                  <div class="muted small">{{ kb.detail.expense_account.name }}</div>
+                {% endif %}
+                {% if kb.note %}
+                  <div style="margin-top: 8px; padding: 8px; background: #fef3c7; border-radius: 4px; font-size: 13px;">
+                    <strong>Reviewer's message:</strong> {{ kb.note }}
+                  </div>
+                {% endif %}
+              </div>
+              <a class="btn" href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=kb.line_number) }}" style="flex-shrink: 0;">
+                Respond
+              </a>
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary">Submit Response</button>
-        </form>
-      {% endif %}
+        {% endfor %}
+      </div>
     </div>
+  {% endif %}
   {% elif status == "SUBMITTED" and not perms.is_checked_out %}
     <div class="callout callout-info" style="margin-bottom: 16px;">
       <strong>Under Review</strong>

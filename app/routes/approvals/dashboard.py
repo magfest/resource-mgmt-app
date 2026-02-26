@@ -5,7 +5,7 @@ from flask import render_template, redirect, url_for, request, abort
 
 from app.models import ApprovalGroup, EventCycle, Department
 from app.routes import get_user_ctx
-from app.routes.work.helpers import format_currency
+from app.routes.work.helpers import format_currency, friendly_status
 from . import approvals_bp
 from .helpers import (
     get_reviewable_groups,
@@ -94,4 +94,5 @@ def dashboard_group(group_code: str):
         selected_event=event_code,
         selected_dept=dept_code,
         format_currency=format_currency,
+        friendly_status=friendly_status,
     )

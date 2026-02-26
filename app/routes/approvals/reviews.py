@@ -26,6 +26,7 @@ from app.routes.work.helpers import (
     require_work_item_view,
     build_work_item_perms,
     format_currency,
+    friendly_status,
     is_checked_out,
 )
 from . import approvals_bp
@@ -149,6 +150,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
         can_respond=can_respond,
         is_checked_out=is_checked_out(work_item),
         format_currency=format_currency,
+        friendly_status=friendly_status,
         # Admin extras
         admin_review=admin_review,
         ag_review=ag_review,

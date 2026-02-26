@@ -38,6 +38,7 @@ from .helpers import (
     generate_public_id,
     compute_work_item_totals,
     format_currency,
+    friendly_status,
     get_visible_expense_accounts,
     get_fixed_cost_expense_accounts,
     get_hotel_service_expense_accounts,
@@ -191,6 +192,21 @@ def work_item_detail(event: str, dept: str, public_id: str):
     # Get lines with details
     lines = work_item.lines
 
+    # Get kicked-back lines (NEEDS_INFO or NEEDS_ADJUSTMENT) with their review notes
+    kicked_back_lines = []
+    for line in lines:
+        if line.status in ("NEEDS_INFO", "NEEDS_ADJUSTMENT"):
+            # Get the most recent review for this line
+            review = WorkLineReview.query.filter_by(
+                work_line_id=line.id
+            ).order_by(WorkLineReview.decided_at.desc()).first()
+            kicked_back_lines.append({
+                "line_number": line.line_number,
+                "status": line.status,
+                "detail": line.budget_detail,
+                "note": review.note if review else None,
+            })
+
     # Check if can finalize (for admins - allowed from AWAITING_DISPATCH or SUBMITTED)
     can_finalize = False
     finalization_summary = None
@@ -215,6 +231,8 @@ def work_item_detail(event: str, dept: str, public_id: str):
         lines=lines,
         totals=totals,
         format_currency=format_currency,
+        friendly_status=friendly_status,
+        kicked_back_lines=kicked_back_lines,
         can_finalize=can_finalize,
         finalization_summary=finalization_summary,
         filtered_comments=comments,
@@ -230,18 +248,22 @@ def work_item_comment(event: str, dept: str, public_id: str):
     work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
     perms = require_work_item_view(work_item, ctx)
 
-    # Permission check: must be admin OR approver for any line
+    # Get return URL (for redirecting back to edit page if that's where they came from)
+    return_to = (request.form.get("return_to") or "").strip()
+    default_redirect = url_for("work.work_item_detail", event=event, dept=dept,
+                               public_id=public_id)
+
+    # Permission check: must be admin OR approver OR can edit (requester)
     is_approver_for_item = _is_approver_for_work_item(work_item, user_ctx)
-    if not (perms.is_admin or is_approver_for_item):
+    can_comment = perms.is_admin or is_approver_for_item or perms.can_edit
+    if not can_comment:
         flash("You do not have permission to comment on this request.", "error")
-        return redirect(url_for("work.work_item_detail", event=event, dept=dept,
-                                public_id=public_id))
+        return redirect(return_to or default_redirect)
 
     comment_text = (request.form.get("comment") or "").strip()
     if not comment_text:
         flash("Comment text is required.", "error")
-        return redirect(url_for("work.work_item_detail", event=event, dept=dept,
-                                public_id=public_id))
+        return redirect(return_to or default_redirect)
 
     # Check if admin requested admin-only visibility
     # Both conditions must be true: checkbox selected AND user is admin
@@ -256,15 +278,14 @@ def work_item_comment(event: str, dept: str, public_id: str):
     comment = WorkItemComment(
         work_item_id=work_item.id,
         visibility=visibility,
-        body=f"[COMMENT] {comment_text}",
+        body=comment_text,
         created_by_user_id=user_ctx.user_id,
     )
     db.session.add(comment)
     db.session.commit()
 
     flash("Comment added.", "success")
-    return redirect(url_for("work.work_item_detail", event=event, dept=dept,
-                            public_id=public_id))
+    return redirect(return_to or default_redirect)
 
 
 # ============================================================
@@ -407,10 +428,17 @@ def work_item_edit(event: str, dept: str, public_id: str):
     fixed_cost_count = sum(1 for item in fixed_cost_data if item["existing_quantity"])
     hotel_count = sum(1 for item in hotel_data if item["existing_quantity"])
 
+    # Get comments (filter admin-only for non-admins)
+    user_ctx = get_user_ctx()
+    comments = work_item.comments
+    if not user_ctx.is_admin:
+        comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
+
     return render_template(
         "budget/work_item_edit.html",
         ctx=ctx,
         perms=perms,
+        user_ctx=user_ctx,
         work_item=work_item,
         lines=regular_lines,
         fixed_cost_lines=fixed_cost_lines,
@@ -423,12 +451,14 @@ def work_item_edit(event: str, dept: str, public_id: str):
         event_start_date=ctx.event_cycle.event_start_date,
         event_end_date=ctx.event_cycle.event_end_date,
         totals=totals,
+        comments=comments,
         expense_accounts=expense_accounts,
         spend_types_by_account=spend_types_by_account,
         confidence_levels=get_confidence_levels(),
         frequency_options=get_frequency_options(),
         priority_levels=get_priority_levels(),
         format_currency=format_currency,
+        friendly_status=friendly_status,
     )
 
 
@@ -682,7 +712,11 @@ def work_item_submit(event: str, dept: str, public_id: str):
 
     db.session.commit()
 
-    flash("Budget request submitted to dispatch queue.", "success")
+    flash(
+        "Budget request submitted! A budget admin will assign reviewers and "
+        "dispatch it for approval. You'll be notified if any changes are needed.",
+        "success"
+    )
     return redirect(url_for(
         "work.work_item_detail",
         event=event,
@@ -941,6 +975,7 @@ def quick_review(event: str, dept: str, public_id: str):
         has_checkout=has_checkout,
         can_checkout=can_checkout,
         format_currency=format_currency,
+        friendly_status=friendly_status,
     )
 
 

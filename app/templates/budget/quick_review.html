@@ -4,6 +4,15 @@
 {% block title %}Quick Review - {{ work_item.public_id }}{% endblock %}
 
 {% block content %}
+<style>
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .quick-action:disabled {
+    cursor: not-allowed;
+  }
+</style>
 
   {# Header #}
   <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
@@ -112,13 +121,14 @@
               {{ format_currency(item.total_cents) }}
             </td>
             <td>
+              {% set status_label = friendly_status(status) if friendly_status else status %}
               <span class="pill line-status-pill
                 {% if status == 'APPROVED' %}pill-approved
                 {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}pill-needs
                 {% elif status == 'REJECTED' %}tag-kicked
                 {% else %}pill-draft{% endif %}"
                 style="font-size: 11px;">
-                {{ status }}
+                {{ status_label }}
               </span>
             </td>
             <td class="line-actions">
@@ -182,8 +192,15 @@
                 <span class="muted small">-</span>
               {% endif %}
 
-              {# Inline feedback message #}
-              <div class="action-feedback" style="display: none; margin-top: 4px; font-size: 12px;"></div>
+              {# Inline feedback message with loading spinner #}
+              <div class="action-feedback" style="display: none; margin-top: 4px; font-size: 12px;">
+                <span class="feedback-spinner" style="display: none;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 4px; animation: spin 1s linear infinite;">
+                    <circle cx="12" cy="12" r="10" stroke="#666" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                <span class="feedback-text"></span>
+              </div>
             </td>
           </tr>
         {% endfor %}
@@ -244,6 +261,15 @@
     'admin-needs-info': 'NEEDS_INFO'
   };
 
+  // User-friendly status labels
+  var friendlyStatusLabels = {
+    'PENDING': 'Pending',
+    'APPROVED': 'Approved',
+    'REJECTED': 'Rejected',
+    'NEEDS_INFO': 'Info Requested',
+    'NEEDS_ADJUSTMENT': 'Adjustment Needed'
+  };
+
   // Actions that require notes
   var requiresNote = ['reject', 'needs-info', 'needs-adjustment', 'admin-reject', 'admin-needs-info'];
 
@@ -259,9 +285,14 @@
     var note = noteInput ? noteInput.value.trim() : '';
     var feedback = row.querySelector('.action-feedback');
 
+    // Get feedback elements
+    var feedbackSpinner = feedback.querySelector('.feedback-spinner');
+    var feedbackText = feedback.querySelector('.feedback-text');
+
     // Check if note is required
     if (requiresNote.indexOf(action) !== -1 && !note) {
-      feedback.textContent = 'Note required for this action';
+      feedbackText.textContent = 'Note required for this action';
+      feedbackSpinner.style.display = 'none';
       feedback.style.display = 'block';
       feedback.style.color = '#dc3545';
       noteInput.focus();
@@ -270,8 +301,12 @@
 
     // Disable buttons while processing
     var buttons = row.querySelectorAll('.quick-action');
-    buttons.forEach(function(b) { b.disabled = true; });
-    feedback.textContent = 'Processing...';
+    buttons.forEach(function(b) {
+      b.disabled = true;
+      b.style.opacity = '0.6';
+    });
+    feedbackSpinner.style.display = 'inline';
+    feedbackText.textContent = 'Processing...';
     feedback.style.display = 'block';
     feedback.style.color = '#666';
 
@@ -307,9 +342,9 @@
         var newStatus = statusMap[action];
         row.setAttribute('data-status', newStatus);
 
-        // Update status pill
+        // Update status pill with friendly label
         var pill = row.querySelector('.line-status-pill');
-        pill.textContent = newStatus;
+        pill.textContent = friendlyStatusLabels[newStatus] || newStatus;
         pill.className = 'pill line-status-pill';
         if (newStatus === 'APPROVED') {
           pill.classList.add('pill-approved');
@@ -334,18 +369,27 @@
         // Update summary counts
         updateSummaryCounts();
 
-        feedback.textContent = 'Done!';
+        feedbackSpinner.style.display = 'none';
+        feedbackText.textContent = 'Done!';
         feedback.style.color = '#059669';
       } else {
-        feedback.textContent = data.error || 'Error occurred';
+        feedbackSpinner.style.display = 'none';
+        feedbackText.textContent = data.error || 'Error occurred';
         feedback.style.color = '#dc3545';
-        buttons.forEach(function(b) { b.disabled = false; });
+        buttons.forEach(function(b) {
+          b.disabled = false;
+          b.style.opacity = '1';
+        });
       }
     })
     .catch(function(err) {
-      feedback.textContent = 'Network error';
+      feedbackSpinner.style.display = 'none';
+      feedbackText.textContent = 'Network error';
       feedback.style.color = '#dc3545';
-      buttons.forEach(function(b) { b.disabled = false; });
+      buttons.forEach(function(b) {
+        b.disabled = false;
+        b.style.opacity = '1';
+      });
     });
   });
 

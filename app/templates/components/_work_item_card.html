@@ -1,9 +1,10 @@
 {# templates/components/_work_item_card.html #}
 {# Card displaying a work item summary #}
-{# Expects: item, item_totals, line_summary (optional), ctx, format_currency #}
+{# Expects: item, item_totals, line_summary (optional), ctx, format_currency, friendly_status #}
 
 {# Use effective status from line_summary if available, otherwise fall back to item status #}
 {% set status = line_summary.effective_status | upper if line_summary else item.status | upper %}
+{% set status_label = friendly_status(status) if friendly_status else status %}
 {% set status_pill_class =
   "pill-approved" if status == "FINALIZED"
   else "pill-submitted" if status == "SUBMITTED"
@@ -22,7 +23,7 @@
            style="text-decoration: none; color: inherit;">
           {{ item.public_id }}
         </a>
-        <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
+        <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status_label }}</span>
         {# Show approval stage breakdown if there are approved lines #}
         {% if line_summary and line_summary.approved_count > 0 and status != "FINALIZED" %}
           {% if line_summary.final_approved_count > 0 and line_summary.ag_approved_count == 0 %}

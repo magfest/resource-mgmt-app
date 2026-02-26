@@ -18,13 +18,14 @@
 </style>
 
   {% set status = work_item.status | upper %}
+  {% set status_label = friendly_status(status) if friendly_status else status %}
 
   {# Header #}
   <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
     <div>
       <h1 style="margin:0;">
         Edit {{ work_item.public_id }}
-        <span class="pill pill-draft" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
+        <span class="pill pill-draft" style="margin-left: 8px; font-weight: normal;">{{ status_label }}</span>
       </h1>
       <div class="muted" style="margin-top:4px; line-height:1.5;">
         <strong>{{ work_item.request_kind }}</strong> &middot;
@@ -41,10 +42,6 @@
 
   {# Actions #}
   <div class="btn-row" style="margin-bottom: 16px;">
-    <a class="btn btn-primary" href="{{ url_for('work.line_new', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
-      Add Line
-    </a>
-
     {% if perms.can_submit %}
       <form method="post" action="{{ url_for('work.work_item_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -59,113 +56,123 @@
     </a>
 
     <a class="btn" href="{{ url_for('work.portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
-      Back to Portfolio
+      Department Budget
     </a>
   </div>
 
   {# Tab Navigation #}
-  <nav class="tab-nav" style="display: flex; gap: 4px; border-bottom: 2px solid #e0e0e0; margin-bottom: 16px;">
-    <button type="button" class="tab-btn active" data-tab="budget-lines" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
-      Budget Lines <span class="badge" style="background: #e0e0e0; color: #666; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ lines | length }}</span>
+  <nav class="tab-nav" style="display: flex; gap: 0; margin-bottom: 0; border-radius: 8px 8px 0 0; padding: 4px 4px 0 4px;">
+    <button type="button" class="tab-btn active" data-tab="budget-lines" style="padding: 14px 24px; border: 1px solid #ccc; border-bottom: none; background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #111; border-radius: 8px 8px 0 0; margin-right: 4px; position: relative; z-index: 1;">
+      Budget Lines <span class="badge" style="background: #0a66c2; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ lines | length }}</span>
     </button>
-    <button type="button" class="tab-btn" data-tab="fixed-costs" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
-      Fixed Costs <span class="badge" style="background: #e0e0e0; color: #666; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ fixed_cost_count }}</span>
+    <button type="button" class="tab-btn" data-tab="fixed-costs" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">
+      Fixed Costs <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ fixed_cost_count }}</span>
     </button>
-    <button type="button" class="tab-btn" data-tab="hotel-services" style="padding: 12px 20px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;">
-      Hotel/Gaylord <span class="badge" style="background: #e0e0e0; color: #666; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ hotel_count }}</span>
+    <button type="button" class="tab-btn" data-tab="hotel-services" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">
+      Hotel <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ hotel_count }}</span>
+    </button>
+    <button type="button" class="tab-btn" data-tab="notes" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0;">
+      Notes <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ comments | length }}</span>
     </button>
   </nav>
 
+
   {# Tab 1: Budget Lines #}
   <div class="tab-panel active" id="panel-budget-lines">
-    <form method="post" action="{{ url_for('work.work_item_edit_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <section class="card">
-        <h3 style="margin:0 0 12px 0;">Other Budget Lines</h3>
-        <div class="muted" style="margin-bottom: 12px;">
-          Check lines to delete, then click "Save Changes".
-        </div>
+    <section class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="margin: 0;">Budget Lines</h3>
+        <a class="btn btn-primary" href="{{ url_for('work.line_new', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+          + Add Line
+        </a>
+      </div>
 
-        {% if lines %}
-          <table>
-            <thead>
+      {% if lines %}
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 40px;">#</th>
+              <th>Expense</th>
+              <th>Details</th>
+              <th style="width: 70px;" class="right">Qty</th>
+              <th style="width: 90px;" class="right">Unit</th>
+              <th style="width: 100px;" class="right">Total</th>
+              <th style="width: 100px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in lines %}
+              {% set detail = line.budget_detail %}
+              {% set line_total = (detail.unit_price_cents * detail.quantity) if detail else 0 %}
               <tr>
-                <th style="width: 50px;">Del</th>
-                <th style="width: 50px;">#</th>
-                <th>Expense</th>
-                <th>Details</th>
-                <th style="width: 80px;" class="right">Qty</th>
-                <th style="width: 100px;" class="right">Unit Price</th>
-                <th style="width: 120px;" class="right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for line in lines %}
-                {% set detail = line.budget_detail %}
-                {% set line_total = (detail.unit_price_cents * detail.quantity) if detail else 0 %}
-                <tr>
-                  <td style="text-align: center;">
-                    <input type="checkbox" name="delete_line" value="{{ line.id }}">
-                  </td>
-                  <td>{{ line.line_number }}</td>
-                  <td>
-                    {% if detail and detail.expense_account %}
-                      <strong>{{ detail.expense_account.name }}</strong>
-                      {% if detail.spend_type %}
-                        <div class="muted small">{{ detail.spend_type.name }}</div>
-                      {% endif %}
-                    {% else %}
-                      <span class="muted">-</span>
+                <td>{{ line.line_number }}</td>
+                <td>
+                  {% if detail and detail.expense_account %}
+                    <strong>{{ detail.expense_account.name }}</strong>
+                    {% if detail.spend_type %}
+                      <div class="muted small">{{ detail.spend_type.name }}</div>
                     {% endif %}
-                  </td>
-                  <td>
-                    {% if detail and detail.description %}
-                      {{ detail.description }}
-                    {% else %}
-                      <span class="muted">-</span>
-                    {% endif %}
-                    {% if detail %}
-                      <div class="muted small" style="margin-top: 4px;">
-                        {% if detail.priority %}Priority: {{ detail.priority.name }}{% endif %}
-                        {% if detail.confidence_level %} &middot; Confidence: {{ detail.confidence_level.name }}{% endif %}
-                        {% if detail.frequency %} &middot; {{ detail.frequency.name }}{% endif %}
-                        {% if detail.warehouse_flag %} &middot; Warehouse{% endif %}
-                      </div>
-                    {% endif %}
-                  </td>
-                  <td class="right num">{{ detail.quantity if detail else '-' }}</td>
-                  <td class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
-                  <td class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
-                </tr>
-              {% endfor %}
-            </tbody>
-            <tfoot>
-              <tr style="font-weight: 700;">
-                <td colspan="6" class="right">Other Lines Subtotal:</td>
-                <td class="right num">
-                  {% set other_subtotal = namespace(total=0) %}
-                  {% for line in lines %}
-                    {% if line.budget_detail %}
-                      {% set other_subtotal.total = other_subtotal.total + (line.budget_detail.unit_price_cents * line.budget_detail.quantity) | int %}
-                    {% endif %}
-                  {% endfor %}
-                  {{ format_currency(other_subtotal.total) }}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if detail and detail.description %}
+                    {{ detail.description }}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                  {% if detail %}
+                    <div class="muted small" style="margin-top: 4px;">
+                      {% if detail.priority %}Priority: {{ detail.priority.name }}{% endif %}
+                      {% if detail.confidence_level %} &middot; Confidence: {{ detail.confidence_level.name }}{% endif %}
+                      {% if detail.frequency %} &middot; {{ detail.frequency.name }}{% endif %}
+                      {% if detail.warehouse_flag %} &middot; Warehouse{% endif %}
+                    </div>
+                  {% endif %}
+                </td>
+                <td class="right num">{{ detail.quantity if detail else '-' }}</td>
+                <td class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
+                <td class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
+                <td>
+                  <div style="display: flex; gap: 4px;">
+                    <a class="btn" href="{{ url_for('work.line_edit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="padding: 4px 8px; font-size: 12px;">
+                      Edit
+                    </a>
+                    <form method="post" action="{{ url_for('work.line_delete', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn" style="padding: 4px 8px; font-size: 12px; color: #dc3545; border-color: #dc3545;" data-confirm="Delete line {{ line.line_number }}?">
+                        Del
+                      </button>
+                    </form>
+                  </div>
                 </td>
               </tr>
-            </tfoot>
-          </table>
-
-          <div class="btn-row" style="margin-top: 16px;">
-            <button type="submit" class="btn">Save Changes</button>
-          </div>
-        {% else %}
-          <div class="muted" style="text-align: center; padding: 24px;">
-            No other budget lines yet.
-            <a href="{{ url_for('work.line_new', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">Add one now</a>.
-          </div>
-        {% endif %}
-      </section>
-    </form>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr style="font-weight: 700;">
+              <td colspan="5" class="right">Budget Lines Subtotal:</td>
+              <td class="right num">
+                {% set other_subtotal = namespace(total=0) %}
+                {% for line in lines %}
+                  {% if line.budget_detail %}
+                    {% set other_subtotal.total = other_subtotal.total + (line.budget_detail.unit_price_cents * line.budget_detail.quantity) | int %}
+                  {% endif %}
+                {% endfor %}
+                {{ format_currency(other_subtotal.total) }}
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      {% else %}
+        <div class="muted" style="text-align: center; padding: 24px;">
+          No budget lines yet.
+          <a href="{{ url_for('work.line_new', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">Add one now</a>.
+        </div>
+      {% endif %}
+    </section>
   </div>
 
   {# Tab 2: Fixed Costs (non-hotel) #}
@@ -409,6 +416,56 @@
     {% endif %}
   </div>
 
+  {# Tab 4: Notes #}
+  <div class="tab-panel" id="panel-notes" style="display: none;">
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">Request Notes</h3>
+      <div class="muted small" style="margin-bottom: 16px;">
+        Add notes or context about this budget request for reviewers.
+      </div>
+
+      {# Add Comment Form - at the top for visibility #}
+      <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee;">
+        <form method="post" action="{{ url_for('work.work_item_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="return_to" value="{{ request.url }}">
+          <div style="margin-bottom: 8px;">
+            <label for="comment" style="font-size: 13px; font-weight: 600;">Add Note:</label>
+            <textarea name="comment" id="comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Add context, justification, or notes for reviewers..."></textarea>
+          </div>
+          {% if user_ctx.is_admin %}
+            <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
+              Admin-only (not visible to requesters)
+            </label>
+          {% endif %}
+          <button type="submit" class="btn btn-primary">Add Note</button>
+        </form>
+      </div>
+
+      {# Existing Notes #}
+      {% if comments %}
+        <h4 style="margin: 0 0 12px 0; font-size: 14px;">Previous Notes</h4>
+        {% for comment in comments %}
+          <div class="comment">
+            <div class="muted small">
+              {{ comment.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
+              {{ comment.created_by_user_id }}
+              {% if comment.visibility == "ADMIN" %}
+                <span class="pill" style="margin-left: 4px;">Admin Only</span>
+              {% endif %}
+            </div>
+            <div style="margin-top: 4px; white-space: pre-wrap;">{{ comment.body }}</div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="muted" style="padding: 12px; text-align: center; background: #f8f9fa; border-radius: 6px;">
+          No notes yet. Add a note above to provide context for reviewers.
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -418,15 +475,33 @@
     btn.addEventListener('click', function() {
       const targetTab = this.dataset.tab;
 
-      // Update button states
+      // Update button states - inactive tabs
       document.querySelectorAll('.tab-btn').forEach(function(b) {
         b.classList.remove('active');
-        b.style.color = '#666';
-        b.style.borderBottomColor = 'transparent';
+        b.style.background = '#e0e0e0';
+        b.style.color = '#555';
+        b.style.borderColor = 'transparent';
+        b.style.zIndex = '0';
+        // Update badge to inactive style
+        var badge = b.querySelector('.badge');
+        if (badge) {
+          badge.style.background = '#888';
+          badge.style.color = '#fff';
+        }
       });
+
+      // Active tab styling
       this.classList.add('active');
-      this.style.color = '#1a73e8';
-      this.style.borderBottomColor = '#1a73e8';
+      this.style.background = '#fff';
+      this.style.color = '#111';
+      this.style.borderColor = '#ccc';
+      this.style.zIndex = '1';
+      // Update badge to active style
+      var activeBadge = this.querySelector('.badge');
+      if (activeBadge) {
+        activeBadge.style.background = '#0a66c2';
+        activeBadge.style.color = '#fff';
+      }
 
       // Update panel visibility
       document.querySelectorAll('.tab-panel').forEach(function(panel) {
@@ -440,13 +515,6 @@
       }
     });
   });
-
-  // Set initial active tab styling
-  const activeBtn = document.querySelector('.tab-btn.active');
-  if (activeBtn) {
-    activeBtn.style.color = '#1a73e8';
-    activeBtn.style.borderBottomColor = '#1a73e8';
-  }
 
   // Update fixed-cost line totals and subtotal
   document.querySelectorAll('.fixed-qty-input').forEach(function(input) {

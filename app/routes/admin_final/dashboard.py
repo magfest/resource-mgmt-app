@@ -22,7 +22,7 @@ from app.models import (
     WORK_LINE_STATUS_REJECTED,
 )
 from app.routes import get_user_ctx
-from app.routes.work.helpers import format_currency
+from app.routes.work.helpers import format_currency, friendly_status
 from . import admin_final_bp
 from .helpers import (
     require_admin,
@@ -80,6 +80,7 @@ def dashboard():
         selected_event=event_code,
         selected_dept=dept_code,
         format_currency=format_currency,
+        friendly_status=friendly_status,
         get_finalization_summary=get_finalization_summary,
     )
 
@@ -123,6 +124,7 @@ def unfinalize_form(work_item_id: int):
         user_ctx=user_ctx,
         work_item=work_item,
         format_currency=format_currency,
+        friendly_status=friendly_status,
         get_finalization_summary=get_finalization_summary,
     )
 
@@ -205,6 +207,7 @@ def admin_home():
         approval_groups=approval_groups,
         event_cycles=event_cycles,
         departments=departments,
+        friendly_status=friendly_status,
     )
 
 
@@ -292,11 +295,11 @@ def all_requests():
     event_cycles = get_active_event_cycles()
     departments = get_active_departments()
 
-    # Status options
+    # Status options (using friendly labels)
     statuses = [
         ("DRAFT", "Draft"),
-        ("AWAITING_DISPATCH", "Awaiting Dispatch"),
-        ("SUBMITTED", "Submitted"),
+        ("AWAITING_DISPATCH", "Waiting for Assignment"),
+        ("SUBMITTED", "Under Review"),
         ("FINALIZED", "Finalized"),
     ]
 
@@ -313,4 +316,5 @@ def all_requests():
         selected_status=status_filter,
         search_query=search_query,
         format_currency=format_currency,
+        friendly_status=friendly_status,
     )
