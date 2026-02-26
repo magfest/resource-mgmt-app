@@ -40,7 +40,6 @@ We allow `'unsafe-inline'` for styles because:
 
 1. **Low risk**: CSS can't execute code or steal data (mostly)
 2. **High refactoring cost**: Templates use `style="..."` attributes extensively
-3. **Industry standard**: Most production apps take this compromise
 
 ---
 
