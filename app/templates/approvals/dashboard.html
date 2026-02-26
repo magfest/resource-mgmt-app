@@ -71,12 +71,13 @@
   {# Summary Cards #}
   <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
     <div class="card" style="text-align: center;">
-      <div style="font-size: 32px; font-weight: 700; color: #0a66c2;">{{ queues.pending_count }}</div>
-      <div class="muted">Pending Review</div>
+      <div style="font-size: 32px; font-weight: 700; color: #0a66c2;">{{ queues.pending_request_count }}</div>
+      <div class="muted">Requests Pending</div>
+      <div class="muted small">{{ queues.pending_line_count }} lines</div>
     </div>
     <div class="card" style="text-align: center;">
       <div style="font-size: 32px; font-weight: 700; color: #d97706;">{{ queues.kicked_back_count }}</div>
-      <div class="muted">Kicked Back</div>
+      <div class="muted">Lines Kicked Back</div>
     </div>
     <div class="card" style="text-align: center;">
       <div style="font-size: 32px; font-weight: 700; color: #059669;">{{ queues.recently_decided_count }}</div>
@@ -84,20 +85,64 @@
     </div>
   </div>
 
-  {# Pending Review Queue #}
+  {# Pending Review Queue - Request Level #}
   <section class="card" style="margin-bottom: 16px;">
     <h3 style="margin:0 0 12px 0;">
-      Pending Review
-      {% if queues.pending_count > 0 %}
-        <span class="pill pill-submitted">{{ queues.pending_count }}</span>
+      Requests Pending Review
+      {% if queues.pending_request_count > 0 %}
+        <span class="pill pill-submitted">{{ queues.pending_request_count }}</span>
       {% endif %}
     </h3>
 
-    {% if queues.pending %}
-      {% include "approvals/_queue_table.html" with context %}
+    {% if queues.pending_requests %}
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 110px;">Request</th>
+            <th>Department</th>
+            <th style="width: 100px;" class="right">Lines</th>
+            <th style="width: 120px;" class="right">Total</th>
+            <th style="width: 130px;">Submitted</th>
+            <th style="width: 80px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in queues.pending_requests %}
+            {% set wi = item.work_item %}
+            <tr>
+              <td>
+                <a href="{{ url_for('work.work_item_detail', event=item.event_cycle.code, dept=item.department.code, public_id=wi.public_id) }}">
+                  {{ wi.public_id }}
+                </a>
+              </td>
+              <td>
+                {{ item.department.name }}
+                <div class="muted small">{{ item.event_cycle.name }}</div>
+              </td>
+              <td class="right num">
+                <span class="pill pill-submitted">{{ item.pending_line_count }}</span>
+                {% if item.pending_line_count != item.total_line_count %}
+                  <span class="muted small">/ {{ item.total_line_count }}</span>
+                {% endif %}
+              </td>
+              <td class="right num">{{ format_currency(item.total_requested_cents) }}</td>
+              <td class="muted small">
+                {% if wi.submitted_at %}
+                  {{ wi.submitted_at.strftime('%Y-%m-%d %H:%M') }}
+                {% endif %}
+              </td>
+              <td>
+                <a class="btn btn-primary" href="{{ url_for('work.work_item_detail', event=item.event_cycle.code, dept=item.department.code, public_id=wi.public_id) }}" style="padding: 4px 8px; font-size: 12px;">
+                  Review
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     {% else %}
       <div class="muted" style="text-align: center; padding: 24px;">
-        No lines pending review in this queue.
+        No requests pending review in this queue.
       </div>
     {% endif %}
   </section>
@@ -122,7 +167,7 @@
     {% endif %}
   </section>
 
-  {# Recently Decided Queue #}
+  {# Recently Decided Queue - Request Level #}
   <section class="card">
     <h3 style="margin:0 0 12px 0;">
       Recently Decided (Last 72 Hours)
@@ -131,11 +176,41 @@
       {% endif %}
     </h3>
 
-    {% if queues.recently_decided %}
-      {% set queue_items = queues.recently_decided %}
-      {% set show_status = true %}
-      {% set show_decided_at = true %}
-      {% include "approvals/_queue_table.html" %}
+    {% if queues.recently_decided_requests %}
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 110px;">Request</th>
+            <th>Department</th>
+            <th style="width: 100px;" class="right">Lines</th>
+            <th style="width: 120px;" class="right">Total</th>
+            <th style="width: 80px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in queues.recently_decided_requests %}
+            {% set wi = item.work_item %}
+            <tr>
+              <td>
+                <a href="{{ url_for('work.work_item_detail', event=item.event_cycle.code, dept=item.department.code, public_id=wi.public_id) }}">
+                  {{ wi.public_id }}
+                </a>
+              </td>
+              <td>
+                {{ item.department.name }}
+                <div class="muted small">{{ item.event_cycle.name }}</div>
+              </td>
+              <td class="right num">{{ item.total_line_count }}</td>
+              <td class="right num">{{ format_currency(item.total_requested_cents) }}</td>
+              <td>
+                <a class="btn btn-muted" href="{{ url_for('work.work_item_detail', event=item.event_cycle.code, dept=item.department.code, public_id=wi.public_id) }}" style="padding: 4px 8px; font-size: 12px;">
+                  View
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     {% else %}
       <div class="muted" style="text-align: center; padding: 24px;">
         No recent decisions.

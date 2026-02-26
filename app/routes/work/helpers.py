@@ -31,7 +31,9 @@ from app.models import (
     REQUEST_KIND_PRIMARY,
     REQUEST_KIND_SUPPLEMENTARY,
     WORK_ITEM_STATUS_DRAFT,
+    WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
+    WORK_ITEM_STATUS_UNDER_REVIEW,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_NEEDS_INFO,
     WORK_LINE_STATUS_PENDING,
@@ -995,6 +997,8 @@ def compute_line_status_summary(item: WorkItem) -> LineStatusSummary:
     # Priority: NEEDS_INFO/NEEDS_ADJUSTMENT > base item status
     if item.status == WORK_ITEM_STATUS_DRAFT:
         effective_status = "DRAFT"
+    elif item.status == WORK_ITEM_STATUS_AWAITING_DISPATCH:
+        effective_status = "AWAITING_DISPATCH"
     elif item.status == WORK_ITEM_STATUS_FINALIZED:
         effective_status = "FINALIZED"
     elif needs_info > 0 and needs_adjustment > 0:
@@ -1062,6 +1066,9 @@ def compute_portfolio_status_summary(portfolio: "WorkPortfolio") -> LineStatusSu
     for supp in supplementary_items:
         if supp.status == WORK_ITEM_STATUS_DRAFT:
             supp_draft += 1
+        elif supp.status == WORK_ITEM_STATUS_AWAITING_DISPATCH:
+            # Awaiting dispatch counts as needing attention (admin action required)
+            supp_needs_attention += 1
         elif supp.status in (WORK_ITEM_STATUS_NEEDS_INFO, WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_UNDER_REVIEW):
             # Check if any lines need attention
             supp_summary = compute_line_status_summary(supp)

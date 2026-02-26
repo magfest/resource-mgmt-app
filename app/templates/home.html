@@ -32,6 +32,20 @@
 </div>
 {% endif %}
 
+
+
+{% if not has_any_access %}
+{# No Access State #}
+<div class="card" style="text-align: center; padding: 48px; max-width: 600px; margin: 48px auto;">
+  <div style="font-size: 48px; margin-bottom: 16px;">?</div>
+  <h2 style="margin: 0 0 16px 0;">No Access Yet</h2>
+  <p class="muted" style="margin: 0;">
+    You don't currently have access to any departments or approval groups.
+    Contact an administrator to be added to a department or division.
+  </p>
+</div>
+
+{% else %}
 {# Timeline / Milestones - shown to everyone #}
 {% if milestones %}
 <section class="card" style="margin-bottom: 24px;">
@@ -60,74 +74,6 @@
     {% endfor %}
   </div>
 </section>
-{% endif %}
-
-{% if not has_any_access %}
-{# No Access State #}
-<div class="card" style="text-align: center; padding: 48px; max-width: 600px; margin: 48px auto;">
-  <div style="font-size: 48px; margin-bottom: 16px;">?</div>
-  <h2 style="margin: 0 0 16px 0;">No Access Yet</h2>
-  <p class="muted" style="margin: 0;">
-    You don't currently have access to any departments or approval groups.
-    Contact an administrator to be added to a department or division.
-  </p>
-</div>
-
-{% else %}
-
-{# Super Admin Section #}
-{% if is_super_admin %}
-<section class="card" style="margin-bottom: 24px; background: #f0fdf4; border: 1px solid #059669;">
-  <h3 style="margin:0 0 16px 0;">Admin Quick Actions</h3>
-  <div class="btn-row" style="margin-bottom: 16px;">
-    <a class="btn btn-primary" href="{{ url_for('admin_final.admin_home') }}">
-      Admin Dashboard
-    </a>
-    <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
-      Final Review
-    </a>
-    <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
-      Approval Groups
-    </a>
-  </div>
-
-  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
-    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
-      <div style="font-size: 28px; font-weight: 700; color: #0a66c2;">{{ submitted_count or 0 }}</div>
-      <div class="muted small">Submitted Requests</div>
-    </div>
-    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
-      <div style="font-size: 28px; font-weight: 700; color: #d97706;">{{ pending_lines or 0 }}</div>
-      <div class="muted small">Pending Lines</div>
-    </div>
-    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
-      <div style="font-size: 28px; font-weight: 700; color: #059669;">{{ approval_groups|length }}</div>
-      <div class="muted small">Approval Groups</div>
-    </div>
-  </div>
-</section>
-{% endif %}
-
-{# Approver Section #}
-{% if approval_groups %}
-<section class="card" style="margin-bottom: 24px; background: #eff6ff; border: 1px solid #3b82f6;">
-  <h3 style="margin:0 0 16px 0;">Your Approval Groups</h3>
-
-  {% if pending_for_approver %}
-  <div class="callout" style="background: #fef3c7; border-color: #f59e0b; margin-bottom: 16px;">
-    <strong>{{ pending_for_approver }} line(s)</strong> pending your review
-  </div>
-  {% endif %}
-
-  <div class="btn-row">
-    {% for group in approval_groups %}
-      <a class="btn" href="{{ url_for('approvals.dashboard_group', group_code=group.code) }}">
-        {{ group.name }}
-      </a>
-    {% endfor %}
-  </div>
-</section>
-{% endif %}
 {# How It Works Guide #}
 <section class="card" style="margin-bottom: 24px;">
   <details>
@@ -173,6 +119,75 @@
     </div>
   </details>
 </section>
+
+{% endif %}
+{# Super Admin Section #}
+{% if is_super_admin %}
+<section class="card" style="margin-bottom: 24px; background: #f0fdf4; border: 1px solid #059669;">
+  <h3 style="margin:0 0 16px 0;">Budget Admin Quick Actions</h3>
+
+  <div class="btn-row" style="margin-bottom: 16px;">
+      <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
+      Dispatch Queue
+      {% if dispatch_queue_count %}
+        <span class="pill pill-needs" style="position: absolute; top: -8px; right: -8px; font-size: 11px; padding: 2px 6px;">{{ dispatch_queue_count }}</span>
+      {% endif %}
+    </a>
+      <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
+      Approval Groups Queue
+    </a>
+
+    <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
+      Final Review Queue
+    </a>
+        <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
+        All Requests
+      </a>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+          <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
+      <div style="font-size: 28px; font-weight: 700; color: #0a66c2;">{{ submitted_count or 0 }}</div>
+      <div class="muted small">Submitted Requests</div>
+    </div>
+    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
+      <div style="font-size: 28px; font-weight: 700; color: #d97706;">{{ dispatch_queue_count or 0 }}</div>
+      <div class="muted small">Awaiting Dispatch</div>
+    </div>
+
+    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
+      <div style="font-size: 28px; font-weight: 700; color: #6b7280;">{{ pending_for_approver or 0 }}</div>
+      <div class="muted small">Pending Lines for Lvl 1 Approves</div>
+    </div>
+    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
+      <div style="font-size: 28px; font-weight: 700; color: #059669;">{{ approval_groups|length }}</div>
+      <div class="muted small">Approval Groups</div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# Approver Section #}
+{% if approval_groups %}
+<section class="card" style="margin-bottom: 24px; background: #eff6ff; border: 1px solid #3b82f6;">
+  <h3 style="margin:0 0 16px 0;">Your Approval Groups Queue(s)</h3>
+
+  {% if pending_for_approver %}
+  <div class="callout" style="background: #fef3c7; border-color: #f59e0b; margin-bottom: 16px;">
+    <strong>{{ pending_for_approver }} line(s)</strong> pending your review
+  </div>
+  {% endif %}
+
+  <div class="btn-row">
+    {% for group in approval_groups %}
+      <a class="btn" href="{{ url_for('approvals.dashboard_group', group_code=group.code) }}">
+        {{ group.name }}
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 
 {# Department Access Section - includes both direct and division-derived access #}
 {% if accessible_depts %}
@@ -250,6 +265,8 @@
                     <a href="{{ wt_url }}" class="pill pill-approved pill-link">Finalized</a>
                   {% elif status == "DRAFT" %}
                     <a href="{{ wt_url }}" class="pill pill-draft pill-link">Draft</a>
+                  {% elif status == "AWAITING_DISPATCH" %}
+                    <a href="{{ wt_url }}" class="pill pill-needs pill-link">Awaiting Dispatch</a>
                   {% elif status == "NEEDS_INFO" or status == "NEEDS_ADJUSTMENT" or status == "NEEDS_RESPONSE" %}
                     <a href="{{ wt_url }}" class="pill pill-needs pill-link">{{ status | replace('_', ' ') | title }}</a>
                   {% elif status == "UNDER_REVIEW" %}
@@ -308,10 +325,15 @@
 
 {# Quick Links #}
 <section class="card">
-  <h3 style="margin:0 0 16px 0;">Quick Links</h3>
+  <h3 style="margin:0 0 16px 0;">App Quick Links</h3>
   <div class="btn-row">
     {% if is_super_admin %}
-      <a class="btn" href="{{ url_for('admin_config.departments.list_departments') }}">Manage Departments</a>
+      <a class="btn btn-primary" href="{{ url_for('admin_final.admin_home') }}">
+          Admin Settings
+      </a>
+      <a class="btn" href="{{ url_for('admin_config.departments.list_departments') }}">
+          Manage Departments
+      </a>
       <a class="btn" href="{{ url_for('admin_config.divisions.list_divisions') }}">Manage Divisions</a>
       <a class="btn" href="{{ url_for('admin_config.users.list_users') }}">Manage Users</a>
     {% endif %}

@@ -9,7 +9,7 @@
   {% set status_pill_class =
     "pill-approved" if status == "FINALIZED"
     else "pill-submitted" if status == "SUBMITTED"
-    else "pill-needs" if status in ["UNDER_REVIEW", "NEEDS_INFO", "PAUSED"]
+    else "pill-needs" if status in ["UNDER_REVIEW", "NEEDS_INFO", "PAUSED", "AWAITING_DISPATCH"]
     else "pill-draft" %}
 
   {# Header #}
@@ -93,6 +93,7 @@
     {% if perms.can_checkout %}
       <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ request.url }}">
         <button type="submit" class="btn btn-primary">
           Checkout for Review
         </button>
@@ -103,6 +104,7 @@
     {% if perms.can_checkin %}
       <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ request.url }}">
         <button type="submit" class="btn" data-confirm="Release your checkout lock?">
           {% if perms.is_checked_out_by_current_user %}
             Release Lock
@@ -113,7 +115,14 @@
       </form>
     {% endif %}
 
-    {# Review Lines button for reviewers #}
+    {# Quick Review button for reviewers/admins #}
+    {% if perms.is_admin or perms.can_checkout or perms.is_checked_out_by_current_user %}
+      <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        Quick Review
+      </a>
+    {% endif %}
+
+    {# Dashboard link for reviewers #}
     {% if perms.is_admin or perms.is_checked_out_by_current_user %}
       <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
         Approval Dashboard
@@ -132,8 +141,22 @@
     </a>
   </div>
 
-  {# Finalization Section for Admins #}
-  {% if perms.is_admin and status == "SUBMITTED" and finalization_summary %}
+  {# Dispatch Section for Admins (when AWAITING_DISPATCH) #}
+  {% if perms.is_admin and status == "AWAITING_DISPATCH" %}
+    <div class="card" style="margin-bottom: 16px; background: #fef3c7; border: 1px solid #d97706;">
+      <h4 style="margin:0 0 12px 0;">Awaiting Dispatch</h4>
+      <p class="muted" style="margin: 0 0 12px 0;">
+        This request is waiting to be dispatched to the approval queue.
+        Assign approval groups to each line and dispatch to begin the review process.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('dispatch.dispatch_item', work_item_id=work_item.id) }}">
+        Assign &amp; Dispatch
+      </a>
+    </div>
+  {% endif %}
+
+  {# Finalization Section for Admins (bypass - can finalize from AWAITING_DISPATCH or SUBMITTED) #}
+  {% if perms.is_admin and status in ["AWAITING_DISPATCH", "SUBMITTED"] and finalization_summary %}
     <div class="card" style="margin-bottom: 16px; background: #f0fdf4; border: 1px solid #059669;">
       <h4 style="margin:0 0 12px 0;">Admin Finalization</h4>
 
@@ -220,7 +243,14 @@
   {% endif %}
 
   {# Status-specific callouts #}
-  {% if status == "NEEDS_INFO" %}
+  {% if status == "AWAITING_DISPATCH" and not perms.is_admin %}
+    <div class="callout" style="margin-bottom: 16px; background: #fef3c7; border-left: 4px solid #d97706;">
+      <strong>Awaiting Dispatch</strong>
+      <div class="muted" style="margin-top:4px;">
+        This request has been submitted and is waiting for a budget admin to assign approval groups and dispatch it for review.
+      </div>
+    </div>
+  {% elif status == "NEEDS_INFO" %}
     <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
       <strong>Information Requested</strong>
       <div class="muted" style="margin-top:4px;">

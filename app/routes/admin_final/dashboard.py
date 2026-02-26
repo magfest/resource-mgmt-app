@@ -7,9 +7,12 @@ from app import db
 from app.models import (
     WorkItem,
     WorkLine,
+    WorkPortfolio,
     EventCycle,
     Department,
     ApprovalGroup,
+    WORK_ITEM_STATUS_DRAFT,
+    WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_LINE_STATUS_PENDING,
@@ -202,4 +205,112 @@ def admin_home():
         approval_groups=approval_groups,
         event_cycles=event_cycles,
         departments=departments,
+    )
+
+
+# ============================================================
+# All Requests View
+# ============================================================
+
+@admin_final_bp.get("/admin/requests/")
+def all_requests():
+    """
+    View all budget requests with search, filter, and pagination.
+    """
+    user_ctx = get_user_ctx()
+    require_admin(user_ctx)
+
+    # Get filter/search params
+    search_query = request.args.get("q", "").strip()
+    event_code = request.args.get("event", "").strip()
+    dept_code = request.args.get("dept", "").strip()
+    status_filter = request.args.get("status", "").strip()
+    page = request.args.get("page", 1, type=int)
+    per_page = 25
+
+    # Build base query
+    query = WorkItem.query.filter(
+        WorkItem.is_archived == False
+    ).join(
+        WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
+    ).join(
+        Department, WorkPortfolio.department_id == Department.id
+    ).join(
+        EventCycle, WorkPortfolio.event_cycle_id == EventCycle.id
+    )
+
+    # Apply event filter
+    if event_code:
+        query = query.filter(EventCycle.code == event_code.upper())
+
+    # Apply department filter
+    if dept_code:
+        query = query.filter(Department.code == dept_code.upper())
+
+    # Apply status filter
+    if status_filter:
+        query = query.filter(WorkItem.status == status_filter.upper())
+
+    # Apply search (search by public_id or department name)
+    if search_query:
+        search_pattern = f"%{search_query}%"
+        query = query.filter(
+            db.or_(
+                WorkItem.public_id.ilike(search_pattern),
+                Department.name.ilike(search_pattern),
+                Department.code.ilike(search_pattern),
+            )
+        )
+
+    # Order by most recent first
+    query = query.order_by(WorkItem.updated_at.desc())
+
+    # Paginate
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    items = pagination.items
+
+    # Build item data with totals
+    requests_data = []
+    for wi in items:
+        portfolio = wi.portfolio
+        line_count = len(wi.lines)
+        total_cents = sum(
+            line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+            for line in wi.lines
+            if line.budget_detail
+        )
+        requests_data.append({
+            "work_item": wi,
+            "portfolio": portfolio,
+            "event_cycle": portfolio.event_cycle,
+            "department": portfolio.department,
+            "line_count": line_count,
+            "total_cents": total_cents,
+        })
+
+    # Get filter options
+    event_cycles = get_active_event_cycles()
+    departments = get_active_departments()
+
+    # Status options
+    statuses = [
+        ("DRAFT", "Draft"),
+        ("AWAITING_DISPATCH", "Awaiting Dispatch"),
+        ("SUBMITTED", "Submitted"),
+        ("FINALIZED", "Finalized"),
+    ]
+
+    return render_template(
+        "admin_final/all_requests.html",
+        user_ctx=user_ctx,
+        requests_data=requests_data,
+        pagination=pagination,
+        event_cycles=event_cycles,
+        departments=departments,
+        statuses=statuses,
+        selected_event=event_code,
+        selected_dept=dept_code,
+        selected_status=status_filter,
+        search_query=search_query,
+        format_currency=format_currency,
     )

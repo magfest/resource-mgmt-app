@@ -15,6 +15,7 @@ COMMENT_VISIBILITY_ADMIN = "ADMIN"
 
 # Work item statuses (request header)
 WORK_ITEM_STATUS_DRAFT = "DRAFT"
+WORK_ITEM_STATUS_AWAITING_DISPATCH = "AWAITING_DISPATCH"
 WORK_ITEM_STATUS_SUBMITTED = "SUBMITTED"
 WORK_ITEM_STATUS_UNDER_REVIEW = "UNDER_REVIEW"
 WORK_ITEM_STATUS_FINALIZED = "FINALIZED"
@@ -643,6 +644,10 @@ class WorkItem(db.Model):
     finalized_note = db.Column(db.Text, nullable=True)
     finalized_at = db.Column(db.DateTime, nullable=True, index=True)
     finalized_by_user_id = db.Column(db.String(64), nullable=True, index=True)
+
+    # Dispatch lifecycle (for dispatch queue workflow)
+    dispatched_at = db.Column(db.DateTime, nullable=True, index=True)
+    dispatched_by_user_id = db.Column(db.String(64), nullable=True, index=True)
 
     # Checkout / check-in locking
     checked_out_by_user_id = db.Column(db.String(64), nullable=True, index=True)

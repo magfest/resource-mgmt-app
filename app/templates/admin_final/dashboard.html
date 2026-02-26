@@ -54,31 +54,28 @@
   </div>
 
   {# Summary Cards #}
-  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
     <div class="card" style="text-align: center;">
-      <div style="font-size: 32px; font-weight: 700; color: #0a66c2;">{{ queues.ready_for_review | length }}</div>
-      <div class="muted">Lines Ready for Review</div>
+      <div style="font-size: 32px; font-weight: 700; color: #0a66c2;">{{ queues.ready_request_count }}</div>
+      <div class="muted">Requests Ready</div>
+      <div class="muted small">{{ queues.ready_line_count }} lines</div>
     </div>
     <div class="card" style="text-align: center;">
       <div style="font-size: 32px; font-weight: 700; color: #d97706;">{{ queues.kicked_back | length }}</div>
       <div class="muted">Lines Kicked Back</div>
     </div>
     <div class="card" style="text-align: center;">
-      <div style="font-size: 32px; font-weight: 700; color: #059669;">{{ queues.pending_finalization | length }}</div>
-      <div class="muted">Ready to Finalize</div>
-    </div>
-    <div class="card" style="text-align: center;">
-      <div style="font-size: 32px; font-weight: 700; color: #6b7280;">{{ queues.recently_finalized | length }}</div>
+      <div style="font-size: 32px; font-weight: 700; color: #059669;">{{ queues.recently_finalized | length }}</div>
       <div class="muted">Recently Finalized</div>
     </div>
   </div>
 
-  {# Ready for Review Queue #}
+  {# Ready for Review Queue - Request Level #}
   <section class="card" style="margin-bottom: 16px;">
     <h3 style="margin:0 0 12px 0;">
-      Lines Ready for Final Review
+      Requests Ready for Final Review
       {% if queues.ready_for_review %}
-        <span class="pill pill-submitted">{{ queues.ready_for_review | length }}</span>
+        <span class="pill pill-submitted">{{ queues.ready_request_count }}</span>
       {% endif %}
     </h3>
 
@@ -87,63 +84,55 @@
         <thead>
           <tr>
             <th style="width: 110px;">Request</th>
-            <th style="width: 80px;">Line #</th>
-            <th>Expense Account</th>
-            <th style="width: 100px;" class="right">Requested</th>
-            <th style="width: 100px;" class="right">Recommended</th>
-            <th style="width: 100px;">AG Status</th>
+            <th>Department</th>
+            <th style="width: 100px;" class="right">Lines Ready</th>
+            <th style="width: 120px;" class="right">Requested</th>
+            <th style="width: 120px;" class="right">Recommended</th>
+            <th style="width: 130px;">Submitted</th>
             <th style="width: 80px;"></th>
           </tr>
         </thead>
         <tbody>
           {% for item in queues.ready_for_review %}
             {% set wi = item.work_item %}
-            {% set line = item.work_line %}
-            {% set detail = item.budget_detail %}
-            {% set portfolio = wi.portfolio %}
-            {% set event_code = portfolio.event_cycle.code if portfolio else '' %}
-            {% set dept_code = portfolio.department.code if portfolio else '' %}
             <tr>
               <td>
-                <a href="{{ url_for('work.work_item_detail', event=event_code, dept=dept_code, public_id=wi.public_id) }}">
+                <a href="{{ url_for('work.work_item_detail', event=item.event_cycle.code, dept=item.department.code, public_id=wi.public_id) }}">
                   {{ wi.public_id }}
                 </a>
-                <div class="muted small">{{ portfolio.department.name if portfolio else '-' }}</div>
               </td>
-              <td>{{ line.line_number }}</td>
               <td>
-                {% if detail and detail.expense_account %}
-                  <strong>{{ detail.expense_account.name }}</strong>
-                {% else %}
-                  <span class="muted">-</span>
+                {{ item.department.name }}
+                <div class="muted small">{{ item.event_cycle.name }}</div>
+              </td>
+              <td class="right num">
+                <span class="pill pill-submitted">{{ item.ready_line_count }}</span>
+                {% if item.ready_line_count != item.total_line_count %}
+                  <span class="muted small">/ {{ item.total_line_count }}</span>
                 {% endif %}
               </td>
-              <td class="right num">{{ format_currency(item.line_total_cents) }}</td>
+              <td class="right num">{{ format_currency(item.total_requested_cents) }}</td>
               <td class="right num">
-                {% if item.recommended_amount_cents is not none %}
-                  {% set differs = item.recommended_amount_cents != item.line_total_cents %}
-                  <span {% if differs %}class="amount-changed" style="display: inline-block;"{% endif %}>
-                    {{ format_currency(item.recommended_amount_cents) }}
-                    {% if differs %}
-                      {% set diff = item.recommended_amount_cents - item.line_total_cents %}
-                      <span class="diff {% if diff < 0 %}negative{% else %}positive{% endif %}" style="font-size: 11px;">
-                        ({% if diff >= 0 %}+{% endif %}{{ format_currency(diff) }})
-                      </span>
-                    {% endif %}
+                {% set differs = item.total_recommended_cents != item.total_requested_cents %}
+                {% if differs %}
+                  <span class="amount-changed" style="display: inline-block;">
+                    {{ format_currency(item.total_recommended_cents) }}
+                    {% set diff = item.total_recommended_cents - item.total_requested_cents %}
+                    <span class="diff {% if diff < 0 %}negative{% else %}positive{% endif %}" style="font-size: 11px;">
+                      ({% if diff >= 0 %}+{% endif %}{{ format_currency(diff) }})
+                    </span>
                   </span>
                 {% else %}
-                  <span class="muted">-</span>
+                  {{ format_currency(item.total_recommended_cents) }}
+                {% endif %}
+              </td>
+              <td class="muted small">
+                {% if wi.submitted_at %}
+                  {{ wi.submitted_at.strftime('%Y-%m-%d %H:%M') }}
                 {% endif %}
               </td>
               <td>
-                {% if item.approval_group_review %}
-                  <span class="pill" style="background: #dbeafe; color: #1e40af;">AG {{ item.approval_group_review.status }}</span>
-                {% else %}
-                  <span class="muted">-</span>
-                {% endif %}
-              </td>
-              <td>
-                <a class="btn btn-muted" href="{{ url_for('admin_final.line_review', event=event_code, dept=dept_code, public_id=wi.public_id, line_num=line.line_number) }}" style="padding: 4px 8px; font-size: 12px;">
+                <a class="btn btn-primary" href="{{ url_for('work.work_item_detail', event=item.event_cycle.code, dept=item.department.code, public_id=wi.public_id) }}" style="padding: 4px 8px; font-size: 12px;">
                   Review
                 </a>
               </td>
@@ -153,7 +142,7 @@
       </table>
     {% else %}
       <div class="muted" style="text-align: center; padding: 24px;">
-        No lines ready for final review.
+        No requests ready for final review.
       </div>
     {% endif %}
   </section>
@@ -226,65 +215,6 @@
     {% endif %}
   </section>
 
-  {# Pending Finalization #}
-  <section class="card" style="margin-bottom: 16px;">
-    <h3 style="margin:0 0 12px 0;">
-      Ready to Finalize
-      {% if queues.pending_finalization %}
-        <span class="pill pill-approved">{{ queues.pending_finalization | length }}</span>
-      {% endif %}
-    </h3>
-
-    {% if queues.pending_finalization %}
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 110px;">Request</th>
-            <th>Department</th>
-            <th style="width: 80px;" class="right">Lines</th>
-            <th style="width: 120px;" class="right">Requested</th>
-            <th style="width: 120px;" class="right">Approved</th>
-            <th style="width: 100px;"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for wi in queues.pending_finalization %}
-            {% set portfolio = wi.portfolio %}
-            {% set event_code = portfolio.event_cycle.code if portfolio else '' %}
-            {% set dept_code = portfolio.department.code if portfolio else '' %}
-            {% set summary = get_finalization_summary(wi) %}
-            <tr>
-              <td>
-                <a href="{{ url_for('work.work_item_detail', event=event_code, dept=dept_code, public_id=wi.public_id) }}">
-                  {{ wi.public_id }}
-                </a>
-              </td>
-              <td>{{ portfolio.department.name if portfolio else '-' }}</td>
-              <td class="right num">
-                {{ summary.approved_lines }}/{{ summary.total_lines }}
-                {% if summary.pending_lines > 0 %}
-                  <span class="muted">({{ summary.pending_lines }} pending)</span>
-                {% endif %}
-              </td>
-              <td class="right num">{{ format_currency(summary.total_requested_cents) }}</td>
-              <td class="right num">{{ format_currency(summary.total_approved_cents) }}</td>
-              <td>
-                <button type="button" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px;"
-                        data-finalize-modal data-work-item-id="{{ wi.id }}" data-public-id="{{ wi.public_id }}" data-pending-count="{{ summary.pending_lines }}">
-                  Finalize
-                </button>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <div class="muted" style="text-align: center; padding: 24px;">
-        No requests ready to finalize.
-      </div>
-    {% endif %}
-  </section>
-
   {# Recently Finalized #}
   <section class="card">
     <h3 style="margin:0 0 12px 0;">
@@ -340,77 +270,4 @@
     {% endif %}
   </section>
 
-  {# Finalize Modal - data-modal enables Escape key close from base.html #}
-  <div id="finalize-modal" data-modal style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
-    <div style="background: white; border-radius: 8px; padding: 24px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
-      <h3 style="margin: 0 0 16px 0;">Finalize Request <span id="modal-public-id"></span></h3>
-
-      <div id="modal-pending-warning" class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107; display: none;">
-        <strong>Note:</strong> <span id="modal-pending-count"></span> pending line(s) will be auto-approved at their requested amounts.
-      </div>
-
-      <form id="finalize-form" method="post" action="">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div style="margin-bottom: 16px;">
-          <label for="modal-note" style="font-weight: 600; display: block; margin-bottom: 4px;">
-            Finalization Note <span style="color: #dc3545;">*</span>
-          </label>
-          <textarea name="note" id="modal-note" rows="5" style="width: 100%;"
-                    placeholder="Enter your finalization notes... (e.g., budget adjustments made, items flagged for follow-up, conditions of approval)" required></textarea>
-          <div class="muted small" style="margin-top: 4px;">
-            This note will be recorded in the audit trail.
-          </div>
-        </div>
-        <div class="btn-row">
-          <button type="submit" class="btn btn-primary">Confirm Finalization</button>
-          <button type="button" class="btn" data-modal-close="finalize-modal">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-{% endblock %}
-
-{% block scripts %}
-<script nonce="{{ csp_nonce }}">
-(function() {
-  var modal = document.getElementById('finalize-modal');
-  var form = document.getElementById('finalize-form');
-  var publicIdSpan = document.getElementById('modal-public-id');
-  var pendingWarning = document.getElementById('modal-pending-warning');
-  var pendingCountSpan = document.getElementById('modal-pending-count');
-  var noteField = document.getElementById('modal-note');
-
-  // Handle finalize modal open via data attributes
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('[data-finalize-modal]');
-    if (btn) {
-      var workItemId = btn.getAttribute('data-work-item-id');
-      var publicId = btn.getAttribute('data-public-id');
-      var pendingCount = parseInt(btn.getAttribute('data-pending-count'), 10) || 0;
-
-      form.action = '/admin/final-review/finalize/' + workItemId;
-      publicIdSpan.textContent = publicId;
-      noteField.value = '';
-
-      if (pendingCount > 0) {
-        pendingWarning.style.display = 'block';
-        pendingCountSpan.textContent = pendingCount;
-      } else {
-        pendingWarning.style.display = 'none';
-      }
-
-      modal.style.display = 'flex';
-      noteField.focus();
-    }
-  });
-
-  // Close modal on clicking outside
-  modal.addEventListener('click', function(e) {
-    if (e.target === this) {
-      modal.style.display = 'none';
-    }
-  });
-})();
-</script>
 {% endblock %}

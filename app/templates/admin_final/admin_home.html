@@ -19,8 +19,11 @@
   <section class="card" style="margin-bottom: 24px; background: #f0fdf4; border: 1px solid #059669;">
     <h3 style="margin:0 0 16px 0;">Quick Actions</h3>
     <div class="btn-row">
-      <a class="btn btn-primary" href="{{ url_for('admin_final.dashboard') }}">
-        Admin Final Review
+      <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
+        All Requests
+      </a>
+      <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
+        Final Review Queue
       </a>
       <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
         Approval Group Dashboard

@@ -326,7 +326,7 @@ def line_create(event: str, dept: str, public_id: str):
 
     flash("Budget line added successfully.", "success")
     return redirect(url_for(
-        "budget.work_item_edit",
+        "work.work_item_edit",
         event=event,
         dept=dept,
         public_id=public_id

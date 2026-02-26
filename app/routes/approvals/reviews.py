@@ -1,7 +1,7 @@
 """
 Line review routes - individual line review with decision actions.
 """
-from flask import render_template, redirect, url_for, request, abort, flash
+from flask import render_template, redirect, url_for, request, abort, flash, jsonify
 
 from app import db
 from app.models import (
@@ -192,9 +192,13 @@ def line_reset(event: str, dept: str, public_id: str, line_num: int):
 def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, action: str):
     """
     Common handler for all review actions.
+    Returns JSON if ajax=1 in form data, otherwise redirects.
     """
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num)
+
+    # Check if this is an AJAX request
+    is_ajax = request.form.get("ajax") == "1"
 
     # Get or create review
     review, _created = get_or_create_review(line, user_ctx)
@@ -225,6 +229,8 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
     )
 
     if not success:
+        if is_ajax:
+            return jsonify({"success": False, "error": error})
         flash(error, "error")
     else:
         action_labels = {
@@ -234,7 +240,6 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
             REVIEW_ACTION_NEEDS_ADJUSTMENT: "marked as needing adjustment",
             REVIEW_ACTION_RESET: "reset to pending",
         }
-        flash(f"Line {line_num} {action_labels.get(action, 'updated')}.", "success")
 
         # Add comment with the note if provided
         if note:
@@ -262,6 +267,16 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
             db.session.add(comment)
 
         db.session.commit()
+
+        if is_ajax:
+            return jsonify({
+                "success": True,
+                "line_num": line_num,
+                "new_status": line.status,
+                "message": f"Line {line_num} {action_labels.get(action, 'updated')}."
+            })
+
+        flash(f"Line {line_num} {action_labels.get(action, 'updated')}.", "success")
 
     return redirect(url_for(
         "approvals.line_review",

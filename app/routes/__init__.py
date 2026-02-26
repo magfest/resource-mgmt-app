@@ -87,6 +87,7 @@ def register_all_routes(app: Flask, helpers: RouteHelpers) -> None:
     from .work import work_bp
     from .approvals import approvals_bp
     from .admin_final import admin_final_bp
+    from .dispatch import dispatch_bp
     from .dev import dev_bp
     from .auth import auth_bp
 
@@ -96,6 +97,7 @@ def register_all_routes(app: Flask, helpers: RouteHelpers) -> None:
     app.register_blueprint(work_bp)
     app.register_blueprint(approvals_bp)
     app.register_blueprint(admin_final_bp)
+    app.register_blueprint(dispatch_bp)
     app.register_blueprint(dev_bp)
     app.register_blueprint(auth_bp)
 

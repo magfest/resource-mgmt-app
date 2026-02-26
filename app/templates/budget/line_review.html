@@ -62,9 +62,18 @@
   {% if is_checked_out %}
     {% if has_checkout %}
       <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
-        <strong>You have this item checked out</strong>
-        <div class="muted" style="margin-top:4px;">
-          You can make review decisions on this line.
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+          <div>
+            <strong>You have this item checked out</strong>
+            <div class="muted" style="margin-top:4px;">
+              You can make review decisions on this line.
+            </div>
+          </div>
+          <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="flex-shrink: 0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_to" value="{{ request.url }}">
+            <button type="submit" class="btn">Release Lock</button>
+          </form>
         </div>
       </div>
     {% else %}
@@ -390,6 +399,7 @@
             <div style="margin-top: 12px;">
               <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="return_to" value="{{ request.url }}">
                 <button type="submit" class="btn btn-primary">Checkout for Review</button>
               </form>
             </div>

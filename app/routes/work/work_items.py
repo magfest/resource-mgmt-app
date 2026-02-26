@@ -15,6 +15,7 @@ from app.models import (
     REQUEST_KIND_PRIMARY,
     REQUEST_KIND_SUPPLEMENTARY,
     WORK_ITEM_STATUS_DRAFT,
+    WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_NEEDS_INFO,
@@ -190,10 +191,10 @@ def work_item_detail(event: str, dept: str, public_id: str):
     # Get lines with details
     lines = work_item.lines
 
-    # Check if can finalize (for admins)
+    # Check if can finalize (for admins - allowed from AWAITING_DISPATCH or SUBMITTED)
     can_finalize = False
     finalization_summary = None
-    if perms.is_admin and work_item.status == WORK_ITEM_STATUS_SUBMITTED:
+    if perms.is_admin and work_item.status in (WORK_ITEM_STATUS_AWAITING_DISPATCH, WORK_ITEM_STATUS_SUBMITTED):
         can_finalize, _ = can_finalize_work_item(work_item)
         finalization_summary = get_finalization_summary(work_item)
 
@@ -651,7 +652,7 @@ def work_item_submit(event: str, dept: str, public_id: str):
             public_id=public_id
         ))
 
-    # Validate: all lines must have budget details and approval group routing
+    # Validate: all lines must have budget details with expense accounts
     for line in work_item.lines:
         if not line.budget_detail:
             flash(f"Cannot submit: line {line.line_number} is missing budget details.", "error")
@@ -661,7 +662,6 @@ def work_item_submit(event: str, dept: str, public_id: str):
                 dept=dept,
                 public_id=public_id
             ))
-        # Check that the expense account has approval group routing
         expense_account = line.budget_detail.expense_account
         if not expense_account:
             flash(f"Cannot submit: line {line.line_number} has no expense account.", "error")
@@ -671,51 +671,18 @@ def work_item_submit(event: str, dept: str, public_id: str):
                 dept=dept,
                 public_id=public_id
             ))
-        if not expense_account.approval_group_id:
-            flash(
-                f"Cannot submit: expense account '{expense_account.name}' has no approval group configured. "
-                "Please contact an administrator.",
-                "error"
-            )
-            return redirect(url_for(
-                "work.work_item_edit",
-                event=event,
-                dept=dept,
-                public_id=public_id
-            ))
 
     user_ctx = get_user_ctx()
 
-    # Update work item status
-    work_item.status = WORK_ITEM_STATUS_SUBMITTED
+    # Update work item status to AWAITING_DISPATCH
+    # Approval group assignment and WorkLineReview creation happens during dispatch
+    work_item.status = WORK_ITEM_STATUS_AWAITING_DISPATCH
     work_item.submitted_at = datetime.utcnow()
     work_item.submitted_by_user_id = user_ctx.user_id
 
-    # Snapshot routing: set routed_approval_group_id from expense account
-    # and create WorkLineReview records for each line
-    for line in work_item.lines:
-        if line.budget_detail:
-            detail = line.budget_detail
-            expense_account = detail.expense_account
-            if expense_account and expense_account.approval_group_id:
-                detail.routed_approval_group_id = expense_account.approval_group_id
-
-            # Set initial review stage
-            line.current_review_stage = REVIEW_STAGE_APPROVAL_GROUP
-
-            # Create WorkLineReview record for APPROVAL_GROUP stage
-            review = WorkLineReview(
-                work_line_id=line.id,
-                stage=REVIEW_STAGE_APPROVAL_GROUP,
-                approval_group_id=detail.routed_approval_group_id,
-                status=REVIEW_STATUS_PENDING,
-                created_by_user_id=user_ctx.user_id,
-            )
-            db.session.add(review)
-
     db.session.commit()
 
-    flash("Budget request submitted for review.", "success")
+    flash("Budget request submitted to dispatch queue.", "success")
     return redirect(url_for(
         "work.work_item_detail",
         event=event,
@@ -847,14 +814,19 @@ def work_item_checkout(event: str, dept: str, public_id: str):
     work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
     perms = require_work_item_view(work_item, ctx)
 
+    # Get optional return_to URL from form data
+    return_to = (request.form.get("return_to") or "").strip()
+
+    default_redirect = url_for(
+        "work.work_item_detail",
+        event=event,
+        dept=dept,
+        public_id=public_id
+    )
+
     if not perms.can_checkout:
         flash("You cannot checkout this work item.", "error")
-        return redirect(url_for(
-            "work.work_item_detail",
-            event=event,
-            dept=dept,
-            public_id=public_id
-        ))
+        return redirect(return_to or default_redirect)
 
     user_ctx = get_user_ctx()
     if checkout_work_item(work_item, user_ctx):
@@ -863,12 +835,7 @@ def work_item_checkout(event: str, dept: str, public_id: str):
     else:
         flash("Could not checkout work item.", "error")
 
-    return redirect(url_for(
-        "work.work_item_detail",
-        event=event,
-        dept=dept,
-        public_id=public_id
-    ))
+    return redirect(return_to or default_redirect)
 
 
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/checkin")
@@ -879,14 +846,19 @@ def work_item_checkin(event: str, dept: str, public_id: str):
     work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
     perms = require_work_item_view(work_item, ctx)
 
+    # Get optional return_to URL from form data
+    return_to = (request.form.get("return_to") or "").strip()
+
+    default_redirect = url_for(
+        "work.work_item_detail",
+        event=event,
+        dept=dept,
+        public_id=public_id
+    )
+
     if not perms.can_checkin:
         flash("You cannot release this checkout.", "error")
-        return redirect(url_for(
-            "work.work_item_detail",
-            event=event,
-            dept=dept,
-            public_id=public_id
-        ))
+        return redirect(return_to or default_redirect)
 
     user_ctx = get_user_ctx()
     force = perms.is_admin and not perms.is_checked_out_by_current_user
@@ -896,12 +868,80 @@ def work_item_checkin(event: str, dept: str, public_id: str):
     else:
         flash("Could not release lock.", "error")
 
-    return redirect(url_for(
-        "work.work_item_detail",
-        event=event,
-        dept=dept,
-        public_id=public_id
-    ))
+    return redirect(return_to or default_redirect)
+
+
+# ============================================================
+# Quick Review Route
+# ============================================================
+
+@work_bp.get("/<event>/<dept>/budget/item/<public_id>/quick-review")
+def quick_review(event: str, dept: str, public_id: str):
+    """
+    Quick review page - shows all lines with inline action buttons.
+    Designed for rapid review without navigating into each line.
+    """
+    from app.routes.approvals.helpers import get_review_for_line, is_reviewer_for_line
+
+    user_ctx = get_user_ctx()
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    perms = require_work_item_view(work_item, ctx)
+
+    # Must be a reviewer or admin to use quick review
+    if not (perms.is_admin or _is_approver_for_work_item(work_item, user_ctx)):
+        flash("You don't have permission to review this request.", "error")
+        return redirect(url_for(
+            "work.work_item_detail",
+            event=event,
+            dept=dept,
+            public_id=public_id
+        ))
+
+    # Get checkout info
+    checked_out = is_checked_out(work_item)
+    has_checkout = work_item.checked_out_by_user_id == user_ctx.user_id
+    can_checkout = perms.can_checkout
+
+    # Build line data
+    lines_data = []
+    summary = {"pending": 0, "approved": 0, "kicked_back": 0, "rejected": 0}
+
+    for line in work_item.lines:
+        detail = line.budget_detail
+        review = get_review_for_line(line)
+        total_cents = detail.unit_price_cents * int(detail.quantity) if detail else 0
+
+        # Update summary
+        status = line.status.upper() if line.status else "PENDING"
+        if status == "PENDING":
+            summary["pending"] += 1
+        elif status == "APPROVED":
+            summary["approved"] += 1
+        elif status in ("NEEDS_INFO", "NEEDS_ADJUSTMENT"):
+            summary["kicked_back"] += 1
+        elif status == "REJECTED":
+            summary["rejected"] += 1
+
+        lines_data.append({
+            "line": line,
+            "detail": detail,
+            "review": review,
+            "total_cents": total_cents,
+        })
+
+    return render_template(
+        "budget/quick_review.html",
+        ctx=ctx,
+        perms=perms,
+        user_ctx=user_ctx,
+        work_item=work_item,
+        lines=lines_data,
+        summary=summary,
+        is_checked_out=checked_out,
+        has_checkout=has_checkout,
+        can_checkout=can_checkout,
+        format_currency=format_currency,
+    )
 
 
 # ============================================================

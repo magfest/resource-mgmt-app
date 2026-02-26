@@ -71,7 +71,7 @@ VALID_TRANSITIONS = {
 
 @dataclass(frozen=True)
 class ReviewQueueItem:
-    """A line item in the review queue."""
+    """A line item in the review queue (used for kicked-back lines)."""
     work_item: WorkItem
     work_line: WorkLine
     review: WorkLineReview
@@ -80,12 +80,24 @@ class ReviewQueueItem:
 
 
 @dataclass(frozen=True)
+class RequestQueueItem:
+    """A request-level item in the review queue."""
+    work_item: WorkItem
+    event_cycle: "EventCycle"
+    department: "Department"
+    pending_line_count: int
+    total_line_count: int
+    total_requested_cents: int
+
+
+@dataclass(frozen=True)
 class ApprovalQueues:
     """Queues for the approval dashboard."""
-    pending: List[ReviewQueueItem]
-    kicked_back: List[ReviewQueueItem]
-    recently_decided: List[ReviewQueueItem]
-    pending_count: int
+    pending_requests: List[RequestQueueItem]  # Request-level view
+    kicked_back: List[ReviewQueueItem]  # Line-level (needs specific action)
+    recently_decided_requests: List[RequestQueueItem]  # Request-level view
+    pending_request_count: int
+    pending_line_count: int
     kicked_back_count: int
     recently_decided_count: int
 
@@ -402,10 +414,12 @@ def build_approval_queues(
     Build the approval queues for a dashboard.
 
     Returns queues for:
-    - pending: Lines with PENDING review
-    - kicked_back: Lines with NEEDS_INFO or NEEDS_ADJUSTMENT
-    - recently_decided: Lines decided in last 72 hours
+    - pending_requests: Requests with PENDING lines (grouped by request)
+    - kicked_back: Lines with NEEDS_INFO or NEEDS_ADJUSTMENT (line-level)
+    - recently_decided_requests: Requests with recently decided lines (grouped)
     """
+    from app.models import WorkPortfolio
+
     # Base query for reviews in this group at APPROVAL_GROUP stage
     base_query = (
         db.session.query(WorkLineReview)
@@ -419,35 +433,65 @@ def build_approval_queues(
 
     # Apply event cycle filter
     if event_cycle_id:
-        from app.models import WorkPortfolio
         base_query = base_query.join(
             WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
         ).filter(WorkPortfolio.event_cycle_id == event_cycle_id)
 
     # Apply department filter
     if department_id:
-        from app.models import WorkPortfolio
         if not event_cycle_id:
             base_query = base_query.join(
                 WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
             )
         base_query = base_query.filter(WorkPortfolio.department_id == department_id)
 
-    # Pending queue
+    # Pending reviews
     pending_reviews = base_query.filter(
         WorkLineReview.status == REVIEW_STATUS_PENDING
     ).order_by(WorkLineReview.created_at.asc()).all()
 
-    # Kicked back queue
+    # Group pending reviews by work item
+    pending_by_item: dict[int, list] = {}
+    for review in pending_reviews:
+        wi_id = review.work_line.work_item_id
+        if wi_id not in pending_by_item:
+            pending_by_item[wi_id] = []
+        pending_by_item[wi_id].append(review)
+
+    # Build request-level pending queue
+    pending_requests = []
+    for wi_id, reviews in pending_by_item.items():
+        work_item = reviews[0].work_line.work_item
+        portfolio = work_item.portfolio
+
+        # Count total lines in this group for this request
+        total_lines_in_group = sum(
+            1 for line in work_item.lines
+            if line.budget_detail and line.budget_detail.routed_approval_group_id == group_id
+        )
+
+        # Calculate total amount for lines in this group
+        total_cents = sum(
+            line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+            for line in work_item.lines
+            if line.budget_detail and line.budget_detail.routed_approval_group_id == group_id
+        )
+
+        pending_requests.append(RequestQueueItem(
+            work_item=work_item,
+            event_cycle=portfolio.event_cycle,
+            department=portfolio.department,
+            pending_line_count=len(reviews),
+            total_line_count=total_lines_in_group,
+            total_requested_cents=total_cents,
+        ))
+
+    # Sort by oldest pending first (based on work item submitted_at)
+    pending_requests.sort(key=lambda x: x.work_item.submitted_at or datetime.min)
+
+    # Kicked back queue (keep line-level for specific action items)
     kicked_back_reviews = base_query.filter(
         WorkLineReview.status.in_([REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT])
-    ).order_by(WorkLineReview.decided_at.desc()).all()
-
-    # Recently decided (last 72 hours)
-    cutoff = datetime.utcnow() - timedelta(hours=72)
-    recently_decided_reviews = base_query.filter(
-        WorkLineReview.status.in_([REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED]),
-        WorkLineReview.decided_at >= cutoff,
     ).order_by(WorkLineReview.decided_at.desc()).all()
 
     def to_queue_item(review: WorkLineReview) -> ReviewQueueItem:
@@ -462,13 +506,54 @@ def build_approval_queues(
             line_total_cents=line_total,
         )
 
+    # Recently decided (last 72 hours) - group by request
+    cutoff = datetime.utcnow() - timedelta(hours=72)
+    recently_decided_reviews = base_query.filter(
+        WorkLineReview.status.in_([REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED]),
+        WorkLineReview.decided_at >= cutoff,
+    ).order_by(WorkLineReview.decided_at.desc()).all()
+
+    # Group recently decided by work item
+    decided_by_item: dict[int, list] = {}
+    for review in recently_decided_reviews:
+        wi_id = review.work_line.work_item_id
+        if wi_id not in decided_by_item:
+            decided_by_item[wi_id] = []
+        decided_by_item[wi_id].append(review)
+
+    recently_decided_requests = []
+    for wi_id, reviews in decided_by_item.items():
+        work_item = reviews[0].work_line.work_item
+        portfolio = work_item.portfolio
+
+        total_lines_in_group = sum(
+            1 for line in work_item.lines
+            if line.budget_detail and line.budget_detail.routed_approval_group_id == group_id
+        )
+
+        total_cents = sum(
+            line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+            for line in work_item.lines
+            if line.budget_detail and line.budget_detail.routed_approval_group_id == group_id
+        )
+
+        recently_decided_requests.append(RequestQueueItem(
+            work_item=work_item,
+            event_cycle=portfolio.event_cycle,
+            department=portfolio.department,
+            pending_line_count=0,  # All decided
+            total_line_count=len(reviews),  # Lines that were decided
+            total_requested_cents=total_cents,
+        ))
+
     return ApprovalQueues(
-        pending=[to_queue_item(r) for r in pending_reviews],
+        pending_requests=pending_requests,
         kicked_back=[to_queue_item(r) for r in kicked_back_reviews],
-        recently_decided=[to_queue_item(r) for r in recently_decided_reviews],
-        pending_count=len(pending_reviews),
+        recently_decided_requests=recently_decided_requests,
+        pending_request_count=len(pending_requests),
+        pending_line_count=len(pending_reviews),
         kicked_back_count=len(kicked_back_reviews),
-        recently_decided_count=len(recently_decided_reviews),
+        recently_decided_count=len(recently_decided_requests),
     )
 
 

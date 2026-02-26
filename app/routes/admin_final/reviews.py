@@ -1,7 +1,7 @@
 """
 Admin Final Review line review routes.
 """
-from flask import render_template, redirect, url_for, request, abort, flash
+from flask import render_template, redirect, url_for, request, abort, flash, jsonify
 
 from app import db
 from app.models import (
@@ -152,11 +152,15 @@ def line_reset(event: str, dept: str, public_id: str, line_num: int):
 def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int, action: str):
     """
     Common handler for admin final review decisions.
+    Returns JSON if ajax=1 in form data, otherwise redirects.
     """
     user_ctx = get_user_ctx()
     require_admin(user_ctx)
 
     work_item, line, ctx = _get_work_item_and_line(event, dept, public_id, line_num)
+
+    # Check if this is an AJAX request
+    is_ajax = request.form.get("ajax") == "1"
 
     # Get form data
     note = (request.form.get("note") or "").strip()
@@ -169,6 +173,8 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
             amount_dollars = float(amount_str.replace(",", "").replace("$", ""))
             amount_cents = int(amount_dollars * 100)
         except ValueError:
+            if is_ajax:
+                return jsonify({"success": False, "error": "Invalid amount format."})
             flash("Invalid amount format.", "error")
             return redirect(url_for(
                 "admin_final.line_review",
@@ -189,6 +195,8 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
     )
 
     if not success:
+        if is_ajax:
+            return jsonify({"success": False, "error": error})
         flash(error, "error")
     else:
         action_labels = {
@@ -196,7 +204,6 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
             REVIEW_ACTION_REJECT: "rejected",
             REVIEW_ACTION_NEEDS_INFO: "marked as needing information",
         }
-        flash(f"Line {line_num} {action_labels.get(action, 'updated')}.", "success")
 
         # Add comment if note provided
         if note:
@@ -217,6 +224,16 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
             db.session.add(comment)
 
         db.session.commit()
+
+        if is_ajax:
+            return jsonify({
+                "success": True,
+                "line_num": line_num,
+                "new_status": line.status,
+                "message": f"Line {line_num} {action_labels.get(action, 'updated')}."
+            })
+
+        flash(f"Line {line_num} {action_labels.get(action, 'updated')}.", "success")
 
     return redirect(url_for(
         "admin_final.line_review",

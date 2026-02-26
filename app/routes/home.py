@@ -23,6 +23,7 @@ from app.models import (
     WorkTypeConfig,
     BudgetLineDetail,
     ExpenseAccount,
+    WORK_ITEM_STATUS_AWAITING_DISPATCH,
 )
 from app.routes.work.helpers import compute_portfolio_status_summary, get_active_work_types
 from app.routes import h, get_user_ctx, render_page
@@ -249,6 +250,15 @@ def index():
             .count()
         )
         context["submitted_count"] = submitted_count
+
+        # Count items awaiting dispatch
+        dispatch_queue_count = (
+            db.session.query(WorkItem)
+            .filter(WorkItem.status == WORK_ITEM_STATUS_AWAITING_DISPATCH)
+            .filter(WorkItem.is_archived == False)
+            .count()
+        )
+        context["dispatch_queue_count"] = dispatch_queue_count
 
         # Count pending work lines
         pending_lines = (

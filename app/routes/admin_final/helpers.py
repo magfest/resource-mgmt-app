@@ -26,6 +26,7 @@ from app.models import (
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     REVIEW_STATUS_APPROVED,
     REVIEW_STATUS_REJECTED,
+    WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_PAUSED,
@@ -50,7 +51,7 @@ from app.routes import UserContext
 
 @dataclass(frozen=True)
 class AdminQueueItem:
-    """A line item in the admin review queue."""
+    """A line item in the admin review queue (used for kicked-back lines)."""
     work_item: WorkItem
     work_line: WorkLine
     approval_group_review: Optional[WorkLineReview]
@@ -61,12 +62,25 @@ class AdminQueueItem:
 
 
 @dataclass(frozen=True)
+class AdminRequestQueueItem:
+    """A request-level item in the admin review queue."""
+    work_item: WorkItem
+    event_cycle: "EventCycle"
+    department: "Department"
+    ready_line_count: int
+    total_line_count: int
+    total_requested_cents: int
+    total_recommended_cents: int
+
+
+@dataclass(frozen=True)
 class AdminQueues:
     """Queues for the admin final review dashboard."""
-    ready_for_review: List[AdminQueueItem]
-    kicked_back: List[AdminQueueItem]
-    pending_finalization: List[WorkItem]
+    ready_for_review: List[AdminRequestQueueItem]  # Request-level view
+    kicked_back: List[AdminQueueItem]  # Line-level (needs specific action)
     recently_finalized: List[WorkItem]
+    ready_request_count: int
+    ready_line_count: int
 
 
 # ============================================================
@@ -134,11 +148,15 @@ def can_finalize_work_item(work_item: WorkItem) -> Tuple[bool, str]:
     Check if a work item can be finalized.
 
     Returns (can_finalize, reason) tuple.
+
+    Note: Admins can finalize from either AWAITING_DISPATCH or SUBMITTED status
+    (AWAITING_DISPATCH allows admin bypass of the dispatch queue).
     """
     if work_item.status == WORK_ITEM_STATUS_FINALIZED:
         return False, "Work item is already finalized."
 
-    if work_item.status != WORK_ITEM_STATUS_SUBMITTED:
+    # Allow finalization from AWAITING_DISPATCH (admin bypass) or SUBMITTED
+    if work_item.status not in (WORK_ITEM_STATUS_AWAITING_DISPATCH, WORK_ITEM_STATUS_SUBMITTED):
         return False, "Work item must be submitted before finalization."
 
     # Check for kicked-back lines
@@ -385,6 +403,9 @@ def finalize_work_item(
             line.status_changed_by_user_id = user_ctx.user_id
             line.current_review_stage = REVIEW_STAGE_ADMIN_FINAL
 
+    # Capture old status for audit before changing
+    old_status = work_item.status
+
     # Set work item to finalized
     work_item.status = WORK_ITEM_STATUS_FINALIZED
     work_item.finalized_at = datetime.utcnow()
@@ -394,7 +415,7 @@ def finalize_work_item(
     audit = WorkItemAuditEvent(
         work_item_id=work_item.id,
         event_type=AUDIT_EVENT_FINALIZE,
-        old_value=WORK_ITEM_STATUS_SUBMITTED,
+        old_value=old_status,
         new_value=WORK_ITEM_STATUS_FINALIZED,
         reason=(note or "").strip(),
         created_by_user_id=user_ctx.user_id,
@@ -583,8 +604,8 @@ def build_admin_queues(
     Build the admin final review queues.
 
     Returns queues for:
-    - ready_for_review: Lines with APPROVAL_GROUP APPROVED, no ADMIN_FINAL decision
-    - kicked_back: Lines with ADMIN_FINAL NEEDS_INFO
+    - ready_for_review: Requests with lines ready for admin review (request-level)
+    - kicked_back: Lines with ADMIN_FINAL NEEDS_INFO (line-level)
     - pending_finalization: Work items ready to finalize
     - recently_finalized: Work items finalized in last 7 days
     """
@@ -610,14 +631,16 @@ def build_admin_queues(
         WorkItem.status == WORK_ITEM_STATUS_SUBMITTED
     ).all()
 
-    ready_for_review = []
+    # Track request-level data for ready_for_review
+    ready_requests: dict[int, dict] = {}
     kicked_back = []
-    pending_finalization_items = []
+    total_ready_lines = 0
 
     for item in submitted_items:
-        item_has_pending = False
         item_has_kicked_back = False
-        item_all_decided = True
+        item_ready_lines = 0
+        item_total_requested = 0
+        item_total_recommended = 0
 
         for line in item.lines:
             ag_review = get_approval_group_review(line)
@@ -636,46 +659,65 @@ def build_admin_queues(
             else:
                 recommended = None
 
-            queue_item = AdminQueueItem(
-                work_item=item,
-                work_line=line,
-                approval_group_review=ag_review,
-                admin_review=admin_review,
-                budget_detail=detail,
-                line_total_cents=line_total,
-                recommended_amount_cents=recommended,
-            )
-
             # Check line state
             if admin_review:
                 if admin_review.status in (REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT):
+                    queue_item = AdminQueueItem(
+                        work_item=item,
+                        work_line=line,
+                        approval_group_review=ag_review,
+                        admin_review=admin_review,
+                        budget_detail=detail,
+                        line_total_cents=line_total,
+                        recommended_amount_cents=recommended,
+                    )
                     kicked_back.append(queue_item)
                     item_has_kicked_back = True
-                    item_all_decided = False
                 elif admin_review.status == REVIEW_STATUS_PENDING:
-                    ready_for_review.append(queue_item)
-                    item_has_pending = True
-                    item_all_decided = False
+                    # Ready for admin final review
+                    item_ready_lines += 1
+                    item_total_requested += line_total
+                    item_total_recommended += recommended or line_total
                 # APPROVED or REJECTED means decided
             elif ag_review and ag_review.status == REVIEW_STATUS_APPROVED:
                 # Ready for admin final review
-                ready_for_review.append(queue_item)
-                item_has_pending = True
-                item_all_decided = False
+                item_ready_lines += 1
+                item_total_requested += line_total
+                item_total_recommended += recommended or line_total
             elif line.status in (WORK_LINE_STATUS_NEEDS_INFO, WORK_LINE_STATUS_NEEDS_ADJUSTMENT):
                 # Line kicked back at approval group level
                 item_has_kicked_back = True
-                item_all_decided = False
-            else:
-                # Still pending at some level
-                item_has_pending = True
-                item_all_decided = False
 
-        # Check if item is ready for finalization
-        if not item_has_kicked_back:
-            can_finalize, _ = can_finalize_work_item(item)
-            if can_finalize:
-                pending_finalization_items.append(item)
+        # Add to ready_requests if there are lines ready
+        if item_ready_lines > 0:
+            portfolio = item.portfolio
+            ready_requests[item.id] = {
+                "work_item": item,
+                "event_cycle": portfolio.event_cycle,
+                "department": portfolio.department,
+                "ready_line_count": item_ready_lines,
+                "total_line_count": len(item.lines),
+                "total_requested_cents": item_total_requested,
+                "total_recommended_cents": item_total_recommended,
+            }
+            total_ready_lines += item_ready_lines
+
+    # Convert ready_requests dict to list of AdminRequestQueueItem
+    ready_for_review = [
+        AdminRequestQueueItem(
+            work_item=data["work_item"],
+            event_cycle=data["event_cycle"],
+            department=data["department"],
+            ready_line_count=data["ready_line_count"],
+            total_line_count=data["total_line_count"],
+            total_requested_cents=data["total_requested_cents"],
+            total_recommended_cents=data["total_recommended_cents"],
+        )
+        for data in ready_requests.values()
+    ]
+
+    # Sort by oldest submitted first
+    ready_for_review.sort(key=lambda x: x.work_item.submitted_at or datetime.min)
 
     # Recently finalized (last 7 days)
     cutoff = datetime.utcnow() - timedelta(days=7)
@@ -689,8 +731,9 @@ def build_admin_queues(
     return AdminQueues(
         ready_for_review=ready_for_review,
         kicked_back=kicked_back,
-        pending_finalization=pending_finalization_items,
         recently_finalized=recently_finalized,
+        ready_request_count=len(ready_for_review),
+        ready_line_count=total_ready_lines,
     )
 
 
