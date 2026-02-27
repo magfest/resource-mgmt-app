@@ -46,150 +46,8 @@
 </div>
 
 {% else %}
-{# Timeline / Milestones - shown to everyone #}
-{% if milestones %}
-<section class="card">
-  <h3 style="margin:0 0 16px 0;">Key Dates</h3>
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
-    {% for m in milestones %}
-      <div style="padding: 12px 16px; background: {% if m.is_past %}#f8fafc{% elif m.is_today %}#fef3c7{% elif m.is_soon %}#fffbeb{% else %}#f8fafc{% endif %}; border-radius: 6px; border-left: 3px solid {% if m.is_past %}#94a3b8{% elif m.is_today %}#f59e0b{% elif m.is_soon %}#fbbf24{% else %}#cbd5e1{% endif %};">
-        <div style="font-weight: 600; font-size: 0.9rem; {% if m.is_past %}color: #94a3b8;{% endif %}">
-          {{ m.label }}
-        </div>
-        <div style="font-size: 0.85rem; color: #64748b; margin: 4px 0;">
-          {{ m.date.strftime('%b %d, %Y') }}
-        </div>
-        <div style="font-size: 0.8rem; {% if m.is_past %}color: #94a3b8;{% elif m.is_today %}color: #d97706; font-weight: 600;{% elif m.is_soon %}color: #b45309;{% else %}color: #64748b;{% endif %}">
-          {% if m.is_today %}
-            Today!
-          {% elif m.is_past %}
-            {{ (-m.days_until) }} days ago
-          {% elif m.days_until == 1 %}
-            Tomorrow
-          {% else %}
-            {{ m.days_until }} days
-          {% endif %}
-        </div>
-      </div>
-    {% endfor %}
-  </div>
-</section>
-{# How It Works Guide #}
-<section class="card">
-  <details>
-    <summary style="cursor: pointer; font-weight: 600; font-size: 1rem; padding: 4px 0;">
-      How the Budget Process Works
-    </summary>
-    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
 
-        <div style="padding: 12px; background: #f8fafc; border-radius: 6px;">
-          <div style="font-weight: 600; color: #3b82f6; margin-bottom: 8px;">1. Draft Your Budget</div>
-          <div class="muted small">
-            Add line items for everything your department needs. Include quantities, costs, and notes to help reviewers understand your requests.
-          </div>
-        </div>
-
-        <div style="padding: 12px; background: #f8fafc; border-radius: 6px;">
-          <div style="font-weight: 600; color: #8b5cf6; margin-bottom: 8px;">2. Submit for Review</div>
-          <div class="muted small">
-            Once your budget is ready, submit it. Your lines will go to the appropriate approval groups based on expense type.
-          </div>
-        </div>
-
-        <div style="padding: 12px; background: #f8fafc; border-radius: 6px;">
-          <div style="font-weight: 600; color: #f59e0b; margin-bottom: 8px;">3. Respond to Feedback</div>
-          <div class="muted small">
-            Reviewers may ask questions or request changes. Check back for "Needs Info" or "Needs Adjustment" items and respond promptly.
-          </div>
-        </div>
-
-        <div style="padding: 12px; background: #f8fafc; border-radius: 6px;">
-          <div style="font-weight: 600; color: #059669; margin-bottom: 8px;">4. Final Approval</div>
-          <div class="muted small">
-            Lines are approved at the approval group level, then finalized by admins. Once finalized, your budget is locked and ready for the event.
-          </div>
-        </div>
-
-      </div>
-
-      <div class="muted small" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
-        Questions? Reach out to your division head or the budget team.
-      </div>
-    </div>
-  </details>
-</section>
-
-{% endif %}
-{# Super Admin Section #}
-{% if is_super_admin %}
-<section class="card" style="background: #f0fdf4; border: 1px solid #059669;">
-  <h3 style="margin:0 0 16px 0;">Budget Admin Quick Actions</h3>
-
-  <div class="btn-row">
-      <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
-      Dispatch Queue
-      {% if dispatch_queue_count %}
-        <span class="pill pill-needs" style="position: absolute; top: -8px; right: -8px; font-size: 11px; padding: 2px 6px;">{{ dispatch_queue_count }}</span>
-      {% endif %}
-    </a>
-      <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
-      Approval Groups Queue
-    </a>
-
-    <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
-      Final Review Queue
-    </a>
-        <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
-        All Requests
-      </a>
-  </div>
-
-  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 16px;">
-          <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
-      <div style="font-size: 28px; font-weight: 700; color: #0a66c2;">{{ submitted_count or 0 }}</div>
-      <div class="muted small">Submitted Requests</div>
-    </div>
-    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
-      <div style="font-size: 28px; font-weight: 700; color: #d97706;">{{ dispatch_queue_count or 0 }}</div>
-      <div class="muted small">Awaiting Dispatch</div>
-    </div>
-
-    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
-      <div style="font-size: 28px; font-weight: 700; color: #6b7280;">{{ pending_for_approver or 0 }}</div>
-      <div class="muted small">Pending Lines for Lvl 1 Approves</div>
-    </div>
-    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
-      <div style="font-size: 28px; font-weight: 700; color: #059669;">{{ approval_groups|length }}</div>
-      <div class="muted small">Approval Groups</div>
-    </div>
-  </div>
-</section>
-{% endif %}
-
-{# Approver Section #}
-{% if approval_groups %}
-<section class="card" style="background: #eff6ff; border: 1px solid #3b82f6;">
-  <h3 style="margin:0 0 16px 0;">Your Approval Groups Queue(s)</h3>
-
-  {% if pending_for_approver %}
-  <div class="callout" style="background: #fef3c7; border-color: #f59e0b; margin-bottom: 16px;">
-    <strong>{{ pending_for_approver }} line(s)</strong> pending your review
-  </div>
-  {% endif %}
-
-  <div class="btn-row">
-    {% for group in approval_groups %}
-      <a class="btn" href="{{ url_for('approvals.dashboard_group', group_code=group.code) }}">
-        {{ group.name }}
-      </a>
-    {% endfor %}
-  </div>
-</section>
-{% endif %}
-
-
-{# Department Access Section - includes both direct and division-derived access #}
+{# Department Access Section - PRIMARY ACTION AREA - includes both direct and division-derived access #}
 {% if accessible_depts %}
 <section class="card">
   <h3 style="margin:0 0 16px 0;">Your Departments</h3>
@@ -321,26 +179,207 @@
 </section>
 {% endif %}
 
+{# Super Admin Section #}
+{% if is_super_admin %}
+<section class="card" style="background: #f0fdf4; border: 1px solid #059669;">
+  <h3 style="margin:0 0 16px 0;">Budget Admin Quick Actions</h3>
 
-
-{# Quick Links #}
-<section class="card">
-  <h3 style="margin:0 0 16px 0;">App Quick Links</h3>
   <div class="btn-row">
-    {% if is_super_admin %}
-      <a class="btn btn-primary" href="{{ url_for('admin_final.admin_home') }}">
-          Admin Settings
+      <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
+      Dispatch Queue
+      {% if dispatch_queue_count %}
+        <span class="pill pill-needs" style="position: absolute; top: -8px; right: -8px; font-size: 11px; padding: 2px 6px;">{{ dispatch_queue_count }}</span>
+      {% endif %}
+    </a>
+      <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
+      Approval Groups Queue
+    </a>
+
+    <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
+      Final Review Queue
+    </a>
+        <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
+        All Requests
       </a>
-      <a class="btn" href="{{ url_for('admin_config.departments.list_departments') }}">
-          Manage Departments
-      </a>
-      <a class="btn" href="{{ url_for('admin_config.divisions.list_divisions') }}">Manage Divisions</a>
-      <a class="btn" href="{{ url_for('admin_config.users.list_users') }}">Manage Users</a>
-    {% endif %}
-    <a class="btn" href="{{ url_for('dev.dev_login') }}">Switch User (Dev)</a>
   </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 16px;">
+          <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
+      <div style="font-size: 28px; font-weight: 700; color: #0a66c2;">{{ submitted_count or 0 }}</div>
+      <div class="muted small">Submitted Requests</div>
+    </div>
+    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
+      <div style="font-size: 28px; font-weight: 700; color: #d97706;">{{ dispatch_queue_count or 0 }}</div>
+      <div class="muted small">Awaiting Dispatch</div>
+    </div>
+
+    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
+      <div style="font-size: 28px; font-weight: 700; color: #6b7280;">{{ pending_for_approver or 0 }}</div>
+      <div class="muted small">Pending Lines for Lvl 1 Approves</div>
+    </div>
+    <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
+      <div style="font-size: 28px; font-weight: 700; color: #059669;">{{ approval_groups|length }}</div>
+      <div class="muted small">Approval Groups</div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# Approver Section #}
+{% if approval_groups %}
+<section class="card" style="background: #eff6ff; border: 1px solid #3b82f6;">
+  <h3 style="margin:0 0 16px 0;">Your Approval Groups Queue(s)</h3>
+
+  {% if pending_for_approver %}
+  <div class="callout" style="background: #fef3c7; border-color: #f59e0b; margin-bottom: 16px;">
+    <strong>{{ pending_for_approver }} line(s)</strong> pending your review
+  </div>
+  {% endif %}
+
+  <div class="btn-row">
+    {% for group in approval_groups %}
+      <a class="btn" href="{{ url_for('approvals.dashboard_group', group_code=group.code) }}">
+        {{ group.name }}
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{# Key Dates - Collapsible #}
+{% if milestones %}
+<section class="card">
+  <details>
+    <summary style="cursor: pointer; font-weight: 600; font-size: 1rem; padding: 4px 0;">
+      Key Dates
+    </summary>
+    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+        {% for m in milestones %}
+          <div style="padding: 12px 16px; background: {% if m.is_past %}#f8fafc{% elif m.is_today %}#fef3c7{% elif m.is_soon %}#fffbeb{% else %}#f8fafc{% endif %}; border-radius: 6px; border-left: 3px solid {% if m.is_past %}#94a3b8{% elif m.is_today %}#f59e0b{% elif m.is_soon %}#fbbf24{% else %}#cbd5e1{% endif %};">
+            <div style="font-weight: 600; font-size: 0.9rem; {% if m.is_past %}color: #94a3b8;{% endif %}">
+              {{ m.label }}
+            </div>
+            <div style="font-size: 0.85rem; color: #64748b; margin: 4px 0;">
+              {{ m.date.strftime('%b %d, %Y') }}
+            </div>
+            <div style="font-size: 0.8rem; {% if m.is_past %}color: #94a3b8;{% elif m.is_today %}color: #d97706; font-weight: 600;{% elif m.is_soon %}color: #b45309;{% else %}color: #64748b;{% endif %}">
+              {% if m.is_today %}
+                Today!
+              {% elif m.is_past %}
+                {{ (-m.days_until) }} days ago
+              {% elif m.days_until == 1 %}
+                Tomorrow
+              {% else %}
+                {{ m.days_until }} days
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </details>
+</section>
+{% endif %}
+
+{# How It Works Guide - Tabbed Interface - Collapsible #}
+{% if work_types_with_access %}
+<section class="card">
+  <details>
+    <summary style="cursor: pointer; font-weight: 600; font-size: 1rem; padding: 4px 0;">
+      How It Works
+    </summary>
+    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+
+      {# Tab Navigation - only show if multiple work types #}
+      {% if work_types_with_access|length > 1 %}
+      <nav class="tab-nav" style="display: flex; gap: 0; margin-bottom: 16px;">
+        {% for wt in work_types_with_access %}
+          <button type="button"
+                  class="tab-btn how-it-works-tab {% if loop.first %}active{% endif %}"
+                  data-tab="{{ wt.code|lower }}"
+                  style="padding: 10px 20px; border: 1px solid {% if loop.first %}#ccc{% else %}transparent{% endif %};
+                         border-bottom: none; background: {% if loop.first %}#fff{% else %}#e0e0e0{% endif %};
+                         cursor: pointer; font-size: 13px; font-weight: 600;
+                         color: {% if loop.first %}#111{% else %}#555{% endif %};
+                         border-radius: 8px 8px 0 0; margin-right: 4px;">
+            {{ wt.name }}
+          </button>
+        {% endfor %}
+      </nav>
+      {% endif %}
+
+      {# Tab Panels #}
+      {% for wt in work_types_with_access %}
+        <div class="tab-panel how-it-works-panel {% if loop.first %}active{% endif %}"
+             id="panel-hiw-{{ wt.code|lower }}"
+             {% if not loop.first %}style="display: none;"{% endif %}>
+          {% include "partials/how_it_works_" ~ wt.code|lower ~ ".html" ignore missing %}
+        </div>
+      {% endfor %}
+
+    </div>
+  </details>
+</section>
+{% endif %}
+
+{# Quick Links - Collapsible #}
+<section class="card">
+  <details>
+    <summary style="cursor: pointer; font-weight: 600; font-size: 1rem; padding: 4px 0;">
+      Quick Links
+    </summary>
+    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+      <div class="btn-row">
+        {% if is_super_admin %}
+          <a class="btn btn-primary" href="{{ url_for('admin_final.admin_home') }}">
+              Admin Settings
+          </a>
+          <a class="btn" href="{{ url_for('admin_config.departments.list_departments') }}">
+              Manage Departments
+          </a>
+          <a class="btn" href="{{ url_for('admin_config.divisions.list_divisions') }}">Manage Divisions</a>
+          <a class="btn" href="{{ url_for('admin_config.users.list_users') }}">Manage Users</a>
+        {% endif %}
+        <a class="btn" href="{{ url_for('dev.dev_login') }}">Switch User (Dev)</a>
+      </div>
+    </div>
+  </details>
 </section>
 
 {% endif %}
+
+{# JavaScript for How It Works tab switching #}
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.how-it-works-tab').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const targetTab = this.dataset.tab;
+
+      // Update button styles
+      document.querySelectorAll('.how-it-works-tab').forEach(b => {
+        b.style.background = '#e0e0e0';
+        b.style.color = '#555';
+        b.style.border = '1px solid transparent';
+        b.style.borderBottom = 'none';
+        b.classList.remove('active');
+      });
+      this.style.background = '#fff';
+      this.style.color = '#111';
+      this.style.border = '1px solid #ccc';
+      this.style.borderBottom = 'none';
+      this.classList.add('active');
+
+      // Show/hide panels
+      document.querySelectorAll('.how-it-works-panel').forEach(p => {
+        p.style.display = 'none';
+        p.classList.remove('active');
+      });
+      document.getElementById('panel-hiw-' + targetTab).style.display = 'block';
+      document.getElementById('panel-hiw-' + targetTab).classList.add('active');
+    });
+  });
+});
+</script>
 
 {% endblock %}

@@ -241,6 +241,19 @@ def index():
         if any(wt.code == "BUDGET" and wt.id == wt_id for wt in active_work_types)
     }
 
+    # Derive which work types user has access to (for any department)
+    user_accessible_work_types = set()
+    for (dept_id, wt_id), access in dept_work_type_access.items():
+        if access['can_view'] or access['can_edit']:
+            user_accessible_work_types.add(wt_id)
+
+    # Build list of work types to show tabs for (preserving order)
+    work_types_with_access = [
+        wt for wt in active_work_types
+        if wt.id in user_accessible_work_types or is_super_admin
+    ]
+    context["work_types_with_access"] = work_types_with_access
+
     # Get stats for admins
     if is_super_admin:
         # Count submitted work items
