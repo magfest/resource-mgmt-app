@@ -1,0 +1,33 @@
+{
+  "name": "MAGFest Budget System",
+  "description": "A Flask-based budget request and approval system for MAGFest events.",
+  "keywords": [
+    "flask",
+    "python",
+    "budget",
+    "approval",
+    "workflow"
+  ],
+  "stack": "heroku-24",
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "addons": [
+    "heroku-postgresql"
+  ],
+  "env": {
+    "APP_ENV": "development",
+    "BETA_TESTING_MODE": "True",
+    "DEV_LOGIN_ENABLED": "True",
+    "ENV_BANNER_MESSAGE": "Review App",
+    "SECRET_KEY": {
+      "description": "A secret key for verifying the integrity of signed cookies.",
+      "generator": "secret"
+    }
+  },
+  "scripts": {
+    "postdeploy": "flask db upgrade && python -c \"from app import create_app; from app.seeds.config_seed import run_all_seeds; app = create_app(); app.app_context().push(); run_all_seeds()\""
+  }
+}
