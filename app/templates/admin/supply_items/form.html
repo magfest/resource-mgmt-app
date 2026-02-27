@@ -21,14 +21,14 @@
     <h4 style="margin-top: 0;">Basic Info</h4>
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
       <div style="grid-column: 1 / -1;">
-        <label for="item_name" style="display: block; font-weight: 600; margin-bottom: 6px;">Item Name *</label>
+        <label for="item_name" class="form-label">Item Name *</label>
         <input id="item_name" name="item_name" type="text" required maxlength="256"
                value="{{ item.item_name if item else '' }}"
                placeholder="e.g. Standard Pens (Box of 12)" />
       </div>
 
       <div>
-        <label for="category_id" style="display: block; font-weight: 600; margin-bottom: 6px;">Category *</label>
+        <label for="category_id" class="form-label">Category *</label>
         <select id="category_id" name="category_id" required>
           <option value="">Select category...</option>
           {% for cat in categories %}
@@ -40,27 +40,27 @@
       </div>
 
       <div>
-        <label for="unit" style="display: block; font-weight: 600; margin-bottom: 6px;">Unit *</label>
+        <label for="unit" class="form-label">Unit *</label>
         <input id="unit" name="unit" type="text" required maxlength="32"
                value="{{ item.unit if item else 'each' }}"
                placeholder="e.g. each, box, case" />
       </div>
 
       <div>
-        <label for="unit_cost" style="display: block; font-weight: 600; margin-bottom: 6px;">Unit Cost ($)</label>
+        <label for="unit_cost" class="form-label">Unit Cost ($)</label>
         <input id="unit_cost" name="unit_cost" type="number" step="0.01" min="0"
                value="{{ '{:.2f}'.format(item.unit_cost_cents / 100) if item and item.unit_cost_cents else '' }}"
                placeholder="0.00" />
       </div>
 
       <div>
-        <label for="sort_order" style="display: block; font-weight: 600; margin-bottom: 6px;">Sort Order</label>
+        <label for="sort_order" class="form-label">Sort Order</label>
         <input id="sort_order" name="sort_order" type="number"
                value="{{ item.sort_order if item else 0 }}" />
       </div>
 
       <div style="grid-column: 1 / -1;">
-        <label for="notes" style="display: block; font-weight: 600; margin-bottom: 6px;">Notes</label>
+        <label for="notes" class="form-label">Notes</label>
         <textarea id="notes" name="notes" rows="2"
                   placeholder="Optional notes about the item...">{{ item.notes if item else '' }}</textarea>
       </div>
@@ -69,21 +69,21 @@
     <h4 style="margin-top: 24px;">Inventory</h4>
     <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
       <div>
-        <label for="qty_on_hand" style="display: block; font-weight: 600; margin-bottom: 6px;">Qty On Hand</label>
+        <label for="qty_on_hand" class="form-label">Qty On Hand</label>
         <input id="qty_on_hand" name="qty_on_hand" type="number" min="0"
                value="{{ item.qty_on_hand if item and item.qty_on_hand is not none else '' }}"
                placeholder="0" />
       </div>
 
       <div>
-        <label for="location_zone" style="display: block; font-weight: 600; margin-bottom: 6px;">Location Zone</label>
+        <label for="location_zone" class="form-label">Location Zone</label>
         <input id="location_zone" name="location_zone" type="text" maxlength="32"
                value="{{ item.location_zone if item else '' }}"
                placeholder="e.g. A, B, Main" />
       </div>
 
       <div>
-        <label for="bin_location" style="display: block; font-weight: 600; margin-bottom: 6px;">Bin Location</label>
+        <label for="bin_location" class="form-label">Bin Location</label>
         <input id="bin_location" name="bin_location" type="text" maxlength="32"
                value="{{ item.bin_location if item else '' }}"
                placeholder="e.g. A-12, B-3" />
@@ -122,14 +122,14 @@
     <h4 style="margin-top: 24px;">Advanced</h4>
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
       <div>
-        <label for="internal_type" style="display: block; font-weight: 600; margin-bottom: 6px;">Internal Type</label>
+        <label for="internal_type" class="form-label">Internal Type</label>
         <input id="internal_type" name="internal_type" type="text" maxlength="32"
                value="{{ item.internal_type if item else '' }}"
                placeholder="e.g. consumable, equipment" />
       </div>
 
       <div>
-        <label for="image_url" style="display: block; font-weight: 600; margin-bottom: 6px;">Image URL</label>
+        <label for="image_url" class="form-label">Image URL</label>
         <input id="image_url" name="image_url" type="url" maxlength="512"
                value="{{ item.image_url if item else '' }}"
                placeholder="https://..." />

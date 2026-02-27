@@ -16,7 +16,7 @@
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
 
       <div>
-        <label for="event_cycle_id" style="display: block; font-weight: 600; margin-bottom: 6px;">Event Cycle</label>
+        <label for="event_cycle_id" class="form-label">Event Cycle</label>
         <select id="event_cycle_id" name="event_cycle_id" required {% if override %}disabled{% endif %}>
           <option value="" disabled {% if not override %}selected{% endif %}>Select...</option>
           {% if event_cycles %}
@@ -37,34 +37,34 @@
       </div>
 
       <div>
-        <label for="default_unit_price" style="display: block; font-weight: 600; margin-bottom: 6px;">Default Unit Price ($)</label>
+        <label for="default_unit_price" class="form-label">Default Unit Price ($)</label>
         <input id="default_unit_price" name="default_unit_price" type="text"
                value="{% if override and override.default_unit_price_cents is not none %}{{ '%.2f'|format(override.default_unit_price_cents / 100) }}{% endif %}"
                placeholder="blank = inherit from base" />
-        <div class="muted small" style="margin-top: 4px;">
+        <div class="muted small mt-4">
           Base: {% if account.default_unit_price_cents %}${{ '%.2f'|format(account.default_unit_price_cents / 100) }}{% else %}Not set{% endif %}
         </div>
       </div>
 
       <div>
-        <label for="default_spend_type_id" style="display: block; font-weight: 600; margin-bottom: 6px;">Default Spend Type</label>
+        <label for="default_spend_type_id" class="form-label">Default Spend Type</label>
         <select id="default_spend_type_id" name="default_spend_type_id">
           <option value="">Inherit from base</option>
           {% for st in spend_types %}
             <option value="{{ st.id }}" {% if override and override.default_spend_type_id == st.id %}selected{% endif %}>{{ st.name }}</option>
           {% endfor %}
         </select>
-        <div class="muted small" style="margin-top: 4px;">
+        <div class="muted small mt-4">
           Base: {{ account.default_spend_type.name if account.default_spend_type else 'Not set' }}
         </div>
       </div>
 
       <div>
-        <label for="ui_display_group" style="display: block; font-weight: 600; margin-bottom: 6px;">UI Display Group</label>
+        <label for="ui_display_group" class="form-label">UI Display Group</label>
         <input id="ui_display_group" name="ui_display_group" type="text"
                value="{{ override.ui_display_group if override else '' }}"
                placeholder="blank = inherit from base" />
-        <div class="muted small" style="margin-top: 4px;">
+        <div class="muted small mt-4">
           Base: {{ account.ui_display_group or 'Not set' }}
         </div>
       </div>

@@ -88,7 +88,7 @@
   {% endif %}
 
   {# Navigation #}
-  <div class="btn-row" style="margin-bottom: 16px;">
+  <div class="btn-row mb-16">
     <a class="btn" href="{{ url_for('work.work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
       Back to Request
     </a>
@@ -101,7 +101,7 @@
 
     {# Left Column: Line Details #}
     <div>
-      <section class="card" style="margin-bottom: 16px;">
+      <section class="card">
         <h3 style="margin:0 0 12px 0;">Line Details</h3>
 
         <div class="meta">
@@ -170,7 +170,7 @@
                 {{ event.old_value or '-' }} &rarr; {{ event.new_value or '-' }}
               </div>
               {% if event.note %}
-                <div class="muted" style="margin-top: 4px;">{{ event.note }}</div>
+                <div class="muted mt-4">{{ event.note }}</div>
               {% endif %}
             </div>
           {% endfor %}
@@ -216,7 +216,7 @@
 
       {# Status-specific notices #}
       {% if status == "NEEDS_INFO" %}
-        <div class="callout callout-action" style="margin-bottom: 16px;">
+        <div class="callout callout-action mb-16">
           <strong>Awaiting Requester Response</strong>
           <div class="muted" style="margin-top:4px;">
             This line is waiting for the requester to provide additional information.
@@ -241,7 +241,7 @@
           {% endif %}
         </div>
       {% elif status == "NEEDS_ADJUSTMENT" %}
-        <div class="callout callout-action" style="margin-bottom: 16px;">
+        <div class="callout callout-action mb-16">
           <strong>Awaiting Requester Adjustment</strong>
           <div class="muted" style="margin-top:4px;">
             This line is waiting for the requester to make adjustments.
@@ -290,7 +290,7 @@
           {% endif %}
         </div>
       {% elif status == "APPROVED" %}
-        <div class="callout callout-success" style="margin-bottom: 16px;">
+        <div class="callout callout-success mb-16">
           <strong>AG Approved</strong>
           {% if review and review.decided_at %}
             <div class="muted" style="margin-top:4px;">
@@ -302,7 +302,7 @@
           {% endif %}
         </div>
       {% elif status == "REJECTED" %}
-        <div class="callout callout-danger" style="margin-bottom: 16px;">
+        <div class="callout callout-danger mb-16">
           <strong>AG Rejected</strong>
           {% if review and review.decided_at %}
             <div class="muted" style="margin-top:4px;">
@@ -329,7 +329,7 @@
                   <span style="margin-left: 8px;">Recommended: {{ format_currency(ag_review.approved_amount_cents) }}</span>
                 {% endif %}
                 {% if ag_review.note %}
-                  <div class="muted" style="margin-top: 4px;">{{ ag_review.note }}</div>
+                  <div class="muted mt-4">{{ ag_review.note }}</div>
                 {% endif %}
               </div>
             {% endif %}
@@ -341,7 +341,7 @@
               <textarea name="note" id="review_note" rows="3" style="width: 100%;" placeholder="Enter your review notes..."></textarea>
             </div>
 
-            <div style="margin-bottom: 16px;">
+            <div class="mb-16">
               <label for="recommended_amount" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
                 Recommended Amount (optional)
               </label>
@@ -349,7 +349,7 @@
                      placeholder="{{ format_currency(line_total) }}"
                      style="max-width: 150px;"
               />
-              <div class="muted small" style="margin-top: 4px;">Leave blank to recommend full amount</div>
+              <div class="muted small mt-4">Leave blank to recommend full amount</div>
             </div>
 
             <div class="btn-row">
@@ -415,7 +415,7 @@
 
           {# Current Admin Final status #}
           {% if admin_review and admin_review.status in ['APPROVED', 'REJECTED'] %}
-            <div class="callout {% if admin_review.status == 'APPROVED' %}callout-success{% else %}callout-danger{% endif %}" style="margin-bottom: 16px;">
+            <div class="callout {% if admin_review.status == 'APPROVED' %}callout-success mb-16{% else %}callout-danger mb-16{% endif %}">
               <strong>Admin Final: {{ admin_review.status }}</strong>
               {% if admin_review.status == 'APPROVED' and line.approved_amount_cents is not none %}
                 <span style="margin-left: 8px;">Approved: {{ format_currency(line.approved_amount_cents) }}</span>
@@ -438,7 +438,7 @@
               </form>
             </div>
           {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}
-            <div class="callout callout-action" style="margin-bottom: 16px;">
+            <div class="callout callout-action mb-16">
               <strong>Awaiting Requester Response</strong>
               <div class="muted" style="margin-top:4px;">
                 This line is waiting for the requester to respond before admin final review can continue.
@@ -459,14 +459,14 @@
                     Full amount ({{ format_currency(line_total) }})
                   {% endif %}
                   {% if ag_review.note %}
-                    <div class="muted" style="margin-top: 4px;">{{ ag_review.note }}</div>
+                    <div class="muted mt-4">{{ ag_review.note }}</div>
                   {% endif %}
                 </div>
               {% elif ag_review and ag_review.status == 'REJECTED' %}
                 <div class="callout callout-danger" style="margin-bottom: 12px;">
                   <strong>Approval Group Recommended: REJECT</strong>
                   {% if ag_review.note %}
-                    <div class="muted" style="margin-top: 4px;">{{ ag_review.note }}</div>
+                    <div class="muted mt-4">{{ ag_review.note }}</div>
                   {% endif %}
                 </div>
               {% else %}
@@ -486,7 +486,7 @@
                        value="{{ '%.2f' % ((ag_review.approved_amount_cents or line_total) / 100) if ag_review else '%.2f' % (line_total / 100) }}"
                        style="max-width: 150px;"
                 />
-                <div class="muted small" style="margin-top: 4px;">
+                <div class="muted small mt-4">
                   Requested: {{ format_currency(line_total) }}
                   {% if ag_review and ag_review.approved_amount_cents is not none %}
                     &middot; AG Recommended: {{ format_currency(ag_review.approved_amount_cents) }}
@@ -494,7 +494,7 @@
                 </div>
               </div>
 
-              <div style="margin-bottom: 16px;">
+              <div class="mb-16">
                 <label for="admin_note" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
                   Note (required for reject/needs-info/amount changes)
                 </label>

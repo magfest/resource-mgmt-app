@@ -25,18 +25,18 @@
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
 
       <div>
-        <label for="display_name" style="display: block; font-weight: 600; margin-bottom: 6px;">Display Name</label>
+        <label for="display_name" class="form-label">Display Name</label>
         <input id="display_name" name="display_name" type="text" required
                value="{{ user.display_name if user else '' }}"
                placeholder="e.g. John Smith" />
       </div>
 
       <div>
-        <label for="email" style="display: block; font-weight: 600; margin-bottom: 6px;">Email</label>
+        <label for="email" class="form-label">Email</label>
         <input id="email" name="email" type="email" required
                value="{{ user.email if user else '' }}"
                placeholder="e.g. john@magfest.org" />
-        <div class="muted small" style="margin-top: 4px;">Must match their Google account email to sign in.</div>
+        <div class="muted small mt-4">Must match their Google account email to sign in.</div>
       </div>
 
       <div style="grid-column: 1 / -1;">
@@ -54,7 +54,7 @@
       <strong style="display: block; margin-bottom: 12px;">System Roles</strong>
 
       {# Super Admin #}
-      <div style="margin-bottom: 16px;">
+      <div class="mb-16">
         <label style="display: flex; gap: 8px; align-items: flex-start; font-weight: normal;">
           <input type="checkbox" name="role_super_admin" value="1"
                  {% if user %}{% for r in user.roles %}{% if r.role_code == 'SUPER_ADMIN' %}checked{% endif %}{% endfor %}{% endif %}
@@ -68,7 +68,7 @@
 
       {# Work Type Admin #}
       {% if work_types %}
-      <div style="margin-bottom: 16px;">
+      <div class="mb-16">
         <div style="font-weight: 600; margin-bottom: 8px;">Work Type Admin</div>
         <div class="muted small" style="margin-bottom: 8px;">Admin privileges for specific work types.</div>
         <div style="display: flex; flex-wrap: wrap; gap: 16px;">
@@ -125,7 +125,7 @@
 {% if user %}
 <div class="card" style="max-width: 800px; margin-top: 24px;">
   <h3 style="margin: 0 0 12px 0;">Memberships</h3>
-  <p class="muted" style="margin-bottom: 16px;">
+  <p class="muted mb-16">
     This user's department and division memberships are managed from the respective department and division admin pages.
   </p>
   <table style="margin-bottom: 0;">
@@ -143,7 +143,7 @@
 {% if user.auth_subject and not user.auth_subject.startswith('dev:') %}
 <div class="callout" style="max-width: 800px; margin-top: 24px; background: #f0fdf4; border-color: #bbf7d0;">
   <strong>Google Account Linked</strong>
-  <div class="muted small" style="margin-top: 4px;">
+  <div class="muted small mt-4">
     This user has signed in with Google. Their account is matched by email address.
   </div>
 </div>

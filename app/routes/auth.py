@@ -15,6 +15,17 @@ from app import db
 
 auth_bp = Blueprint('auth', __name__)
 
+# Domains where email updates are allowed (organization emails)
+MAGFEST_DOMAINS = {'magfest.org', 'magwest.org', 'magstock.org'}
+
+
+def is_magfest_email(email: str) -> bool:
+    """Check if email is from a MAGFest organization domain."""
+    if not email or '@' not in email:
+        return False
+    domain = email.split('@')[-1].lower()
+    return domain in MAGFEST_DOMAINS
+
 
 def login_required(f):
     """Decorator to require user authentication.
@@ -221,21 +232,47 @@ def _complete_login(email: str, subject: str, display_name: str, provider: str):
     """Complete the login process after OAuth validation.
 
     This is shared logic for all OAuth providers.
+
+    User lookup priority:
+    1. auth_subject (stable identifier from OAuth provider)
+    2. email (fallback for migration of legacy users)
+
+    Email updates:
+    - Only updates email if new email is from a MAGFest domain
+    - Prevents personal email addresses from overwriting org emails
     """
     from app.models import User
     from app.security_audit import log_login_success, log_login_failure
     import uuid
 
-    # Try to find existing user by email
-    user = db.session.query(User).filter(
-        db.func.lower(User.email) == email
-    ).first()
+    user = None
+
+    # Primary lookup: auth_subject (stable identifier)
+    if subject:
+        user = User.query.filter_by(auth_subject=subject).first()
+
+    # Fallback lookup: email (for legacy users without auth_subject)
+    if not user:
+        user = db.session.query(User).filter(
+            db.func.lower(User.email) == email
+        ).first()
+
+        if user:
+            # Legacy user found by email - backfill auth_subject
+            if not user.auth_subject or user.auth_subject.startswith('dev:'):
+                current_app.logger.info(
+                    f"Backfilling auth_subject for user {user.id} ({user.email})"
+                )
+                user.auth_subject = subject
 
     if user:
-        # Existing user - update their auth subject if not set or was dev
-        if not user.auth_subject or user.auth_subject.startswith('dev:'):
-            user.auth_subject = subject
-            db.session.commit()
+        # Existing user found
+        # Update email only if new email is from MAGFest domain
+        if is_magfest_email(email) and user.email.lower() != email.lower():
+            current_app.logger.info(
+                f"Updating email for user {user.id}: {user.email} -> {email}"
+            )
+            user.email = email
 
         if not user.is_active:
             log_login_failure("inactive_user", email=email, provider=provider)

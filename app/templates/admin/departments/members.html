@@ -4,14 +4,14 @@
 
 {% block content %}
 <h1>{{ department.name }} - Department Members</h1>
-<div class="muted" style="margin-bottom: 16px;">
+<div class="muted mb-16">
   Manage users who can view and edit work requests for this department.
   {% if department.division %}
     <span class="pill" style="margin-left: 8px;">{{ department.division.name }}</span>
   {% endif %}
 </div>
 
-<div class="row" style="margin-bottom: 16px;">
+<div class="row mb-16">
   <a class="btn btn-primary" href="{{ url_for('admin_config.departments.add_member_form', dept_id=department.id) }}">+ Add Member</a>
   <a class="btn" href="{{ url_for('admin_config.departments.edit_department', dept_id=department.id) }}">Back to Department</a>
 </div>

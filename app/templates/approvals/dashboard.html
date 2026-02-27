@@ -17,7 +17,7 @@
 
   {# Group Tabs #}
   {% if groups|length > 1 %}
-    <div class="btn-row" style="margin-bottom: 16px;">
+    <div class="btn-row mb-16">
       {% for g in groups %}
         {% if g.id == current_group.id %}
           <span class="btn btn-primary">{{ g.name }}</span>
@@ -86,7 +86,7 @@
   </div>
 
   {# Pending Review Queue - Request Level #}
-  <section class="card" style="margin-bottom: 16px;">
+  <section class="card">
     <h3 style="margin:0 0 12px 0;">
       Requests Pending Review
       {% if queues.pending_request_count > 0 %}
@@ -148,7 +148,7 @@
   </section>
 
   {# Kicked Back Queue #}
-  <section class="card" style="margin-bottom: 16px;">
+  <section class="card">
     <h3 style="margin:0 0 12px 0;">
       Kicked Back (Awaiting Requester)
       {% if queues.kicked_back_count > 0 %}

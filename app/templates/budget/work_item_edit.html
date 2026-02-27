@@ -41,7 +41,7 @@
   </div>
 
   {# Actions #}
-  <div class="btn-row" style="margin-bottom: 16px;">
+  <div class="btn-row mb-16">
     {% if perms.can_submit %}
       <form method="post" action="{{ url_for('work.work_item_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -123,7 +123,7 @@
                     <span class="muted">-</span>
                   {% endif %}
                   {% if detail %}
-                    <div class="muted small" style="margin-top: 4px;">
+                    <div class="muted small mt-4">
                       {% if detail.priority %}Priority: {{ detail.priority.name }}{% endif %}
                       {% if detail.confidence_level %} &middot; Confidence: {{ detail.confidence_level.name }}{% endif %}
                       {% if detail.frequency %} &middot; {{ detail.frequency.name }}{% endif %}
@@ -280,7 +280,7 @@
         <h3 style="margin:0 0 12px 0;">Duration Calculator</h3>
 
         {% if event_start_date and event_end_date %}
-          <div style="margin-bottom: 16px;">
+          <div class="mb-16">
             <strong>Event:</strong>
             {{ event_start_date.strftime('%b %d') }} - {{ event_end_date.strftime('%b %d, %Y') }}
             (<span id="event-nights-display">{{ event_nights }}</span> nights)
@@ -303,7 +303,7 @@
 
           <div style="background: #fff; padding: 12px; border-radius: 6px; margin-bottom: 16px;">
             <strong>Total: <span id="total-nights-display">{{ event_nights }}</span> nights/days</strong>
-            <div class="muted small" style="margin-top: 4px;">
+            <div class="muted small mt-4">
               (<span id="event-nights-calc">{{ event_nights }}</span> event + <span id="setup-nights-calc">0</span> setup + <span id="teardown-nights-calc">0</span> teardown) x <span id="room-count-calc">1</span>
             </div>
           </div>
@@ -420,7 +420,7 @@
   <div class="tab-panel" id="panel-notes" style="display: none;">
     <section class="card">
       <h3 style="margin:0 0 12px 0;">Request Notes</h3>
-      <div class="muted small" style="margin-bottom: 16px;">
+      <div class="muted small mb-16">
         Add notes or context about this budget request for reviewers.
       </div>
 

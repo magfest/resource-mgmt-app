@@ -255,16 +255,12 @@ def get_portfolio_context(
 # Permission Building Functions
 # ============================================================
 
-def is_budget_admin(user_ctx: UserContext, work_type_id: int | None = None) -> bool:
-    """Check if user is a budget admin (SUPER_ADMIN or WORKTYPE_ADMIN for BUDGET)."""
+def is_worktype_admin(user_ctx: UserContext, work_type_id: int) -> bool:
+    """Check if user is an admin for a specific work type (SUPER_ADMIN or WORKTYPE_ADMIN)."""
     if user_ctx.is_admin:
         return True
 
     from app.models import UserRole
-    if work_type_id is None:
-        work_type = get_budget_work_type()
-        work_type_id = work_type.id
-
     admin_role = UserRole.query.filter_by(
         user_id=user_ctx.user_id,
         role_code=ROLE_WORKTYPE_ADMIN,
@@ -272,6 +268,14 @@ def is_budget_admin(user_ctx: UserContext, work_type_id: int | None = None) -> b
     ).first()
 
     return admin_role is not None
+
+
+def is_budget_admin(user_ctx: UserContext, work_type_id: int | None = None) -> bool:
+    """Check if user is a budget admin. Convenience wrapper for is_worktype_admin()."""
+    if work_type_id is None:
+        work_type = get_budget_work_type()
+        work_type_id = work_type.id
+    return is_worktype_admin(user_ctx, work_type_id)
 
 
 def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:

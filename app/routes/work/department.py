@@ -24,6 +24,7 @@ from app.routes.work.helpers import (
     compute_work_item_totals,
     is_budget_admin,
 )
+from app.routes.admin.helpers import can_manage_department_members, can_edit_department_info
 from . import work_bp
 
 
@@ -139,6 +140,16 @@ def department_home(event: str, dept: str):
     if not work_type_cards and not user_ctx.is_admin:
         abort(403, "You do not have access to any work types for this department.")
 
+    # Check if user can manage department members (Div Head, DH, or Admin)
+    can_manage_members = can_manage_department_members(
+        user_ctx, department.id, event_cycle.id
+    )
+
+    # Check if user can edit department info (same permission)
+    can_edit_info = can_edit_department_info(
+        user_ctx, department.id, event_cycle.id
+    )
+
     return render_page(
         "budget/department_home.html",
         event_cycle=event_cycle,
@@ -146,4 +157,6 @@ def department_home(event: str, dept: str):
         dept_membership=dept_membership,
         div_membership=div_membership,
         work_type_cards=work_type_cards,
+        can_manage_members=can_manage_members,
+        can_edit_info=can_edit_info,
     )

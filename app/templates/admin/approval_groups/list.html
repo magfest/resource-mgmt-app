@@ -8,11 +8,11 @@
 </div>
 
 <h1>Approval Groups</h1>
-<div class="muted" style="margin-bottom: 16px;">
+<div class="muted mb-16">
   Manage approval groups that review expense accounts. Each expense account routes to one approval group.
 </div>
 
-<div class="row" style="margin-bottom: 16px;">
+<div class="row mb-16">
   <a class="btn btn-primary" href="{{ url_for('admin_config.approval_groups.new_approval_group') }}">+ New Approval Group</a>
 
   <form method="get" action="{{ url_for('admin_config.approval_groups.list_approval_groups') }}" class="row" style="margin: 0; gap: 8px;">

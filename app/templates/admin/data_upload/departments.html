@@ -4,7 +4,7 @@
 
 {% block content %}
 <h1>Upload Departments</h1>
-<div class="muted" style="margin-bottom: 16px;">
+<div class="muted mb-16">
   <a href="{{ url_for('admin_config.data_upload.index') }}">&larr; Back to Data Upload</a>
 </div>
 
@@ -15,7 +15,7 @@
 
 <form method="post" enctype="multipart/form-data" style="max-width: 600px;">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div style="margin-bottom: 16px;">
+  <div class="mb-16">
     <label for="file"><strong>Select File</strong></label>
     <div style="margin-top: 8px;">
       <input type="file" name="file" id="file" accept=".csv,.xlsx,.xls" required>

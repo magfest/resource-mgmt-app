@@ -23,22 +23,22 @@
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
 
       <div>
-        <label for="code" style="display: block; font-weight: 600; margin-bottom: 6px;">Code</label>
+        <label for="code" class="form-label">Code</label>
         <input id="code" name="code" type="text" required maxlength="16"
                value="{{ cycle.code if cycle else '' }}"
                placeholder="e.g. SMF2026" />
-        <div class="muted small" style="margin-top: 4px;">Unique identifier (max 16 chars). Will be uppercased.</div>
+        <div class="muted small mt-4">Unique identifier (max 16 chars). Will be uppercased.</div>
       </div>
 
       <div>
-        <label for="name" style="display: block; font-weight: 600; margin-bottom: 6px;">Name</label>
+        <label for="name" class="form-label">Name</label>
         <input id="name" name="name" type="text" required
                value="{{ cycle.name if cycle else '' }}"
                placeholder="e.g. Super MAGFest 2026" />
       </div>
 
       <div>
-        <label for="sort_order" style="display: block; font-weight: 600; margin-bottom: 6px;">Sort Order</label>
+        <label for="sort_order" class="form-label">Sort Order</label>
         <input id="sort_order" name="sort_order" type="number"
                value="{{ cycle.sort_order if cycle else 0 }}" />
       </div>
@@ -61,44 +61,44 @@
 
     <div style="border-top: 1px solid #eee; margin-top: 20px; padding-top: 20px;">
       <h3 style="margin: 0 0 16px 0; font-size: 1rem;">Key Dates</h3>
-      <div class="muted small" style="margin-bottom: 16px;">
+      <div class="muted small mb-16">
         These dates are shown on the homepage to help everyone track the budget timeline.
       </div>
 
       <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
         <div>
-          <label for="event_start_date" style="display: block; font-weight: 600; margin-bottom: 6px;">Event Start Date</label>
+          <label for="event_start_date" class="form-label">Event Start Date</label>
           <input id="event_start_date" name="event_start_date" type="date"
                  value="{{ cycle.event_start_date.isoformat() if cycle and cycle.event_start_date else '' }}" />
-          <div class="muted small" style="margin-top: 4px;">When the event begins</div>
+          <div class="muted small mt-4">When the event begins</div>
         </div>
 
         <div>
-          <label for="event_end_date" style="display: block; font-weight: 600; margin-bottom: 6px;">Event End Date</label>
+          <label for="event_end_date" class="form-label">Event End Date</label>
           <input id="event_end_date" name="event_end_date" type="date"
                  value="{{ cycle.event_end_date.isoformat() if cycle and cycle.event_end_date else '' }}" />
-          <div class="muted small" style="margin-top: 4px;">When the event ends (used for hotel calculations)</div>
+          <div class="muted small mt-4">When the event ends (used for hotel calculations)</div>
         </div>
 
         <div>
-          <label for="submission_deadline" style="display: block; font-weight: 600; margin-bottom: 6px;">Submission Deadline</label>
+          <label for="submission_deadline" class="form-label">Submission Deadline</label>
           <input id="submission_deadline" name="submission_deadline" type="date"
                  value="{{ cycle.submission_deadline.isoformat() if cycle and cycle.submission_deadline else '' }}" />
-          <div class="muted small" style="margin-top: 4px;">When departments should submit budgets</div>
+          <div class="muted small mt-4">When departments should submit budgets</div>
         </div>
 
         <div>
-          <label for="approval_target_date" style="display: block; font-weight: 600; margin-bottom: 6px;">Approval Target</label>
+          <label for="approval_target_date" class="form-label">Approval Target</label>
           <input id="approval_target_date" name="approval_target_date" type="date"
                  value="{{ cycle.approval_target_date.isoformat() if cycle and cycle.approval_target_date else '' }}" />
-          <div class="muted small" style="margin-top: 4px;">Target for completing all approvals</div>
+          <div class="muted small mt-4">Target for completing all approvals</div>
         </div>
 
         <div>
-          <label for="finalization_date" style="display: block; font-weight: 600; margin-bottom: 6px;">Finalization Date</label>
+          <label for="finalization_date" class="form-label">Finalization Date</label>
           <input id="finalization_date" name="finalization_date" type="date"
                  value="{{ cycle.finalization_date.isoformat() if cycle and cycle.finalization_date else '' }}" />
-          <div class="muted small" style="margin-top: 4px;">When budgets are locked</div>
+          <div class="muted small mt-4">When budgets are locked</div>
         </div>
       </div>
     </div>

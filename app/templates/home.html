@@ -48,7 +48,7 @@
 {% else %}
 {# Timeline / Milestones - shown to everyone #}
 {% if milestones %}
-<section class="card" style="margin-bottom: 24px;">
+<section class="card">
   <h3 style="margin:0 0 16px 0;">Key Dates</h3>
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
     {% for m in milestones %}
@@ -75,7 +75,7 @@
   </div>
 </section>
 {# How It Works Guide #}
-<section class="card" style="margin-bottom: 24px;">
+<section class="card">
   <details>
     <summary style="cursor: pointer; font-weight: 600; font-size: 1rem; padding: 4px 0;">
       How the Budget Process Works
@@ -123,10 +123,10 @@
 {% endif %}
 {# Super Admin Section #}
 {% if is_super_admin %}
-<section class="card" style="margin-bottom: 24px; background: #f0fdf4; border: 1px solid #059669;">
+<section class="card" style="background: #f0fdf4; border: 1px solid #059669;">
   <h3 style="margin:0 0 16px 0;">Budget Admin Quick Actions</h3>
 
-  <div class="btn-row" style="margin-bottom: 16px;">
+  <div class="btn-row">
       <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
       Dispatch Queue
       {% if dispatch_queue_count %}
@@ -145,7 +145,7 @@
       </a>
   </div>
 
-  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 16px;">
           <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
       <div style="font-size: 28px; font-weight: 700; color: #0a66c2;">{{ submitted_count or 0 }}</div>
       <div class="muted small">Submitted Requests</div>
@@ -169,7 +169,7 @@
 
 {# Approver Section #}
 {% if approval_groups %}
-<section class="card" style="margin-bottom: 24px; background: #eff6ff; border: 1px solid #3b82f6;">
+<section class="card" style="background: #eff6ff; border: 1px solid #3b82f6;">
   <h3 style="margin:0 0 16px 0;">Your Approval Groups Queue(s)</h3>
 
   {% if pending_for_approver %}
@@ -191,11 +191,11 @@
 
 {# Department Access Section - includes both direct and division-derived access #}
 {% if accessible_depts %}
-<section class="card" style="margin-bottom: 24px;">
+<section class="card">
   <h3 style="margin:0 0 16px 0;">Your Departments</h3>
 
   {% if div_memberships %}
-  <p class="muted" style="margin-bottom: 16px;">
+  <p class="muted mb-16">
     Includes departments from your division access:
     {% for dm in div_memberships %}
       <span class="pill" style="background: #f3e8ff; color: #7c3aed; font-size: 0.75rem;">{{ dm.division.name }}</span>

@@ -8,7 +8,7 @@
 
   <div class="callout" style="background: #fef3c7; border-color: #fcd34d; margin-bottom: 24px;">
     <strong>Testing Tool</strong>
-    <div class="muted small" style="margin-top: 4px;">
+    <div class="muted small mt-4">
       View the app as another user to test their experience. You'll see their departments,
       memberships, and permissions. Use "Exit Impersonation" to return to your account.
     </div>
@@ -17,7 +17,7 @@
   <div class="card">
     <form method="post" action="{{ url_for('dev.impersonate_user') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div style="margin-bottom: 16px;">
+      <div class="mb-16">
         <label for="user_id" style="display: block; font-weight: 600; margin-bottom: 8px;">
           Select User to Impersonate
         </label>

@@ -7,11 +7,11 @@
 <div class="muted" style="margin-bottom: 8px;">
   Account: <strong>{{ account.code }}</strong> - {{ account.name }}
 </div>
-<div class="muted small" style="margin-bottom: 16px;">
+<div class="muted small mb-16">
   Override account settings for specific event cycles. Useful for changing unit costs or labels per-event.
 </div>
 
-<div class="row" style="margin-bottom: 16px;">
+<div class="row mb-16">
   <a class="btn btn-primary" href="{{ url_for('admin_config.expense_accounts.new_override', account_id=account.id) }}">+ New Override</a>
   <a class="btn" href="{{ url_for('admin_config.expense_accounts.edit_expense_account', account_id=account.id) }}">Back to Account</a>
 </div>

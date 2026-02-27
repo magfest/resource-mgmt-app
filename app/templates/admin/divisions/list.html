@@ -8,11 +8,11 @@
 </div>
 
 <h1>Divisions</h1>
-<div class="muted" style="margin-bottom: 16px;">
+<div class="muted mb-16">
   Manage organizational divisions that group departments for reporting.
 </div>
 
-<div class="row" style="margin-bottom: 16px;">
+<div class="row mb-16">
   <a class="btn btn-primary" href="{{ url_for('admin_config.divisions.new_division') }}">+ New Division</a>
 
   <form method="get" action="{{ url_for('admin_config.divisions.list_divisions') }}" class="row" style="margin: 0; gap: 8px;">

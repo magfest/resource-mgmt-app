@@ -6,7 +6,7 @@
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
   <div>
     <h1 style="margin: 0;">{% if account %}Edit Expense Account{% else %}New Expense Account{% endif %}</h1>
-    <div class="muted" style="margin-top: 4px;">
+    <div class="muted mt-4">
       {% if account %}
         <strong>{{ account.code }}</strong>
         {% if line_count %}
@@ -28,7 +28,7 @@
 </div>
 
 {% if not can_modify %}
-<div class="callout callout-warning" style="margin-bottom: 16px;">
+<div class="callout callout-warning mb-16">
   <strong>Modification Limited</strong>: This account is referenced by submitted budget lines. Some fields cannot be changed.
 </div>
 {% endif %}
@@ -45,23 +45,23 @@
     {# Left Column - Main Fields #}
     <div>
       {# Basic Info Section #}
-      <section class="card" style="margin-bottom: 16px;">
+      <section class="card">
         <h3 style="margin: 0 0 16px 0;">Basic Info</h3>
 
         <div class="grid" style="grid-template-columns: 1fr 2fr; gap: 16px;">
           <div>
-            <label for="code" style="display: block; font-weight: 600; margin-bottom: 6px;">Code</label>
+            <label for="code" class="form-label">Code</label>
             <input id="code" name="code" type="text" required
                    value="{{ account.code if account else '' }}"
                    placeholder="HTL_ROOM_REG"
                    maxlength="16"
                    style="text-transform: uppercase;"
                    {% if not can_modify %}disabled{% endif %} />
-            <div class="muted small" style="margin-top: 4px;">Unique identifier (max 16 chars)</div>
+            <div class="muted small mt-4">Unique identifier (max 16 chars)</div>
           </div>
 
           <div>
-            <label for="name" style="display: block; font-weight: 600; margin-bottom: 6px;">Name</label>
+            <label for="name" class="form-label">Name</label>
             <input id="name" name="name" type="text" required
                    value="{{ account.name if account else '' }}"
                    placeholder="Hotel Room - Regular"
@@ -70,28 +70,28 @@
         </div>
 
         <div style="margin-top: 16px;">
-          <label for="description" style="display: block; font-weight: 600; margin-bottom: 6px;">Description</label>
+          <label for="description" class="form-label">Description</label>
           <textarea id="description" name="description" rows="2"
                     placeholder="Optional notes shown to requesters..."
                     {% if not can_modify %}disabled{% endif %}>{{ account.description if account else '' }}</textarea>
         </div>
 
         <div style="margin-top: 16px;">
-          <label for="quickbooks_account_name" style="display: block; font-weight: 600; margin-bottom: 6px;">QuickBooks Account Name</label>
+          <label for="quickbooks_account_name" class="form-label">QuickBooks Account Name</label>
           <input id="quickbooks_account_name" name="quickbooks_account_name" type="text"
                  value="{{ account.quickbooks_account_name if account else '' }}"
                  placeholder="Exact name from QuickBooks"
                  {% if not can_modify %}disabled{% endif %} />
-          <div class="muted small" style="margin-top: 4px;">For export/integration. Multiple accounts can share the same QB name.</div>
+          <div class="muted small mt-4">For export/integration. Multiple accounts can share the same QB name.</div>
         </div>
       </section>
 
       {# Account Type & Pricing Section #}
-      <section class="card" style="margin-bottom: 16px;">
+      <section class="card">
         <h3 style="margin: 0 0 16px 0;">Account Type</h3>
 
         <div>
-          <label for="account_type" style="display: block; font-weight: 600; margin-bottom: 6px;">Type</label>
+          <label for="account_type" class="form-label">Type</label>
           <select id="account_type" name="account_type" {% if not can_modify %}disabled{% endif %} style="max-width: 300px;">
             {% set current_type = 'standard' %}
             {% if account %}
@@ -105,7 +105,7 @@
             <option value="fixed_cost" {% if current_type == 'fixed_cost' %}selected{% endif %}>Fixed Cost</option>
             <option value="hotel_service" {% if current_type == 'hotel_service' %}selected{% endif %}>Hotel/Gaylord Service</option>
           </select>
-          <div class="muted small" style="margin-top: 4px;">
+          <div class="muted small mt-4">
             <strong>Standard:</strong> User enters price and quantity.<br>
             <strong>Fixed Cost:</strong> Price is set by admin; user only enters quantity. Shows in Fixed Costs tab.<br>
             <strong>Hotel/Gaylord:</strong> Same as Fixed Cost, but shows in Hotel tab with duration calculator.
@@ -115,22 +115,22 @@
         <div id="pricing-section" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee; {% if not account or not account.is_fixed_cost %}display: none;{% endif %}">
           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
-              <label for="default_unit_price" style="display: block; font-weight: 600; margin-bottom: 6px;">Unit Price ($)</label>
+              <label for="default_unit_price" class="form-label">Unit Price ($)</label>
               <input id="default_unit_price" name="default_unit_price" type="text"
                      value="{% if account and account.default_unit_price_cents %}{{ '%.2f'|format(account.default_unit_price_cents / 100) }}{% endif %}"
                      placeholder="0.00"
                      style="max-width: 150px;"
                      {% if not can_modify %}disabled{% endif %} />
-              <div class="muted small" style="margin-top: 4px;">Price per unit (per night, per item, etc.)</div>
+              <div class="muted small mt-4">Price per unit (per night, per item, etc.)</div>
             </div>
           </div>
         </div>
       </section>
 
       {# Spend Types Section #}
-      <section class="card" style="margin-bottom: 16px;">
+      <section class="card">
         <h3 style="margin: 0 0 8px 0;">Allowed Spend Types</h3>
-        <div class="muted" style="margin-bottom: 16px;">
+        <div class="muted mb-16">
           Select which spend types can be used with this account. If only one is selected, it will be locked.
         </div>
 
@@ -163,27 +163,27 @@
     {# Right Column - Settings #}
     <div>
       {# Routing Section #}
-      <section class="card" style="margin-bottom: 16px;">
+      <section class="card">
         <h3 style="margin: 0 0 16px 0;">Approval Routing</h3>
 
         <div>
-          <label for="approval_group_id" style="display: block; font-weight: 600; margin-bottom: 6px;">Approval Group</label>
+          <label for="approval_group_id" class="form-label">Approval Group</label>
           <select id="approval_group_id" name="approval_group_id" required {% if not can_modify %}disabled{% endif %}>
             <option value="" disabled {% if not account %}selected{% endif %}>Select...</option>
             {% for g in approval_groups %}
               <option value="{{ g.id }}" {% if account and account.approval_group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
             {% endfor %}
           </select>
-          <div class="muted small" style="margin-top: 4px;">Who reviews budget lines for this account</div>
+          <div class="muted small mt-4">Who reviews budget lines for this account</div>
         </div>
       </section>
 
       {# Visibility Section #}
-      <section class="card" style="margin-bottom: 16px;">
+      <section class="card">
         <h3 style="margin: 0 0 16px 0;">Visibility</h3>
 
         <div>
-          <label for="visibility_mode" style="display: block; font-weight: 600; margin-bottom: 6px;">Who can use this account?</label>
+          <label for="visibility_mode" class="form-label">Who can use this account?</label>
           <select id="visibility_mode" name="visibility_mode" {% if not can_modify %}disabled{% endif %}>
             <option value="ALL_DEPARTMENTS" {% if not account or account.visibility_mode == 'ALL_DEPARTMENTS' %}selected{% endif %}>All Departments</option>
             <option value="RESTRICTED" {% if account and account.visibility_mode == 'RESTRICTED' %}selected{% endif %}>Specific Departments Only</option>
@@ -206,16 +206,16 @@
       </section>
 
       {# Display Settings Section #}
-      <section class="card" style="margin-bottom: 16px;">
+      <section class="card">
         <h3 style="margin: 0 0 16px 0;">Display</h3>
 
         <div>
-          <label for="sort_order" style="display: block; font-weight: 600; margin-bottom: 6px;">Sort Order</label>
+          <label for="sort_order" class="form-label">Sort Order</label>
           <input id="sort_order" name="sort_order" type="number"
                  value="{{ account.sort_order if account else 0 }}"
                  style="max-width: 100px;"
                  {% if not can_modify %}disabled{% endif %} />
-          <div class="muted small" style="margin-top: 4px;">Lower numbers appear first</div>
+          <div class="muted small mt-4">Lower numbers appear first</div>
         </div>
       </section>
 
@@ -232,13 +232,13 @@
             </label>
 
             <div>
-              <label for="prompt_mode" style="display: block; font-weight: 600; margin-bottom: 6px;">Prompt Mode</label>
+              <label for="prompt_mode" class="form-label">Prompt Mode</label>
               <select id="prompt_mode" name="prompt_mode" {% if not can_modify %}disabled{% endif %}>
                 <option value="NONE" {% if not account or account.prompt_mode == 'NONE' %}selected{% endif %}>None</option>
                 <option value="SUGGEST" {% if account and account.prompt_mode == 'SUGGEST' %}selected{% endif %}>Suggest</option>
                 <option value="REQUIRE_EXPLICIT_NA" {% if account and account.prompt_mode == 'REQUIRE_EXPLICIT_NA' %}selected{% endif %}>Require Explicit N/A</option>
               </select>
-              <div class="muted small" style="margin-top: 4px;">Controls how this account is prompted during budget entry</div>
+              <div class="muted small mt-4">Controls how this account is prompted during budget entry</div>
             </div>
           </div>
         </details>

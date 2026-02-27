@@ -20,28 +20,28 @@
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
 
       <div>
-        <label for="code" style="display: block; font-weight: 600; margin-bottom: 6px;">Code</label>
+        <label for="code" class="form-label">Code</label>
         <input id="code" name="code" type="text" required maxlength="32"
                value="{{ category.code if category else '' }}"
                placeholder="e.g. OFFICE" />
-        <div class="muted small" style="margin-top: 4px;">Unique identifier. Will be uppercased.</div>
+        <div class="muted small mt-4">Unique identifier. Will be uppercased.</div>
       </div>
 
       <div>
-        <label for="name" style="display: block; font-weight: 600; margin-bottom: 6px;">Name</label>
+        <label for="name" class="form-label">Name</label>
         <input id="name" name="name" type="text" required
                value="{{ category.name if category else '' }}"
                placeholder="e.g. Office Supplies" />
       </div>
 
       <div style="grid-column: 1 / -1;">
-        <label for="description" style="display: block; font-weight: 600; margin-bottom: 6px;">Description</label>
+        <label for="description" class="form-label">Description</label>
         <textarea id="description" name="description" rows="3"
                   placeholder="Optional description...">{{ category.description if category else '' }}</textarea>
       </div>
 
       <div>
-        <label for="approval_group_id" style="display: block; font-weight: 600; margin-bottom: 6px;">Approval Group</label>
+        <label for="approval_group_id" class="form-label">Approval Group</label>
         <select id="approval_group_id" name="approval_group_id">
           <option value="">— None —</option>
           {% for ag in approval_groups %}
@@ -53,7 +53,7 @@
       </div>
 
       <div>
-        <label for="sort_order" style="display: block; font-weight: 600; margin-bottom: 6px;">Sort Order</label>
+        <label for="sort_order" class="form-label">Sort Order</label>
         <input id="sort_order" name="sort_order" type="number"
                value="{{ category.sort_order if category else 0 }}" />
       </div>

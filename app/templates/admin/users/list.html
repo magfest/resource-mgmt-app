@@ -8,11 +8,11 @@
 </div>
 
 <h1>Users</h1>
-<div class="muted" style="margin-bottom: 16px;">
+<div class="muted mb-16">
   Manage user accounts and their system roles.
 </div>
 
-<div class="row" style="margin-bottom: 16px;">
+<div class="row mb-16">
   <a class="btn btn-primary" href="{{ url_for('admin_config.users.new_user') }}">+ New User</a>
 
   <form method="get" action="{{ url_for('admin_config.users.list_users') }}" class="row" style="margin: 0; gap: 8px;">

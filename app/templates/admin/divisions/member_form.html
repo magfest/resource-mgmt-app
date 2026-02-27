@@ -21,7 +21,7 @@
     {% if not membership %}
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
       <div>
-        <label for="user_id" style="display: block; font-weight: 600; margin-bottom: 6px;">User</label>
+        <label for="user_id" class="form-label">User</label>
         <select id="user_id" name="user_id" required>
           <option value="" disabled selected>Select a user...</option>
           {% for user in users %}
@@ -31,7 +31,7 @@
       </div>
 
       <div>
-        <label for="event_cycle_id" style="display: block; font-weight: 600; margin-bottom: 6px;">Event Cycle</label>
+        <label for="event_cycle_id" class="form-label">Event Cycle</label>
         <select id="event_cycle_id" name="event_cycle_id" required>
           <option value="" disabled selected>Select...</option>
           {% for cycle in event_cycles %}

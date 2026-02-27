@@ -8,11 +8,11 @@
 </div>
 
 <h1>Event Cycles</h1>
-<div class="muted" style="margin-bottom: 16px;">
+<div class="muted mb-16">
   Manage event cycles (years/events) for budget tracking.
 </div>
 
-<div class="row" style="margin-bottom: 16px;">
+<div class="row mb-16">
   <a class="btn btn-primary" href="{{ url_for('admin_config.event_cycles.new_event_cycle') }}">+ New Event Cycle</a>
 
   <form method="get" action="{{ url_for('admin_config.event_cycles.list_event_cycles') }}" class="row" style="margin: 0; gap: 8px;">

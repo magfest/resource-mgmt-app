@@ -37,7 +37,7 @@
       <div style="font-size: 24px; font-weight:700;">{{ format_currency(totals.requested) }}</div>
       <div class="muted">{{ totals.line_count }} line{% if totals.line_count != 1 %}s{% endif %}</div>
       {% if totals.approved > 0 %}
-        <div class="muted" style="margin-top: 4px;">Approved: {{ format_currency(totals.approved) }}</div>
+        <div class="muted mt-4">Approved: {{ format_currency(totals.approved) }}</div>
       {% endif %}
     </div>
   </div>
@@ -74,7 +74,7 @@
   {% endif %}
 
   {# Actions #}
-  <div class="btn-row" style="margin-bottom: 16px;">
+  <div class="btn-row mb-16">
     {% if perms.is_draft and perms.can_edit %}
       <a class="btn btn-primary" href="{{ url_for('work.work_item_edit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
         Edit Draft
@@ -220,7 +220,7 @@
                 </label>
                 <textarea name="note" id="finalize-note" rows="4" style="width: 100%;"
                           placeholder="Enter your finalization notes... (e.g., budget adjustments made, items flagged for follow-up, conditions of approval)" required></textarea>
-                <div class="muted small" style="margin-top: 4px;">
+                <div class="muted small mt-4">
                   This note will be recorded in the audit trail and may be visible to department heads.
                 </div>
               </div>
@@ -290,14 +290,14 @@
     </div>
   {% endif %}
   {% elif status == "SUBMITTED" and not perms.is_checked_out %}
-    <div class="callout callout-info" style="margin-bottom: 16px;">
+    <div class="callout callout-info mb-16">
       <strong>Under Review</strong>
       <div class="muted" style="margin-top:4px;">
         This request has been submitted and is awaiting approval group review.
       </div>
     </div>
   {% elif status == "FINALIZED" %}
-    <div class="callout callout-success" style="margin-bottom: 16px;">
+    <div class="callout callout-success mb-16">
       <strong>Finalized</strong>
       <div class="muted" style="margin-top:4px;">
         This request has been finalized.
@@ -307,7 +307,7 @@
       </div>
     </div>
   {% elif status == "PAUSED" %}
-    <div class="callout callout-action" style="margin-bottom: 16px;">
+    <div class="callout callout-action mb-16">
       <strong>Paused - Awaiting Primary Request</strong>
       <div class="muted" style="margin-top:4px;">
         This supplementary request is paused because the primary budget request was unfinalized.
@@ -380,7 +380,7 @@
                   <span class="muted">-</span>
                 {% endif %}
                 {% if detail %}
-                  <div class="muted small" style="margin-top: 4px;">
+                  <div class="muted small mt-4">
                     {% if detail.priority %}Priority: {{ detail.priority.name }}{% endif %}
                     {% if detail.confidence_level %} &middot; Confidence: {{ detail.confidence_level.name }}{% endif %}
                     {% if detail.frequency %} &middot; {{ detail.frequency.name }}{% endif %}

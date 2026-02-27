@@ -1,0 +1,50 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Edit Info - {{ department.name }}{% endblock %}
+
+{% block content %}
+<div class="muted" style="margin-bottom: 12px;">
+  <a href="javascript:history.back()">&larr; Back</a>
+</div>
+
+<h1>Edit Department Info</h1>
+<div class="muted" style="margin: 8px 0 16px;">
+  {{ department.name }} ({{ department.code }})
+</div>
+
+<div class="card" style="max-width: 600px;">
+  <form method="post" action="{{ url_for('admin_config.departments.update_info', dept_id=department.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="referrer" value="{{ request.referrer or '' }}">
+
+    <div class="mb-16">
+      <label for="description" class="form-label">Description</label>
+      <textarea id="description" name="description" rows="3" style="width: 100%;"
+                placeholder="Brief description of the department...">{{ department.description or '' }}</textarea>
+      <div class="muted small mt-4">Optional. Shown on the department homepage.</div>
+    </div>
+
+    <div class="mb-16">
+      <label for="mailing_list" class="form-label">Mailing List</label>
+      <input type="email" id="mailing_list" name="mailing_list" style="width: 100%;"
+             value="{{ department.mailing_list or '' }}"
+             placeholder="department@magfest.org">
+      <div class="muted small mt-4">Optional. Email address for the department mailing list.</div>
+    </div>
+
+    <div class="mb-16">
+      <label for="slack_channel" class="form-label">Slack Channel</label>
+      <input type="text" id="slack_channel" name="slack_channel" style="width: 100%;"
+             value="{{ department.slack_channel or '' }}"
+             placeholder="#department-name">
+      <div class="muted small mt-4">Optional. Slack channel name including the # prefix.</div>
+    </div>
+
+    <div class="btn-row" style="margin-top: 20px;">
+      <button class="btn btn-primary" type="submit">Save Changes</button>
+      <a class="btn" href="javascript:history.back()">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

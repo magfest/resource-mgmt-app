@@ -24,7 +24,7 @@
 
     <div style="text-align:right;">
       <div class="muted">{{ lines_data | length }} line{% if lines_data | length != 1 %}s{% endif %}</div>
-      <div style="margin-top: 4px;">
+      <div class="mt-4">
         {% if all_assigned %}
           <span class="pill pill-approved">All Assigned</span>
         {% else %}
@@ -35,7 +35,7 @@
   </div>
 
   {# Actions #}
-  <div class="btn-row" style="margin-bottom: 16px;">
+  <div class="btn-row mb-16">
     <a class="btn" href="{{ url_for('dispatch.dashboard') }}">
       Back to Dispatch Queue
     </a>
@@ -48,7 +48,7 @@
   <form method="post" action="{{ url_for('dispatch.dispatch_to_queue', work_item_id=work_item.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    <section class="card" style="margin-bottom: 16px;">
+    <section class="card">
       <h3 style="margin:0 0 12px 0;">Assign Approval Groups</h3>
 
       <table>

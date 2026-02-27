@@ -10,7 +10,7 @@
 <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;">
   <div>
     <h1 style="margin: 0;">{{ department.name }}</h1>
-    <div class="muted" style="margin-top: 4px;">
+    <div class="muted mt-4">
       {{ event_cycle.name }}
       {% if department.division %}
         <span style="margin: 0 8px;">|</span>
@@ -22,13 +22,18 @@
   <div style="display: flex; gap: 8px; align-items: center;">
     {% if dept_membership %}
       {% if dept_membership.is_department_head %}
-        <span class="pill" style="background: #fef3c7; color: #92400e;">Department Head</span>
+        <span class="pill pill-dh">Department Head</span>
       {% endif %}
     {% elif div_membership %}
       {% if div_membership.is_division_head %}
-        <span class="pill" style="background: #f3e8ff; color: #7c3aed;">Division Head</span>
+        <span class="pill pill-divhead">Division Head</span>
       {% endif %}
       <span class="muted small">via {{ div_membership.division.name }}</span>
+    {% endif %}
+    {% if can_manage_members %}
+      <a class="btn" href="{{ url_for('admin_config.departments.list_members', dept_id=department.id) }}">
+        Manage Members
+      </a>
     {% endif %}
   </div>
 </div>
@@ -72,7 +77,7 @@
       {% endif %}
 
       {% if card.status_summary %}
-        <div style="margin-bottom: 16px;">
+        <div class="mb-16">
           <div class="muted small" style="margin-bottom: 4px;">{{ card.status_summary.line_count }} {{ card.config.line_plural if card.config else 'lines' }}</div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
             {% if card.status_summary.pending_count > 0 %}
@@ -140,12 +145,18 @@
 {% endif %}
 
 {# Department Info #}
-{% if department.description or department.mailing_list or department.slack_channel %}
+{% if department.description or department.mailing_list or department.slack_channel or can_edit_info %}
 <section class="card" style="margin-top: 24px;">
-  <h4 style="margin: 0 0 12px 0;">Department Info</h4>
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+    <h4 style="margin: 0;">Department Info</h4>
+    {% if can_edit_info %}
+      <a class="btn" href="{{ url_for('admin_config.departments.edit_info', dept_id=department.id) }}">Edit</a>
+    {% endif %}
+  </div>
   {% if department.description %}
     <p style="margin: 0 0 12px 0;">{{ department.description }}</p>
   {% endif %}
+  {% if department.mailing_list or department.slack_channel %}
   <div style="display: flex; gap: 16px; flex-wrap: wrap;">
     {% if department.mailing_list %}
       <div>
@@ -160,6 +171,9 @@
       </div>
     {% endif %}
   </div>
+  {% elif can_edit_info %}
+  <div class="muted small">No contact info set. Click Edit to add mailing list or Slack channel.</div>
+  {% endif %}
 </section>
 {% endif %}
 

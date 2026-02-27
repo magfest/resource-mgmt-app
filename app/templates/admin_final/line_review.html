@@ -60,7 +60,7 @@
   </div>
 
   {# Navigation #}
-  <div class="btn-row" style="margin-bottom: 16px;">
+  <div class="btn-row mb-16">
     <a class="btn" href="{{ url_for('work.work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
       Back to Request
     </a>
@@ -73,7 +73,7 @@
 
     {# Left Column: Line Details #}
     <div>
-      <section class="card" style="margin-bottom: 16px;">
+      <section class="card">
         <h3 style="margin:0 0 12px 0;">Line Details</h3>
 
         <div class="meta">
@@ -110,12 +110,12 @@
 
       {# Approval Group Review Summary #}
       {% if ag_review %}
-        <section class="card" style="margin-bottom: 16px;">
+        <section class="card">
           <h3 style="margin:0 0 12px 0;">Approval Group Review</h3>
           <div class="meta">
             <div><strong>Status:</strong> <span class="pill" style="background: #dbeafe; color: #1e40af;">AG {{ ag_review.status }}</span></div>
             {% if ag_review.decided_at %}
-              <div class="muted small" style="margin-top: 4px;">
+              <div class="muted small mt-4">
                 Decided {{ ag_review.decided_at.strftime('%Y-%m-%d %H:%M') }}
               </div>
             {% endif %}
@@ -149,7 +149,7 @@
                 {{ event.old_value or '-' }} &rarr; {{ event.new_value or '-' }}
               </div>
               {% if event.note %}
-                <div class="muted" style="margin-top: 4px;">{{ event.note }}</div>
+                <div class="muted mt-4">{{ event.note }}</div>
               {% endif %}
             </div>
           {% endfor %}
@@ -162,7 +162,7 @@
 
       {# Current Admin Review Status #}
       {% if admin_review and admin_review.status in ['APPROVED', 'REJECTED'] %}
-        <div class="callout {% if admin_review.status == 'APPROVED' %}callout-success{% else %}callout-danger{% endif %}" style="margin-bottom: 16px;">
+        <div class="callout {% if admin_review.status == 'APPROVED' %}callout-success mb-16{% else %}callout-danger mb-16{% endif %}">
           <strong>{{ admin_review.status }}</strong>
           {% if admin_review.decided_at %}
             <div class="muted" style="margin-top:4px;">
@@ -182,7 +182,7 @@
           </form>
         </div>
       {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}
-        <div class="callout callout-action" style="margin-bottom: 16px;">
+        <div class="callout callout-action mb-16">
           <strong>Awaiting Requester Response</strong>
           <div class="muted" style="margin-top:4px;">
             This line is waiting for the requester to respond.
@@ -207,7 +207,7 @@
                    value="{{ '%.2f' % (recommended_amount / 100) if recommended_amount is not none else '%.2f' % (line_total / 100) }}"
                    style="max-width: 150px;"
             />
-            <div class="muted small" style="margin-top: 4px;">
+            <div class="muted small mt-4">
               {% if recommended_amount is not none %}
                 Recommended: {{ format_currency(recommended_amount) }}
               {% else %}
@@ -216,7 +216,7 @@
             </div>
           </div>
 
-          <div style="margin-bottom: 16px;">
+          <div class="mb-16">
             <label for="note" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
               Note (required for reject/needs-info/amount changes)
             </label>

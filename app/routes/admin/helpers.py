@@ -45,10 +45,16 @@ def require_super_admin(f):
 
 
 def render_admin_config_page(template: str, **ctx):
-    """Render an admin config page with user context."""
+    """Render an admin config page with user context. Requires SUPER_ADMIN."""
     user_ctx = get_user_ctx()
     if not user_ctx.is_admin:
         abort(403, "Super admin access required")
+    return render_template(template, user_ctx=user_ctx, **ctx)
+
+
+def render_admin_page(template: str, **ctx):
+    """Render an admin page with user context. Does NOT check permissions - caller must verify."""
+    user_ctx = get_user_ctx()
     return render_template(template, user_ctx=user_ctx, **ctx)
 
 
@@ -247,3 +253,177 @@ def validate_code_length(code: str, entity_name: str = "Code") -> bool:
         )
         return False
     return True
+
+
+# ============================================================
+# Membership Management Permission Helpers
+# ============================================================
+
+def is_division_head(user_ctx, division_id: int, event_cycle_id: int) -> bool:
+    """Check if user is a Division Head for a specific division and event cycle."""
+    from app.models import DivisionMembership
+    return DivisionMembership.query.filter_by(
+        user_id=user_ctx.user_id,
+        division_id=division_id,
+        event_cycle_id=event_cycle_id,
+        is_division_head=True,
+    ).first() is not None
+
+
+def is_department_head(user_ctx, department_id: int, event_cycle_id: int) -> bool:
+    """Check if user is a Department Head for a specific department and event cycle."""
+    from app.models import DepartmentMembership
+    return DepartmentMembership.query.filter_by(
+        user_id=user_ctx.user_id,
+        department_id=department_id,
+        event_cycle_id=event_cycle_id,
+        is_department_head=True,
+    ).first() is not None
+
+
+def get_division_for_department(department_id: int) -> int | None:
+    """Get the division_id for a department, or None if not found/no division."""
+    from app.models import Department
+    dept = db.session.get(Department, department_id)
+    return dept.division_id if dept else None
+
+
+def can_manage_department_members(user_ctx, department_id: int, event_cycle_id: int) -> bool:
+    """
+    Check if user can manage members for a department.
+
+    Access granted to:
+    - SUPER_ADMIN (any department)
+    - Division Head (any department in their division)
+    - Department Head (their own department only)
+    """
+    # Super admin can do anything
+    if user_ctx.is_admin:
+        return True
+
+    # Check if Div Head for this department's division
+    division_id = get_division_for_department(department_id)
+    if division_id and is_division_head(user_ctx, division_id, event_cycle_id):
+        return True
+
+    # Check if DH for this specific department
+    if is_department_head(user_ctx, department_id, event_cycle_id):
+        return True
+
+    return False
+
+
+def can_edit_department_info(user_ctx, department_id: int, event_cycle_id: int) -> bool:
+    """
+    Check if user can edit department info (description, mailing list, slack channel).
+
+    Access granted to:
+    - SUPER_ADMIN (any department)
+    - Division Head (any department in their division)
+    - Department Head (their own department only)
+    """
+    # Same permission as managing members
+    return can_manage_department_members(user_ctx, department_id, event_cycle_id)
+
+
+def can_set_department_head(user_ctx, department_id: int, event_cycle_id: int) -> bool:
+    """
+    Check if user can set the is_department_head flag for a department.
+
+    Only Super Admin and Division Heads can promote someone to Department Head.
+    Department Heads themselves cannot make other people Department Heads.
+    """
+    if user_ctx.is_admin:
+        return True
+
+    # Check if Div Head for this department's division
+    division_id = get_division_for_department(department_id)
+    if division_id and is_division_head(user_ctx, division_id, event_cycle_id):
+        return True
+
+    return False
+
+
+def can_set_department_head_any_cycle(user_ctx, department_id: int) -> bool:
+    """Check if user can set the is_department_head flag for any active event cycle."""
+    from app.models import EventCycle
+
+    if user_ctx.is_admin:
+        return True
+
+    # Check all active event cycles
+    active_cycles = EventCycle.query.filter_by(is_active=True).all()
+    for cycle in active_cycles:
+        if can_set_department_head(user_ctx, department_id, cycle.id):
+            return True
+
+    return False
+
+
+def can_manage_department_members_any_cycle(user_ctx, department_id: int) -> bool:
+    """
+    Check if user can manage members for a department in ANY active event cycle.
+
+    Used for list views where we show all event cycles.
+    """
+    from app.models import EventCycle
+
+    if user_ctx.is_admin:
+        return True
+
+    # Check all active event cycles
+    active_cycles = EventCycle.query.filter_by(is_active=True).all()
+    for cycle in active_cycles:
+        if can_manage_department_members(user_ctx, department_id, cycle.id):
+            return True
+
+    return False
+
+
+def get_manageable_departments_for_user(user_ctx, event_cycle_id: int) -> list:
+    """
+    Get list of departments the user can manage members for.
+
+    Returns list of Department objects the user can manage.
+    """
+    from app.models import Department, DepartmentMembership, DivisionMembership
+
+    if user_ctx.is_admin:
+        # Super admin can manage all departments
+        return Department.query.filter_by(is_active=True).order_by(
+            Department.sort_order, Department.name
+        ).all()
+
+    manageable_dept_ids = set()
+
+    # Departments where user is DH
+    dh_memberships = DepartmentMembership.query.filter_by(
+        user_id=user_ctx.user_id,
+        event_cycle_id=event_cycle_id,
+        is_department_head=True,
+    ).all()
+    for m in dh_memberships:
+        manageable_dept_ids.add(m.department_id)
+
+    # Departments in divisions where user is Div Head
+    div_head_memberships = DivisionMembership.query.filter_by(
+        user_id=user_ctx.user_id,
+        event_cycle_id=event_cycle_id,
+        is_division_head=True,
+    ).all()
+    for dm in div_head_memberships:
+        # Get all departments in this division
+        depts_in_div = Department.query.filter_by(
+            division_id=dm.division_id,
+            is_active=True,
+        ).all()
+        for dept in depts_in_div:
+            manageable_dept_ids.add(dept.id)
+
+    if not manageable_dept_ids:
+        return []
+
+    return Department.query.filter(
+        Department.id.in_(manageable_dept_ids),
+        Department.is_active == True,
+    ).order_by(Department.sort_order, Department.name).all()

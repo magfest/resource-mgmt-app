@@ -20,14 +20,21 @@ from app.models import (
     CONFIG_AUDIT_RESTORE,
 )
 from app.routes import h
+from app.routes import get_user_ctx
 from .helpers import (
     require_super_admin,
     render_admin_config_page,
+    render_admin_page,
     log_config_change,
     track_changes,
     validate_code_length,
     CODE_MAX_LENGTH,
     safe_int,
+    can_manage_department_members,
+    can_manage_department_members_any_cycle,
+    can_set_department_head,
+    can_set_department_head_any_cycle,
+    can_edit_department_info,
 )
 
 departments_bp = Blueprint('departments', __name__, url_prefix='/departments')
@@ -282,10 +289,14 @@ def restore_department(dept_id: int):
 # ============================================================
 
 @departments_bp.get("/<int:dept_id>/members")
-@require_super_admin
 def list_members(dept_id: int):
     """List all members of a department."""
+    user_ctx = get_user_ctx()
     dept = _get_department_or_404(dept_id)
+
+    # Check permission: Super Admin, Div Head, or Department Head
+    if not can_manage_department_members_any_cycle(user_ctx, dept_id):
+        abort(403, "You don't have permission to manage this department's members")
 
     # Get all memberships for this department
     memberships = (
@@ -308,7 +319,7 @@ def list_members(dept_id: int):
     # Get active work types for display
     work_types = _get_active_work_types()
 
-    return render_admin_config_page(
+    return render_admin_page(
         "admin/departments/members.html",
         department=dept,
         memberships=memberships,
@@ -318,10 +329,14 @@ def list_members(dept_id: int):
 
 
 @departments_bp.get("/<int:dept_id>/members/add")
-@require_super_admin
 def add_member_form(dept_id: int):
     """Show form to add a department member."""
+    user_ctx = get_user_ctx()
     dept = _get_department_or_404(dept_id)
+
+    # Check permission: Super Admin, Div Head, or Department Head
+    if not can_manage_department_members_any_cycle(user_ctx, dept_id):
+        abort(403, "You don't have permission to manage this department's members")
 
     # Get available users (all active users)
     users = (
@@ -342,24 +357,36 @@ def add_member_form(dept_id: int):
     # Get active work types for access configuration
     work_types = _get_active_work_types()
 
-    return render_admin_config_page(
+    # Check if user can set department head flag
+    can_set_dh = can_set_department_head_any_cycle(user_ctx, dept_id)
+
+    return render_admin_page(
         "admin/departments/member_form.html",
         department=dept,
         membership=None,
         users=users,
         event_cycles=event_cycles,
         work_types=work_types,
+        can_set_dh=can_set_dh,
     )
 
 
 @departments_bp.post("/<int:dept_id>/members")
-@require_super_admin
 def add_member(dept_id: int):
     """Add a member to the department."""
+    user_ctx = get_user_ctx()
     dept = _get_department_or_404(dept_id)
 
     user_id = request.form.get("user_id")
     event_cycle_id = request.form.get("event_cycle_id")
+
+    # Check permission for the specific event cycle being added to
+    if event_cycle_id:
+        if not can_manage_department_members(user_ctx, dept_id, int(event_cycle_id)):
+            abort(403, "You don't have permission to manage this department's members")
+    else:
+        if not can_manage_department_members_any_cycle(user_ctx, dept_id):
+            abort(403, "You don't have permission to manage this department's members")
 
     if not user_id or not event_cycle_id:
         flash("User and event cycle are required", "error")
@@ -376,11 +403,16 @@ def add_member(dept_id: int):
         flash("This user is already a member of this department for this event cycle", "error")
         return redirect(url_for(".add_member_form", dept_id=dept_id))
 
+    # Only set is_department_head if user has permission (Super Admin or Div Head)
+    is_dh = False
+    if can_set_department_head(user_ctx, dept_id, int(event_cycle_id)):
+        is_dh = request.form.get("is_department_head") == "1"
+
     membership = DepartmentMembership(
         user_id=user_id,
         department_id=dept_id,
         event_cycle_id=int(event_cycle_id),
-        is_department_head=request.form.get("is_department_head") == "1",
+        is_department_head=is_dh,
     )
 
     db.session.add(membership)
@@ -409,39 +441,53 @@ def add_member(dept_id: int):
 
 
 @departments_bp.get("/<int:dept_id>/members/<int:membership_id>")
-@require_super_admin
 def edit_member(dept_id: int, membership_id: int):
     """Show form to edit a department membership."""
+    user_ctx = get_user_ctx()
     dept = _get_department_or_404(dept_id)
 
     membership = db.session.get(DepartmentMembership, membership_id)
     if not membership or membership.department_id != dept_id:
         abort(404, "Membership not found")
 
+    # Check permission for this membership's event cycle
+    if not can_manage_department_members(user_ctx, dept_id, membership.event_cycle_id):
+        abort(403, "You don't have permission to manage this department's members")
+
     # Get active work types for access configuration
     work_types = _get_active_work_types()
 
-    return render_admin_config_page(
+    # Check if user can set department head flag
+    can_set_dh = can_set_department_head(user_ctx, dept_id, membership.event_cycle_id)
+
+    return render_admin_page(
         "admin/departments/member_form.html",
         department=dept,
         membership=membership,
         users=None,  # Can't change user on edit
         event_cycles=None,  # Can't change event cycle on edit
         work_types=work_types,
+        can_set_dh=can_set_dh,
     )
 
 
 @departments_bp.post("/<int:dept_id>/members/<int:membership_id>")
-@require_super_admin
 def update_member(dept_id: int, membership_id: int):
     """Update a department membership."""
+    user_ctx = get_user_ctx()
     dept = _get_department_or_404(dept_id)
 
     membership = db.session.get(DepartmentMembership, membership_id)
     if not membership or membership.department_id != dept_id:
         abort(404, "Membership not found")
 
-    membership.is_department_head = request.form.get("is_department_head") == "1"
+    # Check permission for this membership's event cycle
+    if not can_manage_department_members(user_ctx, dept_id, membership.event_cycle_id):
+        abort(403, "You don't have permission to manage this department's members")
+
+    # Only update is_department_head if user has permission (Super Admin or Div Head)
+    if can_set_department_head(user_ctx, dept_id, membership.event_cycle_id):
+        membership.is_department_head = request.form.get("is_department_head") == "1"
 
     # Update work type access records
     work_types = _get_active_work_types()
@@ -476,14 +522,18 @@ def update_member(dept_id: int, membership_id: int):
 
 
 @departments_bp.post("/<int:dept_id>/members/<int:membership_id>/delete")
-@require_super_admin
 def delete_member(dept_id: int, membership_id: int):
     """Remove a member from the department."""
+    user_ctx = get_user_ctx()
     dept = _get_department_or_404(dept_id)
 
     membership = db.session.get(DepartmentMembership, membership_id)
     if not membership or membership.department_id != dept_id:
         abort(404, "Membership not found")
+
+    # Check permission for this membership's event cycle
+    if not can_manage_department_members(user_ctx, dept_id, membership.event_cycle_id):
+        abort(403, "You don't have permission to manage this department's members")
 
     user_name = membership.user.display_name
     db.session.delete(membership)
@@ -491,3 +541,100 @@ def delete_member(dept_id: int, membership_id: int):
 
     flash(f"Removed {user_name} from {dept.name}", "success")
     return redirect(url_for(".list_members", dept_id=dept_id))
+
+
+# ============================================================
+# Department Info Edit (for Div Heads and DHs)
+# ============================================================
+
+@departments_bp.get("/<int:dept_id>/info")
+def edit_info(dept_id: int):
+    """
+    Show form to edit department info (description, mailing list, slack channel).
+
+    Available to Div Heads, DHs, and Super Admins.
+    """
+    user_ctx = get_user_ctx()
+    dept = _get_department_or_404(dept_id)
+
+    # Get active event cycles to check permission
+    event_cycles = (
+        db.session.query(EventCycle)
+        .filter(EventCycle.is_active == True)
+        .all()
+    )
+
+    # Check permission for any active event cycle
+    has_permission = False
+    for ec in event_cycles:
+        if can_edit_department_info(user_ctx, dept_id, ec.id):
+            has_permission = True
+            break
+
+    if not has_permission:
+        abort(403, "You don't have permission to edit this department's info")
+
+    return render_admin_page(
+        "admin/departments/info_form.html",
+        department=dept,
+    )
+
+
+@departments_bp.post("/<int:dept_id>/info")
+def update_info(dept_id: int):
+    """
+    Update department info (description, mailing list, slack channel).
+
+    Available to Div Heads, DHs, and Super Admins.
+    """
+    user_ctx = get_user_ctx()
+    dept = _get_department_or_404(dept_id)
+
+    # Get active event cycles to check permission
+    event_cycles = (
+        db.session.query(EventCycle)
+        .filter(EventCycle.is_active == True)
+        .all()
+    )
+
+    # Check permission for any active event cycle
+    has_permission = False
+    for ec in event_cycles:
+        if can_edit_department_info(user_ctx, dept_id, ec.id):
+            has_permission = True
+            break
+
+    if not has_permission:
+        abort(403, "You don't have permission to edit this department's info")
+
+    # Track changes
+    old_values = {
+        "description": dept.description,
+        "mailing_list": dept.mailing_list,
+        "slack_channel": dept.slack_channel,
+    }
+
+    # Update info fields only
+    dept.description = (request.form.get("description") or "").strip() or None
+    dept.mailing_list = (request.form.get("mailing_list") or "").strip() or None
+    dept.slack_channel = (request.form.get("slack_channel") or "").strip() or None
+    dept.updated_by_user_id = h.get_active_user_id()
+
+    new_values = {
+        "description": dept.description,
+        "mailing_list": dept.mailing_list,
+        "slack_channel": dept.slack_channel,
+    }
+
+    changes = track_changes(old_values, new_values)
+    if changes:
+        log_config_change("department", dept.id, CONFIG_AUDIT_UPDATE, changes)
+
+    db.session.commit()
+    flash(f"Updated department info for {dept.name}", "success")
+
+    # Redirect back to referring page or department list
+    referrer = request.form.get("referrer")
+    if referrer:
+        return redirect(referrer)
+    return redirect(url_for(".list_departments"))

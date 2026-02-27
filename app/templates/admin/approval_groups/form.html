@@ -23,28 +23,28 @@
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
 
       <div>
-        <label for="code" style="display: block; font-weight: 600; margin-bottom: 6px;">Code</label>
+        <label for="code" class="form-label">Code</label>
         <input id="code" name="code" type="text" required maxlength="16"
                value="{{ group.code if group else '' }}"
                placeholder="e.g. TECH" />
-        <div class="muted small" style="margin-top: 4px;">Unique identifier (max 16 chars). Will be uppercased.</div>
+        <div class="muted small mt-4">Unique identifier (max 16 chars). Will be uppercased.</div>
       </div>
 
       <div>
-        <label for="name" style="display: block; font-weight: 600; margin-bottom: 6px;">Name</label>
+        <label for="name" class="form-label">Name</label>
         <input id="name" name="name" type="text" required
                value="{{ group.name if group else '' }}"
                placeholder="e.g. Technology Team" />
       </div>
 
       <div style="grid-column: 1 / -1;">
-        <label for="description" style="display: block; font-weight: 600; margin-bottom: 6px;">Description</label>
+        <label for="description" class="form-label">Description</label>
         <textarea id="description" name="description" rows="3"
                   placeholder="Optional description of what this group reviews...">{{ group.description if group else '' }}</textarea>
       </div>
 
       <div>
-        <label for="sort_order" style="display: block; font-weight: 600; margin-bottom: 6px;">Sort Order</label>
+        <label for="sort_order" class="form-label">Sort Order</label>
         <input id="sort_order" name="sort_order" type="number"
                value="{{ group.sort_order if group else 0 }}" />
       </div>

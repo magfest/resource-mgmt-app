@@ -8,11 +8,11 @@
 </div>
 
 <h1>Expense Accounts</h1>
-<div class="muted" style="margin-bottom: 16px;">
+<div class="muted mb-16">
   Manage the chart of accounts for budget requests. Each expense account routes to an approval group.
 </div>
 
-<div class="row" style="margin-bottom: 16px;">
+<div class="row mb-16">
   <a class="btn btn-primary" href="{{ url_for('admin_config.expense_accounts.new_expense_account') }}">+ New Account</a>
 
   <form method="get" action="{{ url_for('admin_config.expense_accounts.list_expense_accounts') }}" class="row" style="margin: 0; gap: 8px;">
