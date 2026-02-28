@@ -262,6 +262,8 @@
         This request has been submitted and is waiting for a budget admin to assign approval groups and dispatch it for review.
       </div>
     </div>
+  {% endif %}
+
   {# Kicked-back lines callout - show for requester when lines need attention #}
   {% if kicked_back_lines %}
     <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
@@ -300,7 +302,8 @@
       </div>
     </div>
   {% endif %}
-  {% elif status == "SUBMITTED" and not perms.is_checked_out %}
+
+  {% if status == "SUBMITTED" and not perms.is_checked_out %}
     <div class="callout callout-info mb-16">
       <strong>Under Review</strong>
       <div class="muted" style="margin-top:4px;">

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
 from flask import abort
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import db
 from app.models import (
@@ -16,6 +17,7 @@ from app.models import (
     WorkLineReview,
     WorkItemAuditEvent,
     WorkLineAuditEvent,
+    WorkPortfolio,
     BudgetLineDetail,
     EventCycle,
     Department,
@@ -300,7 +302,7 @@ def apply_admin_final_decision(
 
     Returns (success, error_message) tuple.
     """
-    require_admin(user_ctx)
+    require_budget_admin(user_ctx)
 
     # Get or create admin review record
     review, _created = get_or_create_admin_review(line, user_ctx)
@@ -428,7 +430,7 @@ def finalize_work_item(
 
     Returns (success, error_message) tuple.
     """
-    require_admin(user_ctx)
+    require_budget_admin(user_ctx)
 
     # Require a note
     if not (note or "").strip():
@@ -557,7 +559,7 @@ def unfinalize_work_item(
 
     Returns (success, error_message) tuple.
     """
-    require_admin(user_ctx)
+    require_budget_admin(user_ctx)
 
     if work_item.status != WORK_ITEM_STATUS_FINALIZED:
         return False, "Work item is not finalized."
@@ -583,8 +585,12 @@ def unfinalize_work_item(
 
     # Optionally reset line reviews
     if reset_lines:
+        # Batch load admin reviews to avoid N+1 queries
+        line_ids = [line.id for line in work_item.lines]
+        reviews_by_line = batch_load_reviews_by_line(line_ids)
+
         for line in work_item.lines:
-            admin_review = get_admin_final_review(line)
+            admin_review = reviews_by_line.get(line.id, {}).get('admin')
             if admin_review:
                 admin_review.status = REVIEW_STATUS_PENDING
                 admin_review.decided_at = None
@@ -628,7 +634,7 @@ def reset_line_for_rereview(
 
     Returns (success, error_message) tuple.
     """
-    require_admin(user_ctx)
+    require_budget_admin(user_ctx)
 
     admin_review = get_admin_final_review(line)
     if admin_review:
@@ -671,12 +677,16 @@ def build_admin_queues(
     - pending_finalization: Work items ready to finalize
     - recently_finalized: Work items finalized in last 7 days
     """
-    from app.models import WorkPortfolio
-
-    # Base query for submitted work items
+    # Base query for submitted work items with eager loading
     base_item_query = WorkItem.query.filter(
         WorkItem.status.in_([WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_FINALIZED]),
         WorkItem.is_archived == False,
+    ).options(
+        # Eager load portfolio and its relations
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+        # Eager load lines with budget details
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
     )
 
     if event_cycle_id or department_id:
@@ -693,6 +703,12 @@ def build_admin_queues(
         WorkItem.status == WORK_ITEM_STATUS_SUBMITTED
     ).all()
 
+    # Batch load all reviews for all lines across all submitted items (single query)
+    all_line_ids = []
+    for item in submitted_items:
+        all_line_ids.extend(line.id for line in item.lines)
+    reviews_by_line = batch_load_reviews_by_line(all_line_ids)
+
     # Track request-level data for ready_for_review
     ready_requests: dict[int, dict] = {}
     kicked_back = []
@@ -705,8 +721,10 @@ def build_admin_queues(
         item_total_recommended = 0
 
         for line in item.lines:
-            ag_review = get_approval_group_review(line)
-            admin_review = get_admin_final_review(line)
+            # Use batch-loaded reviews instead of per-line queries
+            line_reviews = reviews_by_line.get(line.id, {'admin': None, 'ag': None})
+            ag_review = line_reviews['ag']
+            admin_review = line_reviews['admin']
             detail = line.budget_detail
 
             # Calculate line total
@@ -781,12 +799,25 @@ def build_admin_queues(
     # Sort by oldest submitted first
     ready_for_review.sort(key=lambda x: x.work_item.submitted_at or datetime.min)
 
-    # Recently finalized (last 7 days)
+    # Recently finalized (last 7 days) - add eager loading
     cutoff = datetime.utcnow() - timedelta(days=7)
-    recently_finalized_query = base_item_query.filter(
+    recently_finalized_query = WorkItem.query.filter(
         WorkItem.status == WORK_ITEM_STATUS_FINALIZED,
         WorkItem.finalized_at >= cutoff,
+        WorkItem.is_archived == False,
+    ).options(
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
     ).order_by(WorkItem.finalized_at.desc())
+
+    if event_cycle_id or department_id:
+        recently_finalized_query = recently_finalized_query.join(
+            WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
+        )
+        if event_cycle_id:
+            recently_finalized_query = recently_finalized_query.filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+        if department_id:
+            recently_finalized_query = recently_finalized_query.filter(WorkPortfolio.department_id == department_id)
 
     recently_finalized = recently_finalized_query.all()
 

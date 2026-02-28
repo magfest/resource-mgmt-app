@@ -4,6 +4,7 @@ Line routes - add budget lines to work items.
 from decimal import Decimal, InvalidOperation
 
 from flask import render_template, redirect, url_for, request, abort, flash
+from sqlalchemy.orm import selectinload, joinedload
 
 from app import db
 from app.models import (
@@ -40,6 +41,7 @@ def get_work_item_by_public_id(event: str, dept: str, public_id: str):
     Get a work item by public_id and verify it belongs to the correct portfolio.
 
     Returns tuple of (work_item, ctx) or aborts with 404.
+    Eager loads lines with budget details.
     """
     ctx = get_portfolio_context(event, dept)
 
@@ -47,6 +49,8 @@ def get_work_item_by_public_id(event: str, dept: str, public_id: str):
         public_id=public_id,
         portfolio_id=ctx.portfolio.id,
         is_archived=False,
+    ).options(
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
     ).first()
 
     if not work_item:

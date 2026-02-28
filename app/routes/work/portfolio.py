@@ -2,10 +2,12 @@
 Portfolio routes - landing page for department budget portfolios.
 """
 from flask import render_template, abort
+from sqlalchemy.orm import selectinload, joinedload
 
 from app import db
 from app.models import (
     WorkItem,
+    WorkLine,
     WorkTypeConfig,
     EventCycle,
     Department,
@@ -41,18 +43,22 @@ def portfolio_landing(event: str, dept: str):
     ctx = get_portfolio_context(event, dept)
     perms = require_portfolio_view(ctx)
 
-    # Get PRIMARY work item if exists
+    # Get PRIMARY work item if exists - eager load lines with budget details
     primary = WorkItem.query.filter_by(
         portfolio_id=ctx.portfolio.id,
         request_kind=REQUEST_KIND_PRIMARY,
         is_archived=False,
+    ).options(
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
     ).first()
 
-    # Get SUPPLEMENTARY work items
+    # Get SUPPLEMENTARY work items - eager load lines with budget details
     supplementary = WorkItem.query.filter_by(
         portfolio_id=ctx.portfolio.id,
         request_kind=REQUEST_KIND_SUPPLEMENTARY,
         is_archived=False,
+    ).options(
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
     ).order_by(WorkItem.created_at.desc()).all()
 
     # Compute totals

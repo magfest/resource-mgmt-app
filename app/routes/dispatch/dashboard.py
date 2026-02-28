@@ -4,6 +4,7 @@ Dispatch queue routes for budget requests.
 from datetime import datetime
 
 from flask import render_template, redirect, url_for, request, abort, flash
+from sqlalchemy.orm import selectinload, joinedload
 
 from app import db
 from app.models import (
@@ -103,7 +104,12 @@ def dispatch_item(work_item_id: int):
     """
     require_dispatch_admin()
 
-    work_item = WorkItem.query.get_or_404(work_item_id)
+    work_item = WorkItem.query.options(
+        selectinload(WorkItem.lines)
+            .joinedload(WorkLine.budget_detail)
+            .joinedload(BudgetLineDetail.expense_account),
+        joinedload(WorkItem.portfolio),
+    ).get_or_404(work_item_id)
 
     if work_item.status != WORK_ITEM_STATUS_AWAITING_DISPATCH:
         flash("This item is not awaiting dispatch.", "error")
@@ -156,7 +162,9 @@ def assign_approval_groups(work_item_id: int):
     """
     user_ctx = require_dispatch_admin()
 
-    work_item = WorkItem.query.get_or_404(work_item_id)
+    work_item = WorkItem.query.options(
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
+    ).get_or_404(work_item_id)
 
     if work_item.status != WORK_ITEM_STATUS_AWAITING_DISPATCH:
         flash("This item is not awaiting dispatch.", "error")
@@ -193,7 +201,9 @@ def dispatch_to_queue(work_item_id: int):
     """
     user_ctx = require_dispatch_admin()
 
-    work_item = WorkItem.query.get_or_404(work_item_id)
+    work_item = WorkItem.query.options(
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
+    ).get_or_404(work_item_id)
 
     if work_item.status != WORK_ITEM_STATUS_AWAITING_DISPATCH:
         flash("This item is not awaiting dispatch.", "error")

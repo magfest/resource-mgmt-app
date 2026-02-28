@@ -4,6 +4,7 @@ Work item routes - create, view, edit, and submit budget requests.
 from datetime import datetime
 
 from flask import render_template, redirect, url_for, request, abort, flash
+from sqlalchemy.orm import selectinload, joinedload
 
 from app import db
 from app.models import (
@@ -73,6 +74,7 @@ def get_work_item_by_public_id(event: str, dept: str, public_id: str):
     Get a work item by public_id and verify it belongs to the correct portfolio.
 
     Returns tuple of (work_item, ctx) or aborts with 404.
+    Eager loads lines with budget details, expense accounts, spend types, etc.
     """
     ctx = get_portfolio_context(event, dept)
 
@@ -80,6 +82,15 @@ def get_work_item_by_public_id(event: str, dept: str, public_id: str):
         public_id=public_id,
         portfolio_id=ctx.portfolio.id,
         is_archived=False,
+    ).options(
+        # Eager load lines with all their related data
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail).joinedload(BudgetLineDetail.expense_account),
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail).joinedload(BudgetLineDetail.spend_type),
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail).joinedload(BudgetLineDetail.confidence_level),
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail).joinedload(BudgetLineDetail.frequency),
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail).joinedload(BudgetLineDetail.priority),
+        # Eager load comments
+        selectinload(WorkItem.comments),
     ).first()
 
     if not work_item:
@@ -688,25 +699,32 @@ def hotel_wizard_add(event: str, dept: str, public_id: str):
     perms = require_work_item_edit(work_item, ctx)
     user_ctx = get_user_ctx()
 
+    # Helper to safely parse integers from form data
+    def safe_int(value, default=0):
+        try:
+            return int(value) if value else default
+        except (ValueError, TypeError):
+            return default
+
     # Parse form data
     purpose = request.form.get("purpose", "external_partner")  # external_partner, dept_operations, staff_crash
     who_pays = request.form.get("who_pays", "magfest")  # magfest, third_party
     room_type = request.form.get("room_type", "standard")  # standard, executive, hospitality
-    room_count = int(request.form.get("room_count", 1) or 1)
+    room_count = safe_int(request.form.get("room_count"), 1)
     description = (request.form.get("description") or "").strip()
 
     # Calculate total nights
-    event_nights = int(request.form.get("event_nights", 0) or 0)
+    event_nights = safe_int(request.form.get("event_nights"), 0)
     use_event_dates = request.form.get("use_event_dates") == "on"
-    manual_nights = int(request.form.get("manual_nights", 4) or 4)
+    manual_nights = safe_int(request.form.get("manual_nights"), 4)
 
     base_nights = event_nights if use_event_dates else manual_nights
 
     early_arrival = request.form.get("early_arrival") == "on"
-    early_nights = int(request.form.get("early_nights", 0) or 0) if early_arrival else 0
+    early_nights = safe_int(request.form.get("early_nights"), 0) if early_arrival else 0
 
     late_departure = request.form.get("late_departure") == "on"
-    late_nights = int(request.form.get("late_nights", 0) or 0) if late_departure else 0
+    late_nights = safe_int(request.form.get("late_nights"), 0) if late_departure else 0
 
     nights_per_room = base_nights + early_nights + late_nights
     total_nights = nights_per_room * room_count
@@ -1103,8 +1121,6 @@ def quick_review(event: str, dept: str, public_id: str):
     Quick review page - shows all lines with inline action buttons.
     Designed for rapid review without navigating into each line.
     """
-    from app.routes.approvals.helpers import get_review_for_line, is_reviewer_for_line
-
     user_ctx = get_user_ctx()
     work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
     perms = require_work_item_view(work_item, ctx)
@@ -1134,13 +1150,19 @@ def quick_review(event: str, dept: str, public_id: str):
     )
     total_lines_count = len(all_lines)
 
+    # Batch load reviews for all visible lines (avoids N+1 queries)
+    from app.routes.admin_final.helpers import batch_load_reviews_by_line
+    visible_line_ids = [line.id for line in visible_lines]
+    reviews_by_line = batch_load_reviews_by_line(visible_line_ids)
+
     # Build line data only for visible lines
     lines_data = []
     summary = {"pending": 0, "approved": 0, "kicked_back": 0, "rejected": 0}
 
     for line in visible_lines:
         detail = line.budget_detail
-        review = get_review_for_line(line)
+        # Get approval group review from batch-loaded data
+        review = reviews_by_line.get(line.id, {}).get('ag')
         total_cents = detail.unit_price_cents * int(detail.quantity) if detail else 0
 
         # Update summary

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Set, Tuple, List, Optional
 
 from flask import abort
+from sqlalchemy.orm import joinedload, selectinload, contains_eager
 
 from app import db
 from app.models import (
@@ -15,6 +16,7 @@ from app.models import (
     WorkLineReview,
     WorkLineAuditEvent,
     WorkItem,
+    WorkPortfolio,
     ApprovalGroup,
     EventCycle,
     Department,
@@ -418,14 +420,31 @@ def build_approval_queues(
     - kicked_back: Lines with NEEDS_INFO or NEEDS_ADJUSTMENT (line-level)
     - recently_decided_requests: Requests with recently decided lines (grouped)
     """
-    from app.models import WorkPortfolio
-
     # Base query for reviews in this group at APPROVAL_GROUP stage
+    # Use contains_eager for joined tables, joinedload for additional relations
     base_query = (
         db.session.query(WorkLineReview)
         .join(WorkLine, WorkLineReview.work_line_id == WorkLine.id)
         .join(WorkItem, WorkLine.work_item_id == WorkItem.id)
         .join(BudgetLineDetail, BudgetLineDetail.work_line_id == WorkLine.id)
+        .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
+        .options(
+            # Use contains_eager for tables already joined
+            contains_eager(WorkLineReview.work_line)
+                .contains_eager(WorkLine.work_item)
+                .contains_eager(WorkItem.portfolio),
+            contains_eager(WorkLineReview.work_line)
+                .contains_eager(WorkLine.budget_detail),
+            # Eager load portfolio relations
+            joinedload(WorkLineReview.work_line)
+                .joinedload(WorkLine.work_item)
+                .joinedload(WorkItem.portfolio)
+                .joinedload(WorkPortfolio.event_cycle),
+            joinedload(WorkLineReview.work_line)
+                .joinedload(WorkLine.work_item)
+                .joinedload(WorkItem.portfolio)
+                .joinedload(WorkPortfolio.department),
+        )
         .filter(WorkLineReview.stage == REVIEW_STAGE_APPROVAL_GROUP)
         .filter(WorkLineReview.approval_group_id == group_id)
         .filter(WorkItem.is_archived == False)
@@ -433,16 +452,10 @@ def build_approval_queues(
 
     # Apply event cycle filter
     if event_cycle_id:
-        base_query = base_query.join(
-            WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
-        ).filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+        base_query = base_query.filter(WorkPortfolio.event_cycle_id == event_cycle_id)
 
     # Apply department filter
     if department_id:
-        if not event_cycle_id:
-            base_query = base_query.join(
-                WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
-            )
         base_query = base_query.filter(WorkPortfolio.department_id == department_id)
 
     # Pending reviews
@@ -450,18 +463,32 @@ def build_approval_queues(
         WorkLineReview.status == REVIEW_STATUS_PENDING
     ).order_by(WorkLineReview.created_at.asc()).all()
 
-    # Group pending reviews by work item
+    # Group pending reviews by work item and collect work item IDs
     pending_by_item: dict[int, list] = {}
+    work_item_ids = set()
     for review in pending_reviews:
         wi_id = review.work_line.work_item_id
+        work_item_ids.add(wi_id)
         if wi_id not in pending_by_item:
             pending_by_item[wi_id] = []
         pending_by_item[wi_id].append(review)
 
+    # Batch load all work items with their lines and budget details
+    work_items_map = {}
+    if work_item_ids:
+        work_items_with_lines = WorkItem.query.filter(
+            WorkItem.id.in_(work_item_ids)
+        ).options(
+            selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
+            joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
+            joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+        ).all()
+        work_items_map = {wi.id: wi for wi in work_items_with_lines}
+
     # Build request-level pending queue
     pending_requests = []
     for wi_id, reviews in pending_by_item.items():
-        work_item = reviews[0].work_line.work_item
+        work_item = work_items_map.get(wi_id, reviews[0].work_line.work_item)
         portfolio = work_item.portfolio
 
         # Count total lines in this group for this request
@@ -513,17 +540,35 @@ def build_approval_queues(
         WorkLineReview.decided_at >= cutoff,
     ).order_by(WorkLineReview.decided_at.desc()).all()
 
-    # Group recently decided by work item
+    # Collect work item IDs from recently decided
+    decided_work_item_ids = set()
     decided_by_item: dict[int, list] = {}
     for review in recently_decided_reviews:
         wi_id = review.work_line.work_item_id
+        decided_work_item_ids.add(wi_id)
         if wi_id not in decided_by_item:
             decided_by_item[wi_id] = []
         decided_by_item[wi_id].append(review)
 
+    # Batch load decided work items if not already loaded
+    for wi_id in decided_work_item_ids:
+        if wi_id not in work_items_map:
+            work_item_ids.add(wi_id)
+
+    if decided_work_item_ids - set(work_items_map.keys()):
+        additional_items = WorkItem.query.filter(
+            WorkItem.id.in_(decided_work_item_ids - set(work_items_map.keys()))
+        ).options(
+            selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
+            joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
+            joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+        ).all()
+        for wi in additional_items:
+            work_items_map[wi.id] = wi
+
     recently_decided_requests = []
     for wi_id, reviews in decided_by_item.items():
-        work_item = reviews[0].work_line.work_item
+        work_item = work_items_map.get(wi_id, reviews[0].work_line.work_item)
         portfolio = work_item.portfolio
 
         total_lines_in_group = sum(

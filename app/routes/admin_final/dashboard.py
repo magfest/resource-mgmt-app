@@ -2,12 +2,14 @@
 Admin Final Review dashboard routes.
 """
 from flask import render_template, redirect, url_for, request, flash
+from sqlalchemy.orm import selectinload, joinedload
 
 from app import db
 from app.models import (
     WorkItem,
     WorkLine,
     WorkPortfolio,
+    BudgetLineDetail,
     EventCycle,
     Department,
     ApprovalGroup,
@@ -94,7 +96,9 @@ def finalize(work_item_id: int):
     user_ctx = get_user_ctx()
     require_budget_admin(user_ctx)
 
-    work_item = WorkItem.query.get_or_404(work_item_id)
+    work_item = WorkItem.query.options(
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
+    ).get_or_404(work_item_id)
     note = (request.form.get("note") or "").strip()
 
     success, error = finalize_work_item(work_item, user_ctx, note)
@@ -118,7 +122,11 @@ def unfinalize_form(work_item_id: int):
     user_ctx = get_user_ctx()
     require_budget_admin(user_ctx)
 
-    work_item = WorkItem.query.get_or_404(work_item_id)
+    work_item = WorkItem.query.options(
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+    ).get_or_404(work_item_id)
 
     return render_template(
         "admin_final/unfinalize.html",
@@ -138,7 +146,9 @@ def unfinalize(work_item_id: int):
     user_ctx = get_user_ctx()
     require_budget_admin(user_ctx)
 
-    work_item = WorkItem.query.get_or_404(work_item_id)
+    work_item = WorkItem.query.options(
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
+    ).get_or_404(work_item_id)
 
     reason = (request.form.get("reason") or "").strip()
     reset_lines = request.form.get("reset_lines") == "yes"

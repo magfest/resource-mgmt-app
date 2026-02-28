@@ -1,0 +1,163 @@
+{# templates/admin_final/budget_home.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Budget Administration{% endblock %}
+
+{% block content %}
+
+  {# Header #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 24px;">
+    <div>
+      <h1 style="margin:0;">Budget Administration</h1>
+      <div class="muted" style="margin-top:4px;">
+        Budget workflow tools and configuration
+      </div>
+    </div>
+    {% if user_ctx.is_admin %}
+      <a class="btn" href="{{ url_for('admin_final.admin_home') }}">
+        Back to System Admin
+      </a>
+    {% endif %}
+  </div>
+
+  {# Quick Actions #}
+  <section class="card" style="margin-bottom: 24px; background: #f0fdf4; border: 1px solid #059669;">
+    <h3 style="margin:0 0 16px 0;">Quick Actions</h3>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
+        All Requests
+      </a>
+      <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
+        Final Review Queue
+      </a>
+      <a class="btn" href="{{ url_for('dispatch.dashboard') }}">
+        Dispatch Queue
+      </a>
+      <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
+        Approval Group Dashboard
+      </a>
+    </div>
+  </section>
+
+  {# Stats Overview #}
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 32px; font-weight: 700; color: #0a66c2;">{{ stats.submitted_items }}</div>
+      <div class="muted">Submitted Requests</div>
+      <a href="{{ url_for('admin_final.dashboard') }}" class="small">View in Final Review</a>
+    </div>
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 32px; font-weight: 700; color: #059669;">{{ stats.finalized_items }}</div>
+      <div class="muted">Finalized Requests</div>
+    </div>
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 32px; font-weight: 700; color: #d97706;">{{ stats.kicked_back_lines }}</div>
+      <div class="muted">Lines Awaiting Response</div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+
+    {# Line Status Breakdown #}
+    <section class="card">
+      <h3 style="margin:0 0 16px 0;">Line Status Overview</h3>
+      <table>
+        <tr>
+          <td><span class="pill pill-draft">PENDING</span></td>
+          <td class="right num" style="font-weight: 700;">{{ stats.pending_lines }}</td>
+        </tr>
+        <tr>
+          <td><span class="pill pill-needs">NEEDS INFO / ADJUSTMENT</span></td>
+          <td class="right num" style="font-weight: 700;">{{ stats.kicked_back_lines }}</td>
+        </tr>
+        <tr>
+          <td><span class="pill pill-approved">APPROVED</span></td>
+          <td class="right num" style="font-weight: 700;">{{ stats.approved_lines }}</td>
+        </tr>
+        <tr>
+          <td><span class="pill tag-kicked">REJECTED</span></td>
+          <td class="right num" style="font-weight: 700;">{{ stats.rejected_lines }}</td>
+        </tr>
+      </table>
+    </section>
+
+    {# Approval Groups #}
+    <section class="card">
+      <h3 style="margin:0 0 16px 0;">Approval Groups</h3>
+      {% if approval_groups %}
+        <table>
+          {% for group in approval_groups %}
+            <tr>
+              <td>
+                <a href="{{ url_for('approvals.dashboard_group', group_code=group.code) }}">
+                  {{ group.name }}
+                </a>
+              </td>
+              <td class="muted small">{{ group.code }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% else %}
+        <div class="muted" style="text-align: center; padding: 16px;">
+          No approval groups configured.
+        </div>
+      {% endif %}
+    </section>
+
+  </div>
+
+  {# Workflow Reminders #}
+  <section class="card" style="margin-bottom: 24px; background: #fffbeb; border: 1px solid #f59e0b;">
+    <h3 style="margin:0 0 16px 0;">Workflow Reminders</h3>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+      <div>
+        <h4 style="margin: 0 0 8px 0;">Review Process</h4>
+        <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+          <li><strong>AG APPROVED</strong> = Approved by Approval Group (Level 1)</li>
+          <li><strong>APPROVED</strong> = Final Admin approval</li>
+          <li>Lines must go through AG review before Admin Final</li>
+          <li>You can override AG recommendations in Admin Final</li>
+        </ul>
+      </div>
+
+      <div>
+        <h4 style="margin: 0 0 8px 0;">Finalization</h4>
+        <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
+          <li>All kicked-back lines must be resolved first</li>
+          <li>Pending lines auto-approve at requested amount</li>
+          <li>A finalization note is <strong>required</strong></li>
+          <li>Unfinalizing pauses related supplementary requests</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #fcd34d;">
+      <h4 style="margin: 0 0 8px 0;">Key Statuses</h4>
+      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+        <div><span class="pill pill-draft">DRAFT</span> Not yet submitted</div>
+        <div><span class="pill pill-submitted">SUBMITTED</span> In review</div>
+        <div><span class="pill pill-needs">NEEDS_INFO</span> Waiting on requester</div>
+        <div><span class="pill pill-approved">FINALIZED</span> Fully approved</div>
+        <div><span class="pill" style="background: #dbeafe; color: #1e40af;">AG APPROVED</span> Level 1 done</div>
+      </div>
+    </div>
+  </section>
+
+  {# Budget Configuration - links to config pages (Super Admin only can access these) #}
+  <section class="card">
+    <h3 style="margin:0 0 16px 0;">Budget Configuration</h3>
+    <p class="muted small" style="margin: 0 0 16px 0;">
+      Configuration pages are accessible to Super Admins only.
+    </p>
+    <div class="btn-row">
+      <a class="btn" href="{{ url_for('admin_config.expense_accounts.list_expense_accounts') }}">
+        Expense Accounts
+      </a>
+      <a class="btn" href="{{ url_for('admin_config.approval_groups.list_approval_groups') }}">
+        Approval Groups
+      </a>
+    </div>
+  </section>
+
+{% endblock %}

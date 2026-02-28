@@ -2,6 +2,7 @@
 Line review routes - individual line review with decision actions.
 """
 from flask import render_template, redirect, url_for, request, abort, flash, jsonify
+from sqlalchemy.orm import joinedload, selectinload
 
 from app import db
 from app.models import (
@@ -61,14 +62,21 @@ def get_work_item_and_line(event: str, dept: str, public_id: str, line_num: int)
         public_id=public_id,
         portfolio_id=ctx.portfolio.id,
         is_archived=False,
+    ).options(
+        joinedload(WorkItem.portfolio),
     ).first()
 
     if not work_item:
         abort(404, f"Work item not found: {public_id}")
 
+    # Eager load budget_detail (with related lookups), comments, and audit events
     line = WorkLine.query.filter_by(
         work_item_id=work_item.id,
         line_number=line_num,
+    ).options(
+        joinedload(WorkLine.budget_detail),
+        selectinload(WorkLine.comments),
+        selectinload(WorkLine.audit_events),
     ).first()
 
     if not line:

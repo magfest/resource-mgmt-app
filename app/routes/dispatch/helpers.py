@@ -6,10 +6,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
+from sqlalchemy.orm import joinedload, selectinload
+
 from app import db
 from app.models import (
     WorkItem,
+    WorkLine,
     WorkPortfolio,
+    BudgetLineDetail,
     EventCycle,
     Department,
     ApprovalGroup,
@@ -55,6 +59,13 @@ def get_dispatch_queue(
 
     # Order by submitted_at
     query = query.order_by(WorkItem.submitted_at.asc())
+
+    # Eager load related data to avoid N+1 queries
+    query = query.options(
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
+    )
 
     work_items = query.all()
     result = []
