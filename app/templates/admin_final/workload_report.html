@@ -1,0 +1,167 @@
+{# templates/admin_final/workload_report.html #}
+{% extends "layout/base.html" %}
+{% from "admin_final/report_macros.html" import
+    report_header,
+    report_filters,
+    report_context,
+    stat_card,
+    aging_indicator,
+    ag_pill,
+    empty_state_no_event,
+    empty_state_no_data,
+    export_button
+%}
+
+{% block title %}Approval Group Workload{% endblock %}
+
+{% block content %}
+
+  {{ report_header(
+      "Approval Group Workload",
+      "Pending work by approval group with aging metrics",
+      url_for('admin_final.budget_admin_home')
+  ) }}
+
+  {{ report_filters(
+      url_for('admin_final.workload_report'),
+      event_cycles,
+      departments,
+      selected_event,
+      selected_dept,
+      event_required=True
+  ) }}
+
+  {% if not selected_event %}
+    {{ empty_state_no_event(
+        icon="⏱️",
+        title="Select an Event Cycle",
+        message="Choose an event cycle above to see approval group workload."
+    ) }}
+
+  {% elif rows %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      {{ report_context(selected_event_cycle, selected_department) }}
+      {{ export_button(url_for('admin_final.workload_report_export'), selected_event, selected_dept) }}
+    </div>
+
+    {# Summary Stats Cards #}
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
+      {{ stat_card(summary.total_approval_groups, "Approval Groups", "#6b7280") }}
+      {{ stat_card(summary.total_pending_lines, "Lines Pending", "#0a66c2") }}
+      {{ stat_card(summary.total_needs_info_lines, "Awaiting Response", "#d97706") }}
+      {{ stat_card(format_currency(summary.total_pending_cents), "Pending Value", "#059669") }}
+    </div>
+
+    {# Aging Summary #}
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px;">
+      <div class="card" style="text-align: center; padding: 16px; {% if summary.oldest_days >= 14 %}background: #fef2f2; border-color: #fca5a5;{% elif summary.oldest_days >= 7 %}background: #fffbeb; border-color: #fcd34d;{% endif %}">
+        <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Oldest Item</div>
+        <div style="font-size: 28px; font-weight: 700; {% if summary.oldest_days >= 14 %}color: #dc2626;{% elif summary.oldest_days >= 7 %}color: #d97706;{% else %}color: #059669;{% endif %}">
+          {{ summary.oldest_days }} days
+        </div>
+      </div>
+      <div class="card" style="text-align: center; padding: 16px;">
+        <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Avg Wait Time</div>
+        <div style="font-size: 28px; font-weight: 700; color: #6b7280;">
+          {{ summary.avg_days_waiting }} days
+        </div>
+      </div>
+    </div>
+
+    {# Data Table #}
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">
+        Workload by Approval Group
+        <span class="pill">{{ rows | length }} groups</span>
+      </h3>
+
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 80px;">Code</th>
+              <th>Approval Group</th>
+              <th style="width: 100px;" class="right">Pending</th>
+              <th style="width: 100px;" class="right">Needs Info</th>
+              <th style="width: 100px;" class="right">Total Lines</th>
+              <th style="width: 120px;" class="right">Pending Value</th>
+              <th style="width: 100px;" class="right">Oldest Item</th>
+              <th style="width: 100px;" class="right">Avg Wait</th>
+              <th style="width: 80px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>{{ ag_pill(row.approval_group_code) }}</td>
+                <td><strong>{{ row.approval_group_name }}</strong></td>
+                <td class="right num {% if row.pending_lines == 0 %}muted{% endif %}">
+                  {% if row.pending_lines > 0 %}
+                    <span class="pill pill-submitted">{{ row.pending_lines }}</span>
+                  {% else %}
+                    0
+                  {% endif %}
+                </td>
+                <td class="right num {% if row.needs_info_lines == 0 %}muted{% endif %}">
+                  {% if row.needs_info_lines > 0 %}
+                    <span class="pill pill-needs">{{ row.needs_info_lines }}</span>
+                  {% else %}
+                    0
+                  {% endif %}
+                </td>
+                <td class="right num" style="font-weight: 600;">{{ row.total_lines }}</td>
+                <td class="right num">{{ format_currency(row.total_pending_cents) }}</td>
+                <td class="right">
+                  {{ aging_indicator(row.oldest_days) }}
+                </td>
+                <td class="right num muted">{{ row.avg_days_waiting|round(1) }} days</td>
+                <td>
+                  <a class="btn btn-muted" href="{{ url_for('approvals.dashboard_group', group_code=row.approval_group_code) }}" style="padding: 4px 8px; font-size: 12px;">
+                    View
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot style="background: #f8f9fa; font-weight: 600;">
+            <tr>
+              <td colspan="2"><strong>TOTALS</strong></td>
+              <td class="right num">{{ summary.total_pending_lines }}</td>
+              <td class="right num">{{ summary.total_needs_info_lines }}</td>
+              <td class="right num">{{ summary.total_pending_lines + summary.total_needs_info_lines }}</td>
+              <td class="right num">{{ format_currency(summary.total_pending_cents) }}</td>
+              <td class="right">{{ aging_indicator(summary.oldest_days) }}</td>
+              <td class="right num muted">{{ summary.avg_days_waiting }} days</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+    {# Health Indicator Legend #}
+    <div class="card" style="margin-top: 16px; background: #f8f9fa;">
+      <h4 style="margin: 0 0 12px 0;">Aging Indicators</h4>
+      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <span class="muted">0-6 days</span> &mdash; On track
+        </div>
+        <div>
+          <span style="color: #d97706;">7-13 days</span> &mdash; Needs attention
+        </div>
+        <div>
+          <span style="color: #dc2626; font-weight: 600;">14+ days</span> &mdash; Urgent
+        </div>
+      </div>
+    </div>
+
+  {% else %}
+    {{ empty_state_no_data(
+        selected_event_cycle.name,
+        selected_department.name if selected_department else None,
+        icon="✅",
+        message_prefix="No pending work found for"
+    ) }}
+  {% endif %}
+
+{% endblock %}

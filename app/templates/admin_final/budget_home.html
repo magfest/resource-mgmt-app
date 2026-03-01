@@ -23,19 +23,43 @@
   {# Quick Actions #}
   <section class="card" style="margin-bottom: 24px; background: #f0fdf4; border: 1px solid #059669;">
     <h3 style="margin:0 0 16px 0;">Quick Actions</h3>
-    <div class="btn-row">
-      <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
-        All Requests
-      </a>
-      <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
-        Final Review Queue
-      </a>
-      <a class="btn" href="{{ url_for('dispatch.dashboard') }}">
-        Dispatch Queue
-      </a>
-      <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
-        Approval Group Dashboard
-      </a>
+
+    {# Workflow Actions #}
+    <div style="margin-bottom: 12px;">
+      <div class="muted small" style="margin-bottom: 8px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Workflow</div>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
+          All Requests
+        </a>
+        <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
+          Final Review Queue
+        </a>
+        <a class="btn" href="{{ url_for('dispatch.dashboard') }}">
+          Dispatch Queue
+        </a>
+        <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
+          Approval Group Dashboard
+        </a>
+      </div>
+    </div>
+
+    {# Divider #}
+    <div style="border-top: 1px solid #a7f3d0; margin: 16px 0;"></div>
+
+    {# Reports #}
+    <div id="reports">
+      <div class="muted small" style="margin-bottom: 8px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Reports</div>
+      <div class="btn-row">
+        <a class="btn" href="{{ url_for('admin_final.master_ledger') }}">
+          Master Ledger Report
+        </a>
+        <a class="btn" href="{{ url_for('admin_final.department_summary') }}">
+          Department Summary
+        </a>
+        <a class="btn" href="{{ url_for('admin_final.workload_report') }}">
+          Workload Report
+        </a>
+      </div>
     </div>
   </section>
 

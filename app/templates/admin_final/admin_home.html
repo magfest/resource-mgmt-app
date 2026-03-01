@@ -21,9 +21,14 @@
     <p style="margin:0 0 16px 0;">
       Manage budget requests, reviews, and budget-specific configuration.
     </p>
-    <a class="btn btn-primary" href="{{ url_for('admin_final.budget_admin_home') }}">
-      Go to Budget Admin
-    </a>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="{{ url_for('admin_final.budget_admin_home') }}">
+        Budget Admin
+      </a>
+      <a class="btn" href="{{ url_for('admin_final.budget_admin_home') }}#reports">
+        Reports
+      </a>
+    </div>
   </section>
 
   {# System Configuration Grid #}

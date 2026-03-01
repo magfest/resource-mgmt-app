@@ -1,0 +1,135 @@
+{# templates/admin_final/department_report.html #}
+{% extends "layout/base.html" %}
+{% from "admin_final/report_macros.html" import
+    report_header,
+    report_filters,
+    report_context,
+    pipeline_summary_cards,
+    grand_total_card,
+    pipeline_table_footer,
+    amount_cell,
+    stat_card,
+    empty_state_no_event,
+    empty_state_no_data,
+    export_button
+%}
+
+{% block title %}Department Budget Summary{% endblock %}
+
+{% block content %}
+
+  {{ report_header(
+      "Department Budget Summary",
+      "Budget totals by department across pipeline stages",
+      url_for('admin_final.budget_admin_home')
+  ) }}
+
+  {{ report_filters(
+      url_for('admin_final.department_summary'),
+      event_cycles,
+      departments,
+      selected_event,
+      selected_dept,
+      event_required=True
+  ) }}
+
+  {% if not selected_event %}
+    {{ empty_state_no_event(
+        icon="🏢",
+        title="Select an Event Cycle",
+        message="Choose an event cycle above to see department budget totals."
+    ) }}
+
+  {% elif rows %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      {{ report_context(selected_event_cycle, selected_department) }}
+      {{ export_button(url_for('admin_final.department_summary_export'), selected_event, selected_dept) }}
+    </div>
+
+    {# Stats Cards #}
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px;">
+      {{ stat_card(stats.total_departments, "Departments", "#6b7280") }}
+      {{ stat_card(stats.total_requests, "Budget Requests", "#0a66c2") }}
+      {{ stat_card(stats.total_lines, "Line Items", "#7c3aed") }}
+    </div>
+
+    {{ pipeline_summary_cards(summary, format_currency) }}
+
+    {{ grand_total_card(summary.total_cents, format_currency) }}
+
+    {# Data Table #}
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">
+        Department Detail
+        <span class="pill">{{ rows | length }} departments</span>
+      </h3>
+
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Department</th>
+              <th style="width: 100px;">Division</th>
+              <th style="width: 70px;" class="right">Requests</th>
+              <th style="width: 70px;" class="right">Lines</th>
+              <th style="width: 100px;" class="right">Draft</th>
+              <th style="width: 100px;" class="right">Submitted</th>
+              <th style="width: 100px;" class="right">AG Approved</th>
+              <th style="width: 100px;" class="right">Final Approved</th>
+              <th style="width: 100px;" class="right">Rejected</th>
+              <th style="width: 110px;" class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>
+                  <strong>{{ row.department_name }}</strong>
+                  <div class="muted small">{{ row.department_code }}</div>
+                </td>
+                <td>
+                  {% if row.division_code %}
+                    <span class="muted small">{{ row.division_code }}</span>
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                <td class="right num">{{ row.request_count }}</td>
+                <td class="right num">{{ row.line_count }}</td>
+                {{ amount_cell(row.draft_cents, format_currency) }}
+                {{ amount_cell(row.submitted_cents, format_currency) }}
+                {{ amount_cell(row.ag_approved_cents, format_currency) }}
+                {{ amount_cell(row.final_approved_cents, format_currency) }}
+                {{ amount_cell(row.rejected_cents, format_currency, highlight_negative=True) }}
+                <td class="right num" style="font-weight: 600;">
+                  {{ format_currency(row.total_cents) }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot style="background: #f8f9fa; font-weight: 600;">
+            <tr>
+              <td colspan="2"><strong>TOTALS</strong></td>
+              <td class="right num">{{ stats.total_requests }}</td>
+              <td class="right num">{{ stats.total_lines }}</td>
+              <td class="right num">{{ format_currency(summary.draft_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.submitted_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.ag_approved_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.final_approved_cents) }}</td>
+              <td class="right num" style="color: #dc2626;">{{ format_currency(summary.rejected_cents) }}</td>
+              <td class="right num" style="font-size: 16px;">{{ format_currency(summary.total_cents) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+  {% else %}
+    {{ empty_state_no_data(
+        selected_event_cycle.name,
+        selected_department.name if selected_department else None,
+        icon="🏢"
+    ) }}
+  {% endif %}
+
+{% endblock %}

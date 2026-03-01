@@ -1,0 +1,100 @@
+{# templates/admin_final/ledger_report.html #}
+{% extends "layout/base.html" %}
+{% from "admin_final/report_macros.html" import
+    report_header,
+    report_filters,
+    report_context,
+    pipeline_summary_cards,
+    grand_total_card,
+    pipeline_table_footer,
+    amount_cell,
+    ag_pill,
+    empty_state_no_event,
+    empty_state_no_data,
+    export_button
+%}
+
+{% block title %}Master Ledger Report{% endblock %}
+
+{% block content %}
+
+  {{ report_header(
+      "Master Ledger Report",
+      "Budget totals by expense account (GL account) across pipeline stages",
+      url_for('admin_final.budget_admin_home')
+  ) }}
+
+  {{ report_filters(
+      url_for('admin_final.master_ledger'),
+      event_cycles,
+      departments,
+      selected_event,
+      selected_dept,
+      event_required=True
+  ) }}
+
+  {% if not selected_event %}
+    {{ empty_state_no_event() }}
+
+  {% elif rows %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      {{ report_context(selected_event_cycle, selected_department) }}
+      {{ export_button(url_for('admin_final.master_ledger_export'), selected_event, selected_dept) }}
+    </div>
+
+    {{ pipeline_summary_cards(summary, format_currency) }}
+
+    {{ grand_total_card(summary.total_cents, format_currency) }}
+
+    {# Data Table #}
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">
+        Ledger Detail
+        <span class="pill">{{ rows | length }} accounts</span>
+      </h3>
+
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 80px;">GL Code</th>
+              <th>Account Name</th>
+              <th style="width: 100px;">AG</th>
+              <th style="width: 110px;" class="right">Draft</th>
+              <th style="width: 110px;" class="right">Submitted</th>
+              <th style="width: 110px;" class="right">AG Approved</th>
+              <th style="width: 110px;" class="right">Final Approved</th>
+              <th style="width: 110px;" class="right">Rejected</th>
+              <th style="width: 120px;" class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td><strong>{{ row.gl_code }}</strong></td>
+                <td>{{ row.account_name }}</td>
+                <td>{{ ag_pill(row.approval_group_code) }}</td>
+                {{ amount_cell(row.draft_cents, format_currency) }}
+                {{ amount_cell(row.submitted_cents, format_currency) }}
+                {{ amount_cell(row.ag_approved_cents, format_currency) }}
+                {{ amount_cell(row.final_approved_cents, format_currency) }}
+                {{ amount_cell(row.rejected_cents, format_currency, highlight_negative=True) }}
+                <td class="right num" style="font-weight: 600;">
+                  {{ format_currency(row.total_cents) }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          {{ pipeline_table_footer(summary, format_currency, pre_columns=3) }}
+        </table>
+      </div>
+    </section>
+
+  {% else %}
+    {{ empty_state_no_data(
+        selected_event_cycle.name,
+        selected_department.name if selected_department else None
+    ) }}
+  {% endif %}
+
+{% endblock %}

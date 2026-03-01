@@ -1,0 +1,263 @@
+{#
+  Shared macros for budget admin reports.
+
+  Usage:
+    {% from "admin_final/report_macros.html" import report_header, report_filters, pipeline_summary_cards, ... %}
+#}
+
+
+{# ============================================================
+   Report Header
+   ============================================================ #}
+
+{% macro report_header(title, subtitle, back_url=None, back_label="Back to Budget Admin") %}
+<div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+  <div>
+    <h1 style="margin:0;">{{ title }}</h1>
+    <div class="muted" style="margin-top:4px;">
+      {{ subtitle }}
+    </div>
+  </div>
+  {% if back_url %}
+    <a class="btn" href="{{ back_url }}">
+      {{ back_label }}
+    </a>
+  {% endif %}
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   Report Filters Form
+   ============================================================ #}
+
+{% macro report_filters(
+    action_url,
+    event_cycles,
+    departments,
+    selected_event="",
+    selected_dept="",
+    event_required=True,
+    show_department=True,
+    submit_label="Generate Report",
+    extra_filters=None
+) %}
+<div class="card" style="margin-bottom: 16px; background: #f8f9fa;">
+  <form method="get" action="{{ action_url }}" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+    <div>
+      <label for="event" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
+        Event Cycle {% if event_required %}<span style="color: #dc2626;">*</span>{% endif %}
+      </label>
+      <select name="event" id="event" style="min-width: 150px;" {% if event_required %}required{% endif %}>
+        <option value="">{% if event_required %}Select Event...{% else %}All Events{% endif %}</option>
+        {% for ec in event_cycles %}
+          <option value="{{ ec.code }}" {% if selected_event == ec.code %}selected{% endif %}>
+            {{ ec.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {% if show_department %}
+    <div>
+      <label for="dept" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Department</label>
+      <select name="dept" id="dept" style="min-width: 150px;">
+        <option value="">All Departments</option>
+        {% for d in departments %}
+          <option value="{{ d.code }}" {% if selected_dept == d.code %}selected{% endif %}>
+            {{ d.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    {# Slot for extra filters #}
+    {% if extra_filters %}
+      {{ extra_filters }}
+    {% endif %}
+
+    <div>
+      <button type="submit" class="btn btn-primary">{{ submit_label }}</button>
+    </div>
+
+    {% if selected_event or selected_dept %}
+      <div>
+        <a class="btn btn-muted" href="{{ action_url }}">Clear</a>
+      </div>
+    {% endif %}
+  </form>
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   Pipeline Summary Cards (5 columns)
+   ============================================================ #}
+
+{% macro pipeline_summary_cards(summary, format_currency) %}
+<div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px;">
+  <div class="card" style="text-align: center; padding: 16px;">
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Draft</div>
+    <div style="font-size: 20px; font-weight: 700; color: #6b7280;">{{ format_currency(summary.draft_cents) }}</div>
+  </div>
+  <div class="card" style="text-align: center; padding: 16px;">
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Submitted</div>
+    <div style="font-size: 20px; font-weight: 700; color: #0a66c2;">{{ format_currency(summary.submitted_cents) }}</div>
+  </div>
+  <div class="card" style="text-align: center; padding: 16px;">
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">AG Approved</div>
+    <div style="font-size: 20px; font-weight: 700; color: #7c3aed;">{{ format_currency(summary.ag_approved_cents) }}</div>
+  </div>
+  <div class="card" style="text-align: center; padding: 16px;">
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Final Approved</div>
+    <div style="font-size: 20px; font-weight: 700; color: #059669;">{{ format_currency(summary.final_approved_cents) }}</div>
+  </div>
+  <div class="card" style="text-align: center; padding: 16px; background: #fef2f2; border-color: #fca5a5;">
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Rejected</div>
+    <div style="font-size: 20px; font-weight: 700; color: #dc2626;">{{ format_currency(summary.rejected_cents) }}</div>
+  </div>
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   Grand Total Card
+   ============================================================ #}
+
+{% macro grand_total_card(total_cents, format_currency, label="Total (Excluding Rejected)") %}
+<div class="card" style="text-align: center; padding: 16px; margin-bottom: 24px; background: #f0f9ff; border-color: #0a66c2;">
+  <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">{{ label }}</div>
+  <div style="font-size: 28px; font-weight: 700; color: #0a66c2;">{{ format_currency(total_cents) }}</div>
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   Empty State - No Event Selected
+   ============================================================ #}
+
+{% macro empty_state_no_event(icon="📊", title="Select an Event Cycle", message="Choose an event cycle above to generate the report.") %}
+<div class="card" style="text-align: center; padding: 48px;">
+  <div style="font-size: 48px; margin-bottom: 16px;">{{ icon }}</div>
+  <h3 style="margin: 0 0 8px 0;">{{ title }}</h3>
+  <p class="muted" style="margin: 0;">{{ message }}</p>
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   Empty State - No Data Found
+   ============================================================ #}
+
+{% macro empty_state_no_data(event_name, department_name=None, icon="📭", message_prefix="No budget data found for") %}
+<div class="card" style="text-align: center; padding: 48px;">
+  <div style="font-size: 48px; margin-bottom: 16px;">{{ icon }}</div>
+  <h3 style="margin: 0 0 8px 0;">No Data Found</h3>
+  <p class="muted" style="margin: 0;">
+    {{ message_prefix }}
+    <strong>{{ event_name }}</strong>
+    {% if department_name %}
+      in <strong>{{ department_name }}</strong>
+    {% endif %}.
+  </p>
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   Report Context Banner
+   ============================================================ #}
+
+{% macro report_context(event_cycle, department=None) %}
+<div style="margin-bottom: 16px;">
+  <strong>{{ event_cycle.name }}</strong>
+  {% if department %}
+    <span class="muted">&mdash; {{ department.name }}</span>
+  {% endif %}
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   Pipeline Table Footer Row
+   ============================================================ #}
+
+{% macro pipeline_table_footer(summary, format_currency, pre_columns=3) %}
+<tfoot style="background: #f8f9fa; font-weight: 600;">
+  <tr>
+    <td colspan="{{ pre_columns }}"><strong>TOTALS</strong></td>
+    <td class="right num">{{ format_currency(summary.draft_cents) }}</td>
+    <td class="right num">{{ format_currency(summary.submitted_cents) }}</td>
+    <td class="right num">{{ format_currency(summary.ag_approved_cents) }}</td>
+    <td class="right num">{{ format_currency(summary.final_approved_cents) }}</td>
+    <td class="right num" style="color: #dc2626;">{{ format_currency(summary.rejected_cents) }}</td>
+    <td class="right num" style="font-size: 16px;">{{ format_currency(summary.total_cents) }}</td>
+  </tr>
+</tfoot>
+{% endmacro %}
+
+
+{# ============================================================
+   Pipeline Amount Cell (with muted zero handling)
+   ============================================================ #}
+
+{% macro amount_cell(cents, format_currency, highlight_negative=False) %}
+<td class="right num {% if cents == 0 %}muted{% elif highlight_negative and cents > 0 %}" style="color: #dc2626;{% endif %}">
+  {{ format_currency(cents) }}
+</td>
+{% endmacro %}
+
+
+{# ============================================================
+   Approval Group Pill
+   ============================================================ #}
+
+{% macro ag_pill(code) %}
+{% if code %}
+  <span class="pill" style="background: #dbeafe; color: #1e40af;">{{ code }}</span>
+{% else %}
+  <span class="muted">-</span>
+{% endif %}
+{% endmacro %}
+
+
+{# ============================================================
+   Stat Card (for workload-style reports)
+   ============================================================ #}
+
+{% macro stat_card(value, label, color="#0a66c2", sublabel=None) %}
+<div class="card" style="text-align: center; padding: 16px;">
+  <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">{{ label }}</div>
+  <div style="font-size: 28px; font-weight: 700; color: {{ color }};">{{ value }}</div>
+  {% if sublabel %}
+    <div class="muted small" style="margin-top: 4px;">{{ sublabel }}</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   Aging Indicator
+   ============================================================ #}
+
+{% macro aging_indicator(days) %}
+{% if days >= 14 %}
+  <span style="color: #dc2626; font-weight: 600;">{{ days }} days</span>
+{% elif days >= 7 %}
+  <span style="color: #d97706;">{{ days }} days</span>
+{% else %}
+  <span class="muted">{{ days }} days</span>
+{% endif %}
+{% endmacro %}
+
+
+{# ============================================================
+   Export Button
+   ============================================================ #}
+
+{% macro export_button(export_url, selected_event, selected_dept=None) %}
+<a class="btn" href="{{ export_url }}?event={{ selected_event }}{% if selected_dept %}&dept={{ selected_dept }}{% endif %}" style="display: inline-flex; align-items: center; gap: 6px;">
+  <span style="font-size: 14px;">&#x2B73;</span> Download CSV
+</a>
+{% endmacro %}
