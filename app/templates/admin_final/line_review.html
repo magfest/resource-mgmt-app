@@ -46,15 +46,13 @@
     </div>
 
     <div style="text-align:right;">
-      <div style="font-size: 24px; font-weight:700;">{{ format_currency(line_total) }}</div>
-      <div class="muted">Requested</div>
-      {% set requested_cents = line_total %}
-      {% set recommended_cents = recommended_amount %}
       {% set approved_cents = line.approved_amount_cents if line.approved_amount_cents is not none else none %}
-      {% if recommended_cents is not none or approved_cents is not none %}
-        <div style="margin-top: 8px;">
-          {% include "components/_amount_comparison.html" %}
-        </div>
+      {% if approved_cents is not none %}
+        <div style="font-size: 24px; font-weight:700; color: #059669;">{{ format_currency(approved_cents) }}</div>
+        <div class="muted small">Approved</div>
+      {% else %}
+        <div style="font-size: 24px; font-weight:700;">{{ format_currency(line_total) }}</div>
+        <div class="muted small">Requested</div>
       {% endif %}
     </div>
   </div>
@@ -106,6 +104,44 @@
             <td class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
           </tr>
         </table>
+
+        {# Pricing Summary - shows recommended and approved amounts if they exist #}
+        {% set requested_cents = line_total %}
+        {% set recommended_cents = recommended_amount %}
+        {% set approved_cents = line.approved_amount_cents if line.approved_amount_cents is not none else none %}
+        {% if recommended_cents is not none or approved_cents is not none %}
+          <table style="margin-top: 12px; border-top: 1px solid #eee; padding-top: 12px;">
+            {% if recommended_cents is not none %}
+              {% set rec_diff = recommended_cents - requested_cents %}
+              <tr>
+                <th style="width: 50%;">AG Recommended</th>
+                <td class="right num">
+                  {{ format_currency(recommended_cents) }}
+                  {% if rec_diff != 0 %}
+                    <span class="muted small" style="color: {% if rec_diff < 0 %}#dc3545{% else %}#059669{% endif %};">
+                      ({% if rec_diff >= 0 %}+{% endif %}{{ format_currency(rec_diff) }})
+                    </span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endif %}
+            {% if approved_cents is not none %}
+              {% set compare_to = recommended_cents if recommended_cents is not none else requested_cents %}
+              {% set app_diff = approved_cents - compare_to %}
+              <tr>
+                <th>Approved</th>
+                <td class="right num" style="color: #059669; font-weight: 700;">
+                  {{ format_currency(approved_cents) }}
+                  {% if app_diff != 0 %}
+                    <span class="small" style="color: {% if app_diff < 0 %}#dc3545{% else %}#059669{% endif %}; font-weight: normal;">
+                      ({% if app_diff >= 0 %}+{% endif %}{{ format_currency(app_diff) }})
+                    </span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endif %}
+          </table>
+        {% endif %}
       </section>
 
       {# Approval Group Review Summary #}

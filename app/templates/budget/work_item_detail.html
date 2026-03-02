@@ -127,7 +127,7 @@
         Quick Review
       </a>
     {% endif %}
-
+    <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
     {# Admin Dispatch button #}
     {% if perms.is_worktype_admin and status == "SUBMITTED" %}
       <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
@@ -147,9 +147,9 @@
         Admin Final Queue
       </a>
     {% endif %}
-
+    <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
     <a class="btn" href="{{ url_for('work.portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
-      Department Budget
+      Dept. Budget Homepage
     </a>
   </div>
 
@@ -170,7 +170,7 @@
   {# Finalization Section for Admins (bypass - can finalize from AWAITING_DISPATCH or SUBMITTED) #}
   {% if perms.is_worktype_admin and status in ["AWAITING_DISPATCH", "SUBMITTED"] and finalization_summary %}
     <div class="card" style="margin-bottom: 16px; background: #f0fdf4; border: 1px solid #059669;">
-      <h4 style="margin:0 0 12px 0;">Admin Finalization</h4>
+      <h4 style="margin:0 0 12px 0;">Budget Admin Request Dashboard</h4>
 
       {# Summary stats #}
       <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;">
@@ -303,7 +303,7 @@
     </div>
   {% endif %}
 
-  {% if status == "SUBMITTED" and not perms.is_checked_out %}
+  {% if status == "SUBMITTED" and not perms.is_checked_out and not perms.is_worktype_admin %}
     <div class="callout callout-info mb-16">
       <strong>Under Review</strong>
       <div class="muted" style="margin-top:4px;">
