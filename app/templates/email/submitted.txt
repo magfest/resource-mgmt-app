@@ -1,0 +1,8 @@
+A new budget request has been submitted and is ready for dispatch.
+
+Request: {{ work_item.public_id }}
+Department: {{ work_item.portfolio.department.name }}
+Event: {{ work_item.portfolio.event_cycle.name }}
+
+Log in to dispatch:
+{{ base_url }}/dispatch/

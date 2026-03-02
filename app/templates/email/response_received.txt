@@ -1,0 +1,7 @@
+A requester has responded to your feedback on a budget line.
+
+Request: {{ work_item.public_id }}
+Department: {{ work_item.portfolio.department.name }}
+
+Log in to continue review:
+{{ base_url }}/approvals/

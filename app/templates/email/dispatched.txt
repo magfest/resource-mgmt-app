@@ -1,0 +1,8 @@
+A budget request has been assigned to your approval group for review.
+
+Request: {{ work_item.public_id }}
+Department: {{ work_item.portfolio.department.name }}
+Event: {{ work_item.portfolio.event_cycle.name }}
+
+Log in to review:
+{{ base_url }}/approvals/

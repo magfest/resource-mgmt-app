@@ -1,0 +1,7 @@
+One or more lines in your budget request need attention.
+
+Request: {{ work_item.public_id }}
+Department: {{ work_item.portfolio.department.name }}
+
+Please log in to review and respond:
+{{ base_url }}/work/{{ work_item.portfolio.event_cycle.code }}/{{ work_item.portfolio.department.code }}/budget/item/{{ work_item.public_id }}
