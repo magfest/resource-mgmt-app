@@ -535,7 +535,7 @@
             <label for="comment" style="font-size: 13px; font-weight: 600;">Add Note:</label>
             <textarea name="comment" id="comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Add context, justification, or notes for reviewers..."></textarea>
           </div>
-          {% if user_ctx.is_admin %}
+          {% if user_ctx.is_super_admin %}
             <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
               <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
               Admin-only (not visible to requesters)

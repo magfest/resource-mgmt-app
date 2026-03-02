@@ -182,7 +182,7 @@
     <div>
 
       {# Admin Review Mode Toggle #}
-      {% if user_ctx.is_admin %}
+      {% if user_ctx.is_super_admin %}
         <div style="margin-bottom: 16px; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden;">
           <div style="display: flex;">
             <button type="button" id="tab-ag" class="review-tab active"
@@ -316,7 +316,7 @@
       {% endif %}
 
       {# Approval Group Review Decision Form #}
-      <div id="review-form-ag" {% if user_ctx.is_admin %}style=""{% endif %}>
+      <div id="review-form-ag" {% if user_ctx.is_super_admin %}style=""{% endif %}>
         {% if can_decide %}
           <section class="card" style="margin-bottom: 16px; background: #f8f9fa;">
             <h3 style="margin:0 0 12px 0;">Make Decision (Approval Group)</h3>
@@ -409,7 +409,7 @@
       </div>{# End review-form-ag #}
 
       {# Admin Final Review Form - Only shown to admins #}
-      {% if user_ctx.is_admin %}
+      {% if user_ctx.is_super_admin %}
         <div id="review-form-admin" style="display: none;">
           {% set admin_status = admin_review.status | upper if admin_review else 'PENDING' %}
 
@@ -571,7 +571,7 @@
                 <label for="standalone_comment" style="font-size: 13px; font-weight: 600;">Add Comment:</label>
                 <textarea name="comment" id="standalone_comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Enter your comment..."></textarea>
               </div>
-              {% if user_ctx.is_admin %}
+              {% if user_ctx.is_super_admin %}
                 <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
                   <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
                   Admin-only (not visible to requesters)

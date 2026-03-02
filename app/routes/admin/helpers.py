@@ -38,7 +38,7 @@ def require_super_admin(f):
         if user_ctx.user_id is None:
             return redirect(url_for('auth.login_page'))
 
-        if not user_ctx.is_admin:
+        if not user_ctx.is_super_admin:
             abort(403, "Super admin access required")
         return f(*args, **kwargs)
     return decorated_function
@@ -47,7 +47,7 @@ def require_super_admin(f):
 def render_admin_config_page(template: str, **ctx):
     """Render an admin config page with user context. Requires SUPER_ADMIN."""
     user_ctx = get_user_ctx()
-    if not user_ctx.is_admin:
+    if not user_ctx.is_super_admin:
         abort(403, "Super admin access required")
     return render_template(template, user_ctx=user_ctx, **ctx)
 
@@ -298,7 +298,7 @@ def can_manage_department_members(user_ctx, department_id: int, event_cycle_id: 
     - Department Head (their own department only)
     """
     # Super admin can do anything
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return True
 
     # Check if Div Head for this department's division
@@ -333,7 +333,7 @@ def can_set_department_head(user_ctx, department_id: int, event_cycle_id: int) -
     Only Super Admin and Division Heads can promote someone to Department Head.
     Department Heads themselves cannot make other people Department Heads.
     """
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return True
 
     # Check if Div Head for this department's division
@@ -348,7 +348,7 @@ def can_set_department_head_any_cycle(user_ctx, department_id: int) -> bool:
     """Check if user can set the is_department_head flag for any active event cycle."""
     from app.models import EventCycle
 
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return True
 
     # Check all active event cycles
@@ -368,7 +368,7 @@ def can_manage_department_members_any_cycle(user_ctx, department_id: int) -> boo
     """
     from app.models import EventCycle
 
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return True
 
     # Check all active event cycles
@@ -388,7 +388,7 @@ def get_manageable_departments_for_user(user_ctx, event_cycle_id: int) -> list:
     """
     from app.models import Department, DepartmentMembership, DivisionMembership
 
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         # Super admin can manage all departments
         return Department.query.filter_by(is_active=True).order_by(
             Department.sort_order, Department.name

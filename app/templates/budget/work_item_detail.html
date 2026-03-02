@@ -58,7 +58,7 @@
           {% endif %}
         </div>
       </div>
-    {% elif perms.is_admin %}
+    {% elif perms.is_worktype_admin %}
       <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
         <strong>Under Review by Another Reviewer</strong>
         <div class="muted" style="margin-top:4px;">
@@ -122,27 +122,27 @@
     {% endif %}
 
     {# Quick Review button for reviewers/admins #}
-    {% if perms.is_admin or perms.can_checkout or perms.is_checked_out_by_current_user %}
+    {% if perms.is_worktype_admin or perms.can_checkout or perms.is_checked_out_by_current_user %}
       <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
         Quick Review
       </a>
     {% endif %}
 
     {# Admin Dispatch button #}
-    {% if perms.is_admin and status == "SUBMITTED" %}
+    {% if perms.is_worktype_admin and status == "SUBMITTED" %}
       <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
       Dispatch Queue</a>
     {% endif %}
 
     {# Dashboard link for reviewers #}
-    {% if perms.is_admin or perms.is_checked_out_by_current_user %}
+    {% if perms.is_worktype_admin or perms.is_checked_out_by_current_user %}
       <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
         Approval Queue
       </a>
     {% endif %}
 
     {# Admin Final Review button #}
-    {% if perms.is_admin and status == "SUBMITTED" %}
+    {% if perms.is_worktype_admin and status == "SUBMITTED" %}
       <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
         Admin Final Queue
       </a>
@@ -154,7 +154,7 @@
   </div>
 
   {# Dispatch Section for Admins (when AWAITING_DISPATCH) #}
-  {% if perms.is_admin and status == "AWAITING_DISPATCH" %}
+  {% if perms.is_worktype_admin and status == "AWAITING_DISPATCH" %}
     <div class="card" style="margin-bottom: 16px; background: #fef3c7; border: 1px solid #d97706;">
       <h4 style="margin:0 0 12px 0;">Awaiting Dispatch</h4>
       <p class="muted" style="margin: 0 0 12px 0;">
@@ -168,7 +168,7 @@
   {% endif %}
 
   {# Finalization Section for Admins (bypass - can finalize from AWAITING_DISPATCH or SUBMITTED) #}
-  {% if perms.is_admin and status in ["AWAITING_DISPATCH", "SUBMITTED"] and finalization_summary %}
+  {% if perms.is_worktype_admin and status in ["AWAITING_DISPATCH", "SUBMITTED"] and finalization_summary %}
     <div class="card" style="margin-bottom: 16px; background: #f0fdf4; border: 1px solid #059669;">
       <h4 style="margin:0 0 12px 0;">Admin Finalization</h4>
 
@@ -255,7 +255,7 @@
   {% endif %}
 
   {# Status-specific callouts #}
-  {% if status == "AWAITING_DISPATCH" and not perms.is_admin %}
+  {% if status == "AWAITING_DISPATCH" and not perms.is_worktype_admin %}
     <div class="callout" style="margin-bottom: 16px; background: #fef3c7; border-left: 4px solid #d97706;">
       <strong>Awaiting Dispatch</strong>
       <div class="muted" style="margin-top:4px;">
@@ -534,7 +534,7 @@
             <label for="work_item_comment" style="font-size: 13px; font-weight: 600;">Add Comment:</label>
             <textarea name="comment" id="work_item_comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Enter your comment..."></textarea>
           </div>
-          {% if perms.is_admin %}
+          {% if perms.is_worktype_admin %}
             <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
               <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
               Admin-only (not visible to requesters)

@@ -71,8 +71,8 @@ def set_role_override():
         flash("Role override not available", "error")
         return redirect(request.referrer or url_for("home.index"))
 
-    # Use real_is_admin to check actual database role, ignoring any current override
-    if not h.real_is_admin():
+    # Check actual database role, ignoring any current override
+    if not h.has_super_admin_role():
         flash("Only super-admins can override roles", "error")
         return redirect(request.referrer or url_for("home.index"))
 
@@ -87,10 +87,6 @@ def set_role_override():
         session["role_override"] = "none"
         session.pop("role_override_approval_group_id", None)
         flash("Role override: No special permissions (regular user)", "info")
-    elif override == "finance":
-        session["role_override"] = "finance"
-        session.pop("role_override_approval_group_id", None)
-        flash("Role override: Finance only (no admin)", "info")
     elif override.startswith("approver:"):
         # Format: approver:GROUP_ID
         try:
@@ -121,7 +117,7 @@ def impersonate_user_page():
         flash("Impersonation not available", "error")
         return redirect(url_for("home.index"))
 
-    if not h.real_is_admin():
+    if not h.has_super_admin_role():
         flash("Only super-admins can impersonate users", "error")
         return redirect(url_for("home.index"))
 
@@ -150,7 +146,7 @@ def impersonate_user():
         flash("Impersonation not available", "error")
         return redirect(url_for("home.index"))
 
-    if not h.real_is_admin():
+    if not h.has_super_admin_role():
         flash("Only super-admins can impersonate users", "error")
         return redirect(url_for("home.index"))
 

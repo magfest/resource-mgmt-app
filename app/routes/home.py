@@ -91,7 +91,7 @@ def index():
     }
 
     # Check if super admin (respects role override for testing)
-    is_super_admin = user_ctx.is_admin
+    is_super_admin = user_ctx.is_super_admin
     context["is_super_admin"] = is_super_admin
 
     # Get approval groups user can review

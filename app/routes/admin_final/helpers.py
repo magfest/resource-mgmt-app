@@ -91,7 +91,7 @@ class AdminQueues:
 
 def require_admin(user_ctx: UserContext) -> None:
     """Abort 403 if user is not an admin."""
-    if not user_ctx.is_admin:
+    if not user_ctx.is_super_admin:
         abort(403, "Admin access required.")
 
 
@@ -100,7 +100,7 @@ def require_budget_admin(user_ctx: UserContext) -> None:
     Require Budget worktype admin OR super admin.
     Aborts with 403 if user lacks permission.
     """
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return  # Super admin has access
 
     # Check for WORKTYPE_ADMIN role with Budget work type

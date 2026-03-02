@@ -13,7 +13,7 @@
         Budget workflow tools and configuration
       </div>
     </div>
-    {% if user_ctx.is_admin %}
+    {% if user_ctx.is_super_admin %}
       <a class="btn" href="{{ url_for('admin_final.admin_home') }}">
         Back to System Admin
       </a>

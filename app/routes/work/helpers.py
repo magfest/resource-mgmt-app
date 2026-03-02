@@ -81,17 +81,27 @@ class PortfolioContext:
 
 @dataclass(frozen=True)
 class PortfolioPerms:
-    """Permission flags for portfolio-level actions."""
+    """Permission flags for portfolio-level actions.
+
+    Attributes:
+        is_worktype_admin: True if user is admin for this work type
+            (either SUPER_ADMIN or WORKTYPE_ADMIN for this work type)
+    """
     can_view: bool
     can_edit: bool
     can_create_primary: bool
     can_create_supplementary: bool
-    is_admin: bool
+    is_worktype_admin: bool
 
 
 @dataclass(frozen=True)
 class WorkItemPerms:
-    """Permission flags for work item actions."""
+    """Permission flags for work item actions.
+
+    Attributes:
+        is_worktype_admin: True if user is admin for this work type
+            (either SUPER_ADMIN or WORKTYPE_ADMIN for this work type)
+    """
     can_view: bool
     can_edit: bool
     can_submit: bool
@@ -101,7 +111,7 @@ class WorkItemPerms:
     can_checkin: bool
     can_request_info: bool
     can_respond_to_info: bool
-    is_admin: bool
+    is_worktype_admin: bool
     is_draft: bool
     is_checked_out: bool
     is_checked_out_by_current_user: bool
@@ -257,7 +267,7 @@ def get_portfolio_context(
 
 def is_worktype_admin(user_ctx: UserContext, work_type_id: int) -> bool:
     """Check if user is an admin for a specific work type (SUPER_ADMIN or WORKTYPE_ADMIN)."""
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return True
 
     from app.models import UserRole
@@ -280,7 +290,7 @@ def is_budget_admin(user_ctx: UserContext, work_type_id: int | None = None) -> b
 
 def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:
     """Build permission flags for a portfolio."""
-    is_admin = is_budget_admin(ctx.user_ctx, ctx.work_type.id)
+    is_wt_admin = is_budget_admin(ctx.user_ctx, ctx.work_type.id)
     work_type_id = ctx.work_type.id
 
     # Department membership permissions - now scoped by work type
@@ -299,11 +309,11 @@ def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:
         dm_can_view = dm.can_view_work_type(work_type_id)
         dm_can_edit = dm.can_edit_work_type(work_type_id)
 
-    # View: admin OR department membership OR division membership (with work type access)
-    can_view = is_admin or m_can_view or dm_can_view
+    # View: worktype admin OR department membership OR division membership (with work type access)
+    can_view = is_wt_admin or m_can_view or dm_can_view
 
-    # Edit: admin OR department membership OR division membership
-    can_edit = is_admin or m_can_edit or dm_can_edit
+    # Edit: worktype admin OR department membership OR division membership
+    can_edit = is_wt_admin or m_can_edit or dm_can_edit
 
     # Check for existing PRIMARY
     existing_primary = WorkItem.query.filter_by(
@@ -326,7 +336,7 @@ def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:
         can_edit=can_edit,
         can_create_primary=can_create_primary,
         can_create_supplementary=can_create_supplementary,
-        is_admin=is_admin,
+        is_worktype_admin=is_wt_admin,
     )
 
 
@@ -336,7 +346,7 @@ def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:
 
 def get_checkout_timeout_minutes(user_ctx: UserContext) -> int:
     """Get checkout timeout in minutes based on user role (respects role override)."""
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return CHECKOUT_TIMEOUTS["SUPER_ADMIN"]
     if user_ctx.approval_group_ids:
         return CHECKOUT_TIMEOUTS["APPROVER"]
@@ -391,7 +401,7 @@ def can_checkout(work_item: WorkItem, user_ctx: UserContext) -> tuple[bool, str]
         return False, "Only SUBMITTED requests can be checked out for review."
 
     # Must be a reviewer (admin or approver) - respects role override
-    if not user_ctx.is_admin and not user_ctx.approval_group_ids:
+    if not user_ctx.is_super_admin and not user_ctx.approval_group_ids:
         return False, "Only reviewers can checkout work items."
 
     # Cannot checkout if already checked out (unless expired)
@@ -439,7 +449,7 @@ def checkin_work_item(work_item: WorkItem, user_ctx: UserContext, force: bool = 
 
     # Check permission
     is_current_holder = work_item.checked_out_by_user_id == user_ctx.user_id
-    is_admin = user_ctx.is_admin
+    is_admin = user_ctx.is_super_admin
 
     if not is_current_holder and not (is_admin and force):
         return False
@@ -504,7 +514,7 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
 
     # Check if user is a reviewer (admin or approver for lines in this item)
     is_approver_for_item = _is_approver_for_work_item(item, ctx.user_ctx)
-    is_reviewer = portfolio_perms.is_admin or is_approver_for_item
+    is_reviewer = portfolio_perms.is_worktype_admin or is_approver_for_item
 
     # View: portfolio can_view OR is a reviewer for this item
     can_view = portfolio_perms.can_view or is_reviewer
@@ -535,7 +545,7 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
     can_checkout_item = is_reviewer and is_submitted and not item_is_checked_out
 
     # Can checkin: current user has checkout OR admin can force release
-    can_checkin_item = is_checked_out_by_current_user or (portfolio_perms.is_admin and item_is_checked_out)
+    can_checkin_item = is_checked_out_by_current_user or (portfolio_perms.is_worktype_admin and item_is_checked_out)
 
     # Can request info: has checkout on item (current user)
     can_request_info = is_checked_out_by_current_user and is_submitted
@@ -553,7 +563,7 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
         can_checkin=can_checkin_item,
         can_request_info=can_request_info,
         can_respond_to_info=can_respond_to_info,
-        is_admin=portfolio_perms.is_admin,
+        is_worktype_admin=portfolio_perms.is_worktype_admin,
         is_draft=is_draft,
         is_checked_out=item_is_checked_out,
         is_checked_out_by_current_user=is_checked_out_by_current_user,
@@ -1131,13 +1141,13 @@ def friendly_status(status: str) -> str:
     return STATUS_LABELS.get(status.upper(), status)
 
 
-def get_comment_visibility(form_data, is_admin: bool) -> str:
+def get_comment_visibility(form_data, is_worktype_admin: bool) -> str:
     """
     Determine comment visibility based on form input and user permissions.
 
     Args:
         form_data: Flask request.form or similar dict-like object
-        is_admin: Whether the current user is an admin
+        is_worktype_admin: Whether the current user is a worktype admin
 
     Returns:
         COMMENT_VISIBILITY_ADMIN if admin requested admin-only and is admin,
@@ -1146,7 +1156,7 @@ def get_comment_visibility(form_data, is_admin: bool) -> str:
     from app.models import COMMENT_VISIBILITY_ADMIN, COMMENT_VISIBILITY_PUBLIC
 
     admin_only_requested = form_data.get("admin_only") == "1"
-    if admin_only_requested and is_admin:
+    if admin_only_requested and is_worktype_admin:
         return COMMENT_VISIBILITY_ADMIN
     return COMMENT_VISIBILITY_PUBLIC
 
@@ -1167,7 +1177,7 @@ def get_next_line_number(work_item: WorkItem) -> int:
 def filter_lines_for_user(
     lines: list,
     user_ctx: UserContext,
-    is_admin: bool,
+    is_worktype_admin: bool,
     has_edit_access: bool = False,
 ) -> tuple[list, bool]:
     """
@@ -1176,7 +1186,7 @@ def filter_lines_for_user(
     Args:
         lines: List of WorkLine objects
         user_ctx: Current user context
-        is_admin: Whether user is a work type admin
+        is_worktype_admin: Whether user is a worktype admin
         has_edit_access: Whether user has edit access (requester/dept member)
 
     Returns:
@@ -1186,8 +1196,8 @@ def filter_lines_for_user(
     """
     all_lines = list(lines)
 
-    # Admins and requesters see all lines
-    if is_admin or has_edit_access:
+    # Worktype admins and requesters see all lines
+    if is_worktype_admin or has_edit_access:
         return all_lines, False
 
     # Non-admin approval group users see only their routed lines

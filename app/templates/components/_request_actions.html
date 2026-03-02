@@ -26,7 +26,7 @@
     </form>
   {% endif %}
 
-  {# Finalize Approval (admin/finance only, and only when ready) #}
+  {# Finalize Approval (worktype admin only, and only when ready) #}
   {% if perms is defined and perms.can_finalize %}
     <form method="post" action="{{ url_for('requests.approve_request', request_id=req.id) }}" style="display:inline;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -35,7 +35,7 @@
         Finalize Approval
       </button>
     </form>
-  {% elif perms is defined and (perms.is_admin or perms.is_finance) and status == "SUBMITTED" %}
+  {% elif perms is defined and perms.is_worktype_admin and status == "SUBMITTED" %}
     {# Show disabled finalize button for admins so they understand why it's missing #}
     <button class="btn" disabled title="Not ready: some lines still need review.">
       Finalize Approval

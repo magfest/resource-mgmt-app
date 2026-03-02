@@ -137,7 +137,7 @@ def department_home(event: str, dept: str):
         work_type_cards.append(card)
 
     # Check if user has any access
-    if not work_type_cards and not user_ctx.is_admin:
+    if not work_type_cards and not user_ctx.is_super_admin:
         abort(403, "You do not have access to any work types for this department.")
 
     # Check if user can manage department members (Div Head, DH, or Admin)

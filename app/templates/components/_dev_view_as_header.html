@@ -102,7 +102,6 @@
             <label style="font-size:0.85em; color:#666;">Test as:</label>
             <select name="role_override" style="font-size:0.85em; padding:4px 6px;" data-autosubmit>
               <option value="normal" {% if not role_override %}selected{% endif %}>Normal (Super Admin)</option>
-              <option value="finance" {% if role_override == 'finance' %}selected{% endif %}>Finance Only</option>
               {% for group in _get_approval_groups() %}
                 <option value="approver:{{ group.id }}"
                   {% if role_override == 'approver' and role_override_approval_group_id == group.id %}selected{% endif %}>

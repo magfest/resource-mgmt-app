@@ -75,7 +75,7 @@
   {% endif %}
 
   {# Review Mode Toggle for Admins #}
-  {% if user_ctx.is_admin %}
+  {% if user_ctx.is_super_admin %}
     <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center;">
       <span class="muted" style="font-size: 13px;">Review as:</span>
       <button type="button" id="mode-ag" class="btn" style="padding: 4px 12px; font-size: 13px; background: #0a66c2; color: #fff; border-color: #0a66c2;">
@@ -136,7 +136,7 @@
               </span>
             </td>
             <td class="line-actions">
-              {% if status == 'PENDING' and (has_checkout or user_ctx.is_admin) %}
+              {% if status == 'PENDING' and (has_checkout or user_ctx.is_super_admin) %}
                 {# Action buttons + inline note field #}
                 <div class="quick-action-row" style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
                   <input type="text" class="line-note" placeholder="Note (required for reject/kickback)"
@@ -163,7 +163,7 @@
                   </div>
 
                   {# Admin Final Actions (hidden by default) #}
-                  {% if user_ctx.is_admin %}
+                  {% if user_ctx.is_super_admin %}
                     <div class="admin-actions" style="display: none; gap: 4px;">
                       <button type="button" class="btn quick-action" data-action="admin-approve" data-mode="admin"
                               style="padding: 4px 8px; font-size: 12px; background: #059669; color: #fff; border-color: #059669;">

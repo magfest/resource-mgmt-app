@@ -213,7 +213,7 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
                 REVIEW_ACTION_REJECT: "[ADMIN REJECTED]",
                 REVIEW_ACTION_NEEDS_INFO: "[ADMIN INFO REQUESTED]",
             }
-            visibility = get_comment_visibility(request.form, user_ctx.is_admin)
+            visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
             comment = WorkLineComment(
                 work_line_id=line.id,
                 visibility=visibility,

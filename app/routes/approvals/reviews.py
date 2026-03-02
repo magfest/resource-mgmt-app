@@ -101,7 +101,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
     perms = require_work_item_view(work_item, ctx)
 
     # Check if user can access this specific line (approval group filtering)
-    if not user_ctx.is_admin:
+    if not user_ctx.is_super_admin:
         routed_group_id = line.budget_detail.routed_approval_group_id if line.budget_detail else None
 
         # Check if user is in the routed approval group
@@ -136,7 +136,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
         line.needs_requester_action and
         review and
         review.status in (REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT) and
-        (is_owner or has_edit_membership or user_ctx.is_admin)
+        (is_owner or has_edit_membership or user_ctx.is_super_admin)
     )
 
     # Get line details
@@ -145,7 +145,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
 
     # Get comments for this line (filter admin-only for non-admins)
     comments = line.comments
-    if not user_ctx.is_admin:
+    if not user_ctx.is_super_admin:
         comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
 
     # Get audit events for this line
@@ -154,7 +154,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
     # For admins, also get admin final review info
     admin_review = None
     ag_review = None
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         admin_review = get_admin_final_review(line)
         ag_review = get_approval_group_review(line)
 
@@ -279,7 +279,7 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
                 REVIEW_ACTION_RESET: "[RESET]",
             }
             # Determine comment visibility
-            visibility = get_comment_visibility(request.form, user_ctx.is_admin)
+            visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
             comment = WorkLineComment(
                 work_line_id=line.id,
                 visibility=visibility,
@@ -373,7 +373,7 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int):
         flash("Response submitted. The line is back in review.", "success")
 
         # Add comment with the response
-        visibility = get_comment_visibility(request.form, user_ctx.is_admin)
+        visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
         comment = WorkLineComment(
             work_line_id=line.id,
             visibility=visibility,
@@ -431,7 +431,7 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
         (ctx.membership and ctx.membership.can_edit_work_type(ctx.work_type.id)) or
         (ctx.division_membership and ctx.division_membership.can_edit_work_type(ctx.work_type.id))
     )
-    if not (is_owner or has_edit_membership or user_ctx.is_admin):
+    if not (is_owner or has_edit_membership or user_ctx.is_super_admin):
         flash("You do not have permission to adjust this line.", "error")
         return redirect(url_for(
             "approvals.line_review",
@@ -544,7 +544,7 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
         changes_text = ", ".join(changes) if changes else "No field changes"
         comment_body = f"[ADJUSTMENT] {changes_text}\n\n{response_text}"
 
-        visibility = get_comment_visibility(request.form, user_ctx.is_admin)
+        visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
         comment = WorkLineComment(
             work_line_id=line.id,
             visibility=visibility,
@@ -585,7 +585,7 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int):
         return redirect(url_for("approvals.line_review", event=event, dept=dept,
                                 public_id=public_id, line_num=line_num))
 
-    visibility = get_comment_visibility(request.form, user_ctx.is_admin)
+    visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
     comment = WorkLineComment(
         work_line_id=line.id,
         visibility=visibility,

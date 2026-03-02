@@ -116,7 +116,7 @@ def is_reviewer_for_line(line: WorkLine, user_ctx: UserContext) -> bool:
     - They are an admin, OR
     - They have APPROVER role for the approval group this line is routed to
     """
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return True
 
     if not line.budget_detail:
@@ -135,7 +135,7 @@ def get_reviewable_groups(user_ctx: UserContext) -> List[ApprovalGroup]:
 
     Admins can review all groups. Approvers can review their assigned groups.
     """
-    if user_ctx.is_admin:
+    if user_ctx.is_super_admin:
         return ApprovalGroup.query.filter_by(is_active=True).order_by(
             ApprovalGroup.sort_order.asc(),
             ApprovalGroup.name.asc()
@@ -282,10 +282,10 @@ def validate_review_transition(
                     ).first()
                     if div_membership and div_membership.can_edit_work_type(work_type_id):
                         has_edit_membership = True
-        if not (is_owner or has_edit_membership or user_ctx.is_admin):
+        if not (is_owner or has_edit_membership or user_ctx.is_super_admin):
             return "", "You do not have permission to respond to this line."
     elif allowed_role == "ADMIN":
-        if not user_ctx.is_admin:
+        if not user_ctx.is_super_admin:
             return "", "Only admins can perform this action."
 
     return new_status, None

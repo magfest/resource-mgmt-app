@@ -626,11 +626,15 @@ def create_app() -> Flask:
     def has_role(role_code: str) -> bool:
         return role_code in set(active_user_roles())
 
-    def _real_is_admin() -> bool:
-        """Check if user is truly a super admin (ignoring any role override)."""
-        from .models import ROLE_SUPER_ADMIN, ROLE_WORKTYPE_ADMIN
+    def _has_super_admin_role() -> bool:
+        """Check if user has SUPER_ADMIN role in database.
+
+        Note: This ignores beta testing role overrides. Use is_super_admin()
+        for most permission checks.
+        """
+        from .models import ROLE_SUPER_ADMIN
         roles = set(active_user_roles())
-        return ROLE_SUPER_ADMIN in roles or ROLE_WORKTYPE_ADMIN in roles
+        return ROLE_SUPER_ADMIN in roles
 
     def _get_role_override() -> str | None:
         """Get the current role override from session, if any.
@@ -638,47 +642,33 @@ def create_app() -> Flask:
         """
         if not app.config.get("BETA_TESTING_MODE"):
             return None
-        if not _real_is_admin():
+        if not _has_super_admin_role():
             return None
         return session.get("role_override")
 
-    def is_admin() -> bool:
-        from .models import ROLE_SUPER_ADMIN, ROLE_WORKTYPE_ADMIN
+    def is_super_admin() -> bool:
+        """Check if user should be treated as a super admin.
+
+        In beta testing mode, super admins can override their role to test
+        as regular users. This function respects those overrides.
+        """
+        from .models import ROLE_SUPER_ADMIN
 
         # Check for role override
         override = _get_role_override()
-        if override == "none":
+        if override in ("none", "approver"):
             return False
-        if override == "approver":
-            return False
-        if override == "finance":
-            return False  # Finance is not admin in override mode
 
         roles = set(active_user_roles())
-        return ROLE_SUPER_ADMIN in roles or ROLE_WORKTYPE_ADMIN in roles
-
-    def is_finance() -> bool:
-        # Check for role override
-        override = _get_role_override()
-        if override == "none":
-            return False
-        if override == "approver":
-            return False
-        if override == "finance":
-            return True  # Finance override grants finance access
-
-        # Finance role removed in new schema; super admin covers this
-        return is_admin()
+        return ROLE_SUPER_ADMIN in roles
 
     def active_user_approval_group_ids() -> set[int]:
         from .models import UserRole, ROLE_APPROVER
 
-        # Check for role override
+        # Check for role override (beta testing mode)
         override = _get_role_override()
         if override == "none":
             return set()
-        if override == "finance":
-            return set()  # Finance override = no approval group access
         if override == "approver":
             # Use the selected test approval group from session
             test_group_id = session.get("role_override_approval_group_id")
@@ -697,7 +687,7 @@ def create_app() -> Flask:
         return {int(r[0]) for r in rows if r[0] is not None}
 
     def can_review_group(approval_group_id: int) -> bool:
-        return is_admin() or (approval_group_id in active_user_approval_group_ids())
+        return is_super_admin() or (approval_group_id in active_user_approval_group_ids())
 
     def _get_approval_groups_for_template():
         """Get all active approval groups for the role override dropdown."""
@@ -713,7 +703,7 @@ def create_app() -> Flask:
     def inject_active_user():
         u = get_active_user()
         roles = active_user_roles()
-        real_admin = _real_is_admin()
+        has_super_admin = _has_super_admin_role()
         beta_mode = app.config.get("BETA_TESTING_MODE", False)
         override = _get_role_override()
 
@@ -727,10 +717,9 @@ def create_app() -> Flask:
             "active_user": u,
             "active_user_id": get_active_user_id(),
             "active_user_roles": roles,
-            "is_admin": is_admin(),
-            "is_finance": is_finance(),
+            "is_super_admin": is_super_admin(),
             "beta_testing_mode": beta_mode,
-            "can_override_role": beta_mode and real_admin,
+            "can_override_role": beta_mode and has_super_admin,
             "role_override": override,
             "role_override_approval_group_id": session.get("role_override_approval_group_id") if override == "approver" else None,
             "_get_approval_groups": _get_approval_groups_for_template,
@@ -758,11 +747,10 @@ def create_app() -> Flask:
             get_active_user_id=get_active_user_id,
             get_active_user=get_active_user,
             active_user_roles=active_user_roles,
-            is_admin=is_admin,
-            is_finance=is_finance,
+            is_super_admin=is_super_admin,
             active_user_approval_group_ids=active_user_approval_group_ids,
             can_review_group=can_review_group,
-            real_is_admin=_real_is_admin,
+            has_super_admin_role=_has_super_admin_role,
         ),
     )
 

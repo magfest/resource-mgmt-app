@@ -215,7 +215,7 @@ def work_item_detail(event: str, dept: str, public_id: str):
     lines, lines_filtered = filter_lines_for_user(
         all_lines,
         user_ctx,
-        is_admin=perms.is_admin,
+        is_worktype_admin=perms.is_worktype_admin,
         has_edit_access=has_dept_membership,  # Dept members/requesters see all lines
     )
     total_lines_count = len(all_lines)
@@ -238,18 +238,18 @@ def work_item_detail(event: str, dept: str, public_id: str):
     # Check if can finalize (for admins - allowed from AWAITING_DISPATCH or SUBMITTED)
     can_finalize = False
     finalization_summary = None
-    if perms.is_admin and work_item.status in (WORK_ITEM_STATUS_AWAITING_DISPATCH, WORK_ITEM_STATUS_SUBMITTED):
+    if perms.is_worktype_admin and work_item.status in (WORK_ITEM_STATUS_AWAITING_DISPATCH, WORK_ITEM_STATUS_SUBMITTED):
         can_finalize, _ = can_finalize_work_item(work_item)
         finalization_summary = get_finalization_summary(work_item)
 
     # Filter comments for non-admins
     comments = list(work_item.comments)
-    if not perms.is_admin:
+    if not perms.is_worktype_admin:
         comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
 
     # Check if user can add comments (admin OR reviewer for any line)
     is_approver_for_item = _is_approver_for_work_item(work_item, user_ctx)
-    can_add_comment = perms.is_admin or is_approver_for_item
+    can_add_comment = perms.is_worktype_admin or is_approver_for_item
 
     return render_template(
         "budget/work_item_detail.html",
@@ -285,7 +285,7 @@ def work_item_comment(event: str, dept: str, public_id: str):
 
     # Permission check: must be admin OR approver OR can edit (requester)
     is_approver_for_item = _is_approver_for_work_item(work_item, user_ctx)
-    can_comment = perms.is_admin or is_approver_for_item or perms.can_edit
+    can_comment = perms.is_worktype_admin or is_approver_for_item or perms.can_edit
     if not can_comment:
         flash("You do not have permission to comment on this request.", "error")
         return redirect(return_to or default_redirect)
@@ -295,7 +295,7 @@ def work_item_comment(event: str, dept: str, public_id: str):
         flash("Comment text is required.", "error")
         return redirect(return_to or default_redirect)
 
-    visibility = get_comment_visibility(request.form, user_ctx.is_admin)
+    visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
     comment = WorkItemComment(
         work_item_id=work_item.id,
         visibility=visibility,
@@ -461,7 +461,7 @@ def work_item_edit(event: str, dept: str, public_id: str):
     # Get comments (filter admin-only for non-admins)
     user_ctx = get_user_ctx()
     comments = work_item.comments
-    if not user_ctx.is_admin:
+    if not user_ctx.is_super_admin:
         comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
 
     return render_template(
@@ -1101,7 +1101,7 @@ def work_item_checkin(event: str, dept: str, public_id: str):
         return redirect(return_to or default_redirect)
 
     user_ctx = get_user_ctx()
-    force = perms.is_admin and not perms.is_checked_out_by_current_user
+    force = perms.is_worktype_admin and not perms.is_checked_out_by_current_user
     if checkin_work_item(work_item, user_ctx, force=force):
         db.session.commit()
         flash("Lock released.", "success")
@@ -1126,7 +1126,7 @@ def quick_review(event: str, dept: str, public_id: str):
     perms = require_work_item_view(work_item, ctx)
 
     # Must be a reviewer or admin to use quick review
-    if not (perms.is_admin or _is_approver_for_work_item(work_item, user_ctx)):
+    if not (perms.is_worktype_admin or _is_approver_for_work_item(work_item, user_ctx)):
         flash("You don't have permission to review this request.", "error")
         return redirect(url_for(
             "work.work_item_detail",
@@ -1145,7 +1145,7 @@ def quick_review(event: str, dept: str, public_id: str):
     visible_lines, lines_filtered = filter_lines_for_user(
         all_lines,
         user_ctx,
-        is_admin=user_ctx.is_admin,
+        is_worktype_admin=user_ctx.is_super_admin,
         has_edit_access=False,  # Quick review is for reviewers only
     )
     total_lines_count = len(all_lines)
