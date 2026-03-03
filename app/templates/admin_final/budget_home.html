@@ -28,17 +28,17 @@
     <div style="margin-bottom: 12px;">
       <div class="muted small" style="margin-bottom: 8px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Workflow</div>
       <div class="btn-row">
-        <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
-          All Requests
-        </a>
-        <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
-          Final Review Queue
-        </a>
         <a class="btn" href="{{ url_for('dispatch.dashboard') }}">
           Dispatch Queue
         </a>
         <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
-          Approval Group Dashboard
+          Approval Group Queue
+        </a>
+        <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
+          Final Review Queue
+        </a>
+         <a class="btn btn-primary" href="{{ url_for('admin_final.all_requests') }}">
+          All Requests
         </a>
       </div>
     </div>
@@ -64,6 +64,34 @@
         </a>
       </div>
     </div>
+      {# Divider #}
+    <div style="border-top: 1px solid #a7f3d0; margin: 16px 0;"></div>
+
+    {# Quick Navigation to Department #}
+    <div class="muted small" style="margin-bottom: 8px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Go to Department</div>
+    <p class="muted small" style="margin: 0 0 16px 0;">
+      Jump directly to a department's budget page.
+    </p>
+    <form id="dept-nav-form" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end;">
+      <div>
+        <label class="muted small" style="display: block; margin-bottom: 4px;">Event</label>
+        <select name="event" id="dept-nav-event" style="width: 150px;" required>
+          {% for ec in event_cycles %}
+            <option value="{{ ec.code }}" {% if loop.first %}selected{% endif %}>{{ ec.code }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="muted small" style="display: block; margin-bottom: 4px;">Department</label>
+        <select name="dept" id="dept-nav-dept" style="width: 200px;" required>
+          <option value="">Select department...</option>
+          {% for dept in departments %}
+            <option value="{{ dept.code }}">{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Go</button>
+    </form>
   </section>
 
   {# Stats Overview #}
@@ -171,33 +199,7 @@
     </div>
   </section>
 
-  {# Quick Navigation to Department #}
-  <section class="card" style="margin-bottom: 24px;">
-    <h3 style="margin:0 0 16px 0;">Go to Department</h3>
-    <p class="muted small" style="margin: 0 0 16px 0;">
-      Jump directly to a department's budget page.
-    </p>
-    <form id="dept-nav-form" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end;">
-      <div>
-        <label class="muted small" style="display: block; margin-bottom: 4px;">Event</label>
-        <select name="event" id="dept-nav-event" style="width: 150px;" required>
-          {% for ec in event_cycles %}
-            <option value="{{ ec.code }}" {% if loop.first %}selected{% endif %}>{{ ec.code }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="muted small" style="display: block; margin-bottom: 4px;">Department</label>
-        <select name="dept" id="dept-nav-dept" style="width: 200px;" required>
-          <option value="">Select department...</option>
-          {% for dept in departments %}
-            <option value="{{ dept.code }}">{{ dept.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <button type="submit" class="btn btn-primary">Go</button>
-    </form>
-  </section>
+
 
   {# Budget Configuration - links to config pages #}
   <section class="card" style="margin-bottom: 24px;">
