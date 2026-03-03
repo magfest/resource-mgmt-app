@@ -129,6 +129,43 @@ def is_reviewer_for_line(line: WorkLine, user_ctx: UserContext) -> bool:
     return routed_group_id in user_ctx.approval_group_ids
 
 
+def can_respond_to_work_item(work_item: WorkItem, ctx, user_ctx: UserContext) -> bool:
+    """
+    Check if user can respond to kicked-back lines on a work item.
+
+    User can respond if they are:
+    - A super admin
+    - The original requester (created_by_user_id)
+    - A department member with edit access for this work type
+    - A division member with edit access for this work type
+
+    Args:
+        work_item: The work item to check
+        ctx: PortfolioContext with membership info
+        user_ctx: Current user context
+
+    Returns:
+        True if user can respond to kicked-back lines
+    """
+    if user_ctx.is_super_admin:
+        return True
+
+    if work_item.created_by_user_id == user_ctx.user_id:
+        return True
+
+    work_type_id = ctx.work_type.id if ctx.work_type else None
+    if not work_type_id:
+        return False
+
+    if ctx.membership and ctx.membership.can_edit_work_type(work_type_id):
+        return True
+
+    if ctx.division_membership and ctx.division_membership.can_edit_work_type(work_type_id):
+        return True
+
+    return False
+
+
 def get_reviewable_groups(user_ctx: UserContext) -> List[ApprovalGroup]:
     """
     Get approval groups the user can review.
@@ -227,9 +264,19 @@ def validate_review_transition(
     user_ctx: UserContext,
     review: WorkLineReview,
     line: WorkLine,
+    ctx=None,
 ) -> Tuple[str, Optional[str]]:
     """
     Validate a review status transition.
+
+    Args:
+        current_status: Current review status
+        action: Action being taken
+        note: Optional note text
+        user_ctx: Current user context
+        review: The review record
+        line: The work line
+        ctx: PortfolioContext (optional, used for permission checks)
 
     Returns (new_status, error_message) tuple.
     error_message is None if transition is valid.
@@ -253,42 +300,63 @@ def validate_review_transition(
         # Requester must be owner or have edit rights
         if not line.needs_requester_action:
             return "", "This line is not awaiting your response."
-        # Verify user is actually the requester (owner or editor)
+
         work_item = line.work_item
-        is_owner = work_item.created_by_user_id == user_ctx.user_id
-        # Check department or division membership for edit rights
-        has_edit_membership = False
-        if work_item.portfolio:
-            from app.models import DepartmentMembership, DivisionMembership, Department
-            work_type_id = work_item.portfolio.work_type_id
-
-            # Check direct department membership
-            membership = DepartmentMembership.query.filter_by(
-                department_id=work_item.portfolio.department_id,
-                event_cycle_id=work_item.portfolio.event_cycle_id,
-                user_id=user_ctx.user_id,
-            ).first()
-            if membership and membership.can_edit_work_type(work_type_id):
-                has_edit_membership = True
-
-            # Check division membership
-            if not has_edit_membership:
-                dept = Department.query.get(work_item.portfolio.department_id)
-                if dept and dept.division_id:
-                    div_membership = DivisionMembership.query.filter_by(
-                        division_id=dept.division_id,
-                        event_cycle_id=work_item.portfolio.event_cycle_id,
-                        user_id=user_ctx.user_id,
-                    ).first()
-                    if div_membership and div_membership.can_edit_work_type(work_type_id):
-                        has_edit_membership = True
-        if not (is_owner or has_edit_membership or user_ctx.is_super_admin):
-            return "", "You do not have permission to respond to this line."
+        if ctx:
+            # Use consolidated permission check when ctx is available
+            if not can_respond_to_work_item(work_item, ctx, user_ctx):
+                return "", "You do not have permission to respond to this line."
+        else:
+            # Fallback: query DB directly (for backwards compatibility)
+            if not _can_respond_to_work_item_db(work_item, user_ctx):
+                return "", "You do not have permission to respond to this line."
     elif allowed_role == "ADMIN":
         if not user_ctx.is_super_admin:
             return "", "Only admins can perform this action."
 
     return new_status, None
+
+
+def _can_respond_to_work_item_db(work_item: WorkItem, user_ctx: UserContext) -> bool:
+    """
+    Check if user can respond to a work item by querying DB directly.
+
+    This is a fallback for when PortfolioContext is not available.
+    Prefer can_respond_to_work_item() when ctx is available.
+    """
+    if user_ctx.is_super_admin:
+        return True
+
+    if work_item.created_by_user_id == user_ctx.user_id:
+        return True
+
+    if not work_item.portfolio:
+        return False
+
+    from app.models import DepartmentMembership, DivisionMembership
+    work_type_id = work_item.portfolio.work_type_id
+
+    # Check direct department membership
+    membership = DepartmentMembership.query.filter_by(
+        department_id=work_item.portfolio.department_id,
+        event_cycle_id=work_item.portfolio.event_cycle_id,
+        user_id=user_ctx.user_id,
+    ).first()
+    if membership and membership.can_edit_work_type(work_type_id):
+        return True
+
+    # Check division membership
+    dept = Department.query.get(work_item.portfolio.department_id)
+    if dept and dept.division_id:
+        div_membership = DivisionMembership.query.filter_by(
+            division_id=dept.division_id,
+            event_cycle_id=work_item.portfolio.event_cycle_id,
+            user_id=user_ctx.user_id,
+        ).first()
+        if div_membership and div_membership.can_edit_work_type(work_type_id):
+            return True
+
+    return False
 
 
 # ============================================================
@@ -358,9 +426,20 @@ def apply_review_decision(
     note: Optional[str],
     amount_cents: Optional[int],
     user_ctx: UserContext,
+    ctx=None,
 ) -> Tuple[bool, Optional[str]]:
     """
     Apply a review decision atomically.
+
+    Args:
+        review: The review record to update
+        line: The work line being reviewed
+        work_item: The parent work item
+        action: The review action (approve, reject, etc.)
+        note: Optional note text
+        amount_cents: Approved amount (for approvals)
+        user_ctx: Current user context
+        ctx: PortfolioContext (optional, improves permission check efficiency)
 
     Returns (success, error_message) tuple.
     """
@@ -372,7 +451,7 @@ def apply_review_decision(
     # 2. Validate transition
     old_status = review.status
     new_status, error = validate_review_transition(
-        old_status, action, note, user_ctx, review, line
+        old_status, action, note, user_ctx, review, line, ctx=ctx
     )
     if error:
         return False, error

@@ -33,7 +33,7 @@ def create_app() -> Flask:
     secret_key = get_secret("SECRET_KEY")
     if is_production and not secret_key:
         raise RuntimeError("SECRET_KEY is required in production (set in env or Secrets Manager)")
-    app.config["SECRET_KEY"] = secret_key or "dev-only-secret-key"
+    app.config["SECRET_KEY"] = secret_key
 
     # --- Database ---
     db_url = get_database_url() or get_secret("DATABASE_URL")
@@ -73,9 +73,9 @@ def create_app() -> Flask:
     )
 
     # --- Authentication Modes ---
-    # Dev login: local user switcher for development (default: on in dev, off in production)
-    dev_login = os.environ.get("DEV_LOGIN_ENABLED", "").lower()
-    app.config["DEV_LOGIN_ENABLED"] = dev_login == "true" or (not is_production and dev_login != "false")
+    # Dev login: local user switcher for development (requires explicit opt-in)
+    dev_login = os.environ.get("DEV_LOGIN_ENABLED", "false").lower()
+    app.config["DEV_LOGIN_ENABLED"] = dev_login == "true" and not is_production
 
     # --- OAuth Provider Selection ---
     # AUTH_PROVIDER: "google", "keycloak", or "none" (default: auto-detect based on config)
@@ -199,8 +199,8 @@ def create_app() -> Flask:
 
         # HSTS - force HTTPS (only in production)
         if is_production:
-            # max-age=31536000 = 1 year; includeSubDomains for all subdomains
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            # max-age=31536000 = 1 year; includeSubDomains for all subdomains; preload for HSTS preload list
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
 
         return response
 

@@ -52,6 +52,9 @@ from .helpers import (
 
 data_upload_bp = Blueprint('data_upload', __name__, url_prefix='/data-upload')
 
+# Maximum rows to read from uploaded files (prevents memory exhaustion)
+MAX_UPLOAD_ROWS = 10000
+
 
 # ============================================================
 # Column name mapping - supports flexible CSV formats
@@ -178,12 +181,16 @@ def _read_uploaded_file(file) -> pd.DataFrame | None:
     filename = file.filename.lower()
     try:
         if filename.endswith('.csv'):
-            return pd.read_csv(file, dtype=str, keep_default_na=False)
+            df = pd.read_csv(file, dtype=str, keep_default_na=False, nrows=MAX_UPLOAD_ROWS)
         elif filename.endswith(('.xlsx', '.xls')):
-            return pd.read_excel(file, dtype=str, keep_default_na=False)
+            df = pd.read_excel(file, dtype=str, keep_default_na=False, nrows=MAX_UPLOAD_ROWS)
         else:
             flash("Unsupported file type. Please upload a CSV or Excel file.", "error")
             return None
+
+        if len(df) == MAX_UPLOAD_ROWS:
+            flash(f"Warning: File truncated to {MAX_UPLOAD_ROWS:,} rows.", "warning")
+        return df
     except Exception as e:
         flash(f"Error reading file: {str(e)}", "error")
         return None
@@ -1242,7 +1249,7 @@ def _make_csv_response(csv_content: str, filename: str) -> Response:
     return Response(
         csv_content,
         mimetype='text/csv',
-        headers={'Content-Disposition': f'attachment; filename={filename}'}
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
     )
 
 

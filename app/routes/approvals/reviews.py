@@ -34,6 +34,7 @@ from app.routes.work.helpers import (
 from . import approvals_bp
 from .helpers import (
     is_reviewer_for_line,
+    can_respond_to_work_item,
     require_reviewer_for_line,
     require_checkout_for_review,
     get_review_for_line,
@@ -101,18 +102,11 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
     perms = require_work_item_view(work_item, ctx)
 
     # Check if user can access this specific line (approval group filtering)
+    # Check view permission for non-admins
     if not user_ctx.is_super_admin:
         routed_group_id = line.budget_detail.routed_approval_group_id if line.budget_detail else None
-
-        # Check if user is in the routed approval group
         is_in_routed_group = routed_group_id and routed_group_id in user_ctx.approval_group_ids
-
-        # Check if user is a requester (can view for response purposes)
-        is_requester = (
-            work_item.created_by_user_id == user_ctx.user_id or
-            (ctx.membership and ctx.membership.can_edit_work_type(ctx.work_type.id)) or
-            (ctx.division_membership and ctx.division_membership.can_edit_work_type(ctx.work_type.id))
-        )
+        is_requester = can_respond_to_work_item(work_item, ctx, user_ctx)
 
         if not is_in_routed_group and not is_requester:
             abort(403, "You do not have permission to view this line.")
@@ -126,17 +120,11 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
     can_decide = can_review and has_checkout and review and review.status == REVIEW_STATUS_PENDING
 
     # Check if user can respond to kicked-back line
-    # User can respond if: line needs action AND (user is owner OR has edit membership)
-    is_owner = work_item.created_by_user_id == user_ctx.user_id
-    has_edit_membership = (
-        (ctx.membership and ctx.membership.can_edit_work_type(ctx.work_type.id)) or
-        (ctx.division_membership and ctx.division_membership.can_edit_work_type(ctx.work_type.id))
-    )
     can_respond = (
         line.needs_requester_action and
         review and
         review.status in (REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT) and
-        (is_owner or has_edit_membership or user_ctx.is_super_admin)
+        can_respond_to_work_item(work_item, ctx, user_ctx)
     )
 
     # Get line details
@@ -254,6 +242,7 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
         note=note,
         amount_cents=amount_cents,
         user_ctx=user_ctx,
+        ctx=ctx,
     )
 
     if not success:
@@ -371,6 +360,7 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int):
         note=response_text,
         amount_cents=None,
         user_ctx=user_ctx,
+        ctx=ctx,
     )
 
     if not success:
@@ -441,12 +431,7 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
         ))
 
     # Validate user can respond
-    is_owner = work_item.created_by_user_id == user_ctx.user_id
-    has_edit_membership = (
-        (ctx.membership and ctx.membership.can_edit_work_type(ctx.work_type.id)) or
-        (ctx.division_membership and ctx.division_membership.can_edit_work_type(ctx.work_type.id))
-    )
-    if not (is_owner or has_edit_membership or user_ctx.is_super_admin):
+    if not can_respond_to_work_item(work_item, ctx, user_ctx):
         flash("You do not have permission to adjust this line.", "error")
         return redirect(url_for(
             "approvals.line_review",
@@ -548,6 +533,7 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
         note=response_text,
         amount_cents=None,
         user_ctx=user_ctx,
+        ctx=ctx,
     )
 
     if not success:
