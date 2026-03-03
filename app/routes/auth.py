@@ -15,16 +15,27 @@ from app import db
 
 auth_bp = Blueprint('auth', __name__)
 
-# Domains where email updates are allowed (organization emails)
-MAGFEST_DOMAINS = {'magfest.org', 'magwest.org', 'magstock.org'}
+# Default organization domains (can be overridden via ORG_EMAIL_DOMAINS env var)
+DEFAULT_ORG_DOMAINS = {'magfest.org', 'magwest.org', 'magstock.org'}
+
+
+def get_org_email_domains() -> set:
+    """Get the set of organization email domains from config or default."""
+    config_domains = current_app.config.get('ORG_EMAIL_DOMAINS')
+    if config_domains:
+        # Support comma-separated string from env var
+        if isinstance(config_domains, str):
+            return {d.strip().lower() for d in config_domains.split(',') if d.strip()}
+        return set(config_domains)
+    return DEFAULT_ORG_DOMAINS
 
 
 def is_magfest_email(email: str) -> bool:
-    """Check if email is from a MAGFest organization domain."""
+    """Check if email is from an organization domain."""
     if not email or '@' not in email:
         return False
     domain = email.split('@')[-1].lower()
-    return domain in MAGFEST_DOMAINS
+    return domain in get_org_email_domains()
 
 
 def login_required(f):

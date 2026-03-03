@@ -10,12 +10,9 @@ from app import db
 from app.models import (
     WorkItem,
     WorkLine,
-    WorkLineReview,
     BudgetLineDetail,
     WorkItemComment,
     WorkItemAuditEvent,
-    WorkLineAuditEvent,
-    User,
     REQUEST_KIND_PRIMARY,
     REQUEST_KIND_SUPPLEMENTARY,
     WORK_ITEM_STATUS_DRAFT,
@@ -67,6 +64,8 @@ from .helpers import (
     checkin_work_item,
     _is_approver_for_work_item,
     filter_lines_for_user,
+    get_kicked_back_lines_summary,
+    get_unified_audit_events,
 )
 from app.routes.admin_final.helpers import (
     can_finalize_work_item,
@@ -241,19 +240,7 @@ def work_item_detail(event: str, dept: str, public_id: str):
     total_lines_count = len(all_lines)
 
     # Get kicked-back lines (NEEDS_INFO or NEEDS_ADJUSTMENT) with their review notes
-    kicked_back_lines = []
-    for line in lines:
-        if line.status in ("NEEDS_INFO", "NEEDS_ADJUSTMENT"):
-            # Get the most recent review for this line
-            review = WorkLineReview.query.filter_by(
-                work_line_id=line.id
-            ).order_by(WorkLineReview.decided_at.desc()).first()
-            kicked_back_lines.append({
-                "line_number": line.line_number,
-                "status": line.status,
-                "detail": line.budget_detail,
-                "note": review.note if review else None,
-            })
+    kicked_back_lines = get_kicked_back_lines_summary(lines)
 
     # Check if can finalize (for admins - allowed from AWAITING_DISPATCH or SUBMITTED)
     can_finalize = False
@@ -272,73 +259,8 @@ def work_item_detail(event: str, dept: str, public_id: str):
     can_add_comment = perms.is_worktype_admin or is_approver_for_item
 
     # Fetch audit events for budget admins (super admin or worktype admin)
-    # Combines both work item level and line level events into a unified log
-    audit_events = []
     can_view_audit = user_ctx.is_super_admin or perms.is_worktype_admin
-    if can_view_audit:
-        # Get work item level events
-        item_events = (
-            WorkItemAuditEvent.query
-            .filter_by(work_item_id=work_item.id)
-            .all()
-        )
-
-        # Get line level events for all lines in this work item
-        line_ids = [line.id for line in work_item.lines]
-        line_events = []
-        if line_ids:
-            line_events = (
-                WorkLineAuditEvent.query
-                .filter(WorkLineAuditEvent.work_line_id.in_(line_ids))
-                .all()
-            )
-
-        # Build line number lookup for line events
-        line_number_map = {line.id: line.line_number for line in work_item.lines}
-
-        # Normalize events into a unified format
-        unified_events = []
-
-        for e in item_events:
-            unified_events.append({
-                "created_at": e.created_at,
-                "event_type": e.event_type,
-                "created_by_user_id": e.created_by_user_id,
-                "old_value": e.old_value,
-                "new_value": e.new_value,
-                "reason": e.reason,
-                "snapshot": e.snapshot,
-                "line_number": None,  # Work item level
-                "is_line_event": False,
-            })
-
-        for e in line_events:
-            unified_events.append({
-                "created_at": e.created_at,
-                "event_type": e.event_type,
-                "created_by_user_id": e.created_by_user_id,
-                "old_value": e.old_value,
-                "new_value": e.new_value,
-                "reason": e.note,  # Line events use 'note' field
-                "snapshot": None,
-                "line_number": line_number_map.get(e.work_line_id),
-                "is_line_event": True,
-            })
-
-        # Sort by timestamp descending
-        unified_events.sort(key=lambda x: x["created_at"], reverse=True)
-
-        # Batch load user display names
-        user_ids = {e["created_by_user_id"] for e in unified_events if e["created_by_user_id"]}
-        user_map = {}
-        if user_ids:
-            users = User.query.filter(User.id.in_(user_ids)).all()
-            user_map = {u.id: u.display_name or u.email for u in users}
-
-        for event in unified_events:
-            event["_user_display_name"] = user_map.get(event["created_by_user_id"], str(event["created_by_user_id"]))
-
-        audit_events = unified_events
+    audit_events = get_unified_audit_events(work_item) if can_view_audit else []
 
     return render_template(
         "budget/work_item_detail.html",

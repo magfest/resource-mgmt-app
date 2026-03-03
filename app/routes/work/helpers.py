@@ -22,12 +22,16 @@ from app.models import (
     WorkPortfolio,
     WorkItem,
     WorkLine,
+    WorkLineReview,
+    WorkItemAuditEvent,
+    WorkLineAuditEvent,
     BudgetLineDetail,
     ExpenseAccount,
     SpendType,
     ConfidenceLevel,
     FrequencyOption,
     PriorityLevel,
+    User,
     REQUEST_KIND_PRIMARY,
     REQUEST_KIND_SUPPLEMENTARY,
     WORK_ITEM_STATUS_DRAFT,
@@ -53,14 +57,20 @@ from app.line_details import get_line_amount_cents, get_line_routing_approval_gr
 
 
 # ============================================================
-# Checkout Configuration
+# Checkout Configuration (defaults, can be overridden via config)
 # ============================================================
 
-CHECKOUT_TIMEOUTS = {
+DEFAULT_CHECKOUT_TIMEOUTS = {
     "APPROVER": 30,      # 30 minutes for approvers
     "SUPER_ADMIN": 120,  # 2 hours for super admins
     "DEFAULT": 30,       # Default fallback
 }
+
+
+def get_checkout_timeouts() -> dict:
+    """Get checkout timeouts from config or defaults."""
+    from flask import current_app
+    return current_app.config.get('CHECKOUT_TIMEOUTS', DEFAULT_CHECKOUT_TIMEOUTS)
 
 
 # ============================================================
@@ -346,11 +356,12 @@ def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:
 
 def get_checkout_timeout_minutes(user_ctx: UserContext) -> int:
     """Get checkout timeout in minutes based on user role (respects role override)."""
+    timeouts = get_checkout_timeouts()
     if user_ctx.is_super_admin:
-        return CHECKOUT_TIMEOUTS["SUPER_ADMIN"]
+        return timeouts.get("SUPER_ADMIN", 120)
     if user_ctx.approval_group_ids:
-        return CHECKOUT_TIMEOUTS["APPROVER"]
-    return CHECKOUT_TIMEOUTS["DEFAULT"]
+        return timeouts.get("APPROVER", 30)
+    return timeouts.get("DEFAULT", 30)
 
 
 def is_checked_out(work_item: WorkItem) -> bool:
@@ -1211,3 +1222,147 @@ def filter_lines_for_user(
 
     # Users with no approval groups see all lines (shouldn't reach here normally)
     return all_lines, False
+
+
+# ============================================================
+# Work Item Detail Helpers
+# ============================================================
+
+def get_kicked_back_lines_summary(lines: list) -> list[dict]:
+    """
+    Get summary of kicked-back lines (NEEDS_INFO or NEEDS_ADJUSTMENT) with review notes.
+
+    Uses batch loading to avoid N+1 queries.
+
+    Args:
+        lines: List of WorkLine objects to check
+
+    Returns:
+        List of dicts with line_number, status, detail, and note
+    """
+    # Filter to kicked-back lines first
+    kicked_back = [
+        line for line in lines
+        if line.status in (WORK_LINE_STATUS_NEEDS_INFO, WORK_LINE_STATUS_NEEDS_ADJUSTMENT)
+    ]
+
+    if not kicked_back:
+        return []
+
+    # Batch load the most recent review for each line
+    line_ids = [line.id for line in kicked_back]
+
+    # Get all reviews for these lines, ordered by decided_at desc
+    all_reviews = (
+        WorkLineReview.query
+        .filter(WorkLineReview.work_line_id.in_(line_ids))
+        .order_by(WorkLineReview.decided_at.desc())
+        .all()
+    )
+
+    # Build a map of line_id -> most recent review (first one we see due to ordering)
+    review_by_line = {}
+    for review in all_reviews:
+        if review.work_line_id not in review_by_line:
+            review_by_line[review.work_line_id] = review
+
+    # Build the summary
+    result = []
+    for line in kicked_back:
+        review = review_by_line.get(line.id)
+        result.append({
+            "line_number": line.line_number,
+            "status": line.status,
+            "detail": line.budget_detail,
+            "note": review.note if review else None,
+        })
+
+    return result
+
+
+def get_unified_audit_events(work_item: WorkItem) -> list[dict]:
+    """
+    Get unified audit log combining work item and line level events.
+
+    Combines WorkItemAuditEvent and WorkLineAuditEvent into a single
+    chronological list with user display names resolved.
+
+    Args:
+        work_item: The work item to get audit events for
+
+    Returns:
+        List of event dicts sorted by created_at descending, with keys:
+        - created_at: datetime
+        - event_type: str
+        - created_by_user_id: str
+        - old_value: str or None
+        - new_value: str or None
+        - reason: str or None
+        - snapshot: dict or None
+        - line_number: int or None (None for work item level)
+        - is_line_event: bool
+        - _user_display_name: str
+    """
+    # Get work item level events
+    item_events = (
+        WorkItemAuditEvent.query
+        .filter_by(work_item_id=work_item.id)
+        .all()
+    )
+
+    # Get line level events for all lines in this work item
+    line_ids = [line.id for line in work_item.lines]
+    line_events = []
+    if line_ids:
+        line_events = (
+            WorkLineAuditEvent.query
+            .filter(WorkLineAuditEvent.work_line_id.in_(line_ids))
+            .all()
+        )
+
+    # Build line number lookup for line events
+    line_number_map = {line.id: line.line_number for line in work_item.lines}
+
+    # Normalize events into a unified format
+    unified_events = []
+
+    for e in item_events:
+        unified_events.append({
+            "created_at": e.created_at,
+            "event_type": e.event_type,
+            "created_by_user_id": e.created_by_user_id,
+            "old_value": e.old_value,
+            "new_value": e.new_value,
+            "reason": e.reason,
+            "snapshot": e.snapshot,
+            "line_number": None,  # Work item level
+            "is_line_event": False,
+        })
+
+    for e in line_events:
+        unified_events.append({
+            "created_at": e.created_at,
+            "event_type": e.event_type,
+            "created_by_user_id": e.created_by_user_id,
+            "old_value": e.old_value,
+            "new_value": e.new_value,
+            "reason": e.note,  # Line events use 'note' field
+            "snapshot": None,
+            "line_number": line_number_map.get(e.work_line_id),
+            "is_line_event": True,
+        })
+
+    # Sort by timestamp descending
+    unified_events.sort(key=lambda x: x["created_at"], reverse=True)
+
+    # Batch load user display names
+    user_ids = {e["created_by_user_id"] for e in unified_events if e["created_by_user_id"]}
+    user_map = {}
+    if user_ids:
+        users = User.query.filter(User.id.in_(user_ids)).all()
+        user_map = {u.id: u.display_name or u.email for u in users}
+
+    for event in unified_events:
+        event["_user_display_name"] = user_map.get(event["created_by_user_id"], str(event["created_by_user_id"]))
+
+    return unified_events

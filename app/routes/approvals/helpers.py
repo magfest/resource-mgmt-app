@@ -518,6 +518,7 @@ def build_approval_queues(
     ).order_by(WorkLineReview.decided_at.desc()).all()
 
     def to_queue_item(review: WorkLineReview) -> ReviewQueueItem:
+        """Convert a WorkLineReview to a ReviewQueueItem for display."""
         line = review.work_line
         detail = line.budget_detail
         line_total = detail.unit_price_cents * int(detail.quantity) if detail else 0
