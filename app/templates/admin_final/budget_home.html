@@ -32,7 +32,7 @@
           Dispatch Queue
         </a>
         <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
-          Approval Group Queue
+          Reviewer Group Queue
         </a>
         <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
           Final Review Queue
@@ -136,9 +136,9 @@
       </table>
     </section>
 
-    {# Approval Groups #}
+    {# Reviewer Groups #}
     <section class="card">
-      <h3 style="margin:0 0 16px 0;">Approval Groups</h3>
+      <h3 style="margin:0 0 16px 0;">Reviewer Groups</h3>
       {% if approval_groups %}
         <table>
           {% for group in approval_groups %}
@@ -154,7 +154,7 @@
         </table>
       {% else %}
         <div class="muted" style="text-align: center; padding: 16px;">
-          No approval groups configured.
+          No reviewer groups configured.
         </div>
       {% endif %}
     </section>
@@ -169,10 +169,10 @@
       <div>
         <h4 style="margin: 0 0 8px 0;">Review Process</h4>
         <ul style="margin: 0; padding-left: 20px; line-height: 1.8;">
-          <li><strong>AG APPROVED</strong> = Approved by Approval Group (Level 1)</li>
+          <li><strong>RECOMMENDED</strong> = Recommended by Reviewer Group (Level 1)</li>
           <li><strong>APPROVED</strong> = Final Admin approval</li>
-          <li>Lines must go through AG review before Admin Final</li>
-          <li>You can override AG recommendations in Admin Final</li>
+          <li>Lines must go through reviewer group review before Admin Final</li>
+          <li>You can override reviewer recommendations in Admin Final</li>
         </ul>
       </div>
 
@@ -194,7 +194,7 @@
         <div><span class="pill pill-submitted">SUBMITTED</span> In review</div>
         <div><span class="pill pill-needs">NEEDS_INFO</span> Waiting on requester</div>
         <div><span class="pill pill-approved">FINALIZED</span> Fully approved</div>
-        <div><span class="pill" style="background: #dbeafe; color: #1e40af;">AG APPROVED</span> Level 1 done</div>
+        <div><span class="pill" style="background: #dbeafe; color: #1e40af;">RECOMMENDED</span> Reviewer group done</div>
       </div>
     </div>
   </section>
@@ -205,14 +205,14 @@
   <section class="card" style="margin-bottom: 24px;">
     <h3 style="margin:0 0 16px 0;">Budget Configuration</h3>
     <p class="muted small" style="margin: 0 0 16px 0;">
-      Manage expense accounts and approval groups for the budget system.
+      Manage expense accounts and reviewer groups for the budget system.
     </p>
     <div class="btn-row">
       <a class="btn" href="{{ url_for('admin_config.expense_accounts.list_expense_accounts') }}">
         Expense Accounts
       </a>
       <a class="btn" href="{{ url_for('admin_config.approval_groups.list_approval_groups') }}">
-        Approval Groups
+        Reviewer Groups
       </a>
     </div>
   </section>

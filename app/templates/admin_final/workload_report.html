@@ -12,13 +12,13 @@
     export_button
 %}
 
-{% block title %}Approval Group Workload{% endblock %}
+{% block title %}Reviewer Group Workload{% endblock %}
 
 {% block content %}
 
   {{ report_header(
-      "Approval Group Workload",
-      "Pending work by approval group with aging metrics",
+      "Reviewer Group Workload",
+      "Pending work by reviewer group with aging metrics",
       url_for('admin_final.budget_admin_home')
   ) }}
 
@@ -35,7 +35,7 @@
     {{ empty_state_no_event(
         icon="⏱️",
         title="Select an Event Cycle",
-        message="Choose an event cycle above to see approval group workload."
+        message="Choose an event cycle above to see reviewer group workload."
     ) }}
 
   {% elif rows %}
@@ -46,7 +46,7 @@
 
     {# Summary Stats Cards #}
     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
-      {{ stat_card(summary.total_approval_groups, "Approval Groups", "#6b7280") }}
+      {{ stat_card(summary.total_approval_groups, "Reviewer Groups", "#6b7280") }}
       {{ stat_card(summary.total_pending_lines, "Lines Pending", "#0a66c2") }}
       {{ stat_card(summary.total_needs_info_lines, "Awaiting Response", "#d97706") }}
       {{ stat_card(format_currency(summary.total_pending_cents), "Pending Value", "#059669") }}
@@ -71,7 +71,7 @@
     {# Data Table #}
     <section class="card">
       <h3 style="margin:0 0 12px 0;">
-        Workload by Approval Group
+        Workload by Reviewer Group
         <span class="pill">{{ rows | length }} groups</span>
       </h3>
 
@@ -80,7 +80,7 @@
           <thead>
             <tr>
               <th style="width: 80px;">Code</th>
-              <th>Approval Group</th>
+              <th>Reviewer Group</th>
               <th style="width: 100px;" class="right">Pending</th>
               <th style="width: 100px;" class="right">Needs Info</th>
               <th style="width: 100px;" class="right">Total Lines</th>

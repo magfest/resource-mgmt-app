@@ -49,7 +49,7 @@ class PipelineTotals:
     """
     draft_cents: int = 0
     submitted_cents: int = 0
-    ag_approved_cents: int = 0
+    reviewer_recommended_cents: int = 0
     final_approved_cents: int = 0
     rejected_cents: int = 0
 
@@ -59,7 +59,7 @@ class PipelineTotals:
         return (
             self.draft_cents
             + self.submitted_cents
-            + self.ag_approved_cents
+            + self.reviewer_recommended_cents
             + self.final_approved_cents
         )
 
@@ -73,7 +73,7 @@ class PipelineTotals:
         return PipelineTotals(
             draft_cents=self.draft_cents + other.draft_cents,
             submitted_cents=self.submitted_cents + other.submitted_cents,
-            ag_approved_cents=self.ag_approved_cents + other.ag_approved_cents,
+            reviewer_recommended_cents=self.reviewer_recommended_cents + other.reviewer_recommended_cents,
             final_approved_cents=self.final_approved_cents + other.final_approved_cents,
             rejected_cents=self.rejected_cents + other.rejected_cents,
         )
@@ -235,7 +235,7 @@ def get_pipeline_sum_columns():
     return [
         func.coalesce(func.sum(cases['draft']), 0).label('draft_cents'),
         func.coalesce(func.sum(cases['submitted']), 0).label('submitted_cents'),
-        func.coalesce(func.sum(cases['ag_approved']), 0).label('ag_approved_cents'),
+        func.coalesce(func.sum(cases['ag_approved']), 0).label('reviewer_recommended_cents'),
         func.coalesce(func.sum(cases['final_approved']), 0).label('final_approved_cents'),
         func.coalesce(func.sum(cases['rejected']), 0).label('rejected_cents'),
     ]
@@ -300,7 +300,7 @@ def compute_pipeline_summary(rows: List[Any]) -> PipelineTotals:
     """
     Compute totals from a list of rows that have pipeline amount attributes.
 
-    Each row should have: draft_cents, submitted_cents, ag_approved_cents,
+    Each row should have: draft_cents, submitted_cents, reviewer_recommended_cents,
     final_approved_cents, rejected_cents (either as attributes or properties).
 
     Args:
@@ -315,7 +315,7 @@ def compute_pipeline_summary(rows: List[Any]) -> PipelineTotals:
         totals = PipelineTotals(
             draft_cents=totals.draft_cents + (getattr(row, 'draft_cents', 0) or 0),
             submitted_cents=totals.submitted_cents + (getattr(row, 'submitted_cents', 0) or 0),
-            ag_approved_cents=totals.ag_approved_cents + (getattr(row, 'ag_approved_cents', 0) or 0),
+            reviewer_recommended_cents=totals.reviewer_recommended_cents + (getattr(row, 'reviewer_recommended_cents', 0) or 0),
             final_approved_cents=totals.final_approved_cents + (getattr(row, 'final_approved_cents', 0) or 0),
             rejected_cents=totals.rejected_cents + (getattr(row, 'rejected_cents', 0) or 0),
         )

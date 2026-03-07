@@ -106,8 +106,8 @@
     <div style="font-size: 20px; font-weight: 700; color: #0a66c2;">{{ format_currency(summary.submitted_cents) }}</div>
   </div>
   <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">AG Approved</div>
-    <div style="font-size: 20px; font-weight: 700; color: #7c3aed;">{{ format_currency(summary.ag_approved_cents) }}</div>
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Reviewer Recommended</div>
+    <div style="font-size: 20px; font-weight: 700; color: #7c3aed;">{{ format_currency(summary.reviewer_recommended_cents) }}</div>
   </div>
   <div class="card" style="text-align: center; padding: 16px;">
     <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Final Approved</div>
@@ -189,7 +189,7 @@
     <td colspan="{{ pre_columns }}"><strong>TOTALS</strong></td>
     <td class="right num">{{ format_currency(summary.draft_cents) }}</td>
     <td class="right num">{{ format_currency(summary.submitted_cents) }}</td>
-    <td class="right num">{{ format_currency(summary.ag_approved_cents) }}</td>
+    <td class="right num">{{ format_currency(summary.reviewer_recommended_cents) }}</td>
     <td class="right num">{{ format_currency(summary.final_approved_cents) }}</td>
     <td class="right num" style="color: #dc2626;">{{ format_currency(summary.rejected_cents) }}</td>
     <td class="right num" style="font-size: 16px;">{{ format_currency(summary.total_cents) }}</td>
@@ -210,7 +210,7 @@
 
 
 {# ============================================================
-   Approval Group Pill
+   Reviewer Group Pill
    ============================================================ #}
 
 {% macro ag_pill(code) %}

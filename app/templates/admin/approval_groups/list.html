@@ -1,6 +1,6 @@
 {% extends "layout/base.html" %}
 
-{% block title %}Approval Groups - Admin{% endblock %}
+{% block title %}Reviewer Groups - Admin{% endblock %}
 
 {% block content %}
 {% macro sort_header(column, label, current_sort, current_dir) %}
@@ -18,13 +18,13 @@
   <a href="{{ url_for('admin_final.admin_home') }}">&larr; Back to Admin</a>
 </div>
 
-<h1>Approval Groups</h1>
+<h1>Reviewer Groups</h1>
 <div class="muted mb-16">
-  Manage approval groups that review expense accounts. Each expense account routes to one approval group.
+  Manage reviewer groups that review expense accounts. Each expense account routes to one reviewer group.
 </div>
 
 <div class="row mb-16">
-  <a class="btn btn-primary" href="{{ url_for('admin_config.approval_groups.new_approval_group') }}">+ New Approval Group</a>
+  <a class="btn btn-primary" href="{{ url_for('admin_config.approval_groups.new_approval_group') }}">+ New Reviewer Group</a>
 
   <form method="get" action="{{ url_for('admin_config.approval_groups.list_approval_groups') }}" class="row" style="margin: 0; gap: 8px;">
     <label class="muted" style="display: flex; gap: 6px; align-items: center;">
@@ -71,7 +71,7 @@
       </tr>
     {% else %}
       <tr>
-        <td colspan="7" class="muted">No approval groups found.</td>
+        <td colspan="7" class="muted">No reviewer groups found.</td>
       </tr>
     {% endfor %}
   </tbody>

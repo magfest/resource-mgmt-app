@@ -1,9 +1,9 @@
 {% extends "layout/base.html" %}
 
-{% block title %}{% if group %}Edit Approval Group{% else %}New Approval Group{% endif %} - Admin{% endblock %}
+{% block title %}{% if group %}Edit Reviewer Group{% else %}New Reviewer Group{% endif %} - Admin{% endblock %}
 
 {% block content %}
-<h1>{% if group %}Edit Approval Group{% else %}New Approval Group{% endif %}</h1>
+<h1>{% if group %}Edit Reviewer Group{% else %}New Reviewer Group{% endif %}</h1>
 <div class="muted" style="margin: 8px 0 16px;">
   {% if group %}
     Editing group: <strong>{{ group.code }}</strong>
@@ -11,7 +11,7 @@
       <span class="pill" style="margin-left: 8px;">{{ account_count }} expense account(s) linked</span>
     {% endif %}
   {% else %}
-    Create a new approval group for routing expense account reviews.
+    Create a new reviewer group for routing expense account reviews.
   {% endif %}
 </div>
 
@@ -66,7 +66,7 @@
         {% if group.is_active %}
           <form method="post" action="{{ url_for('admin_config.approval_groups.archive_approval_group', group_id=group.id) }}" style="display: inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn" type="submit" data-confirm="Archive this approval group?">Archive</button>
+            <button class="btn" type="submit" data-confirm="Archive this reviewer group?">Archive</button>
           </form>
         {% else %}
           <form method="post" action="{{ url_for('admin_config.approval_groups.restore_approval_group', group_id=group.id) }}" style="display: inline;">

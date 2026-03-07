@@ -53,7 +53,7 @@
         <td>One of: SUPER_ADMIN, APPROVER, WORKTYPE_ADMIN</td>
       </tr>
       <tr>
-        <td><strong>Approval Group</strong></td>
+        <td><strong>Reviewer Group</strong></td>
         <td>For APPROVER</td>
         <td><code>approval_group</code>, <code>group</code>, <code>approval_group_code</code></td>
         <td>Required for APPROVER role (e.g., TECH, HOTEL)</td>
@@ -71,7 +71,7 @@
     </tr>
     <tr>
       <td style="padding-right: 16px;"><strong>APPROVER</strong></td>
-      <td>Can approve budget requests routed to their approval group. Requires <code>approval_group</code>.</td>
+      <td>Can approve budget requests routed to their reviewer group. Requires <code>approval_group</code>.</td>
     </tr>
     <tr>
       <td style="padding-right: 16px;"><strong>WORKTYPE_ADMIN</strong></td>
@@ -86,7 +86,7 @@
 
 {% if approval_groups %}
 <div style="margin-top: 16px; padding: 16px; background: #e8f5e9; border: 1px solid #4caf50;">
-  <h4 style="margin-top: 0;">Available Approval Groups</h4>
+  <h4 style="margin-top: 0;">Available Reviewer Groups</h4>
   <p class="muted small">Use these codes in the <code>approval_group</code> column for APPROVER roles:</p>
   <ul style="margin: 8px 0 0 0; padding-left: 20px;">
     {% for group in approval_groups %}

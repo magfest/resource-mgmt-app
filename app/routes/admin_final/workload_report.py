@@ -291,8 +291,8 @@ def workload_report_export():
 
     # Build CSV headers
     headers = [
-        "Approval Group Code",
-        "Approval Group Name",
+        "Reviewer Group Code",
+        "Reviewer Group Name",
         "Pending Lines",
         "Needs Info Lines",
         "Total Lines",

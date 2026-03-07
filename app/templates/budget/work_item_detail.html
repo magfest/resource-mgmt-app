@@ -38,7 +38,7 @@
       <div class="muted">{{ total_lines_count }} line{% if total_lines_count != 1 %}s{% endif %}</div>
       {% if lines_filtered %}
         <div class="muted small" style="margin-top: 4px; color: #0a66c2;">
-          Showing {{ lines|length }} line{% if lines|length != 1 %}s{% endif %} for your approval group
+          Showing {{ lines|length }} line{% if lines|length != 1 %}s{% endif %} for your reviewer group
         </div>
       {% endif %}
       {% if totals.approved > 0 %}
@@ -137,7 +137,7 @@
     {# Dashboard link for reviewers #}
     {% if perms.is_worktype_admin or perms.is_checked_out_by_current_user %}
       <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
-        Approval Queue
+        Review Queue
       </a>
     {% endif %}
 
@@ -159,7 +159,7 @@
       <h4 style="margin:0 0 12px 0;">Awaiting Dispatch</h4>
       <p class="muted" style="margin: 0 0 12px 0;">
         This request is waiting to be dispatched to the approval queue.
-        Assign approval groups to each line and dispatch to begin the review process.
+        Assign reviewer groups to each line and dispatch to begin the review process.
       </p>
       <a class="btn btn-primary" href="{{ url_for('dispatch.dispatch_item', work_item_id=work_item.id) }}">
         Assign &amp; Dispatch
@@ -259,7 +259,7 @@
     <div class="callout" style="margin-bottom: 16px; background: #fef3c7; border-left: 4px solid #d97706;">
       <strong>Awaiting Dispatch</strong>
       <div class="muted" style="margin-top:4px;">
-        This request has been submitted and is waiting for a budget admin to assign approval groups and dispatch it for review.
+        This request has been submitted and is waiting for a budget admin to assign reviewer groups and dispatch it for review.
       </div>
     </div>
   {% endif %}
@@ -307,7 +307,7 @@
     <div class="callout callout-info mb-16">
       <strong>Under Review</strong>
       <div class="muted" style="margin-top:4px;">
-        This request has been submitted and is awaiting approval group review.
+        This request has been submitted and is awaiting reviewer group review.
       </div>
     </div>
   {% elif status == "FINALIZED" %}
@@ -467,7 +467,7 @@
                         {{ event.snapshot.line_count }} line{% if event.snapshot.line_count != 1 %}s{% endif %},
                         {{ format_currency(event.snapshot.total_requested_cents) }} total
                       {% elif event.event_type == 'DISPATCH' %}
-                        Sent to {{ event.snapshot.approval_groups | length }} approval group{% if event.snapshot.approval_groups | length != 1 %}s{% endif %}
+                        Sent to {{ event.snapshot.approval_groups | length }} reviewer group{% if event.snapshot.approval_groups | length != 1 %}s{% endif %}
                       {% elif event.event_type == 'NEEDS_INFO_REQUESTED' %}
                         {{ event.snapshot.message }}
                       {% elif event.event_type == 'NEEDS_INFO_RESPONDED' %}

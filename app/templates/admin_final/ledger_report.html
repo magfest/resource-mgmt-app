@@ -62,7 +62,7 @@
               <th style="width: 100px;">AG</th>
               <th style="width: 110px;" class="right">Draft</th>
               <th style="width: 110px;" class="right">Submitted</th>
-              <th style="width: 110px;" class="right">AG Approved</th>
+              <th style="width: 110px;" class="right">Reviewer Recommended</th>
               <th style="width: 110px;" class="right">Final Approved</th>
               <th style="width: 110px;" class="right">Rejected</th>
               <th style="width: 120px;" class="right">Total</th>
@@ -76,7 +76,7 @@
                 <td>{{ ag_pill(row.approval_group_code) }}</td>
                 {{ amount_cell(row.draft_cents, format_currency) }}
                 {{ amount_cell(row.submitted_cents, format_currency) }}
-                {{ amount_cell(row.ag_approved_cents, format_currency) }}
+                {{ amount_cell(row.reviewer_recommended_cents, format_currency) }}
                 {{ amount_cell(row.final_approved_cents, format_currency) }}
                 {{ amount_cell(row.rejected_cents, format_currency, highlight_negative=True) }}
                 <td class="right num" style="font-weight: 600;">

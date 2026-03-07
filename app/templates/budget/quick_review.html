@@ -79,7 +79,7 @@
     <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center;">
       <span class="muted" style="font-size: 13px;">Review as:</span>
       <button type="button" id="mode-ag" class="btn" style="padding: 4px 12px; font-size: 13px; background: #0a66c2; color: #fff; border-color: #0a66c2;">
-        Approval Group
+        Reviewer Group
       </button>
       <button type="button" id="mode-admin" class="btn" style="padding: 4px 12px; font-size: 13px;">
         Admin Final
@@ -142,7 +142,7 @@
                   <input type="text" class="line-note" placeholder="Note (required for reject/kickback)"
                          style="flex: 1; min-width: 120px; padding: 4px 8px; font-size: 12px;">
 
-                  {# AG Review Actions #}
+                  {# Reviewer Group Actions #}
                   <div class="ag-actions" style="display: flex; gap: 4px;">
                     <button type="button" class="btn quick-action" data-action="approve" data-mode="ag"
                             style="padding: 4px 8px; font-size: 12px; background: #059669; color: #fff; border-color: #059669;">
@@ -187,7 +187,7 @@
                   {% if line.current_review_stage == 'ADMIN_FINAL' %}
                     Final approved
                   {% else %}
-                    AG approved
+                    Recommended
                   {% endif %}
                 </span>
               {% elif status == 'REJECTED' %}
@@ -322,7 +322,7 @@
     formData.append('csrf_token', csrfToken);
     if (note) {
       formData.append('note', note);
-      // For AG actions, use recommended_amount field name for consistency
+      // For reviewer group actions, use recommended_amount field name for consistency
       if (action.indexOf('admin') === -1) {
         formData.append('recommended_amount', '');
       }
@@ -363,7 +363,7 @@
         // Update actions cell
         var actionsCell = row.querySelector('.line-actions');
         if (newStatus === 'APPROVED') {
-          actionsCell.innerHTML = '<span class="muted small">' + (action.indexOf('admin') !== -1 ? 'Final approved' : 'AG approved') + '</span>';
+          actionsCell.innerHTML = '<span class="muted small">' + (action.indexOf('admin') !== -1 ? 'Final approved' : 'Recommended') + '</span>';
         } else if (newStatus === 'REJECTED') {
           actionsCell.innerHTML = '<span class="muted small">Rejected</span>';
         } else if (newStatus === 'NEEDS_INFO' || newStatus === 'NEEDS_ADJUSTMENT') {

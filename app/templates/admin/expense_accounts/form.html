@@ -167,7 +167,7 @@
         <h3 style="margin: 0 0 16px 0;">Approval Routing</h3>
 
         <div>
-          <label for="approval_group_id" class="form-label">Approval Group</label>
+          <label for="approval_group_id" class="form-label">Reviewer Group</label>
           <select id="approval_group_id" name="approval_group_id" required {% if not can_modify %}disabled{% endif %}>
             <option value="" disabled {% if not account %}selected{% endif %}>Select...</option>
             {% for g in approval_groups %}

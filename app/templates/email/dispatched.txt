@@ -1,4 +1,4 @@
-A budget request has been assigned to your approval group for review.
+A budget request has been assigned to your reviewer group for review.
 
 Request: {{ work_item.public_id }}
 Department: {{ work_item.portfolio.department.name }}

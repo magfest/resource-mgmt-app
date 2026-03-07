@@ -20,7 +20,7 @@
 
 <h1>Expense Accounts</h1>
 <div class="muted mb-16">
-  Manage the chart of accounts for budget requests. Each expense account routes to an approval group.
+  Manage the chart of accounts for budget requests. Each expense account routes to a reviewer group.
 </div>
 
 <div class="row mb-16">
@@ -30,7 +30,7 @@
     <input type="text" name="q" value="{{ q or '' }}" placeholder="Search code, name..." style="width: 200px;" />
 
     <select name="approval_group" style="width: 200px;">
-      <option value="">All approval groups</option>
+      <option value="">All reviewer groups</option>
       {% for g in approval_groups %}
         <option value="{{ g.id }}" {% if approval_group_filter == g.id|string %}selected{% endif %}>{{ g.name }}</option>
       {% endfor %}
@@ -56,7 +56,7 @@
       <th style="width: 150px;">QB Account</th>
       <th>Description</th>
       <th style="width: 125px;">Visibility</th>
-      <th style="width: 125px;">{{ sort_header('approval_group', 'Approval Group', sort_by, sort_dir) }}</th>
+      <th style="width: 125px;">{{ sort_header('approval_group', 'Reviewer Group', sort_by, sort_dir) }}</th>
       <th style="width: 75px;">Spend Type</th>
       <th style="width: 75px;">Fixed</th>
       <th style="width: 75px;">Status</th>

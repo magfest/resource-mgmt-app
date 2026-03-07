@@ -74,7 +74,7 @@
               <th style="width: 70px;" class="right">Lines</th>
               <th style="width: 100px;" class="right">Draft</th>
               <th style="width: 100px;" class="right">Submitted</th>
-              <th style="width: 100px;" class="right">AG Approved</th>
+              <th style="width: 100px;" class="right">Reviewer Recommended</th>
               <th style="width: 100px;" class="right">Final Approved</th>
               <th style="width: 100px;" class="right">Rejected</th>
               <th style="width: 110px;" class="right">Total</th>
@@ -98,7 +98,7 @@
                 <td class="right num">{{ row.line_count }}</td>
                 {{ amount_cell(row.draft_cents, format_currency) }}
                 {{ amount_cell(row.submitted_cents, format_currency) }}
-                {{ amount_cell(row.ag_approved_cents, format_currency) }}
+                {{ amount_cell(row.reviewer_recommended_cents, format_currency) }}
                 {{ amount_cell(row.final_approved_cents, format_currency) }}
                 {{ amount_cell(row.rejected_cents, format_currency, highlight_negative=True) }}
                 <td class="right num" style="font-weight: 600;">
@@ -114,7 +114,7 @@
               <td class="right num">{{ stats.total_lines }}</td>
               <td class="right num">{{ format_currency(summary.draft_cents) }}</td>
               <td class="right num">{{ format_currency(summary.submitted_cents) }}</td>
-              <td class="right num">{{ format_currency(summary.ag_approved_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.reviewer_recommended_cents) }}</td>
               <td class="right num">{{ format_currency(summary.final_approved_cents) }}</td>
               <td class="right num" style="color: #dc2626;">{{ format_currency(summary.rejected_cents) }}</td>
               <td class="right num" style="font-size: 16px;">{{ format_currency(summary.total_cents) }}</td>

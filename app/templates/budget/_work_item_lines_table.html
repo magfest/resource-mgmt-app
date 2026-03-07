@@ -94,13 +94,13 @@
               {% if review_stage == "ADMIN_FINAL" %}
                 <span class="pill {{ line_pill_class }}">APPROVED</span>
               {% else %}
-                <span class="pill" style="background: #dbeafe; color: #1e40af;">AG APPROVED</span>
+                <span class="pill" style="background: #dbeafe; color: #1e40af;">RECOMMENDED</span>
               {% endif %}
             {% elif line_status == "REJECTED" %}
               {% if review_stage == "ADMIN_FINAL" %}
                 <span class="pill {{ line_pill_class }}">REJECTED</span>
               {% else %}
-                <span class="pill" style="background: #fee2e2; color: #991b1b;">AG REJECTED</span>
+                <span class="pill" style="background: #fee2e2; color: #991b1b;">REVIEWER REJECTED</span>
               {% endif %}
             {% else %}
               <span class="pill {{ line_pill_class }}">{{ line_status }}</span>

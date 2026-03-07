@@ -62,11 +62,11 @@
         {% if show_status %}
           <td>
             {% set status = review.status | upper %}
-            {# This is the AG dashboard, so show AG prefix for clarity #}
+            {# This is the reviewer dashboard, so show reviewer prefix for clarity #}
             {% if status == "APPROVED" %}
-              <span class="pill" style="background: #dbeafe; color: #1e40af;">AG APPROVED</span>
+              <span class="pill" style="background: #dbeafe; color: #1e40af;">RECOMMENDED</span>
             {% elif status == "REJECTED" %}
-              <span class="pill" style="background: #fee2e2; color: #991b1b;">AG REJECTED</span>
+              <span class="pill" style="background: #fee2e2; color: #991b1b;">REVIEWER REJECTED</span>
             {% else %}
               {% set pill_class =
                 "pill-needs" if status in ["NEEDS_INFO", "NEEDS_ADJUSTMENT"]

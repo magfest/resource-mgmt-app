@@ -192,7 +192,7 @@
       {% endif %}
     </a>
       <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
-      Approval Groups Queue
+      Reviewer Groups Queue
     </a>
 
     <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
@@ -226,7 +226,7 @@
     </div>
     <div style="text-align: center; padding: 16px; background: white; border-radius: 6px;">
       <div style="font-size: 28px; font-weight: 700; color: #059669;">{{ approval_groups|length }}</div>
-      <div class="muted small">Approval Groups</div>
+      <div class="muted small">Reviewer Groups</div>
     </div>
   </div>
 </section>
@@ -235,7 +235,7 @@
 {# Approver Section #}
 {% if approval_groups %}
 <section class="card" style="background: #eff6ff; border: 1px solid #3b82f6;">
-  <h3 style="margin:0 0 16px 0;">Your Approval Groups Queue(s)</h3>
+  <h3 style="margin:0 0 16px 0;">Your Reviewer Group Queue(s)</h3>
 
   {% if pending_for_approver %}
   <div class="callout" style="background: #fef3c7; border-color: #f59e0b; margin-bottom: 16px;">

@@ -1,16 +1,16 @@
 {# templates/approvals/dashboard.html #}
 {% extends "layout/base.html" %}
 
-{% block title %}{{ current_group.name }} - Approval Dashboard{% endblock %}
+{% block title %}{{ current_group.name }} - Review Dashboard{% endblock %}
 
 {% block content %}
 
   {# Header #}
   <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
     <div>
-      <h1 style="margin:0;">Approval Dashboard</h1>
+      <h1 style="margin:0;">Review Dashboard</h1>
       <div class="muted" style="margin-top:4px;">
-        Review budget line items for approval groups
+        Review budget line items for reviewer groups
       </div>
     </div>
   </div>
@@ -81,7 +81,7 @@
     </div>
     <div class="card" style="text-align: center;">
       <div style="font-size: 32px; font-weight: 700; color: #059669;">{{ queues.recently_decided_count }}</div>
-      <div class="muted">Recently Decided</div>
+      <div class="muted">Recently Reviewed</div>
     </div>
   </div>
 
@@ -170,7 +170,7 @@
   {# Recently Decided Queue - Request Level #}
   <section class="card">
     <h3 style="margin:0 0 12px 0;">
-      Recently Decided (Last 72 Hours)
+      Recently Reviewed (Last 72 Hours)
       {% if queues.recently_decided_count > 0 %}
         <span class="pill">{{ queues.recently_decided_count }}</span>
       {% endif %}

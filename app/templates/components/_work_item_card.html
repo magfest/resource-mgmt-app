@@ -29,9 +29,9 @@
           {% if line_summary.final_approved_count > 0 and line_summary.ag_approved_count == 0 %}
             <span class="pill pill-approved" style="margin-left: 4px; font-weight: normal;">{{ line_summary.final_approved_count }} APPROVED</span>
           {% elif line_summary.ag_approved_count > 0 and line_summary.final_approved_count == 0 %}
-            <span class="pill" style="margin-left: 4px; font-weight: normal; background: #dbeafe; color: #1e40af;">{{ line_summary.ag_approved_count }} AG APPROVED</span>
+            <span class="pill" style="margin-left: 4px; font-weight: normal; background: #dbeafe; color: #1e40af;">{{ line_summary.ag_approved_count }} RECOMMENDED</span>
           {% elif line_summary.ag_approved_count > 0 and line_summary.final_approved_count > 0 %}
-            <span class="pill" style="margin-left: 4px; font-weight: normal; background: #dbeafe; color: #1e40af;">{{ line_summary.ag_approved_count }} AG</span>
+            <span class="pill" style="margin-left: 4px; font-weight: normal; background: #dbeafe; color: #1e40af;">{{ line_summary.ag_approved_count }} REC</span>
             <span class="pill pill-approved" style="margin-left: 2px; font-weight: normal;">{{ line_summary.final_approved_count }} FINAL</span>
           {% endif %}
         {% endif %}

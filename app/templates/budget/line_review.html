@@ -24,13 +24,13 @@
           {% if review_stage == "ADMIN_FINAL" %}
             <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">APPROVED</span>
           {% else %}
-            <span class="pill" style="margin-left: 8px; font-weight: normal; background: #dbeafe; color: #1e40af;">AG APPROVED</span>
+            <span class="pill" style="margin-left: 8px; font-weight: normal; background: #dbeafe; color: #1e40af;">REVIEWER RECOMMENDED</span>
           {% endif %}
         {% elif status == "REJECTED" %}
           {% if review_stage == "ADMIN_FINAL" %}
             <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">REJECTED</span>
           {% else %}
-            <span class="pill" style="margin-left: 8px; font-weight: normal; background: #fee2e2; color: #991b1b;">AG REJECTED</span>
+            <span class="pill" style="margin-left: 8px; font-weight: normal; background: #fee2e2; color: #991b1b;">REVIEWER REJECTED</span>
           {% endif %}
         {% else %}
           <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
@@ -140,7 +140,7 @@
             {% if recommended_cents is not none %}
               {% set rec_diff = recommended_cents - requested_cents %}
               <tr>
-                <th style="width: 50%;">AG Recommended</th>
+                <th style="width: 50%;">Reviewer Recommended</th>
                 <td class="right num">
                   {{ format_currency(recommended_cents) }}
                   {% if rec_diff != 0 %}
@@ -183,7 +183,7 @@
         {% if detail and detail.routed_approval_group %}
           <div style="margin-top: 8px;">
             <div class="muted small">
-              Routed to: <strong>{{ detail.routed_approval_group.name }}</strong>
+              Routed to: <strong>{{ detail.routed_approval_group.name }}</strong> (reviewer group)
             </div>
           </div>
         {% endif %}
@@ -222,7 +222,7 @@
             <button type="button" id="tab-ag" class="review-tab active"
                     data-review-mode="ag"
                     style="flex: 1; padding: 12px; border: none; background: #f8f9fa; cursor: pointer; font-weight: 600; border-bottom: 3px solid #0a66c2;">
-              Approval Group Review
+              Reviewer Group Review
             </button>
             <button type="button" id="tab-admin" class="review-tab"
                     data-review-mode="admin"
@@ -234,8 +234,8 @@
           {# Mode explanation #}
           <div id="mode-ag-info" style="padding: 12px; background: #f0f9ff; border-top: 1px solid #d1d5db;">
             <div class="muted small">
-              <strong>Approval Group Mode:</strong> Review on behalf of the
-              <strong>{{ detail.routed_approval_group.name if detail and detail.routed_approval_group else 'routed approval group' }}</strong>.
+              <strong>Reviewer Group Mode:</strong> Review on behalf of the
+              <strong>{{ detail.routed_approval_group.name if detail and detail.routed_approval_group else 'routed reviewer group' }}</strong>.
               Your decision will be a recommendation for the final admin review.
             </div>
           </div>
@@ -325,7 +325,7 @@
         </div>
       {% elif status == "APPROVED" %}
         <div class="callout callout-success mb-16">
-          <strong>AG Approved</strong>
+          <strong>Reviewer Recommended</strong>
           {% if review and review.decided_at %}
             <div class="muted" style="margin-top:4px;">
               Decided {{ review.decided_at.strftime('%Y-%m-%d %H:%M') }}
@@ -337,7 +337,7 @@
         </div>
       {% elif status == "REJECTED" %}
         <div class="callout callout-danger mb-16">
-          <strong>AG Rejected</strong>
+          <strong>Reviewer Rejected</strong>
           {% if review and review.decided_at %}
             <div class="muted" style="margin-top:4px;">
               Decided {{ review.decided_at.strftime('%Y-%m-%d %H:%M') }}
@@ -349,16 +349,16 @@
         </div>
       {% endif %}
 
-      {# Approval Group Review Decision Form #}
+      {# Reviewer Group Review Decision Form #}
       <div id="review-form-ag" {% if user_ctx.is_super_admin %}style=""{% endif %}>
         {% if can_decide %}
           <section class="card" style="margin-bottom: 16px; background: #f8f9fa;">
-            <h3 style="margin:0 0 12px 0;">Make Decision (Approval Group)</h3>
+            <h3 style="margin:0 0 12px 0;">Make Decision (Reviewer Group)</h3>
 
-            {# Show current AG review status if exists #}
+            {# Show current reviewer group review status if exists #}
             {% if ag_review and ag_review.status in ['APPROVED', 'REJECTED'] %}
               <div class="callout {% if ag_review.status == 'APPROVED' %}callout-success{% else %}callout-danger{% endif %}" style="margin-bottom: 12px;">
-                <strong>AG Decision: {{ ag_review.status }}</strong>
+                <strong>Reviewer Decision: {{ ag_review.status }}</strong>
                 {% if ag_review.approved_amount_cents is not none %}
                   <span style="margin-left: 8px;">Recommended: {{ format_currency(ag_review.approved_amount_cents) }}</span>
                 {% endif %}
@@ -486,7 +486,7 @@
               {# Show AG recommendation if available #}
               {% if ag_review and ag_review.status == 'APPROVED' %}
                 <div class="callout callout-info" style="margin-bottom: 12px;">
-                  <strong>Approval Group Recommendation:</strong>
+                  <strong>Reviewer Group Recommendation:</strong>
                   {% if ag_review.approved_amount_cents is not none %}
                     {{ format_currency(ag_review.approved_amount_cents) }}
                   {% else %}
@@ -498,16 +498,16 @@
                 </div>
               {% elif ag_review and ag_review.status == 'REJECTED' %}
                 <div class="callout callout-danger" style="margin-bottom: 12px;">
-                  <strong>Approval Group Recommended: REJECT</strong>
+              <strong>Reviewer Group Recommended: REJECT</strong>
                   {% if ag_review.note %}
                     <div class="muted mt-4">{{ ag_review.note }}</div>
                   {% endif %}
                 </div>
               {% else %}
                 <div class="callout" style="margin-bottom: 12px; background: #fff3cd; border-left: 4px solid #ffc107;">
-                  <strong>No Approval Group Review Yet</strong>
+                  <strong>No Reviewer Group Review Yet</strong>
                   <div class="muted" style="margin-top:4px;">
-                    This line hasn't been reviewed by the approval group. You can still make a final decision.
+                    This line hasn't been reviewed by the reviewer group. You can still make a final decision.
                   </div>
                 </div>
               {% endif %}
@@ -523,7 +523,7 @@
                 <div class="muted small mt-4">
                   Requested: {{ format_currency(line_total) }}
                   {% if ag_review and ag_review.approved_amount_cents is not none %}
-                    &middot; AG Recommended: {{ format_currency(ag_review.approved_amount_cents) }}
+                    &middot; Reviewer Recommended: {{ format_currency(ag_review.approved_amount_cents) }}
                   {% endif %}
                 </div>
               </div>
@@ -625,7 +625,7 @@
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
 (function() {
-  // Approval Group review form confirmation via data-ag-action
+  // Reviewer Group review form confirmation via data-ag-action
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('[data-ag-action]');
     if (!btn) return;
@@ -699,7 +699,7 @@
     if (adminOnlyHidden) adminOnlyHidden.value = adminOnly;
   });
 
-  // Switch between Approval Group and Admin Final review modes via data-review-mode
+  // Switch between Reviewer Group and Admin Final review modes via data-review-mode
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('[data-review-mode]');
     if (!btn) return;

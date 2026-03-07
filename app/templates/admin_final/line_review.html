@@ -23,13 +23,13 @@
           {% if review_stage == "ADMIN_FINAL" %}
             <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">APPROVED</span>
           {% else %}
-            <span class="pill" style="margin-left: 8px; font-weight: normal; background: #dbeafe; color: #1e40af;">AG APPROVED</span>
+            <span class="pill" style="margin-left: 8px; font-weight: normal; background: #dbeafe; color: #1e40af;">REVIEWER RECOMMENDED</span>
           {% endif %}
         {% elif status == "REJECTED" %}
           {% if review_stage == "ADMIN_FINAL" %}
             <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">REJECTED</span>
           {% else %}
-            <span class="pill" style="margin-left: 8px; font-weight: normal; background: #fee2e2; color: #991b1b;">AG REJECTED</span>
+            <span class="pill" style="margin-left: 8px; font-weight: normal; background: #fee2e2; color: #991b1b;">REVIEWER REJECTED</span>
           {% endif %}
         {% else %}
           <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
@@ -114,7 +114,7 @@
             {% if recommended_cents is not none %}
               {% set rec_diff = recommended_cents - requested_cents %}
               <tr>
-                <th style="width: 50%;">AG Recommended</th>
+                <th style="width: 50%;">Reviewer Recommended</th>
                 <td class="right num">
                   {{ format_currency(recommended_cents) }}
                   {% if rec_diff != 0 %}
@@ -144,12 +144,12 @@
         {% endif %}
       </section>
 
-      {# Approval Group Review Summary #}
+      {# Reviewer Group Review Summary #}
       {% if ag_review %}
         <section class="card">
-          <h3 style="margin:0 0 12px 0;">Approval Group Review</h3>
+          <h3 style="margin:0 0 12px 0;">Reviewer Group Review</h3>
           <div class="meta">
-            <div><strong>Status:</strong> <span class="pill" style="background: #dbeafe; color: #1e40af;">AG {{ ag_review.status }}</span></div>
+            <div><strong>Status:</strong> <span class="pill" style="background: #dbeafe; color: #1e40af;">{{ ag_review.status }}</span></div>
             {% if ag_review.decided_at %}
               <div class="muted small mt-4">
                 Decided {{ ag_review.decided_at.strftime('%Y-%m-%d %H:%M') }}

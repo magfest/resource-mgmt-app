@@ -185,6 +185,10 @@
         <div class="muted" style="margin-bottom: 12px;">
           Enter quantities for standard items with predetermined pricing. Include a note explaining what the item is for.
         </div>
+        <div style="margin-bottom: 16px; padding: 10px 14px; background: #e0f2fe; border-radius: 6px; display: flex; align-items: flex-start; gap: 8px;">
+          <i class="bi bi-info-circle" style="color: #0a66c2; flex-shrink: 0; margin-top: 2px;"></i>
+          <span class="muted small">Badge and comp costs shown here are for planning and informational purposes only. These are not directly charged to your department's budget.</span>
+        </div>
 
         <table>
           <thead>
@@ -329,6 +333,10 @@
     {# Hotel Room Wizard #}
     <section class="card">
       <h3 style="margin:0 0 16px 0;">Add Hotel Room Request</h3>
+      <div style="margin-bottom: 16px; padding: 10px 14px; background: #e0f2fe; border-radius: 6px; display: flex; align-items: flex-start; gap: 8px;">
+        <i class="bi bi-info-circle" style="color: #0a66c2; flex-shrink: 0; margin-top: 2px;"></i>
+        <span class="muted small">This tool estimates room nights and their budget impact. It is not the final rooming list system. Focus on total room nights and room categories for now.</span>
+      </div>
 
       <form method="post" action="{{ url_for('work.hotel_wizard_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" id="hotel-wizard-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -364,6 +372,9 @@
                 A suite for staffers to sleep in or for social gatherings. Staff crash suites, if approved, will be partially covered by STOPS based on the regular room rate. The remainder must be paid out-of-pocket. This is for planning purposes only.
               </div>
             </label>
+          </div>
+          <div class="muted small" style="margin-top: 12px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
+            Not sure which to pick? <strong>Department operations</strong> is for rooms essential to your department's function. <strong>Staff crash space</strong> is for optional social/sleeping suites.
           </div>
         </div>
 
@@ -462,6 +473,7 @@
               </label>
             </div>
 
+            <div class="muted small" style="margin-top: 8px;">Early arrival and late departure options are for cost estimation only.</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
               <div>
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 8px;">
@@ -519,6 +531,10 @@
         {# Submit #}
         <div class="btn-row">
           <button type="submit" class="btn btn-primary">Add Hotel Request</button>
+        </div>
+
+        <div class="muted small" style="margin-top: 16px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
+          Future versions will support more detailed rooming lists. For now, please focus on total room nights and categories.
         </div>
       </form>
     </section>
