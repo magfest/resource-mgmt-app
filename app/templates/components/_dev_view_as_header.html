@@ -10,7 +10,12 @@
 
 {% if show_debug_header %}
 {# === DEV/BETA MODE: Full debug header === #}
-<div style="padding: 10px 12px; background: #f3f4f6; border-bottom: 1px solid #ddd; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;">
+{# Hidden state restore button - shown when header is collapsed #}
+<button id="dev-header-show-btn" style="display:none; position:fixed; top:8px; right:8px; z-index:9999; padding:4px 10px; font-size:12px; background:#f3f4f6; border:1px solid #ddd; border-radius:4px; cursor:pointer; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial;">
+  Show Dev Header
+</button>
+
+<div id="dev-header" style="padding: 10px 12px; background: #f3f4f6; border-bottom: 1px solid #ddd; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;">
   <div style="display:flex; gap:12px; align-items:flex-start; justify-content:space-between;">
     <div style="line-height:1.4;">
       {% if active_user %}
@@ -94,6 +99,11 @@
         {% endif %}
       {% endif %}
 
+      {# Hide button for recording/demos #}
+      <button id="dev-header-hide-btn" style="padding:4px 10px; font-size:12px; background:#fff; border:1px solid #ccc; border-radius:4px; cursor:pointer; align-self:flex-start;">
+        Hide
+      </button>
+
       {# Role override dropdown - only for super-admins in beta mode, not while impersonating #}
       {% if can_override_role and not is_impersonating %}
         <div style="border-top:1px solid #ddd; padding-top:8px; margin-top:4px;">
@@ -127,6 +137,35 @@
     </div>
   </div>
 </div>
+
+<script nonce="{{ csp_nonce }}">
+(function() {
+  var header = document.getElementById('dev-header');
+  var hideBtn = document.getElementById('dev-header-hide-btn');
+  var showBtn = document.getElementById('dev-header-show-btn');
+  var storageKey = 'devHeaderHidden';
+
+  function hideHeader() {
+    header.style.display = 'none';
+    showBtn.style.display = 'block';
+    localStorage.setItem(storageKey, 'true');
+  }
+
+  function showHeader() {
+    header.style.display = '';
+    showBtn.style.display = 'none';
+    localStorage.setItem(storageKey, 'false');
+  }
+
+  // Restore state from localStorage
+  if (localStorage.getItem(storageKey) === 'true') {
+    hideHeader();
+  }
+
+  hideBtn.addEventListener('click', hideHeader);
+  showBtn.addEventListener('click', showHeader);
+})();
+</script>
 
 {% elif oauth_enabled %}
 {# === PRODUCTION MODE: Minimal user bar === #}
