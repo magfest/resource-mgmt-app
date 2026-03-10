@@ -33,6 +33,7 @@ from .helpers import (
     get_priority_levels,
     get_next_line_number,
     format_currency,
+    get_effective_description,
 )
 
 
@@ -118,6 +119,12 @@ def line_new(event: str, dept: str, public_id: str):
     # Build spend types data for JavaScript dropdown
     spend_types_by_account = build_spend_types_by_account(expense_accounts)
 
+    # Build effective descriptions dictionary (considering event overrides)
+    effective_descriptions = {
+        acc.id: get_effective_description(acc, ctx.event_cycle.id)
+        for acc in expense_accounts
+    }
+
     return render_template(
         "budget/line_form.html",
         ctx=ctx,
@@ -125,6 +132,7 @@ def line_new(event: str, dept: str, public_id: str):
         work_item=work_item,
         expense_accounts=expense_accounts,
         spend_types_by_account=spend_types_by_account,
+        effective_descriptions=effective_descriptions,
         confidence_levels=get_confidence_levels(),
         frequency_options=get_frequency_options(),
         priority_levels=get_priority_levels(),
@@ -277,6 +285,10 @@ def line_create(event: str, dept: str, public_id: str):
             exclude_fixed=True,
         )
         spend_types_by_account = build_spend_types_by_account(expense_accounts)
+        effective_descriptions = {
+            acc.id: get_effective_description(acc, ctx.event_cycle.id)
+            for acc in expense_accounts
+        }
 
         for error in errors:
             flash(error, "error")
@@ -288,6 +300,7 @@ def line_create(event: str, dept: str, public_id: str):
             work_item=work_item,
             expense_accounts=expense_accounts,
             spend_types_by_account=spend_types_by_account,
+            effective_descriptions=effective_descriptions,
             confidence_levels=get_confidence_levels(),
             frequency_options=get_frequency_options(),
             priority_levels=get_priority_levels(),
@@ -384,6 +397,12 @@ def line_edit(event: str, dept: str, public_id: str, line_num: int):
     # Build spend types data for JavaScript dropdown
     spend_types_by_account = build_spend_types_by_account(expense_accounts)
 
+    # Build effective descriptions dictionary (considering event overrides)
+    effective_descriptions = {
+        acc.id: get_effective_description(acc, ctx.event_cycle.id)
+        for acc in expense_accounts
+    }
+
     # Build form_data from existing line
     form_data = {
         "expense_account_id": str(detail.expense_account_id) if detail.expense_account_id else "",
@@ -404,6 +423,7 @@ def line_edit(event: str, dept: str, public_id: str, line_num: int):
         work_item=work_item,
         expense_accounts=expense_accounts,
         spend_types_by_account=spend_types_by_account,
+        effective_descriptions=effective_descriptions,
         confidence_levels=get_confidence_levels(),
         frequency_options=get_frequency_options(),
         priority_levels=get_priority_levels(),
@@ -576,6 +596,10 @@ def line_update(event: str, dept: str, public_id: str, line_num: int):
             exclude_fixed=True,
         )
         spend_types_by_account = build_spend_types_by_account(expense_accounts)
+        effective_descriptions = {
+            acc.id: get_effective_description(acc, ctx.event_cycle.id)
+            for acc in expense_accounts
+        }
 
         for error in errors:
             flash(error, "error")
@@ -587,6 +611,7 @@ def line_update(event: str, dept: str, public_id: str, line_num: int):
             work_item=work_item,
             expense_accounts=expense_accounts,
             spend_types_by_account=spend_types_by_account,
+            effective_descriptions=effective_descriptions,
             confidence_levels=get_confidence_levels(),
             frequency_options=get_frequency_options(),
             priority_levels=get_priority_levels(),

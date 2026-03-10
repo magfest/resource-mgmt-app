@@ -208,8 +208,8 @@
               <tr>
                 <td>
                   <strong>{{ acc.name }}</strong>
-                  {% if acc.description %}
-                    <div class="muted small">{{ acc.description }}</div>
+                  {% if item.effective_description %}
+                    <div class="muted small">{{ item.effective_description|markdown_links|safe }}</div>
                   {% endif %}
                 </td>
                 <td class="right num">{{ format_currency(unit_price) }}</td>

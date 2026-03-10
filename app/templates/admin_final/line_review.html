@@ -76,8 +76,8 @@
 
         <div class="meta">
           <div><strong>Expense Account:</strong> {{ detail.expense_account.name if detail and detail.expense_account else '-' }}</div>
-          {% if detail and detail.expense_account %}
-            <div class="muted small">{{ detail.expense_account.description or '' }}</div>
+          {% if detail and detail.expense_account and detail.expense_account.description %}
+            <div class="muted small">{{ detail.expense_account.description|markdown_links|safe }}</div>
           {% endif %}
         </div>
 

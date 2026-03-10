@@ -248,6 +248,9 @@ class ExpenseAccountEventOverride(db.Model):
     ui_display_group = db.Column(db.String(32), nullable=True, index=True)
     prompt_mode = db.Column(db.String(32), nullable=True, index=True)
 
+    # Per-event description override (replaces base account description if set)
+    description = db.Column(db.Text, nullable=True)
+
     __table_args__ = (
         db.UniqueConstraint("expense_account_id", "event_cycle_id", name="uq_eaeo_account_event"),
     )

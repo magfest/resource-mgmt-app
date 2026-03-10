@@ -69,6 +69,15 @@
         </div>
       </div>
 
+      <div style="grid-column: 1 / -1;">
+        <label for="description" class="form-label">Description Override</label>
+        <textarea id="description" name="description" rows="3"
+                  placeholder="Leave empty to use base account description. Supports [link text](url) format.">{{ override.description if override else '' }}</textarea>
+        <div class="muted small mt-4">
+          Base: {{ account.description[:100] ~ '...' if account.description and account.description|length > 100 else account.description or 'Not set' }}
+        </div>
+      </div>
+
       <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 16px; margin-top: 8px;">
         <strong style="display: block; margin-bottom: 12px;">Override Settings</strong>
         <div class="muted small" style="margin-bottom: 12px;">Leave unchecked to inherit from base account.</div>

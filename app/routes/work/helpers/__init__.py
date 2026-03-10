@@ -62,6 +62,7 @@ from .expense_accounts import (
     get_hotel_service_expense_accounts,
     get_non_hotel_fixed_cost_accounts,
     get_effective_fixed_cost_settings,
+    get_effective_description,
     get_allowed_spend_types,
     # Dropdown data
     get_confidence_levels,
@@ -142,6 +143,7 @@ __all__ = [
     "get_hotel_service_expense_accounts",
     "get_non_hotel_fixed_cost_accounts",
     "get_effective_fixed_cost_settings",
+    "get_effective_description",
     "get_allowed_spend_types",
     # Dropdown data
     "get_confidence_levels",

@@ -26,6 +26,7 @@ from ..helpers import (
     get_hotel_service_expense_accounts,
     get_non_hotel_fixed_cost_accounts,
     get_effective_fixed_cost_settings,
+    get_effective_description,
     get_allowed_spend_types,
     get_confidence_levels,
     get_frequency_options,
@@ -124,6 +125,7 @@ def work_item_edit(event: str, dept: str, public_id: str):
 
         fixed_cost_data.append({
             "account": acc,
+            "effective_description": get_effective_description(acc, ctx.event_cycle.id),
             "unit_price_cents": settings["unit_price_cents"],
             "frequency_id": settings["frequency_id"],
             "warehouse_default": settings["warehouse_default"],
@@ -148,6 +150,7 @@ def work_item_edit(event: str, dept: str, public_id: str):
 
         hotel_data.append({
             "account": acc,
+            "effective_description": get_effective_description(acc, ctx.event_cycle.id),
             "unit_price_cents": settings["unit_price_cents"],
             "frequency_id": settings["frequency_id"],
             "warehouse_default": settings["warehouse_default"],

@@ -121,21 +121,22 @@
       </form>
     {% endif %}
 
-    {# Quick Review button for reviewers/admins #}
-    {% if perms.is_worktype_admin or perms.can_checkout or perms.is_checked_out_by_current_user %}
+    {# Quick Review button for reviewers/admins (not shown for drafts) #}
+    {% if not perms.is_draft and (perms.is_worktype_admin or perms.can_checkout or perms.is_checked_out_by_current_user) %}
       <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
         Quick Review
       </a>
     {% endif %}
-    <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
+
     {# Admin Dispatch button #}
     {% if perms.is_worktype_admin and status == "SUBMITTED" %}
+      <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
       <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
       Dispatch Queue</a>
     {% endif %}
 
-    {# Dashboard link for reviewers #}
-    {% if perms.is_worktype_admin or perms.is_checked_out_by_current_user %}
+    {# Dashboard link for reviewers (not shown for drafts) #}
+    {% if not perms.is_draft and (perms.is_worktype_admin or perms.is_checked_out_by_current_user) %}
       <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
         Review Queue
       </a>

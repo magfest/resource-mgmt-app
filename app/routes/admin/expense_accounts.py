@@ -576,6 +576,7 @@ def create_override(account_id: int):
         default_spend_type_id=safe_int_or_none(request.form.get("default_spend_type_id")),
         ui_display_group=request.form.get("ui_display_group") or None,
         prompt_mode=request.form.get("prompt_mode") or None,
+        description=request.form.get("description") or None,
     )
 
     db.session.add(override)
@@ -640,6 +641,7 @@ def update_override(account_id: int, override_id: int):
     override.default_spend_type_id = safe_int_or_none(request.form.get("default_spend_type_id"))
     override.ui_display_group = request.form.get("ui_display_group") or None
     override.prompt_mode = request.form.get("prompt_mode") or None
+    override.description = request.form.get("description") or None
 
     log_config_change("expense_account_override", override.id, CONFIG_AUDIT_UPDATE)
 

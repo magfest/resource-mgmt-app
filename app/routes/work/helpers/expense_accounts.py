@@ -207,6 +207,36 @@ def get_effective_fixed_cost_settings(
     }
 
 
+def get_effective_description(
+    expense_account: ExpenseAccount,
+    event_cycle_id: int | None = None,
+) -> str | None:
+    """
+    Get effective description for an expense account,
+    considering event-specific overrides.
+
+    If an override exists for the event cycle and has a description set,
+    that description is returned. Otherwise, the base account description
+    is returned.
+
+    Args:
+        expense_account: The expense account
+        event_cycle_id: Optional event cycle to check for overrides
+
+    Returns:
+        The effective description, or None if not set.
+    """
+    if event_cycle_id:
+        # Find override matching this event cycle
+        for o in expense_account.event_overrides:
+            if o.event_cycle_id == event_cycle_id:
+                if o.description:
+                    return o.description
+                break
+
+    return expense_account.description
+
+
 def get_allowed_spend_types(expense_account: ExpenseAccount) -> list[SpendType]:
     """
     Get valid spend types for an expense account.

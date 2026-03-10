@@ -69,7 +69,7 @@
         <td class="num">{{ acct.code }}</td>
         <td>{{ acct.name }}</td>
         <td class="muted small">{{ acct.quickbooks_account_name or '—' }}</td>
-        <td class="muted small">{{ acct.description or '—' }}</td>
+        <td class="muted small">{{ acct.description|markdown_links|safe if acct.description else '—' }}</td>
       <td class="muted small">{{ acct.visibility_mode or '—' }}</td>
         <td>{{ acct.approval_group.name if acct.approval_group else '—' }}</td>
         <td>

@@ -155,6 +155,7 @@ def create_app() -> Flask:
 
     # --- Template Filters ---
     import math
+    import re
 
     @app.template_filter('format_qty')
     def format_qty(value):
@@ -163,6 +164,40 @@ def create_app() -> Flask:
             return '-'
         int_val = int(math.ceil(float(value)))
         return str(int_val)
+
+    @app.template_filter('markdown_links')
+    def markdown_links(text):
+        """Convert markdown-style links [text](url) to HTML links.
+
+        Also auto-links bare URLs that aren't already in markdown format.
+        Example: [Hotel Policy](https://docs.google.com/...) becomes clickable.
+        """
+        if not text:
+            return ''
+        # First, convert markdown links: [text](url)
+        md_pattern = r'\[([^\]]+)\]\((https?://[^\s\)]+)\)'
+        result = re.sub(md_pattern, r'<a href="\2" target="_blank" rel="noopener">\1</a>', text)
+        # Then, auto-link bare URLs that aren't already in an href
+        # Negative lookbehind to avoid double-linking
+        bare_url_pattern = r'(?<!href=")(https?://[^\s<>"\'\)]+)(?![^<]*</a>)'
+        result = re.sub(bare_url_pattern, r'<a href="\1" target="_blank" rel="noopener">\1</a>', result)
+        return result
+
+    @app.template_filter('strip_links')
+    def strip_links(text):
+        """Strip markdown links and bare URLs for plain text display (e.g., in dropdowns).
+
+        Replaces [text](url) with just 'text' and removes bare URLs.
+        """
+        if not text:
+            return ''
+        # Replace markdown links [text](url) with just the text
+        md_pattern = r'\[([^\]]+)\]\((https?://[^\s\)]+)\)'
+        result = re.sub(md_pattern, r'\1', text)
+        # Remove bare URLs
+        bare_url_pattern = r'https?://[^\s<>"\'\)]+'
+        result = re.sub(bare_url_pattern, '[see details]', result)
+        return result
 
     # Import models so migrations can detect them
     from . import models  # noqa: F401

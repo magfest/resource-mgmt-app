@@ -36,14 +36,17 @@
         <select name="expense_account_id" id="expense_account_id" required class="mt-4">
           <option value="">(Select expense)</option>
           {% for acc in expense_accounts %}
+            {% set eff_desc = effective_descriptions.get(acc.id, "") if effective_descriptions else acc.description %}
+            {% set clean_desc = eff_desc|strip_links if eff_desc else "" %}
             <option value="{{ acc.id }}"
                     data-spend-type-mode="{{ acc.spend_type_mode }}"
                     data-default-spend-type-id="{{ acc.default_spend_type_id or '' }}"
                     {% if form_data and form_data.expense_account_id == acc.id|string %}selected{% endif %}>
-              {{ acc.name }}{% if acc.description %} - {{ acc.description[:50] }}{% endif %}
+              {{ acc.name }}{% if clean_desc %} - {{ clean_desc[:80] }}{% if clean_desc|length > 80 %}...{% endif %}{% endif %}
             </option>
           {% endfor %}
         </select>
+        <div id="expense_account_description" class="muted small mt-4" style="padding: 8px 12px; background: #f8f9fa; border-radius: 4px; display: none;"></div>
       </div>
 
       {# Spend Type #}
@@ -156,6 +159,13 @@
   // Spend types data from server
   const spendTypesByAccount = {{ spend_types_by_account | tojson | safe }};
 
+  // Expense account descriptions (with markdown links rendered to HTML, using effective descriptions from overrides)
+  const expenseDescriptions = {
+    {% for acc in expense_accounts %}
+      {{ acc.id }}: {{ (effective_descriptions.get(acc.id, "")|markdown_links)|tojson }},
+    {% endfor %}
+  };
+
   // Pre-selected values for edit mode
   const preSelectedSpendTypeId = '{{ form_data.spend_type_id if form_data else "" }}';
 
@@ -163,6 +173,20 @@
   const spendTypeSelect = document.getElementById('spend_type_id');
   const spendTypeHint = document.getElementById('spend_type_hint');
   const spendTypeContainer = document.getElementById('spend_type_container');
+  const expenseDescriptionDiv = document.getElementById('expense_account_description');
+
+  function updateExpenseDescription() {
+    const accountId = expenseAccountSelect.value;
+    const description = expenseDescriptions[accountId] || '';
+
+    if (description) {
+      expenseDescriptionDiv.innerHTML = description;
+      expenseDescriptionDiv.style.display = 'block';
+    } else {
+      expenseDescriptionDiv.innerHTML = '';
+      expenseDescriptionDiv.style.display = 'none';
+    }
+  }
 
   function updateSpendTypes(preserveSelection) {
     const accountId = expenseAccountSelect.value;
@@ -210,9 +234,11 @@
 
   expenseAccountSelect.addEventListener('change', function() {
     updateSpendTypes(false);  // Don't preserve selection when changing account
+    updateExpenseDescription();  // Update description preview
   });
 
   // Initialize on page load (use preselected value)
   updateSpendTypes(false);
+  updateExpenseDescription();
 </script>
 {% endblock %}
