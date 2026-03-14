@@ -23,6 +23,7 @@ from app.routes.work.helpers import (
     compute_line_status_summary,
     compute_work_item_totals,
     is_budget_admin,
+    is_department_enabled_for_event,
 )
 from app.routes.admin.helpers import can_manage_department_members, can_edit_department_info
 from . import work_bp
@@ -46,6 +47,11 @@ def department_home(event: str, dept: str):
     department = Department.query.filter_by(code=dept.upper()).first()
     if not department:
         abort(404, f"Department not found: {dept}")
+
+    # Check if department is enabled for this event (super admins bypass this)
+    if not user_ctx.is_super_admin:
+        if not is_department_enabled_for_event(department.id, event_cycle.id):
+            abort(404, f"Department not found: {dept}")
 
     # Get user's memberships
     dept_membership = DepartmentMembership.query.filter_by(

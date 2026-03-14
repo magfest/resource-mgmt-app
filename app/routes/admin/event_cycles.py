@@ -6,14 +6,36 @@ from __future__ import annotations
 from datetime import datetime
 from flask import Blueprint, redirect, url_for, request, abort, flash
 
+from sqlalchemy import func
+
 from app import db
 from app.models import (
     EventCycle,
+    Division,
+    Department,
+    DivisionMembership,
+    DepartmentMembership,
+    User,
     WorkPortfolio,
+    EventCycleDivision,
+    EventCycleDepartment,
     CONFIG_AUDIT_CREATE,
     CONFIG_AUDIT_UPDATE,
     CONFIG_AUDIT_ARCHIVE,
     CONFIG_AUDIT_RESTORE,
+)
+from app.routes.work.helpers import (
+    is_division_enabled_for_event,
+    is_department_enabled_for_event,
+    get_division_enablement_record,
+    get_department_enablement_record,
+    set_division_enablement,
+    set_department_enablement,
+    copy_event_enablement,
+    bulk_set_all_enabled,
+    get_all_division_enablement_records,
+    get_all_department_enablement_records,
+    get_all_department_enabled_status,
 )
 from app.routes import h
 from .helpers import (
@@ -320,3 +342,335 @@ def set_default_event_cycle(cycle_id: int):
     db.session.commit()
     flash(f"Set {cycle.name} as the default event cycle", "success")
     return redirect(url_for(".list_event_cycles"))
+
+
+# ============================================================
+# Organization Enablement (Division/Department per Event)
+# ============================================================
+
+@event_cycles_bp.get("/<int:cycle_id>/organization")
+@require_super_admin
+def organization_enablement(cycle_id: int):
+    """
+    Event Organization dashboard - manage divisions, departments, and members.
+
+    Shows:
+    - Which divisions/departments participate in this event
+    - Member counts and heads for each
+    - Direct links to member management
+    """
+    cycle = _get_event_cycle_or_404(cycle_id)
+
+    # Get all active divisions with their departments
+    divisions = Division.query.filter_by(is_active=True).order_by(
+        Division.sort_order, Division.name
+    ).all()
+
+    # Get all departments (including those without a division)
+    departments = Department.query.filter_by(is_active=True).order_by(
+        Department.sort_order, Department.name
+    ).all()
+
+    # ========================================
+    # Fetch member data efficiently (batch queries)
+    # ========================================
+
+    # Division member counts for this event
+    div_member_counts = dict(
+        db.session.query(
+            DivisionMembership.division_id,
+            func.count(DivisionMembership.id)
+        ).filter(
+            DivisionMembership.event_cycle_id == cycle_id
+        ).group_by(DivisionMembership.division_id).all()
+    )
+
+    # Division heads for this event (with user info)
+    div_heads_query = db.session.query(
+        DivisionMembership.division_id,
+        User.display_name,
+        User.id.label('user_id'),
+    ).join(
+        User, DivisionMembership.user_id == User.id
+    ).filter(
+        DivisionMembership.event_cycle_id == cycle_id,
+        DivisionMembership.is_division_head == True,
+    ).all()
+
+    div_heads = {}
+    for row in div_heads_query:
+        if row.division_id not in div_heads:
+            div_heads[row.division_id] = []
+        div_heads[row.division_id].append({
+            "name": row.display_name,
+            "user_id": row.user_id,
+        })
+
+    # Department member counts for this event
+    dept_member_counts = dict(
+        db.session.query(
+            DepartmentMembership.department_id,
+            func.count(DepartmentMembership.id)
+        ).filter(
+            DepartmentMembership.event_cycle_id == cycle_id
+        ).group_by(DepartmentMembership.department_id).all()
+    )
+
+    # Department heads for this event (with user info)
+    dept_heads_query = db.session.query(
+        DepartmentMembership.department_id,
+        User.display_name,
+        User.id.label('user_id'),
+    ).join(
+        User, DepartmentMembership.user_id == User.id
+    ).filter(
+        DepartmentMembership.event_cycle_id == cycle_id,
+        DepartmentMembership.is_department_head == True,
+    ).all()
+
+    dept_heads = {}
+    for row in dept_heads_query:
+        if row.department_id not in dept_heads:
+            dept_heads[row.department_id] = []
+        dept_heads[row.department_id].append({
+            "name": row.display_name,
+            "user_id": row.user_id,
+        })
+
+    # ========================================
+    # Batch fetch enablement records (2 queries instead of N+N)
+    # ========================================
+    div_enablement_map = get_all_division_enablement_records(cycle_id)
+    dept_enablement_map = get_all_department_enablement_records(cycle_id)
+
+    # Compute all department enabled status in memory (no additional queries)
+    dept_enabled_status = get_all_department_enabled_status(
+        cycle_id, departments, div_enablement_map, dept_enablement_map
+    )
+
+    # ========================================
+    # Build enablement status for each division
+    # ========================================
+    division_status = {}
+    for div in divisions:
+        record = div_enablement_map.get(div.id)
+        division_status[div.id] = {
+            "is_enabled": record.is_enabled if record else True,
+            "note": record.note if record else None,
+            "has_record": record is not None,
+            "user_count": div_member_counts.get(div.id, 0),
+            "heads": div_heads.get(div.id, []),
+        }
+
+    # ========================================
+    # Build enablement status for each department
+    # ========================================
+    department_status = {}
+    for dept in departments:
+        record = dept_enablement_map.get(dept.id)
+        actual_enabled = dept_enabled_status.get(dept.id, True)
+        own_enabled = record.is_enabled if record else True
+
+        department_status[dept.id] = {
+            "is_enabled": actual_enabled,
+            "own_enabled": own_enabled,
+            "note": record.note if record else None,
+            "has_record": record is not None,
+            "inherited_disabled": not actual_enabled and own_enabled,
+            "user_count": dept_member_counts.get(dept.id, 0),
+            "heads": dept_heads.get(dept.id, []),
+        }
+
+    # Group departments by division
+    depts_by_division = {}
+    depts_no_division = []
+    for dept in departments:
+        if dept.division_id:
+            if dept.division_id not in depts_by_division:
+                depts_by_division[dept.division_id] = []
+            depts_by_division[dept.division_id].append(dept)
+        else:
+            depts_no_division.append(dept)
+
+    # Get other event cycles for copy dropdown
+    other_cycles = EventCycle.query.filter(
+        EventCycle.id != cycle_id,
+        EventCycle.is_active == True,
+    ).order_by(EventCycle.sort_order, EventCycle.name).all()
+
+    # Count enabled/disabled
+    enabled_div_count = sum(1 for s in division_status.values() if s["is_enabled"])
+    enabled_dept_count = sum(1 for s in department_status.values() if s["is_enabled"])
+
+    # Total users for summary
+    total_div_users = sum(div_member_counts.values())
+    total_dept_users = sum(dept_member_counts.values())
+
+    return render_admin_config_page(
+        "admin/event_cycles/org_enablement.html",
+        cycle=cycle,
+        divisions=divisions,
+        departments=departments,
+        division_status=division_status,
+        department_status=department_status,
+        depts_by_division=depts_by_division,
+        depts_no_division=depts_no_division,
+        other_cycles=other_cycles,
+        enabled_div_count=enabled_div_count,
+        enabled_dept_count=enabled_dept_count,
+        total_div_count=len(divisions),
+        total_dept_count=len(departments),
+        total_div_users=total_div_users,
+        total_dept_users=total_dept_users,
+    )
+
+
+@event_cycles_bp.post("/<int:cycle_id>/organization/division/<int:division_id>")
+@require_super_admin
+def toggle_division_enablement(cycle_id: int, division_id: int):
+    """Toggle a division's enablement for this event."""
+    cycle = _get_event_cycle_or_404(cycle_id)
+    division = db.session.get(Division, division_id)
+    if not division:
+        abort(404, "Division not found")
+
+    # Get current status
+    current_enabled = is_division_enabled_for_event(division_id, cycle_id)
+    new_enabled = not current_enabled
+
+    set_division_enablement(
+        division_id=division_id,
+        event_cycle_id=cycle_id,
+        is_enabled=new_enabled,
+        user_id=h.get_active_user_id(),
+    )
+
+    action = "enabled" if new_enabled else "disabled"
+    log_config_change(
+        "event_cycle_division",
+        cycle_id,
+        CONFIG_AUDIT_UPDATE,
+        {"division_id": division_id, "is_enabled": {"old": current_enabled, "new": new_enabled}},
+    )
+
+    db.session.commit()
+    flash(f"Division '{division.name}' {action} for {cycle.name}", "success")
+    return redirect(url_for(".organization_enablement", cycle_id=cycle_id))
+
+
+@event_cycles_bp.post("/<int:cycle_id>/organization/department/<int:department_id>")
+@require_super_admin
+def toggle_department_enablement(cycle_id: int, department_id: int):
+    """Toggle a department's enablement for this event."""
+    cycle = _get_event_cycle_or_404(cycle_id)
+    department = db.session.get(Department, department_id)
+    if not department:
+        abort(404, "Department not found")
+
+    # Check if division is disabled (department can't be enabled)
+    if department.division_id:
+        div_enabled = is_division_enabled_for_event(department.division_id, cycle_id)
+        if not div_enabled:
+            flash(f"Cannot enable department - its division is disabled", "error")
+            return redirect(url_for(".organization_enablement", cycle_id=cycle_id))
+
+    # Get current status (own status, not inherited)
+    record = get_department_enablement_record(department_id, cycle_id)
+    current_enabled = record.is_enabled if record else True
+    new_enabled = not current_enabled
+
+    set_department_enablement(
+        department_id=department_id,
+        event_cycle_id=cycle_id,
+        is_enabled=new_enabled,
+        user_id=h.get_active_user_id(),
+    )
+
+    action = "enabled" if new_enabled else "disabled"
+    log_config_change(
+        "event_cycle_department",
+        cycle_id,
+        CONFIG_AUDIT_UPDATE,
+        {"department_id": department_id, "is_enabled": {"old": current_enabled, "new": new_enabled}},
+    )
+
+    db.session.commit()
+    flash(f"Department '{department.name}' {action} for {cycle.name}", "success")
+    return redirect(url_for(".organization_enablement", cycle_id=cycle_id))
+
+
+@event_cycles_bp.post("/<int:cycle_id>/organization/copy-from/<int:source_cycle_id>")
+@require_super_admin
+def copy_enablement_from(cycle_id: int, source_cycle_id: int):
+    """Copy enablement settings from another event cycle."""
+    cycle = _get_event_cycle_or_404(cycle_id)
+    source_cycle = _get_event_cycle_or_404(source_cycle_id)
+
+    result = copy_event_enablement(
+        source_event_id=source_cycle_id,
+        target_event_id=cycle_id,
+        user_id=h.get_active_user_id(),
+    )
+
+    log_config_change(
+        "event_cycle_enablement",
+        cycle_id,
+        CONFIG_AUDIT_UPDATE,
+        {"copied_from": source_cycle_id, **result},
+    )
+
+    db.session.commit()
+    flash(
+        f"Copied settings from {source_cycle.name}: "
+        f"{result['divisions_copied']} divisions, {result['departments_copied']} departments",
+        "success"
+    )
+    return redirect(url_for(".organization_enablement", cycle_id=cycle_id))
+
+
+@event_cycles_bp.post("/<int:cycle_id>/organization/enable-all")
+@require_super_admin
+def enable_all_orgs(cycle_id: int):
+    """Enable all divisions and departments for this event."""
+    cycle = _get_event_cycle_or_404(cycle_id)
+
+    result = bulk_set_all_enabled(
+        event_cycle_id=cycle_id,
+        is_enabled=True,
+        user_id=h.get_active_user_id(),
+    )
+
+    log_config_change(
+        "event_cycle_enablement",
+        cycle_id,
+        CONFIG_AUDIT_UPDATE,
+        {"action": "enable_all", **result},
+    )
+
+    db.session.commit()
+    flash(f"Enabled all divisions and departments for {cycle.name}", "success")
+    return redirect(url_for(".organization_enablement", cycle_id=cycle_id))
+
+
+@event_cycles_bp.post("/<int:cycle_id>/organization/disable-all")
+@require_super_admin
+def disable_all_orgs(cycle_id: int):
+    """Disable all divisions and departments for this event."""
+    cycle = _get_event_cycle_or_404(cycle_id)
+
+    result = bulk_set_all_enabled(
+        event_cycle_id=cycle_id,
+        is_enabled=False,
+        user_id=h.get_active_user_id(),
+    )
+
+    log_config_change(
+        "event_cycle_enablement",
+        cycle_id,
+        CONFIG_AUDIT_UPDATE,
+        {"action": "disable_all", **result},
+    )
+
+    db.session.commit()
+    flash(f"Disabled all divisions and departments for {cycle.name}", "success")
+    return redirect(url_for(".organization_enablement", cycle_id=cycle_id))

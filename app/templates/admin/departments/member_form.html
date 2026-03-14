@@ -1,15 +1,15 @@
 {% extends "layout/base.html" %}
 
-{% block title %}{% if membership %}Edit Member{% else %}Add Member{% endif %} - {{ department.name }} - Admin{% endblock %}
+{% block title %}{% if membership %}Edit User{% else %}Add User{% endif %} - {{ department.name }} - Admin{% endblock %}
 
 {% block content %}
-<h1>{% if membership %}Edit Member{% else %}Add Member{% endif %}</h1>
+<h1>{% if membership %}Edit User{% else %}Add User{% endif %}</h1>
 <div class="muted" style="margin: 8px 0 16px;">
   {% if membership %}
-    Editing membership for <strong>{{ membership.user.display_name }}</strong> in <strong>{{ department.name }}</strong>
+    Editing <strong>{{ membership.user.display_name }}</strong> in <strong>{{ department.name }}</strong>
     <span class="pill" style="margin-left: 8px;">{{ membership.event_cycle.code }}</span>
   {% else %}
-    Add a new member to <strong>{{ department.name }}</strong>
+    Add a user to <strong>{{ department.name }}</strong>
   {% endif %}
 </div>
 
@@ -33,9 +33,9 @@
       <div>
         <label for="event_cycle_id" class="form-label">Event Cycle</label>
         <select id="event_cycle_id" name="event_cycle_id" required>
-          <option value="" disabled selected>Select...</option>
+          <option value="" disabled {% if not preselect_event %}selected{% endif %}>Select...</option>
           {% for cycle in event_cycles %}
-            <option value="{{ cycle.id }}" {% if cycle.is_default %}selected{% endif %}>{{ cycle.code }} - {{ cycle.name }}</option>
+            <option value="{{ cycle.id }}" {% if preselect_event and cycle.id == preselect_event.id %}selected{% elif not preselect_event and cycle.is_default %}selected{% endif %}>{{ cycle.code }} - {{ cycle.name }}</option>
           {% endfor %}
         </select>
       </div>
@@ -104,7 +104,7 @@
     {% endif %}
 
     <div class="btn-row" style="margin-top: 20px;">
-      <button class="btn btn-primary" type="submit">{% if membership %}Save Changes{% else %}Add Member{% endif %}</button>
+      <button class="btn btn-primary" type="submit">{% if membership %}Save Changes{% else %}Add User{% endif %}</button>
       <a class="btn" href="{{ url_for('admin_config.departments.list_members', dept_id=department.id) }}">Cancel</a>
     </div>
   </form>

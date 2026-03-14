@@ -318,17 +318,31 @@ def list_members(dept_id: int):
     if not can_manage_department_members_any_cycle(user_ctx, dept_id):
         abort(403, "You don't have permission to manage this department's members")
 
+    # Check for event filter
+    event_filter_id = request.args.get('event', type=int)
+    selected_event = None
+    if event_filter_id:
+        selected_event = db.session.get(EventCycle, event_filter_id)
+
     # Get all memberships for this department
-    memberships = (
+    memberships_query = (
         db.session.query(DepartmentMembership)
         .filter(DepartmentMembership.department_id == dept_id)
         .join(User)
         .join(EventCycle)
-        .order_by(EventCycle.sort_order, User.display_name)
-        .all()
     )
 
-    # Get available event cycles for adding new members
+    # Apply event filter if specified
+    if selected_event:
+        memberships_query = memberships_query.filter(
+            DepartmentMembership.event_cycle_id == selected_event.id
+        )
+
+    memberships = memberships_query.order_by(
+        EventCycle.sort_order, User.display_name
+    ).all()
+
+    # Get available event cycles for adding new members and filtering
     event_cycles = (
         db.session.query(EventCycle)
         .filter(EventCycle.is_active == True)
@@ -345,6 +359,7 @@ def list_members(dept_id: int):
         memberships=memberships,
         event_cycles=event_cycles,
         work_types=work_types,
+        selected_event=selected_event,
     )
 
 
@@ -357,6 +372,12 @@ def add_member_form(dept_id: int):
     # Check permission: Super Admin, Div Head, or Department Head
     if not can_manage_department_members_any_cycle(user_ctx, dept_id):
         abort(403, "You don't have permission to manage this department's members")
+
+    # Check for pre-selected event (e.g., coming from org page)
+    preselect_event_id = request.args.get('event', type=int)
+    preselect_event = None
+    if preselect_event_id:
+        preselect_event = db.session.get(EventCycle, preselect_event_id)
 
     # Get available users (all active users)
     users = (
@@ -388,6 +409,7 @@ def add_member_form(dept_id: int):
         event_cycles=event_cycles,
         work_types=work_types,
         can_set_dh=can_set_dh,
+        preselect_event=preselect_event,
     )
 
 

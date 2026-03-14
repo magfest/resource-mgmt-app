@@ -120,8 +120,16 @@ def get_active_event_cycles() -> List[EventCycle]:
     ).all()
 
 
-def get_active_departments() -> List[Department]:
-    """Get active departments for filter dropdown."""
+def get_active_departments(event_cycle_id: Optional[int] = None) -> List[Department]:
+    """
+    Get active departments for filter dropdown.
+
+    If event_cycle_id is provided, only returns departments enabled for that event.
+    """
+    if event_cycle_id:
+        from app.routes.work.helpers import get_enabled_departments_for_event
+        return get_enabled_departments_for_event(event_cycle_id)
+
     return Department.query.filter_by(is_active=True).order_by(
         Department.sort_order.asc(),
         Department.name.asc()

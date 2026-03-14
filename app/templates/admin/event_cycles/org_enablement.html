@@ -1,0 +1,337 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ cycle.name }} - Organization{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+  <div>
+    <h1 style="margin-bottom: 4px;">{{ cycle.name }}</h1>
+    <div class="muted">
+      Event Organization &mdash; Manage divisions, departments, and assigned users
+    </div>
+  </div>
+  <a class="btn" href="{{ url_for('admin_config.event_cycles.edit_event_cycle', cycle_id=cycle.id) }}">
+    &larr; Event Settings
+  </a>
+</div>
+
+{# Summary Cards #}
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+  <div class="card" style="padding: 12px 16px; text-align: center;">
+    <div class="muted small">Divisions</div>
+    <div style="font-size: 1.5rem; font-weight: 600;">{{ enabled_div_count }} <span class="muted" style="font-size: 1rem; font-weight: normal;">/ {{ total_div_count }}</span></div>
+    <div class="small muted">enabled</div>
+  </div>
+  <div class="card" style="padding: 12px 16px; text-align: center;">
+    <div class="muted small">Departments</div>
+    <div style="font-size: 1.5rem; font-weight: 600;">{{ enabled_dept_count }} <span class="muted" style="font-size: 1rem; font-weight: normal;">/ {{ total_dept_count }}</span></div>
+    <div class="small muted">enabled</div>
+  </div>
+  <div class="card" style="padding: 12px 16px; text-align: center;">
+    <div class="muted small">Division Users</div>
+    <div style="font-size: 1.5rem; font-weight: 600;">{{ total_div_users }}</div>
+    <div class="small muted">for this event</div>
+  </div>
+  <div class="card" style="padding: 12px 16px; text-align: center;">
+    <div class="muted small">Department Users</div>
+    <div style="font-size: 1.5rem; font-weight: 600;">{{ total_dept_users }}</div>
+    <div class="small muted">for this event</div>
+  </div>
+</div>
+
+{# Actions Bar #}
+<div class="card" style="padding: 12px 16px; margin-bottom: 20px;">
+  <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
+    {# Copy from another event #}
+    {% if other_cycles %}
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <form method="post" id="copy-form" style="display: flex; gap: 8px; align-items: center;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="source_cycle" class="small" style="white-space: nowrap;">Copy from:</label>
+        <select id="source_cycle" name="source_cycle" style="min-width: 160px;">
+          {% for c in other_cycles %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-sm" type="submit" data-confirm="Copy organization settings from the selected event? This will overwrite current enablement settings.">
+          Copy
+        </button>
+      </form>
+    </div>
+    <span class="muted">|</span>
+    {% endif %}
+
+    {# Bulk actions #}
+    <form method="post" action="{{ url_for('admin_config.event_cycles.enable_all_orgs', cycle_id=cycle.id) }}" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm" type="submit" data-confirm="Enable ALL divisions and departments for this event?">
+        Enable All
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('admin_config.event_cycles.disable_all_orgs', cycle_id=cycle.id) }}" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm" type="submit" data-confirm="Disable ALL divisions and departments for this event?">
+        Disable All
+      </button>
+    </form>
+
+    <span style="margin-left: auto;"></span>
+    <button class="btn btn-sm" id="expand-all-btn">Expand All</button>
+    <button class="btn btn-sm" id="collapse-all-btn">Collapse All</button>
+  </div>
+</div>
+
+{# Divisions with their departments #}
+{% for division in divisions %}
+{% set div_status = division_status[division.id] %}
+{% set div_depts = depts_by_division.get(division.id, []) %}
+<div class="card division-card" style="margin-bottom: 12px;{% if not div_status.is_enabled %} opacity: 0.7; border-color: #d1d5db;{% endif %}" data-division-id="{{ division.id }}">
+  {# Division Header - Clickable to expand/collapse #}
+  <div class="division-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #eee;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span class="expand-icon" style="font-family: monospace; width: 16px;">{% if div_status.is_enabled %}&#9660;{% else %}&#9654;{% endif %}</span>
+      <div>
+        <strong style="font-size: 1.1rem;{% if not div_status.is_enabled %} color: #6b7280;{% endif %}">{{ division.name }}</strong>
+        <span class="muted small" style="margin-left: 8px;">({{ division.code }})</span>
+        {% if div_status.is_enabled %}
+          <span class="pill pill-green" style="margin-left: 8px;">Enabled</span>
+        {% else %}
+          <span class="pill pill-red" style="margin-left: 8px;">Disabled</span>
+        {% endif %}
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 16px;">
+      {# Member count and heads #}
+      <div style="text-align: right; min-width: 120px;">
+        {% if div_status.heads %}
+          <div class="small">
+            <strong>Heads:</strong>
+            {% for head in div_status.heads %}{{ head.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+        {% endif %}
+        <a href="{{ url_for('admin_config.divisions.list_members', division_id=division.id) }}?event={{ cycle.id }}" class="small">
+          {{ div_status.user_count }} user{% if div_status.user_count != 1 %}s{% endif %} &rarr;
+        </a>
+      </div>
+      {# Toggle button #}
+      <form method="post" action="{{ url_for('admin_config.event_cycles.toggle_division_enablement', cycle_id=cycle.id, division_id=division.id) }}" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if div_status.is_enabled %}
+          <button class="btn btn-sm" type="submit" data-confirm="Disable this division? All its departments will also be disabled for this event.">
+            Disable
+          </button>
+        {% else %}
+          <button class="btn btn-sm btn-primary" type="submit">
+            Enable
+          </button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+
+  {# Departments in this division - Collapsible (collapsed by default if disabled) #}
+  <div class="division-content" style="padding: 12px 16px; background: #fafafa;{% if not div_status.is_enabled %} display: none;{% endif %}">
+    {% if div_depts %}
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid #ddd;">
+            <th style="text-align: left; padding: 6px 8px; font-weight: 500;">Department</th>
+            <th style="text-align: left; padding: 6px 8px; font-weight: 500; width: 180px;">Head(s)</th>
+            <th style="text-align: center; padding: 6px 8px; font-weight: 500; width: 100px;">Users</th>
+            <th style="text-align: center; padding: 6px 8px; font-weight: 500; width: 100px;">Status</th>
+            <th style="text-align: right; padding: 6px 8px; width: 140px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for dept in div_depts %}
+            {% set dept_status = department_status[dept.id] %}
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 8px;">
+                <strong>{{ dept.name }}</strong>
+                <span class="muted small">({{ dept.code }})</span>
+              </td>
+              <td style="padding: 8px;">
+                {% if dept_status.heads %}
+                  {% for head in dept_status.heads %}
+                    <span class="small">{{ head.name }}</span>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <span class="muted small">None assigned</span>
+                {% endif %}
+              </td>
+              <td style="padding: 8px; text-align: center;">
+                <a href="{{ url_for('admin_config.departments.list_members', dept_id=dept.id) }}?event={{ cycle.id }}">
+                  {{ dept_status.user_count }}
+                </a>
+              </td>
+              <td style="padding: 8px; text-align: center;">
+                {% if dept_status.inherited_disabled %}
+                  <span class="pill pill-gray" style="font-size: 0.75rem;">via division</span>
+                {% elif dept_status.is_enabled %}
+                  <span class="pill pill-green" style="font-size: 0.75rem;">Enabled</span>
+                {% else %}
+                  <span class="pill pill-red" style="font-size: 0.75rem;">Disabled</span>
+                {% endif %}
+              </td>
+              <td style="padding: 8px; text-align: right;">
+                {% if div_status.is_enabled %}
+                  <form method="post" action="{{ url_for('admin_config.event_cycles.toggle_department_enablement', cycle_id=cycle.id, department_id=dept.id) }}" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% if dept_status.own_enabled %}
+                      <button class="btn btn-sm btn-link" type="submit" style="padding: 2px 8px;">Disable</button>
+                    {% else %}
+                      <button class="btn btn-sm btn-link" type="submit" style="padding: 2px 8px; color: #28a745;">Enable</button>
+                    {% endif %}
+                  </form>
+                  <a href="{{ url_for('admin_config.departments.list_members', dept_id=dept.id) }}?event={{ cycle.id }}" class="btn btn-sm btn-link" style="padding: 2px 8px;">
+                    Manage
+                  </a>
+                {% else %}
+                  <span class="muted small">--</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="muted small" style="padding: 8px;">No departments in this division.</div>
+    {% endif %}
+
+    {# Quick add member link #}
+    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #ddd;">
+      <a href="{{ url_for('admin_config.divisions.add_member_form', division_id=division.id) }}?event={{ cycle.id }}" class="btn btn-sm">
+        + Add Division User
+      </a>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{# Departments without a division #}
+{% if depts_no_division %}
+<div class="card" style="margin-bottom: 12px;">
+  <div style="padding: 12px 16px; border-bottom: 1px solid #eee;">
+    <strong style="font-size: 1.1rem;">Departments Without Division</strong>
+    <span class="muted small" style="margin-left: 8px;">({{ depts_no_division|length }} departments)</span>
+  </div>
+  <div style="padding: 12px 16px; background: #fafafa;">
+    <table style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="border-bottom: 1px solid #ddd;">
+          <th style="text-align: left; padding: 6px 8px; font-weight: 500;">Department</th>
+          <th style="text-align: left; padding: 6px 8px; font-weight: 500; width: 180px;">Head(s)</th>
+          <th style="text-align: center; padding: 6px 8px; font-weight: 500; width: 100px;">Users</th>
+          <th style="text-align: center; padding: 6px 8px; font-weight: 500; width: 100px;">Status</th>
+          <th style="text-align: right; padding: 6px 8px; width: 140px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dept in depts_no_division %}
+          {% set dept_status = department_status[dept.id] %}
+          <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 8px;">
+              <strong>{{ dept.name }}</strong>
+              <span class="muted small">({{ dept.code }})</span>
+            </td>
+            <td style="padding: 8px;">
+              {% if dept_status.heads %}
+                {% for head in dept_status.heads %}
+                  <span class="small">{{ head.name }}</span>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              {% else %}
+                <span class="muted small">None assigned</span>
+              {% endif %}
+            </td>
+            <td style="padding: 8px; text-align: center;">
+              <a href="{{ url_for('admin_config.departments.list_members', dept_id=dept.id) }}?event={{ cycle.id }}">
+                {{ dept_status.user_count }}
+              </a>
+            </td>
+            <td style="padding: 8px; text-align: center;">
+              {% if dept_status.is_enabled %}
+                <span class="pill pill-green" style="font-size: 0.75rem;">Enabled</span>
+              {% else %}
+                <span class="pill pill-red" style="font-size: 0.75rem;">Disabled</span>
+              {% endif %}
+            </td>
+            <td style="padding: 8px; text-align: right;">
+              <form method="post" action="{{ url_for('admin_config.event_cycles.toggle_department_enablement', cycle_id=cycle.id, department_id=dept.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if dept_status.own_enabled %}
+                  <button class="btn btn-sm btn-link" type="submit" style="padding: 2px 8px;">Disable</button>
+                {% else %}
+                  <button class="btn btn-sm btn-link" type="submit" style="padding: 2px 8px; color: #28a745;">Enable</button>
+                {% endif %}
+              </form>
+              <a href="{{ url_for('admin_config.departments.list_members', dept_id=dept.id) }}?event={{ cycle.id }}" class="btn btn-sm btn-link" style="padding: 2px 8px;">
+                Manage
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+  // Handle copy form submission
+  var copyForm = document.getElementById('copy-form');
+  if (copyForm) {
+    copyForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      var sourceId = document.getElementById('source_cycle').value;
+      this.action = '{{ url_for("admin_config.event_cycles.organization_enablement", cycle_id=cycle.id) }}'.replace('/organization', '/organization/copy-from/' + sourceId);
+      this.submit();
+    });
+  }
+
+  // Expand/collapse single division
+  function toggleDivision(card) {
+    var content = card.querySelector('.division-content');
+    var icon = card.querySelector('.expand-icon');
+
+    if (content.style.display === 'none') {
+      content.style.display = 'block';
+      icon.innerHTML = '\u25BC';  // Down arrow
+    } else {
+      content.style.display = 'none';
+      icon.innerHTML = '\u25B6';  // Right arrow
+    }
+  }
+
+  // Add click listeners to division headers
+  document.querySelectorAll('.division-header').forEach(function(header) {
+    header.addEventListener('click', function(e) {
+      // Don't toggle if clicking on buttons or form elements inside the header
+      if (e.target.closest('form') || e.target.closest('button') || e.target.closest('a')) {
+        return;
+      }
+      var card = header.closest('.division-card');
+      toggleDivision(card);
+    });
+  });
+
+  // Expand all button
+  document.getElementById('expand-all-btn').addEventListener('click', function() {
+    document.querySelectorAll('.division-content').forEach(function(el) {
+      el.style.display = 'block';
+    });
+    document.querySelectorAll('.expand-icon').forEach(function(el) {
+      el.innerHTML = '\u25BC';
+    });
+  });
+
+  // Collapse all button
+  document.getElementById('collapse-all-btn').addEventListener('click', function() {
+    document.querySelectorAll('.division-content').forEach(function(el) {
+      el.style.display = 'none';
+    });
+    document.querySelectorAll('.expand-icon').forEach(function(el) {
+      el.innerHTML = '\u25B6';
+    });
+  });
+</script>
+{% endblock %}

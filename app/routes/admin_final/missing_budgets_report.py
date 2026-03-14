@@ -16,6 +16,7 @@ from app.models import (
     Division,
     EventCycle,
 )
+from app.routes.work.helpers import get_enabled_department_ids_for_event
 from app.routes import get_user_ctx
 from . import admin_final_bp
 from .helpers import (
@@ -40,9 +41,12 @@ class MissingBudgetRow:
 
 def get_departments_without_budgets(event_cycle_id: int) -> List[MissingBudgetRow]:
     """
-    Get all active departments that do NOT have any budget work items
+    Get all active and enabled departments that do NOT have any budget work items
     (neither primary nor supplementary) for the given event cycle.
     """
+    # Get enabled department IDs for this event
+    enabled_dept_ids = get_enabled_department_ids_for_event(event_cycle_id)
+
     # Subquery: departments that DO have a budget request
     departments_with_budgets = (
         db.session.query(WorkPortfolio.department_id)
@@ -54,7 +58,7 @@ def get_departments_without_budgets(event_cycle_id: int) -> List[MissingBudgetRo
         .subquery()
     )
 
-    # Query active departments NOT in that list
+    # Query active AND enabled departments NOT in that list
     query = (
         db.session.query(
             Department.id.label("department_id"),
@@ -65,6 +69,7 @@ def get_departments_without_budgets(event_cycle_id: int) -> List[MissingBudgetRo
         )
         .outerjoin(Division, Department.division_id == Division.id)
         .filter(Department.is_active == True)
+        .filter(Department.id.in_(enabled_dept_ids))  # Only enabled departments
         .filter(~Department.id.in_(departments_with_budgets))
         .order_by(
             Division.name.asc().nulls_last(),

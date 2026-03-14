@@ -1,0 +1,150 @@
+{% extends "layout/base.html" %}
+
+{% block title %}What's New - MAGFest Budget{% endblock %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 0 auto;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="margin: 0;">What's New</h1>
+    <a class="btn" href="{{ url_for('home.index') }}">&larr; Back to Home</a>
+  </div>
+
+  <p class="muted" style="margin-bottom: 24px;">
+    Recent updates and improvements to the MAGFest Budget System.
+  </p>
+
+  {# Mid-March 2026 #}
+  <section class="card" style="margin-bottom: 16px;">
+    <h3 style="margin: 0 0 16px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">
+      Mid-March 2026
+    </h3>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill pill-green">New</span>
+        <strong>Event Organization Dashboard</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Super admins can now manage which divisions and departments participate in each event
+        from a single page. Access it from Admin Settings or the Quick Links on the homepage.
+        Disabled divisions are collapsed by default and visually distinguished.
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill" style="background: #dbeafe; color: #1e40af;">Improved</span>
+        <strong>User Management Terminology</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Changed "Members" to "Users" throughout the admin pages to reduce confusion.
+        Departments are still "members" of divisions (org structure), but people assigned
+        to divisions/departments are now called "users."
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill pill-green">New</span>
+        <strong>What's New Page</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Added this changelog page so everyone can see recent updates. Find it in Quick Links on the homepage.
+      </p>
+    </div>
+
+    <div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill pill-green">New</span>
+        <strong>Quick Access to Event Organization</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Added a direct link to the current event's organization settings in the
+        homepage Quick Links section and the Admin Settings page.
+      </p>
+    </div>
+  </section>
+
+  {# Early March 2026 #}
+  <section class="card" style="margin-bottom: 16px;">
+    <h3 style="margin: 0 0 16px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">
+      Early March 2026
+    </h3>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill pill-green">New</span>
+        <strong>Clickable Links in Expense Account Descriptions</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        URLs and markdown-style links in expense account descriptions are now clickable.
+        This makes it easy to link to policy documents, Google Docs, or other resources
+        directly from expense account descriptions.
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill pill-green">New</span>
+        <strong>Per-Event Expense Account Descriptions</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Expense accounts can now have different descriptions for different events.
+        For example, the "Hotel Suites" account can show MAGWest-specific information
+        when working on MAGWest budgets, and different info for Super MAGFest.
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill" style="background: #dbeafe; color: #1e40af;">Improved</span>
+        <strong>Faster Page Loading</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Optimized database queries throughout the system for faster page loads,
+        especially on pages showing many budget lines or departments.
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill" style="background: #dbeafe; color: #1e40af;">Improved</span>
+        <strong>More Reliable Email Notifications</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Improved error handling for email notifications. If something goes wrong,
+        the system now logs details to help troubleshoot delivery issues.
+      </p>
+    </div>
+
+    <div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill" style="background: #dbeafe; color: #1e40af;">Improved</span>
+        <strong>Hotel Suite Options Updated</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Updated hotel suite options to match official policy terminology.
+      </p>
+    </div>
+  </section>
+
+  {# Template for future entries
+  <section class="card" style="margin-bottom: 16px;">
+    <h3 style="margin: 0 0 16px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">
+      Month Year
+    </h3>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill pill-green">New</span>
+        <strong>Feature Name</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Description of the feature in user-friendly terms.
+      </p>
+    </div>
+  </section>
+  #}
+
+</div>
+{% endblock %}

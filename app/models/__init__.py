@@ -113,6 +113,8 @@ from .org import (
     DivisionMembershipWorkTypeAccess,
     DepartmentMembership,
     DepartmentMembershipWorkTypeAccess,
+    EventCycleDivision,
+    EventCycleDepartment,
 )
 
 # Re-export workflow models
@@ -261,6 +263,8 @@ __all__ = [
     "DivisionMembershipWorkTypeAccess",
     "DepartmentMembership",
     "DepartmentMembershipWorkTypeAccess",
+    "EventCycleDivision",
+    "EventCycleDepartment",
     # Workflow models
     "ApprovalGroup",
     "WorkType",

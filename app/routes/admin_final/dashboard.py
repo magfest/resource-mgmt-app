@@ -182,9 +182,17 @@ def admin_home():
     user_ctx = get_user_ctx()
     require_admin(user_ctx)
 
+    # Get default event cycle for quick links
+    default_event = EventCycle.query.filter_by(is_default=True, is_active=True).first()
+    if not default_event:
+        default_event = EventCycle.query.filter_by(is_active=True).order_by(
+            EventCycle.sort_order
+        ).first()
+
     return render_template(
         "admin_final/admin_home.html",
         user_ctx=user_ctx,
+        default_event=default_event,
     )
 
 

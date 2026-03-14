@@ -378,12 +378,18 @@
           <a class="btn btn-primary" href="{{ url_for('admin_final.admin_home') }}">
               Admin Settings
           </a>
+          {% if selected_cycle %}
+          <a class="btn" href="{{ url_for('admin_config.event_cycles.organization_enablement', cycle_id=selected_cycle.id) }}">
+              {{ selected_cycle.code }} Organization
+          </a>
+          {% endif %}
           <a class="btn" href="{{ url_for('admin_config.departments.list_departments') }}">
               Manage Departments
           </a>
           <a class="btn" href="{{ url_for('admin_config.divisions.list_divisions') }}">Manage Divisions</a>
           <a class="btn" href="{{ url_for('admin_config.users.list_users') }}">Manage Users</a>
         {% endif %}
+        <a class="btn" href="{{ url_for('home.changelog') }}">What's New</a>
       </div>
     </div>
   </details>

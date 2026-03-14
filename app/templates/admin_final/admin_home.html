@@ -15,21 +15,42 @@
     </div>
   </div>
 
-  {# Link to Budget Admin #}
-  <section class="card" style="background: #e0f2fe; border: 1px solid #0ea5e9; margin-bottom: 24px;">
-    <h3 style="margin:0 0 12px 0;">Budget Administration</h3>
-    <p style="margin:0 0 16px 0;">
-      Manage budget requests, reviews, and budget-specific configuration.
-    </p>
-    <div class="btn-row">
-      <a class="btn btn-primary" href="{{ url_for('admin_final.budget_admin_home') }}">
-        Budget Admin
-      </a>
-      <a class="btn" href="{{ url_for('admin_final.budget_admin_home') }}#reports">
-        Reports
-      </a>
-    </div>
-  </section>
+  {# Quick Actions #}
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+    {# Link to Budget Admin #}
+    <section class="card" style="background: #e0f2fe; border: 1px solid #0ea5e9;">
+      <h3 style="margin:0 0 12px 0;">Budget Administration</h3>
+      <p style="margin:0 0 16px 0;">
+        Manage budget requests, reviews, and budget-specific configuration.
+      </p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="{{ url_for('admin_final.budget_admin_home') }}">
+          Budget Admin
+        </a>
+        <a class="btn" href="{{ url_for('admin_final.budget_admin_home') }}#reports">
+          Reports
+        </a>
+      </div>
+    </section>
+
+    {# Link to Event Organization #}
+    {% if default_event %}
+    <section class="card" style="background: #f0fdf4; border: 1px solid #16a34a;">
+      <h3 style="margin:0 0 12px 0;">Event Organization</h3>
+      <p style="margin:0 0 16px 0;">
+        Manage which divisions and departments participate in <strong>{{ default_event.name }}</strong>.
+      </p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="{{ url_for('admin_config.event_cycles.organization_enablement', cycle_id=default_event.id) }}">
+          {{ default_event.code }} Organization
+        </a>
+        <a class="btn" href="{{ url_for('admin_config.event_cycles.list_event_cycles') }}">
+          All Events
+        </a>
+      </div>
+    </section>
+    {% endif %}
+  </div>
 
   {# System Configuration Grid #}
   <section class="card">

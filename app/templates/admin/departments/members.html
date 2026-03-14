@@ -1,19 +1,38 @@
 {% extends "layout/base.html" %}
 
-{% block title %}{{ department.name }} - Members - Admin{% endblock %}
+{% block title %}{{ department.name }} - Users - Admin{% endblock %}
 
 {% block content %}
-<h1>{{ department.name }} - Department Members</h1>
+<h1>{{ department.name }} - Department Users</h1>
 <div class="muted mb-16">
   Manage users who can view and edit work requests for this department.
   {% if department.division %}
     <span class="pill" style="margin-left: 8px;">{{ department.division.name }}</span>
   {% endif %}
+  {% if selected_event %}
+    <br>Showing users for <strong>{{ selected_event.name }}</strong>.
+  {% endif %}
 </div>
 
-<div class="row mb-16">
-  <a class="btn btn-primary" href="{{ url_for('admin_config.departments.add_member_form', dept_id=department.id) }}">+ Add Member</a>
-  <a class="btn" href="{{ url_for('admin_config.departments.edit_department', dept_id=department.id) }}">Back to Department</a>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+  <div class="row" style="gap: 8px;">
+    <a class="btn btn-primary" href="{{ url_for('admin_config.departments.add_member_form', dept_id=department.id) }}{% if selected_event %}?event={{ selected_event.id }}{% endif %}">+ Add User</a>
+    <a class="btn" href="{{ url_for('admin_config.departments.edit_department', dept_id=department.id) }}">Back to Department</a>
+    {% if selected_event %}
+      <a class="btn" href="{{ url_for('admin_config.event_cycles.organization_enablement', cycle_id=selected_event.id) }}">Back to {{ selected_event.code }} Org</a>
+    {% endif %}
+  </div>
+
+  {# Event filter #}
+  <form method="get" style="display: flex; gap: 8px; align-items: center;">
+    <label for="event" class="small">Filter by event:</label>
+    <select id="event" name="event" onchange="this.form.submit()" style="min-width: 150px;">
+      <option value="">All Events</option>
+      {% for ec in event_cycles %}
+        <option value="{{ ec.id }}" {% if selected_event and ec.id == selected_event.id %}selected{% endif %}>{{ ec.name }}</option>
+      {% endfor %}
+    </select>
+  </form>
 </div>
 
 {% if memberships %}
@@ -75,19 +94,19 @@
 </table>
 
 <div class="muted small" style="margin-top: 16px;">
-  {{ memberships|length }} member(s) in this department
+  {{ memberships|length }} user(s) in this department
 </div>
 {% else %}
 <div class="card" style="text-align: center; padding: 32px;">
-  <div class="muted">No members assigned to this department yet.</div>
-  <a class="btn btn-primary" style="margin-top: 16px;" href="{{ url_for('admin_config.departments.add_member_form', dept_id=department.id) }}">Add First Member</a>
+  <div class="muted">No users assigned to this department yet.</div>
+  <a class="btn btn-primary" style="margin-top: 16px;" href="{{ url_for('admin_config.departments.add_member_form', dept_id=department.id) }}">Add First User</a>
 </div>
 {% endif %}
 
 <div class="callout" style="margin-top: 24px;">
   <strong>Work Type Access</strong>
   <p style="margin: 8px 0 0 0;">
-    Each member can be granted access to specific work types (Budget, Contracts, Supply Orders, etc.).
+    Each user can be granted access to specific work types (Budget, Contracts, Supply Orders, etc.).
     Access is scoped per work type - a user with Budget access does not automatically have Contracts access.
   </p>
   <ul style="margin: 8px 0 0 0; padding-left: 20px;">
@@ -98,10 +117,10 @@
 </div>
 
 <div class="callout" style="margin-top: 16px; background: #fffbeb; border-color: #f59e0b;">
-  <strong>Note about Division Membership</strong>
+  <strong>Note about Division Access</strong>
   <p style="margin: 8px 0 0 0;">
     Users with division-level access (e.g., Division Heads) automatically have access to all departments
-    in that division. Those memberships are managed from the
+    in that division. Those assignments are managed from the
     {% if department.division %}
       <a href="{{ url_for('admin_config.divisions.list_members', division_id=department.division_id) }}">{{ department.division.name }} division page</a>.
     {% else %}

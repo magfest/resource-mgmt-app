@@ -101,6 +101,27 @@ from .formatting import (
     get_unified_audit_events,
 )
 
+# Re-export event enablement functions
+from .event_enablement import (
+    # Division functions
+    is_division_enabled_for_event,
+    get_enabled_division_ids_for_event,
+    get_division_enablement_record,
+    set_division_enablement,
+    get_all_division_enablement_records,
+    # Department functions
+    is_department_enabled_for_event,
+    get_enabled_department_ids_for_event,
+    get_enabled_departments_for_event,
+    get_department_enablement_record,
+    set_department_enablement,
+    get_all_department_enablement_records,
+    get_all_department_enabled_status,
+    # Bulk operations
+    copy_event_enablement,
+    bulk_set_all_enabled,
+)
+
 # Define __all__ for explicit exports
 __all__ = [
     # Dataclasses
@@ -171,4 +192,21 @@ __all__ = [
     # Work item detail helpers
     "get_kicked_back_lines_summary",
     "get_unified_audit_events",
+    # Event enablement - divisions
+    "is_division_enabled_for_event",
+    "get_enabled_division_ids_for_event",
+    "get_division_enablement_record",
+    "set_division_enablement",
+    "get_all_division_enablement_records",
+    # Event enablement - departments
+    "is_department_enabled_for_event",
+    "get_enabled_department_ids_for_event",
+    "get_enabled_departments_for_event",
+    "get_department_enablement_record",
+    "set_department_enablement",
+    "get_all_department_enablement_records",
+    "get_all_department_enabled_status",
+    # Event enablement - bulk
+    "copy_event_enablement",
+    "bulk_set_all_enabled",
 ]

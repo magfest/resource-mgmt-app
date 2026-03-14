@@ -1,16 +1,35 @@
 {% extends "layout/base.html" %}
 
-{% block title %}{{ division.name }} - Members - Admin{% endblock %}
+{% block title %}{{ division.name }} - Users - Admin{% endblock %}
 
 {% block content %}
-<h1>{{ division.name }} - Division Members</h1>
+<h1>{{ division.name }} - Division Users</h1>
 <div class="muted mb-16">
   Manage users who have division-level access to all departments in this division.
+  {% if selected_event %}
+    <br>Showing users for <strong>{{ selected_event.name }}</strong>.
+  {% endif %}
 </div>
 
-<div class="row mb-16">
-  <a class="btn btn-primary" href="{{ url_for('admin_config.divisions.add_member_form', division_id=division.id) }}">+ Add Member</a>
-  <a class="btn" href="{{ url_for('admin_config.divisions.edit_division', division_id=division.id) }}">Back to Division</a>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+  <div class="row" style="gap: 8px;">
+    <a class="btn btn-primary" href="{{ url_for('admin_config.divisions.add_member_form', division_id=division.id) }}{% if selected_event %}?event={{ selected_event.id }}{% endif %}">+ Add User</a>
+    <a class="btn" href="{{ url_for('admin_config.divisions.edit_division', division_id=division.id) }}">Back to Division</a>
+    {% if selected_event %}
+      <a class="btn" href="{{ url_for('admin_config.event_cycles.organization_enablement', cycle_id=selected_event.id) }}">Back to {{ selected_event.code }} Org</a>
+    {% endif %}
+  </div>
+
+  {# Event filter #}
+  <form method="get" style="display: flex; gap: 8px; align-items: center;">
+    <label for="event" class="small">Filter by event:</label>
+    <select id="event" name="event" onchange="this.form.submit()" style="min-width: 150px;">
+      <option value="">All Events</option>
+      {% for ec in event_cycles %}
+        <option value="{{ ec.id }}" {% if selected_event and ec.id == selected_event.id %}selected{% endif %}>{{ ec.name }}</option>
+      {% endfor %}
+    </select>
+  </form>
 </div>
 
 {% if memberships %}
@@ -72,19 +91,19 @@
 </table>
 
 <div class="muted small" style="margin-top: 16px;">
-  {{ memberships|length }} member(s) in this division
+  {{ memberships|length }} user(s) in this division
 </div>
 {% else %}
 <div class="card" style="text-align: center; padding: 32px;">
-  <div class="muted">No members assigned to this division yet.</div>
-  <a class="btn btn-primary" style="margin-top: 16px;" href="{{ url_for('admin_config.divisions.add_member_form', division_id=division.id) }}">Add First Member</a>
+  <div class="muted">No users assigned to this division yet.</div>
+  <a class="btn btn-primary" style="margin-top: 16px;" href="{{ url_for('admin_config.divisions.add_member_form', division_id=division.id) }}">Add First User</a>
 </div>
 {% endif %}
 
 <div class="callout" style="margin-top: 24px;">
   <strong>Work Type Access</strong>
   <p style="margin: 8px 0 0 0;">
-    Division members have access to all departments within the division. Access is scoped per work type -
+    Division users have access to all departments within the division. Access is scoped per work type -
     a user with Budget access does not automatically have Contracts access.
   </p>
   <ul style="margin: 8px 0 0 0; padding-left: 20px;">

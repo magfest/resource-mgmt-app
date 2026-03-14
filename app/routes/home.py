@@ -25,7 +25,12 @@ from app.models import (
     ExpenseAccount,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
 )
-from app.routes.work.helpers import compute_portfolio_status_summary, get_active_work_types, is_budget_admin
+from app.routes.work.helpers import (
+    compute_portfolio_status_summary,
+    get_active_work_types,
+    is_budget_admin,
+    get_enabled_department_ids_for_event,
+)
 from app.routes import h, get_user_ctx, render_page
 
 home_bp = Blueprint('home', __name__)
@@ -263,6 +268,14 @@ def index():
             x["department"].name,
         ))
 
+        # Filter out departments not enabled for this event (super admins bypass this)
+        if not is_super_admin:
+            enabled_dept_ids = get_enabled_department_ids_for_event(default_cycle.id)
+            accessible_depts = [
+                d for d in accessible_depts
+                if d["department"].id in enabled_dept_ids
+            ]
+
         # Get status for each work type for each accessible department (only if user has access)
         for work_type in active_work_types:
             for dept_info in accessible_depts:
@@ -408,3 +421,9 @@ def index():
     context["has_any_access"] = has_any_access
 
     return render_page("home.html", **context)
+
+
+@home_bp.get("/whats-new")
+def changelog():
+    """Display the changelog / what's new page."""
+    return render_page("changelog.html")

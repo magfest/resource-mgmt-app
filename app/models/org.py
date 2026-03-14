@@ -315,3 +315,95 @@ class DepartmentMembershipWorkTypeAccess(db.Model):
             name="uq_dmwta_membership_work_type",
         ),
     )
+
+
+class EventCycleDivision(db.Model):
+    """
+    Controls which divisions participate in which events.
+
+    Key behavior:
+    - No record = ENABLED (backward compatible)
+    - Division disabled = ALL departments in that division are disabled
+    - Only divisions explicitly disabled via is_enabled=False are excluded
+    """
+    __tablename__ = "event_cycle_divisions"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", name="fk_ecd_event_cycle_id"),
+        nullable=False,
+        index=True,
+    )
+
+    division_id = db.Column(
+        db.Integer,
+        db.ForeignKey("divisions.id", name="fk_ecd_division_id"),
+        nullable=False,
+        index=True,
+    )
+
+    is_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    note = db.Column(db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_by_user_id = db.Column(db.String(64), nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_user_id = db.Column(db.String(64), nullable=True)
+
+    event_cycle = db.relationship("EventCycle", backref=db.backref("division_enablements", lazy=True))
+    division = db.relationship("Division", backref=db.backref("event_enablements", lazy=True))
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "event_cycle_id", "division_id",
+            name="uq_ecdiv_event_div",
+        ),
+    )
+
+
+class EventCycleDepartment(db.Model):
+    """
+    Controls which departments participate in which events.
+
+    Key behavior:
+    - No record = ENABLED (backward compatible)
+    - Department can only be enabled if its division is also enabled
+    - If division is disabled, all its departments are disabled regardless of this record
+    """
+    __tablename__ = "event_cycle_departments"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", name="fk_ecdept_event_cycle_id"),
+        nullable=False,
+        index=True,
+    )
+
+    department_id = db.Column(
+        db.Integer,
+        db.ForeignKey("departments.id", name="fk_ecdept_department_id"),
+        nullable=False,
+        index=True,
+    )
+
+    is_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    note = db.Column(db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_by_user_id = db.Column(db.String(64), nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_user_id = db.Column(db.String(64), nullable=True)
+
+    event_cycle = db.relationship("EventCycle", backref=db.backref("department_enablements", lazy=True))
+    department = db.relationship("Department", backref=db.backref("event_enablements", lazy=True))
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "event_cycle_id", "department_id",
+            name="uq_ecd_event_dept",
+        ),
+    )

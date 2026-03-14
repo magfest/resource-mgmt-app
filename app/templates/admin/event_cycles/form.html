@@ -107,6 +107,9 @@
       <button class="btn btn-primary" type="submit">{% if cycle %}Save Changes{% else %}Create Cycle{% endif %}</button>
       <a class="btn" href="{{ url_for('admin_config.event_cycles.list_event_cycles') }}">Cancel</a>
       {% if cycle %}
+        <a class="btn" href="{{ url_for('admin_config.event_cycles.organization_enablement', cycle_id=cycle.id) }}">
+          Organization Settings
+        </a>
         {% if cycle.is_active %}
           <form method="post" action="{{ url_for('admin_config.event_cycles.archive_event_cycle', cycle_id=cycle.id) }}" style="display: inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

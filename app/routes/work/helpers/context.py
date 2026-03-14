@@ -25,6 +25,7 @@ from app.models import (
     ROLE_WORKTYPE_ADMIN,
 )
 from app.routes import get_user_ctx, UserContext
+from .event_enablement import is_department_enabled_for_event
 
 
 # ============================================================
@@ -173,6 +174,11 @@ def get_portfolio_context(
     department = Department.query.filter_by(code=dept_code.upper()).first()
     if not department:
         abort(404, f"Department not found: {dept_code}")
+
+    # Check if department is enabled for this event (super admins bypass this)
+    if not user_ctx.is_super_admin:
+        if not is_department_enabled_for_event(department.id, event_cycle.id):
+            abort(403, f"Department '{department.name}' is not enabled for this event.")
 
     # Get work type by slug (falls back to BUDGET for backward compatibility)
     if work_type_slug == "budget":
