@@ -24,10 +24,19 @@
 
       <div>
         <label for="code" class="form-label">Code</label>
-        <input id="code" name="code" type="text" required maxlength="16"
-               value="{{ cycle.code if cycle else '' }}"
-               placeholder="e.g. SMF2026" />
-        <div class="muted small mt-4">Unique identifier (max 16 chars). Will be uppercased.</div>
+        {% if code_locked %}
+          <input id="code" type="text" value="{{ cycle.code }}" readonly disabled
+                 style="background-color: #f5f5f5; cursor: not-allowed;" />
+          <input type="hidden" name="code" value="{{ cycle.code }}" />
+          <div class="muted small mt-4">
+            Code cannot be changed ({{ work_item_count }} budget request{% if work_item_count != 1 %}s{% endif %} exist{% if work_item_count == 1 %}s{% endif %})
+          </div>
+        {% else %}
+          <input id="code" name="code" type="text" required maxlength="16"
+                 value="{{ cycle.code if cycle else '' }}"
+                 placeholder="e.g. SMF2026" />
+          <div class="muted small mt-4">Unique identifier (max 16 chars). Will be uppercased.</div>
+        {% endif %}
       </div>
 
       <div>

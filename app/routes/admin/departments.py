@@ -14,6 +14,8 @@ from app.models import (
     EventCycle,
     User,
     WorkType,
+    WorkPortfolio,
+    WorkItem,
     CONFIG_AUDIT_CREATE,
     CONFIG_AUDIT_UPDATE,
     CONFIG_AUDIT_ARCHIVE,
@@ -46,6 +48,19 @@ def _get_department_or_404(dept_id: int) -> Department:
     if not dept:
         abort(404, "Department not found")
     return dept
+
+
+def _get_work_item_count_for_department(dept_id: int) -> int:
+    """Count non-archived work items for this department."""
+    return (
+        db.session.query(WorkItem)
+        .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
+        .filter(
+            WorkPortfolio.department_id == dept_id,
+            WorkItem.is_archived == False,
+        )
+        .count()
+    )
 
 
 def _dept_to_dict(dept: Department) -> dict:
@@ -204,11 +219,17 @@ def edit_department(dept_id: int):
         .count()
     )
 
+    # Check if code is locked (work items exist)
+    work_item_count = _get_work_item_count_for_department(dept_id)
+    code_locked = work_item_count > 0
+
     return render_admin_config_page(
         "admin/departments/form.html",
         department=dept,
         member_count=member_count,
         divisions=_get_active_divisions(),
+        code_locked=code_locked,
+        work_item_count=work_item_count,
     )
 
 
@@ -226,6 +247,17 @@ def update_department(dept_id: int):
     if not code or not name:
         flash("Code and name are required", "error")
         return redirect(url_for(".edit_department", dept_id=dept_id))
+
+    # Check if code is being changed and work items exist
+    if code != dept.code:
+        work_item_count = _get_work_item_count_for_department(dept_id)
+        if work_item_count > 0:
+            flash(
+                f"Cannot change department code: {work_item_count} budget request(s) exist. "
+                "The code is used in request IDs and URLs.",
+                "error"
+            )
+            return redirect(url_for(".edit_department", dept_id=dept_id))
 
     # Validate code length
     if not validate_code_length(code, "Code"):

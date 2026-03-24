@@ -17,7 +17,7 @@ from ..helpers import (
     get_portfolio_context,
     require_portfolio_view,
     require_portfolio_edit,
-    generate_public_id,
+    generate_public_id_for_portfolio,
 )
 
 
@@ -93,7 +93,7 @@ def primary_create(event: str, dept: str):
         portfolio_id=ctx.portfolio.id,
         request_kind=REQUEST_KIND_PRIMARY,
         status=WORK_ITEM_STATUS_DRAFT,
-        public_id=generate_public_id("BUD"),
+        public_id=generate_public_id_for_portfolio(ctx.portfolio),
         created_by_user_id=user_ctx.user_id,
     )
     db.session.add(work_item)
@@ -203,13 +203,13 @@ def supplementary_create(event: str, dept: str):
     if len(reason) > 256:
         reason = reason[:256]
 
-    # Create the work item with SUP- prefix
+    # Create the work item (uses shared portfolio sequence for ID)
     user_ctx = get_user_ctx()
     work_item = WorkItem(
         portfolio_id=ctx.portfolio.id,
         request_kind=REQUEST_KIND_SUPPLEMENTARY,
         status=WORK_ITEM_STATUS_DRAFT,
-        public_id=generate_public_id("SUP"),
+        public_id=generate_public_id_for_portfolio(ctx.portfolio),
         created_by_user_id=user_ctx.user_id,
         reason=reason if reason else None,
     )

@@ -22,6 +22,32 @@
     <div style="margin-bottom: 20px;">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
         <span class="pill" style="background: #dbeafe; color: #1e40af;">Improved</span>
+        <strong>Meaningful Request IDs</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Budget requests now have human-readable IDs like <code>SMF27-TECHOPS-BUD-1</code> instead of random codes.
+        The format includes the event, department, work type, and a sequential number.
+        Both primary and supplemental requests share the same sequence, so you might see
+        <code>SMF27-PANELS-BUD-1</code> (primary), <code>SMF27-PANELS-BUD-2</code> (supplemental), etc.
+        Existing requests keep their original IDs.
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill" style="background: #dbeafe; color: #1e40af;">Improved</span>
+        <strong>Protected Event and Department Codes</strong>
+      </div>
+      <p style="margin: 0; color: #4b5563;">
+        Event cycle and department codes are now locked once budget requests exist.
+        This prevents accidental changes that would break request IDs and URLs.
+        The admin edit forms clearly indicate when a code is locked and why.
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+        <span class="pill" style="background: #dbeafe; color: #1e40af;">Improved</span>
         <strong>Supplemental Request UX</strong>
       </div>
       <p style="margin: 0; color: #4b5563;">

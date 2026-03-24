@@ -88,6 +88,7 @@ from .formatting import (
     # Public ID
     generate_public_id,
     generate_public_id_for_work_type,
+    generate_public_id_for_portfolio,
     # Formatting
     format_currency,
     STATUS_LABELS,
@@ -182,6 +183,7 @@ __all__ = [
     # Public ID
     "generate_public_id",
     "generate_public_id_for_work_type",
+    "generate_public_id_for_portfolio",
     # Formatting
     "format_currency",
     "STATUS_LABELS",

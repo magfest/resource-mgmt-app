@@ -126,6 +126,9 @@ class WorkPortfolio(db.Model):
     archived_by_user_id = db.Column(db.String(64), nullable=True, index=True)
     archived_reason = db.Column(db.Text, nullable=True)
 
+    # Sequence counter for deterministic public IDs (e.g., SMF27-TECHOPS-BUD-1, BUD-2, etc.)
+    next_public_id_seq = db.Column(db.Integer, nullable=False, default=1)
+
     created_by_user_id = db.Column(db.String(64), nullable=False, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)

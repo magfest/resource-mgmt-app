@@ -17,6 +17,7 @@ from app.models import (
     DepartmentMembership,
     User,
     WorkPortfolio,
+    WorkItem,
     EventCycleDivision,
     EventCycleDepartment,
     CONFIG_AUDIT_CREATE,
@@ -57,6 +58,19 @@ def _get_event_cycle_or_404(cycle_id: int) -> EventCycle:
     if not cycle:
         abort(404, "Event cycle not found")
     return cycle
+
+
+def _get_work_item_count_for_event(cycle_id: int) -> int:
+    """Count non-archived work items for this event cycle."""
+    return (
+        db.session.query(WorkItem)
+        .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
+        .filter(
+            WorkPortfolio.event_cycle_id == cycle_id,
+            WorkItem.is_archived == False,
+        )
+        .count()
+    )
 
 
 def _cycle_to_dict(cycle: EventCycle) -> dict:
@@ -208,10 +222,16 @@ def edit_event_cycle(cycle_id: int):
         .count()
     )
 
+    # Check if code is locked (work items exist)
+    work_item_count = _get_work_item_count_for_event(cycle_id)
+    code_locked = work_item_count > 0
+
     return render_admin_config_page(
         "admin/event_cycles/form.html",
         cycle=cycle,
         portfolio_count=portfolio_count,
+        code_locked=code_locked,
+        work_item_count=work_item_count,
     )
 
 
@@ -229,6 +249,17 @@ def update_event_cycle(cycle_id: int):
     if not code or not name:
         flash("Code and name are required", "error")
         return redirect(url_for(".edit_event_cycle", cycle_id=cycle_id))
+
+    # Check if code is being changed and work items exist
+    if code != cycle.code:
+        work_item_count = _get_work_item_count_for_event(cycle_id)
+        if work_item_count > 0:
+            flash(
+                f"Cannot change event code: {work_item_count} budget request(s) exist. "
+                "The code is used in request IDs and URLs.",
+                "error"
+            )
+            return redirect(url_for(".edit_event_cycle", cycle_id=cycle_id))
 
     # Validate code length
     if not validate_code_length(code, "Code"):

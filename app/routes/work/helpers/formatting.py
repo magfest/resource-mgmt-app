@@ -57,6 +57,35 @@ def generate_public_id_for_work_type(work_type: WorkType) -> str:
     return generate_public_id(prefix)
 
 
+def generate_public_id_for_portfolio(portfolio) -> str:
+    """
+    Generate a meaningful public ID like SMF27-TECHOPS-BUD-1.
+
+    Format: {EVENT_CODE}-{DEPT_CODE}-{WORKTYPE_PREFIX}-{SEQ}
+    Sequence is shared across PRIMARY and SUPPLEMENTARY requests within
+    the same portfolio.
+
+    Args:
+        portfolio: The WorkPortfolio to generate an ID for
+
+    Returns:
+        A deterministic public ID like "SMF27-TECHOPS-BUD-1"
+    """
+    event_code = portfolio.event_cycle.code
+    dept_code = portfolio.department.code
+
+    # Get work type prefix from config, fallback to "REQ"
+    work_type_prefix = "REQ"
+    if portfolio.work_type and portfolio.work_type.config:
+        work_type_prefix = portfolio.work_type.config.public_id_prefix
+
+    # Get current sequence and increment
+    seq = portfolio.next_public_id_seq or 1
+    portfolio.next_public_id_seq = seq + 1
+
+    return f"{event_code}-{dept_code}-{work_type_prefix}-{seq}"
+
+
 # ============================================================
 # Formatting Helpers
 # ============================================================
