@@ -30,6 +30,7 @@ python -m venv .venv
 
 # Install dependencies
 pip install -r requirements.txt
+pre-commit install #allow for pip-aduit before any commits
 
 # Copy environment template
 cp .env.example .env
