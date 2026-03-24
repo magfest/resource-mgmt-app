@@ -90,6 +90,42 @@ magfest-budget/
 - **Auth**: Keycloak/Google OAuth via authlib
 - **Deployment**: AWS AppRunner
 
+## Security
+
+### Dependency Management
+
+Dependencies are managed with [pip-tools](https://pip-tools.readthedocs.io/):
+
+- `requirements.in` — direct production dependencies
+- `requirements-dev.in` — dev/test dependencies (inherits from `requirements.in`)
+- `requirements.txt` / `requirements-dev.txt` — compiled lockfiles with pinned versions
+
+To update dependencies:
+
+```bash
+pip-compile --generate-hashes requirements.in -o requirements.txt --upgrade
+pip-compile --generate-hashes requirements-dev.in -o requirements-dev.txt --upgrade
+```
+
+Always compile both files together to keep versions in sync.
+
+### Automated Vulnerability Scanning
+
+- **Pre-commit hook**: [pip-audit](https://github.com/trailofbits/pip-audit) runs before every commit via the [pre-commit](https://pre-commit.com/) framework, blocking commits with known CVEs.
+- **CI**: A GitHub Actions workflow (`.github/workflows/security.yml`) runs `pip-audit` on every push and PR to `master`.
+- **Dependabot**: GitHub Dependabot alerts and security updates are enabled to notify of newly disclosed vulnerabilities.
+
+### Setup for new contributors
+
+After cloning and installing dependencies, install the pre-commit hooks:
+
+```bash
+pip install -r requirements-dev.txt
+pre-commit install
+```
+
+For more detail, see [SECURITY_ROADMAP.md](SECURITY_ROADMAP.md).
+
 ## Contributing
 
 1. Create a feature branch
