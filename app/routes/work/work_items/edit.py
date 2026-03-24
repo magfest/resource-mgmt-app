@@ -286,6 +286,43 @@ def work_item_reason_save(event: str, dept: str, public_id: str):
     ))
 
 
+@work_bp.post("/<event>/<dept>/budget/item/<public_id>/income")
+def work_item_income_save(event: str, dept: str, public_id: str):
+    """
+    Save income information for a DRAFT work item.
+    Income is informational only — does not affect approval workflow.
+    """
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    perms = require_work_item_edit(work_item, ctx)
+
+    # Parse dollar amount and convert to cents
+    amount_str = (request.form.get("income_estimate") or "").strip()
+    if amount_str:
+        try:
+            dollars = Decimal(amount_str.replace(",", "").replace("$", ""))
+            work_item.income_estimate_cents = int(dollars * 100)
+        except Exception:
+            flash("Invalid dollar amount.", "error")
+            return redirect(url_for(
+                "work.work_item_edit", event=event, dept=dept,
+                public_id=public_id, tab="notes",
+            ))
+    else:
+        work_item.income_estimate_cents = None
+
+    # Save income notes
+    notes = (request.form.get("income_notes") or "").strip()
+    work_item.income_notes = notes if notes else None
+
+    db.session.commit()
+
+    flash("Income information updated.", "success")
+    return redirect(url_for(
+        "work.work_item_edit", event=event, dept=dept,
+        public_id=public_id, tab="notes",
+    ))
+
+
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/edit")
 def work_item_edit_save(event: str, dept: str, public_id: str):
     """

@@ -1,6 +1,24 @@
 {# templates/budget/_work_item_comments.html #}
 {# Partial: Comments section for work_item_detail.html #}
 
+{% if work_item.income_estimate_cents or work_item.income_notes %}
+<div style="margin-bottom: 20px; padding: 14px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0;">
+  <h4 style="margin: 0 0 8px 0; font-size: 14px;">Income Information</h4>
+  {% if work_item.income_estimate_cents %}
+    <div style="margin-bottom: 4px;">
+      <span style="font-weight: 600; font-size: 13px;">Estimated Income:</span>
+      <span>${{ '%.2f'|format(work_item.income_estimate_cents / 100) }}</span>
+    </div>
+  {% endif %}
+  {% if work_item.income_notes %}
+    <div>
+      <span style="font-weight: 600; font-size: 13px;">Notes:</span>
+      <span style="white-space: pre-wrap;">{{ work_item.income_notes }}</span>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <h3 style="margin:0 0 12px 0;">Request Comments</h3>
 
 {% if filtered_comments %}
@@ -8,7 +26,7 @@
     <div class="comment">
       <div class="muted small">
         {{ comment.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
-        {{ comment.created_by_user_id }}
+        {{ comment.created_by_user_id|user_display }}
         {% if comment.visibility == "ADMIN" %}
           <span class="pill" style="margin-left: 4px;">Admin Only</span>
         {% endif %}

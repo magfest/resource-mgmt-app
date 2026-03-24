@@ -197,7 +197,7 @@
             <div class="comment" style="font-size: 13px;">
               <div class="muted small">
                 {{ event.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
-                {{ event.created_by_user_id }}
+                {{ event.created_by_user_id|user_display }}
               </div>
               <div>
                 <strong>{{ event.event_type }}</strong>:
@@ -582,7 +582,7 @@
             <div class="comment">
               <div class="muted small">
                 {{ comment.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
-                {{ comment.created_by_user_id }}
+                {{ comment.created_by_user_id|user_display }}
                 {% if comment.visibility == "ADMIN" %}
                   <span class="pill" style="margin-left: 4px;">Admin Only</span>
                 {% endif %}

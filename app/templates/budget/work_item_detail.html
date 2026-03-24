@@ -502,7 +502,7 @@
                       <div class="small muted" style="margin-top: 4px;">{{ event.reason }}</div>
                     {% endif %}
                   </td>
-                  <td class="muted small">{{ event._user_display_name if event._user_display_name else event.created_by_user_id }}</td>
+                  <td class="muted small">{{ event.created_by_user_id|user_display }}</td>
                 </tr>
               {% endfor %}
             </tbody>

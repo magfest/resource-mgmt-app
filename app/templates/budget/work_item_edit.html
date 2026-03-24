@@ -698,6 +698,30 @@
         {% endif %}
       {% endif %}
 
+      {# Income Information #}
+      <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee;">
+        <h4 style="margin: 0 0 8px 0; font-size: 14px;">Income Information</h4>
+        <div style="margin-bottom: 12px; padding: 10px 14px; background: #e0f2fe; border-radius: 6px; display: flex; align-items: flex-start; gap: 8px;">
+          <i class="bi bi-info-circle" style="color: #0a66c2; flex-shrink: 0; margin-top: 2px;"></i>
+          <span class="muted small">Most departments do not generate income. Only fill this out if your department expects revenue (e.g., merchandise sales). This is for reference only and does not affect your budget approval.</span>
+        </div>
+        <form method="post" action="{{ url_for('work.work_item_income_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div style="margin-bottom: 10px;">
+            <label for="income_estimate" style="font-size: 13px; font-weight: 600;">Estimated Income ($):</label>
+            <input type="text" name="income_estimate" id="income_estimate" inputmode="decimal"
+                   value="{{ '%.2f'|format(work_item.income_estimate_cents / 100) if work_item.income_estimate_cents else '' }}"
+                   placeholder="0.00"
+                   style="width: 200px; margin-top: 4px; display: block;">
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="income_notes" style="font-size: 13px; font-weight: 600;">Income Notes:</label>
+            <textarea name="income_notes" id="income_notes" rows="2" style="width: 100%; margin-top: 4px;" placeholder="Describe the source of expected income (e.g., merch sales, pilk black market)...">{{ work_item.income_notes or '' }}</textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">Save Income Info</button>
+        </form>
+      </div>
+
       {# Add Comment Form - at the top for visibility #}
       <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee;">
         <form method="post" action="{{ url_for('work.work_item_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">

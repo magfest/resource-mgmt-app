@@ -230,6 +230,10 @@ class WorkItem(db.Model):
     # Optional reason/description for this request (primarily used for supplementals)
     reason = db.Column(db.String(256), nullable=True)
 
+    # Income information (informational only, displayed on Notes tab)
+    income_estimate_cents = db.Column(db.Integer, nullable=True)
+    income_notes = db.Column(db.Text, nullable=True)
+
     status = db.Column(db.String(32), nullable=False, default=WORK_ITEM_STATUS_DRAFT, index=True)
 
     # Submission lifecycle

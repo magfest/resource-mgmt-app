@@ -199,6 +199,21 @@ def create_app() -> Flask:
         result = re.sub(bare_url_pattern, '[see details]', result)
         return result
 
+    @app.template_filter('user_display')
+    def user_display(user_id):
+        """Resolve a user ID to a display name. Caches lookups per-request."""
+        if not user_id:
+            return ''
+        # Per-request cache on g
+        if not hasattr(g, '_user_display_cache'):
+            g._user_display_cache = {}
+        cache = g._user_display_cache
+        if user_id not in cache:
+            from app.models import User
+            user = User.query.get(user_id)
+            cache[user_id] = (user.display_name or user.email) if user else str(user_id)
+        return cache[user_id]
+
     # Import models so migrations can detect them
     from . import models  # noqa: F401
 

@@ -88,7 +88,7 @@
         <div class="muted small">
           <div>Last updated: {{ content.updated_at.strftime('%Y-%m-%d %H:%M') if content.updated_at else 'Never' }}</div>
           {% if content.updated_by_user_id %}
-            <div>By: {{ content.updated_by_user_id }}</div>
+            <div>By: {{ content.updated_by_user_id|user_display }}</div>
           {% endif %}
         </div>
       </section>

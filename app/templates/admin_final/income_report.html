@@ -1,0 +1,145 @@
+{# templates/admin_final/income_report.html #}
+{% extends "layout/base.html" %}
+{% from "admin_final/report_macros.html" import
+    report_header,
+    stat_card,
+    empty_state_no_event,
+    export_button
+%}
+
+{% block title %}Income Report{% endblock %}
+
+{% block content %}
+
+  {{ report_header(
+      "Income Report",
+      "Departments with expected income for an event cycle"
+  ) }}
+
+  {# Event Filter #}
+  <section class="card" style="margin-bottom: 24px;">
+    <form method="get" action="{{ url_for('admin_final.income_report') }}" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+      <div>
+        <label class="muted small" style="display: block; margin-bottom: 4px;">Event Cycle</label>
+        <select name="event" style="width: 200px;">
+          <option value="">Select event...</option>
+          {% for ec in event_cycles %}
+            <option value="{{ ec.code }}" {% if selected_event == ec.code %}selected{% endif %}>
+              {{ ec.code }} - {{ ec.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" type="submit">View Report</button>
+      {% if selected_event %}
+        <a class="btn" href="{{ url_for('admin_final.income_report') }}">Clear</a>
+      {% endif %}
+    </form>
+  </section>
+
+  {% if not selected_event %}
+    {{ empty_state_no_event(
+        icon="$",
+        title="Select an Event Cycle",
+        message="Choose an event cycle above to see departments with expected income."
+    ) }}
+
+  {% elif rows %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div class="muted">
+        <strong>{{ selected_event_cycle.name }}</strong> ({{ selected_event_cycle.code }})
+      </div>
+      {{ export_button(url_for('admin_final.income_export'), selected_event) }}
+    </div>
+
+    {# Stats #}
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px;">
+      {{ stat_card(rows | length, "Requests with Income", "#059669") }}
+      {{ stat_card("$" ~ "%.2f"|format(total_income_cents / 100), "Total Estimated Income", "#059669") }}
+    </div>
+
+    {# Data Table #}
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">
+        Departments with Expected Income
+        <span class="pill" style="background: #d1fae5; color: #065f46;">{{ rows | length }}</span>
+      </h3>
+
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Department</th>
+              <th style="width: 140px;">Request</th>
+              <th style="width: 100px;">Status</th>
+              <th style="width: 140px; text-align: right;">Estimated Income</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set current_division = namespace(name='') %}
+            {% for row in rows %}
+              {% set div_name = row.division_name or 'No Division' %}
+
+              {# Division header row when division changes #}
+              {% if div_name != current_division.name %}
+                {% set current_division.name = div_name %}
+                <tr style="background: #f8fafc;">
+                  <td colspan="5" style="padding: 8px 12px; font-weight: 600; color: #64748b; font-size: 0.85rem;">
+                    {{ div_name }}
+                  </td>
+                </tr>
+              {% endif %}
+
+              <tr>
+                <td style="padding-left: 24px;">
+                  <strong>{{ row.department_name }}</strong>
+                </td>
+                <td>
+                  <span class="muted small">{{ row.public_id }}</span>
+                  {% if row.request_kind == 'SUPPLEMENTARY' %}
+                    <span class="pill" style="font-size: 10px;">SUP</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="pill pill-{{ row.status|lower }}">{{ row.status }}</span>
+                </td>
+                <td style="text-align: right; font-weight: 600;">
+                  {% if row.income_estimate_cents %}
+                    ${{ "%.2f"|format(row.income_estimate_cents / 100) }}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if row.income_notes %}
+                    <span style="white-space: pre-wrap;">{{ row.income_notes }}</span>
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot style="background: #f8f9fa; font-weight: 600;">
+            <tr>
+              <td colspan="3"><strong>TOTAL</strong></td>
+              <td style="text-align: right;">${{ "%.2f"|format(total_income_cents / 100) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+  {% else %}
+    <div class="card" style="text-align: center; padding: 48px;">
+      <div style="font-size: 48px; margin-bottom: 16px;">$</div>
+      <h2 style="margin: 0 0 16px 0; color: #6b7280;">No Income Reported</h2>
+      <p class="muted" style="margin: 0;">
+        No departments have reported expected income for {{ selected_event_cycle.name }}.
+      </p>
+    </div>
+  {% endif %}
+
+{% endblock %}
