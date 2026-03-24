@@ -639,7 +639,7 @@ def seed_expense_accounts_from_spreadsheet(
 
             # MAGFest Paid variants (hits department budget)
             magfest_paid_variants = [
-                ("HTL_STD_MAGPAID", "Standard Room (MAGFest Paid)", 25200, "Standard hotel room - MAGFest covers cost"),
+                ("HTL_STD_MAGPAID", "Standard Room (MAGFest Paid)", 200000, "Standard hotel room - MAGFest covers cost"),
                 ("HTL_EXEC_MAGPAID", "Executive Suite (MAGFest Paid)", 51500, "Executive suite - MAGFest covers cost"),
                 ("HTL_HOSP_MAGPAID", "Hospitality Suite (MAGFest Paid)", 99500, "Hospitality suite with attached bedrooms - MAGFest covers cost"),
             ]
