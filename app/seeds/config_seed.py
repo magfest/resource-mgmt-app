@@ -53,7 +53,8 @@ def seed_approval_groups() -> dict[str, ApprovalGroup]:
     groups_data = [
         ("TECH", "Tech Review", "Reviews technical equipment, rentals, and tech-related expenses", 10),
         ("HOTEL", "Hotel Review", "Reviews hotel rooms, venue fees, and hotel-related expenses", 20),
-        ("OTHER", "Admin Review", "Reviews general expenses and admin items", 30),
+        ("OTHER", "Admin Review", "Reviews special but general expenses and admin items", 30),
+        ("General", "General Review", "Reviews general expenses and admin items", 30),
     ]
 
     groups = {}
