@@ -1,16 +1,16 @@
 {# templates/dispatch/dashboard.html #}
 {% extends "layout/base.html" %}
 
-{% block title %}Dispatch Queue{% endblock %}
+{% block title %}Assign Reviewers{% endblock %}
 
 {% block content %}
 
   {# Header #}
   <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
     <div>
-      <h1 style="margin:0;">Dispatch Queue</h1>
+      <h1 style="margin:0;">Assign Reviewers</h1>
       <div class="muted" style="margin-top:4px;">
-        Review and dispatch budget requests to approval queues
+        Assign reviewer groups to budget requests pending review
       </div>
     </div>
   </div>
@@ -57,14 +57,14 @@
   <div style="display: grid; grid-template-columns: repeat(1, 1fr); gap: 16px; margin-bottom: 24px;">
     <div class="card" style="text-align: center;">
       <div style="font-size: 32px; font-weight: 700; color: #d97706;">{{ queue_items | length }}</div>
-      <div class="muted">Requests Awaiting Reviewer Assignment</div>
+      <div class="muted">Requests Pending Review</div>
     </div>
   </div>
 
   {# Queue Table #}
   <section class="card">
     <h3 style="margin:0 0 12px 0;">
-      Awaiting Reviewer Assignment
+      Pending Review
       {% if queue_items %}
         <span class="pill pill-needs">{{ queue_items | length }}</span>
       {% endif %}

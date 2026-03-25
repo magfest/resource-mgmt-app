@@ -86,19 +86,19 @@
   {# Tab Navigation #}
   <nav class="tab-nav" style="display: flex; gap: 0; margin-bottom: 0; border-radius: 8px 8px 0 0; padding: 4px 4px 0 4px;">
     <button type="button" class="tab-btn active" data-tab="budget-lines" style="padding: 14px 24px; border: 1px solid #ccc; border-bottom: none; background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #111; border-radius: 8px 8px 0 0; margin-right: 4px; position: relative; z-index: 1;">
-      Budget Lines <span class="badge" style="background: #0a66c2; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ lines | length }}</span>
+      1. Budget Lines <span class="badge" style="background: #0a66c2; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ lines | length }}</span>
     </button>
     <button type="button" class="tab-btn" data-tab="fixed-costs" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">
-      Fixed Costs <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ fixed_cost_count }}</span>
+      2. Fixed Costs <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ fixed_cost_count }}</span>
     </button>
     <button type="button" class="tab-btn" data-tab="hotel-services" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">
-      Hotel <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ hotel_count }}</span>
+      3. Hotel <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ hotel_count }}</span>
     </button>
     <button type="button" class="tab-btn" data-tab="badges" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">
-      Badges <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ badge_count }}</span>
+      4. Badges <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ badge_count }}</span>
     </button>
     <button type="button" class="tab-btn" data-tab="notes" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0;">
-      Notes <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ comments | length }}</span>
+      5. Notes <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ comments | length }}</span>
     </button>
   </nav>
 
@@ -770,60 +770,98 @@
 <script nonce="{{ csp_nonce }}">
   // Check for tab parameter on page load and switch to that tab
   (function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const tabParam = urlParams.get('tab');
+    var urlParams = new URLSearchParams(window.location.search);
+    var tabParam = urlParams.get('tab');
     if (tabParam) {
-      const tabBtn = document.querySelector('.tab-btn[data-tab="' + tabParam + '"]');
+      var tabBtn = document.querySelector('.tab-btn[data-tab="' + tabParam + '"]');
       if (tabBtn) {
-        // Defer click to after DOM is ready
-        setTimeout(function() { tabBtn.click(); }, 0);
+        setTimeout(function() { switchToTab(tabParam); }, 0);
       }
     }
   })();
 
-  // Tab switching
-  document.querySelectorAll('.tab-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      const targetTab = this.dataset.tab;
+  // Tab switching with unsaved changes detection
+  var activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'budget-lines';
+  var tabDirty = {};
 
-      // Update button states - inactive tabs
-      document.querySelectorAll('.tab-btn').forEach(function(b) {
-        b.classList.remove('active');
-        b.style.background = '#e0e0e0';
-        b.style.color = '#555';
-        b.style.borderColor = 'transparent';
-        b.style.zIndex = '0';
-        // Update badge to inactive style
-        var badge = b.querySelector('.badge');
-        if (badge) {
-          badge.style.background = '#888';
-          badge.style.color = '#fff';
-        }
-      });
+  // Track changes per tab panel
+  document.querySelectorAll('.tab-panel').forEach(function(panel) {
+    var tabId = panel.id.replace('panel-', '');
+    panel.querySelectorAll('input, textarea, select').forEach(function(el) {
+      el.addEventListener('change', function() { tabDirty[tabId] = true; });
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+        el.addEventListener('input', function() { tabDirty[tabId] = true; });
+      }
+    });
+  });
 
-      // Active tab styling
-      this.classList.add('active');
-      this.style.background = '#fff';
-      this.style.color = '#111';
-      this.style.borderColor = '#ccc';
-      this.style.zIndex = '1';
-      // Update badge to active style
-      var activeBadge = this.querySelector('.badge');
+  // Clear dirty flag for a tab when its form is submitted
+  document.querySelectorAll('.tab-panel form').forEach(function(form) {
+    var panel = form.closest('.tab-panel');
+    if (panel) {
+      var tabId = panel.id.replace('panel-', '');
+      form.addEventListener('submit', function() { tabDirty[tabId] = false; });
+    }
+  });
+
+  function switchToTab(targetTab) {
+    // Update button states - inactive tabs
+    document.querySelectorAll('.tab-btn').forEach(function(b) {
+      b.classList.remove('active');
+      b.style.background = '#e0e0e0';
+      b.style.color = '#555';
+      b.style.borderColor = 'transparent';
+      b.style.zIndex = '0';
+      var badge = b.querySelector('.badge');
+      if (badge) {
+        badge.style.background = '#888';
+        badge.style.color = '#fff';
+      }
+    });
+
+    // Active tab styling
+    var activeBtn = document.querySelector('.tab-btn[data-tab="' + targetTab + '"]');
+    if (activeBtn) {
+      activeBtn.classList.add('active');
+      activeBtn.style.background = '#fff';
+      activeBtn.style.color = '#111';
+      activeBtn.style.borderColor = '#ccc';
+      activeBtn.style.zIndex = '1';
+      var activeBadge = activeBtn.querySelector('.badge');
       if (activeBadge) {
         activeBadge.style.background = '#0a66c2';
         activeBadge.style.color = '#fff';
       }
+    }
 
-      // Update panel visibility
-      document.querySelectorAll('.tab-panel').forEach(function(panel) {
-        panel.style.display = 'none';
-        panel.classList.remove('active');
-      });
-      const targetPanel = document.getElementById('panel-' + targetTab);
-      if (targetPanel) {
-        targetPanel.style.display = 'block';
-        targetPanel.classList.add('active');
+    // Update panel visibility
+    document.querySelectorAll('.tab-panel').forEach(function(panel) {
+      panel.style.display = 'none';
+      panel.classList.remove('active');
+    });
+    var targetPanel = document.getElementById('panel-' + targetTab);
+    if (targetPanel) {
+      targetPanel.style.display = 'block';
+      targetPanel.classList.add('active');
+    }
+
+    activeTab = targetTab;
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var targetTab = this.dataset.tab;
+      if (targetTab === activeTab) return;
+
+      // Warn if current tab has unsaved changes
+      if (tabDirty[activeTab]) {
+        if (!confirm('You have unsaved changes on this tab. Switch anyway? Your changes will be lost.')) {
+          return;
+        }
+        tabDirty[activeTab] = false;
       }
+
+      switchToTab(targetTab);
     });
   });
 
@@ -1063,5 +1101,14 @@
       reasonDisplayContainer.style.display = 'block';
     });
   }
+
+  // ========== Unsaved Changes Warning (page navigation) ==========
+  window.addEventListener('beforeunload', function(e) {
+    var anyDirty = Object.keys(tabDirty).some(function(k) { return tabDirty[k]; });
+    if (anyDirty) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 </script>
 {% endblock %}

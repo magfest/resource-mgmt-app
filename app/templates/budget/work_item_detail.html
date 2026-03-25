@@ -141,7 +141,7 @@
     {% if perms.is_worktype_admin and status == "SUBMITTED" %}
       <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
       <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
-      Dispatch Queue</a>
+      Assign Reviewers</a>
     {% endif %}
 
     {# Dashboard link for reviewers (not shown for drafts) #}
@@ -166,7 +166,7 @@
   {# Dispatch Section for Admins (when AWAITING_DISPATCH) #}
   {% if perms.is_worktype_admin and status == "AWAITING_DISPATCH" %}
     <div class="card" style="margin-bottom: 16px; background: #fef3c7; border: 1px solid #d97706;">
-      <h4 style="margin:0 0 12px 0;">Awaiting Reviewer Assignment</h4>
+      <h4 style="margin:0 0 12px 0;">Pending Review</h4>
       <p class="muted" style="margin: 0 0 12px 0;">
         This budget request is waiting for reviewer groups to be assigned.
         Assign reviewer groups to each line and send it for review.
@@ -267,7 +267,7 @@
   {# Status-specific callouts #}
   {% if status == "AWAITING_DISPATCH" and not perms.is_worktype_admin %}
     <div class="callout" style="margin-bottom: 16px; background: #fef3c7; border-left: 4px solid #d97706;">
-      <strong>Awaiting Reviewer Assignment</strong>
+      <strong>Pending Review</strong>
       <div class="muted" style="margin-top:4px;">
         Your budget request has been submitted. A budget admin will assign reviewers shortly — no action needed from you right now.
       </div>

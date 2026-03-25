@@ -164,7 +164,7 @@
                   {% elif status == "DRAFT" %}
                     <a href="{{ wt_url }}" class="pill pill-draft pill-link">Draft</a>
                   {% elif status == "AWAITING_DISPATCH" %}
-                    <a href="{{ wt_url }}" class="pill pill-needs pill-link">Awaiting Reviewer Assignment</a>
+                    <a href="{{ wt_url }}" class="pill pill-needs pill-link">Pending Review</a>
                   {% elif status == "NEEDS_INFO" or status == "NEEDS_ADJUSTMENT" or status == "NEEDS_RESPONSE" %}
                     <a href="{{ wt_url }}" class="pill pill-needs pill-link">
                       {%- if status == "NEEDS_ADJUSTMENT" -%}Changes Requested

@@ -99,7 +99,7 @@ def format_currency(cents: int) -> str:
 # User-friendly status label mapping
 STATUS_LABELS = {
     "DRAFT": "Draft",
-    "AWAITING_DISPATCH": "Awaiting Reviewer Assignment",
+    "AWAITING_DISPATCH": "Pending Review",
     "SUBMITTED": "Under Review",
     "UNDER_REVIEW": "Under Review",
     "NEEDS_INFO": "Info Requested",
