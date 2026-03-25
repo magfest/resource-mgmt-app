@@ -7,5 +7,6 @@ pandas
 openpyxl
 psycopg2-binary
 Authlib
+requests
 boto3
 gunicorn
