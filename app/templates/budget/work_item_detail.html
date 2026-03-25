@@ -71,7 +71,7 @@
       <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
         <strong>Under Review by Another Reviewer</strong>
         <div class="muted" style="margin-top:4px;">
-          Checked out by <strong>{{ work_item.checked_out_by_user_id }}</strong>
+          Checked out by <strong>{{ work_item.checked_out_by_user_id|user_display }}</strong>
           {% if work_item.checked_out_expires_at %}
             &middot; Expires {{ work_item.checked_out_expires_at.strftime('%Y-%m-%d %H:%M') }}
           {% endif %}
@@ -110,7 +110,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="return_to" value="{{ request.url }}">
         <button type="submit" class="btn btn-primary">
-          Checkout for Review
+          Start Reviewing
         </button>
       </form>
     {% endif %}
@@ -120,11 +120,11 @@
       <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="return_to" value="{{ request.url }}">
-        <button type="submit" class="btn" data-confirm="Release your checkout lock?">
+        <button type="submit" class="btn" data-confirm="Finish your review session?">
           {% if perms.is_checked_out_by_current_user %}
-            Release Lock
+            Finish Reviewing
           {% else %}
-            Force Release Lock
+            Force Release
           {% endif %}
         </button>
       </form>
@@ -166,10 +166,10 @@
   {# Dispatch Section for Admins (when AWAITING_DISPATCH) #}
   {% if perms.is_worktype_admin and status == "AWAITING_DISPATCH" %}
     <div class="card" style="margin-bottom: 16px; background: #fef3c7; border: 1px solid #d97706;">
-      <h4 style="margin:0 0 12px 0;">Awaiting Dispatch</h4>
+      <h4 style="margin:0 0 12px 0;">Awaiting Reviewer Assignment</h4>
       <p class="muted" style="margin: 0 0 12px 0;">
-        This request is waiting to be dispatched to the approval queue.
-        Assign reviewer groups to each line and dispatch to begin the review process.
+        This budget request is waiting for reviewer groups to be assigned.
+        Assign reviewer groups to each line and send it for review.
       </p>
       <a class="btn btn-primary" href="{{ url_for('dispatch.dispatch_item', work_item_id=work_item.id) }}">
         Assign &amp; Dispatch
@@ -215,7 +215,7 @@
 
       {% if finalization_summary.kicked_back_lines > 0 %}
         <div class="callout callout-danger" style="margin-bottom: 12px;">
-          <strong>Cannot Finalize</strong>
+          <strong>Not Ready to Finalize</strong>
           <div class="muted" style="margin-top:4px;">
             {{ finalization_summary.kicked_back_lines }} line(s) are awaiting requester response.
           </div>
@@ -267,9 +267,9 @@
   {# Status-specific callouts #}
   {% if status == "AWAITING_DISPATCH" and not perms.is_worktype_admin %}
     <div class="callout" style="margin-bottom: 16px; background: #fef3c7; border-left: 4px solid #d97706;">
-      <strong>Awaiting Dispatch</strong>
+      <strong>Awaiting Reviewer Assignment</strong>
       <div class="muted" style="margin-top:4px;">
-        This request has been submitted and is waiting for a budget admin to assign reviewer groups and dispatch it for review.
+        Your budget request has been submitted. A budget admin will assign reviewers shortly — no action needed from you right now.
       </div>
     </div>
   {% endif %}
@@ -277,7 +277,7 @@
   {# Kicked-back lines callout - show ONLY for requesters, not for admins/reviewers #}
   {% if kicked_back_lines and not can_view_audit %}
     <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
-      <strong>Action Required</strong>
+      <strong>Reviewer Feedback — Response Needed</strong>
       <div class="muted" style="margin-top:4px;">
         {{ kicked_back_lines | length }} line{% if kicked_back_lines | length != 1 %}s{% endif %} need{% if kicked_back_lines | length == 1 %}s{% endif %} your attention:
       </div>
@@ -458,7 +458,7 @@
                       {% elif event.new_value == 'NEEDS_INFO' %}
                         <span class="pill pill-needs">NEEDS INFO</span>
                       {% elif event.new_value == 'NEEDS_ADJUSTMENT' %}
-                        <span class="pill pill-needs">NEEDS ADJUSTMENT</span>
+                        <span class="pill pill-needs">CHANGES REQUESTED</span>
                       {% elif event.new_value == 'PENDING' %}
                         <span class="pill">RESET TO PENDING</span>
                       {% else %}

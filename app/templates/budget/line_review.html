@@ -72,7 +72,7 @@
           <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="flex-shrink: 0;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="return_to" value="{{ request.url }}">
-            <button type="submit" class="btn">Release Lock</button>
+            <button type="submit" class="btn">Finish Reviewing</button>
           </form>
         </div>
       </div>
@@ -370,7 +370,7 @@
 
             <div style="margin-bottom: 12px;">
               <label for="review_note" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
-                Note (required for reject/needs-info/needs-adjustment)
+                Note (required for reject, info request, or changes requested)
               </label>
               <textarea name="note" id="review_note" rows="3" style="width: 100%;" placeholder="Enter your review notes..."></textarea>
             </div>
@@ -429,13 +429,13 @@
           <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
             <strong>Checkout Required</strong>
             <div class="muted" style="margin-top:4px;">
-              You must checkout the work item to make review decisions.
+              You must start a review session to make decisions on this budget request.
             </div>
             <div style="margin-top: 12px;">
               <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="return_to" value="{{ request.url }}">
-                <button type="submit" class="btn btn-primary">Checkout for Review</button>
+                <button type="submit" class="btn btn-primary">Start Reviewing</button>
               </form>
             </div>
           </div>

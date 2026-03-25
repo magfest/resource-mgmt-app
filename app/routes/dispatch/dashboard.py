@@ -114,7 +114,7 @@ def dispatch_item(work_item_id: int):
     ).get_or_404(work_item_id)
 
     if work_item.status != WORK_ITEM_STATUS_AWAITING_DISPATCH:
-        flash("This item is not awaiting dispatch.", "error")
+        flash("This budget request is not awaiting reviewer assignment.", "error")
         return redirect(url_for("dispatch.dashboard"))
 
     portfolio = work_item.portfolio
@@ -169,7 +169,7 @@ def assign_approval_groups(work_item_id: int):
     ).get_or_404(work_item_id)
 
     if work_item.status != WORK_ITEM_STATUS_AWAITING_DISPATCH:
-        flash("This item is not awaiting dispatch.", "error")
+        flash("This budget request is not awaiting reviewer assignment.", "error")
         return redirect(url_for("dispatch.dashboard"))
 
     # Process form data
@@ -208,7 +208,7 @@ def dispatch_to_queue(work_item_id: int):
     ).get_or_404(work_item_id)
 
     if work_item.status != WORK_ITEM_STATUS_AWAITING_DISPATCH:
-        flash("This item is not awaiting dispatch.", "error")
+        flash("This budget request is not awaiting reviewer assignment.", "error")
         return redirect(url_for("dispatch.dashboard"))
 
     # First save any pending assignments from the form
@@ -302,7 +302,7 @@ def dispatch_to_queue(work_item_id: int):
 
     # Build redirect URL to work item detail
     portfolio = work_item.portfolio
-    flash("Request dispatched to approval queue.", "success")
+    flash("Budget request sent to reviewer groups.", "success")
 
     return redirect(url_for(
         "work.work_item_detail",

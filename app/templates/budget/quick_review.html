@@ -49,7 +49,7 @@
           <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="return_to" value="{{ request.url }}">
-            <button type="submit" class="btn">Release Lock</button>
+            <button type="submit" class="btn">Finish Reviewing</button>
           </form>
         </div>
       </div>
@@ -62,13 +62,13 @@
     <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
         <div>
-          <strong>Checkout Required</strong>
-          <span class="muted">- Check out to make review decisions.</span>
+          <strong>Review Session Required</strong>
+          <span class="muted">- Start a review session to make decisions.</span>
         </div>
         <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="return_to" value="{{ request.url }}">
-          <button type="submit" class="btn btn-primary">Checkout for Review</button>
+          <button type="submit" class="btn btn-primary">Start Reviewing</button>
         </form>
       </div>
     </div>
@@ -271,7 +271,7 @@
     'APPROVED': 'Approved',
     'REJECTED': 'Rejected',
     'NEEDS_INFO': 'Info Requested',
-    'NEEDS_ADJUSTMENT': 'Adjustment Needed'
+    'NEEDS_ADJUSTMENT': 'Changes Requested'
   };
 
   // Actions that require notes

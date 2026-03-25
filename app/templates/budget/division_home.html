@@ -63,9 +63,13 @@
               {% elif status == "DRAFT" %}
                 <a href="{{ wt_url }}" class="pill pill-draft pill-link">Draft</a>
               {% elif status == "AWAITING_DISPATCH" %}
-                <a href="{{ wt_url }}" class="pill pill-needs pill-link">Awaiting Dispatch</a>
+                <a href="{{ wt_url }}" class="pill pill-needs pill-link">Awaiting Reviewer Assignment</a>
               {% elif status == "NEEDS_INFO" or status == "NEEDS_ADJUSTMENT" or status == "NEEDS_RESPONSE" %}
-                <a href="{{ wt_url }}" class="pill pill-needs pill-link">{{ status | replace('_', ' ') | title }}</a>
+                <a href="{{ wt_url }}" class="pill pill-needs pill-link">
+                  {%- if status == "NEEDS_ADJUSTMENT" -%}Changes Requested
+                  {%- elif status == "NEEDS_INFO" -%}Info Requested
+                  {%- else -%}Response Needed{%- endif -%}
+                </a>
               {% elif status == "UNDER_REVIEW" or status == "SUBMITTED" %}
                 <a href="{{ wt_url }}" class="pill pill-submitted pill-link">{{ status | replace('_', ' ') | title }}</a>
               {% else %}

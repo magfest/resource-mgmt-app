@@ -64,7 +64,7 @@
       <div class="muted small" style="margin-top: 12px;">
         Finalized {{ work_item.finalized_at.strftime('%Y-%m-%d %H:%M') }}
         {% if work_item.finalized_by_user_id %}
-          by {{ work_item.finalized_by_user_id }}
+          by {{ work_item.finalized_by_user_id|user_display }}
         {% endif %}
       </div>
     {% endif %}

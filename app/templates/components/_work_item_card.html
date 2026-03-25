@@ -25,9 +25,9 @@
       <h3 style="margin:0;">
         <a href="{{ url_for('work.work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=item.public_id) }}"
            style="text-decoration: none; color: inherit;">
-          {# Show "Supplemental #N" for supplementary items, otherwise public ID #}
+          {# Show "Supplementary #N" for supplementary items, otherwise public ID #}
           {% if item.request_kind == 'SUPPLEMENTARY' and supp_number %}
-            Supplemental #{{ supp_number }}
+            Supplementary #{{ supp_number }}
           {% else %}
             {{ item.public_id }}
           {% endif %}
@@ -74,7 +74,7 @@
           {% endif %}
           {% if line_summary.needs_info_count > 0 and line_summary.needs_adjustment_count > 0 %}, {% endif %}
           {% if line_summary.needs_adjustment_count > 0 %}
-            {{ line_summary.needs_adjustment_count }} line{% if line_summary.needs_adjustment_count != 1 %}s{% endif %} need{% if line_summary.needs_adjustment_count == 1 %}s{% endif %} adjustment
+            {{ line_summary.needs_adjustment_count }} line{% if line_summary.needs_adjustment_count != 1 %}s{% endif %} — changes requested
           {% endif %}
         </div>
       {% endif %}

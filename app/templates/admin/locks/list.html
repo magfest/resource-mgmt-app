@@ -48,7 +48,7 @@
               {{ lock.user.display_name }}
               <div class="muted small">{{ lock.user.email }}</div>
             {% else %}
-              {{ lock.work_item.checked_out_by_user_id }}
+              {{ lock.work_item.checked_out_by_user_id|user_display }}
             {% endif %}
           </td>
           <td class="muted">

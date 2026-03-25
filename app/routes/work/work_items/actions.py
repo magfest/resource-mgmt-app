@@ -148,7 +148,7 @@ def work_item_checkout(event: str, dept: str, public_id: str):
     )
 
     if not perms.can_checkout:
-        flash("You cannot checkout this work item.", "error")
+        flash("You cannot start a review session for this budget request.", "error")
         return redirect(return_to or default_redirect)
 
     user_ctx = get_user_ctx()
@@ -164,9 +164,9 @@ def work_item_checkout(event: str, dept: str, public_id: str):
         )
         db.session.add(audit_event)
         db.session.commit()
-        flash("Work item checked out. You have the lock for review.", "success")
+        flash("Review session started.", "success")
     else:
-        flash("Could not checkout work item.", "error")
+        flash("Could not start review session.", "error")
 
     return redirect(return_to or default_redirect)
 
@@ -190,7 +190,7 @@ def work_item_checkin(event: str, dept: str, public_id: str):
     )
 
     if not perms.can_checkin:
-        flash("You cannot release this checkout.", "error")
+        flash("You cannot end this review session.", "error")
         return redirect(return_to or default_redirect)
 
     user_ctx = get_user_ctx()
@@ -212,9 +212,9 @@ def work_item_checkin(event: str, dept: str, public_id: str):
         )
         db.session.add(audit_event)
         db.session.commit()
-        flash("Lock released.", "success")
+        flash("Review session ended.", "success")
     else:
-        flash("Could not release lock.", "error")
+        flash("Could not end review session.", "error")
 
     return redirect(return_to or default_redirect)
 

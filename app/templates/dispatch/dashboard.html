@@ -57,14 +57,14 @@
   <div style="display: grid; grid-template-columns: repeat(1, 1fr); gap: 16px; margin-bottom: 24px;">
     <div class="card" style="text-align: center;">
       <div style="font-size: 32px; font-weight: 700; color: #d97706;">{{ queue_items | length }}</div>
-      <div class="muted">Requests Awaiting Dispatch</div>
+      <div class="muted">Requests Awaiting Reviewer Assignment</div>
     </div>
   </div>
 
   {# Queue Table #}
   <section class="card">
     <h3 style="margin:0 0 12px 0;">
-      Awaiting Dispatch
+      Awaiting Reviewer Assignment
       {% if queue_items %}
         <span class="pill pill-needs">{{ queue_items | length }}</span>
       {% endif %}

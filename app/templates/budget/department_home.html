@@ -54,7 +54,11 @@
           {% elif status == "DRAFT" %}
             <span class="pill pill-draft">Draft</span>
           {% elif status == "NEEDS_INFO" or status == "NEEDS_ADJUSTMENT" or status == "NEEDS_RESPONSE" %}
-            <span class="pill pill-needs">{{ status | replace('_', ' ') | title }}</span>
+            <span class="pill pill-needs">
+              {%- if status == "NEEDS_ADJUSTMENT" -%}Changes Requested
+              {%- elif status == "NEEDS_INFO" -%}Info Requested
+              {%- else -%}Response Needed{%- endif -%}
+            </span>
           {% elif status == "UNDER_REVIEW" or status == "SUBMITTED" %}
             <span class="pill pill-submitted">{{ status | replace('_', ' ') | title }}</span>
           {% else %}
@@ -92,7 +96,7 @@
               <span style="color: #d97706; font-size: 0.85rem;">{{ card.status_summary.needs_info_count }} needs info</span>
             {% endif %}
             {% if card.status_summary.needs_adjustment_count > 0 %}
-              <span style="color: #d97706; font-size: 0.85rem;">{{ card.status_summary.needs_adjustment_count }} needs adjust</span>
+              <span style="color: #d97706; font-size: 0.85rem;">{{ card.status_summary.needs_adjustment_count }} changes requested</span>
             {% endif %}
             {% if card.status_summary.rejected_count > 0 %}
               <span style="color: #dc2626; font-size: 0.85rem;">{{ card.status_summary.rejected_count }} rejected</span>

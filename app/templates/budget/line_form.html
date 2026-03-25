@@ -93,9 +93,9 @@
 
         {# Confidence Level #}
         <div>
-          <label for="confidence_level_id"><strong>Unit Cost Confidence</strong> <span style="color: red;">*</span></label>
+          <label for="confidence_level_id"><strong>Price Certainty</strong> <span style="color: red;">*</span></label>
           <select name="confidence_level_id" id="confidence_level_id" class="mt-4" required>
-            <option value="">(Select confidence)</option>
+            <option value="">(Select certainty level)</option>
             {% for c in confidence_levels %}
               <option value="{{ c.id }}"
                       {% if form_data and form_data.confidence_level_id == c.id|string %}selected{% endif %}>
@@ -104,15 +104,15 @@
             {% endfor %}
           </select>
           <div class="muted small mt-4">
-            Confirmed = quotes/contracts in hand. Estimated = best guess from prior experience. Placeholder = cost unknown yet.
+            Confirmed = quotes/contracts in hand. Estimated = best guess from prior experience. Tentative = cost unknown yet.
           </div>
         </div>
 
         {# Frequency #}
         <div>
-          <label for="frequency_id"><strong>Frequency</strong> <span style="color: red;">*</span></label>
+          <label for="frequency_id"><strong>Type of Expense</strong> <span style="color: red;">*</span></label>
           <select name="frequency_id" id="frequency_id" class="mt-4" required>
-            <option value="">(Select frequency)</option>
+            <option value="">(Select type)</option>
             {% for f in frequency_options %}
               <option value="{{ f.id }}"
                       {% if form_data and form_data.frequency_id == f.id|string %}selected{% endif %}>
