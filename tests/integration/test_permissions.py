@@ -213,6 +213,40 @@ class TestAdminRoutePermissions:
         assert response.status_code == 403
 
 
+class TestAdminWriteOperations:
+    """Admin write operations must not crash due to h being None."""
+
+    def test_admin_can_update_event_cycle(self, app, client):
+        """
+        Updating an event cycle exercises h.get_active_user_id().
+
+        This catches the regression where admin modules imported h=None
+        due to incorrect import ordering in create_app().
+        """
+        _seed_test_data(app)
+        _login(client, "test:admin")
+
+        # Get the event cycle ID
+        from app.models import EventCycle
+        with app.app_context():
+            cycle = EventCycle.query.filter_by(code="TST2026").first()
+            cycle_id = cycle.id
+
+        response = client.post(f"/admin/config/event-cycles/{cycle_id}", data={
+            "code": "TST2026",
+            "name": "Test Event 2026 Updated",
+            "is_active": "1",
+            "is_default": "1",
+            "sort_order": "1",
+        }, follow_redirects=False)
+
+        # Should redirect on success (302), not crash (500)
+        assert response.status_code in (302, 200), (
+            f"Admin write returned {response.status_code}. "
+            "If 500, h is likely None — check import order in create_app()."
+        )
+
+
 class TestDispatchPermissions:
     """Dispatch routes require budget admin (SUPER_ADMIN or WORKTYPE_ADMIN)."""
 

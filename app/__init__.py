@@ -214,9 +214,8 @@ def create_app() -> Flask:
             cache[user_id] = (user.display_name or user.email) if user else str(user_id)
         return cache[user_id]
 
-    # Make get_site_content available in all templates
-    from app.routes.admin.site_content import get_site_content
-    app.jinja_env.globals['get_site_content'] = get_site_content
+    # NOTE: get_site_content is registered as a Jinja global after register_all_routes()
+    # to avoid circular imports that would cause the RouteHelpers (h) to be None.
 
     # Import models so migrations can detect them
     from . import models  # noqa: F401
@@ -919,6 +918,13 @@ def create_app() -> Flask:
             has_super_admin_role=_has_super_admin_role,
         ),
     )
+
+    # Make get_site_content available in all templates
+    # This MUST be after register_all_routes() — importing site_content triggers
+    # the admin module tree, which imports h from app.routes. If h hasn't been
+    # set yet by register_all_routes(), all admin modules get h=None.
+    from app.routes.admin.site_content import get_site_content
+    app.jinja_env.globals['get_site_content'] = get_site_content
 
     # --- Bootstrap Admins (runs once on first request) ---
     _bootstrap_done = {"done": False}

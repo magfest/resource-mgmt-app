@@ -914,9 +914,11 @@
 
   // Room prices in cents — pulled from expense account unit_price_cents
   const roomPrices = {
-    'standard': {{ room_prices.get('standard', 0) }},
-    'executive': {{ room_prices.get('executive', 0) }},
-    'hospitality': {{ room_prices.get('hospitality', 0) }}
+    {% for item in hotel_data %}
+      {% if item.account.code == 'HTL_STD_MAGPAID' %}'standard': {{ item.unit_price_cents }},{% endif %}
+      {% if item.account.code == 'HTL_EXEC_MAGPAID' %}'executive': {{ item.unit_price_cents }},{% endif %}
+      {% if item.account.code == 'HTL_HOSP_MAGPAID' %}'hospitality': {{ item.unit_price_cents }},{% endif %}
+    {% endfor %}
   };
 
   const roomTypeNames = {

@@ -24,8 +24,34 @@ class RouteHelpers:
     has_super_admin_role: Callable[[], bool]  # Raw DB check, ignores role override
 
 
-# Global helpers reference - set by register_all_routes()
-h: RouteHelpers | None = None
+class _HelpersProxy:
+    """Proxy that forwards attribute access to the real RouteHelpers instance.
+
+    This exists so that `from app.routes import h` works regardless of import
+    order.  Every module that imports `h` gets a reference to this same proxy
+    object.  When register_all_routes() later calls ``h._set(helpers)``, the
+    proxy starts delegating to the real helpers — and every module sees the
+    change because the proxy object identity never changes.
+    """
+
+    def __init__(self):
+        object.__setattr__(self, '_instance', None)
+
+    def _set(self, instance: RouteHelpers):
+        object.__setattr__(self, '_instance', instance)
+
+    def __getattr__(self, name):
+        inst = object.__getattribute__(self, '_instance')
+        if inst is None:
+            raise RuntimeError("Route helpers not initialized.")
+        return getattr(inst, name)
+
+    def __bool__(self):
+        return object.__getattribute__(self, '_instance') is not None
+
+
+# Global helpers proxy - populated by register_all_routes()
+h: _HelpersProxy = _HelpersProxy()
 
 
 @dataclass(frozen=True)
@@ -47,7 +73,7 @@ class UserContext:
 
 
 def _require_helpers():
-    if h is None:
+    if not h:
         raise RuntimeError("Route helpers not initialized.")
 
 
@@ -84,8 +110,7 @@ def render_admin_page(template: str, **ctx):
 
 def register_all_routes(app: Flask, helpers: RouteHelpers) -> None:
     """Register all blueprints with the Flask app."""
-    global h
-    h = helpers
+    h._set(helpers)
 
     # Current/active routes
     from .home import home_bp
