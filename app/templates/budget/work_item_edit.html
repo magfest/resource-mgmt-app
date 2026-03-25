@@ -373,6 +373,18 @@
     </section>
     {% endif %}
 
+    {# Build price lookup from hotel expense accounts: room_type -> price_cents #}
+    {% set room_prices = {} %}
+    {% for item in hotel_data %}
+      {% if item.account.code.startswith('HTL_STD_MAGPAID') %}
+        {% set _ = room_prices.update({'standard': item.unit_price_cents}) %}
+      {% elif item.account.code.startswith('HTL_EXEC_MAGPAID') %}
+        {% set _ = room_prices.update({'executive': item.unit_price_cents}) %}
+      {% elif item.account.code.startswith('HTL_HOSP_MAGPAID') %}
+        {% set _ = room_prices.update({'hospitality': item.unit_price_cents}) %}
+      {% endif %}
+    {% endfor %}
+
     {# Hotel Room Wizard #}
     <section class="card">
       <h3 style="margin:0 0 16px 0;">{{ tab_content.hotel.title or 'Add Hotel Room Request' }}</h3>
@@ -475,7 +487,7 @@
               <div style="display: flex; align-items: center; gap: 8px;">
                 <input type="radio" name="room_type" value="standard" checked>
                 <strong>Standard Room</strong>
-                <span class="pill" style="margin-left: auto;">$252/night</span>
+                <span class="pill" style="margin-left: auto;">${{ '{:,.0f}'.format((room_prices.get('standard', 0)) / 100) }}/night</span>
               </div>
               <div class="muted small" style="margin-left: 24px; margin-top: 4px;">
                 King or double-queen sleeping room
@@ -485,7 +497,7 @@
               <div style="display: flex; align-items: center; gap: 8px;">
                 <input type="radio" name="room_type" value="executive">
                 <strong>Executive Suite</strong>
-                <span class="pill" style="margin-left: auto;">$515/night</span>
+                <span class="pill" style="margin-left: auto;">${{ '{:,.0f}'.format((room_prices.get('executive', 0)) / 100) }}/night</span>
               </div>
               <div class="muted small" style="margin-left: 24px; margin-top: 4px;">
                 King bed + pullout couch, sleeps up to 4
@@ -495,7 +507,7 @@
               <div style="display: flex; align-items: center; gap: 8px;">
                 <input type="radio" name="room_type" value="hospitality">
                 <strong>Hospitality Suite</strong>
-                <span class="pill" style="margin-left: auto;">$995/night</span>
+                <span class="pill" style="margin-left: auto;">${{ '{:,.0f}'.format((room_prices.get('hospitality', 0)) / 100) }}/night</span>
               </div>
               <div class="muted small" style="margin-left: 24px; margin-top: 4px;">
                 Suite + 2 attached bedrooms, sleeps up to 10
@@ -900,12 +912,11 @@
   // ========== Hotel Room Wizard ==========
   const eventNights = {{ event_nights if event_nights else 0 }};
 
-  // Room prices in cents — placeholder values for preview only
-  // Actual prices come from the expense account unit_price_cents in the database
+  // Room prices in cents — pulled from expense account unit_price_cents
   const roomPrices = {
-    'standard': 15000,
-    'executive': 30000,
-    'hospitality': 60000
+    'standard': {{ room_prices.get('standard', 0) }},
+    'executive': {{ room_prices.get('executive', 0) }},
+    'hospitality': {{ room_prices.get('hospitality', 0) }}
   };
 
   const roomTypeNames = {

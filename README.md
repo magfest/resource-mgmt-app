@@ -130,30 +130,26 @@ pip-compile --generate-hashes requirements-dev.in -o requirements-dev.txt --upgr
 - **CI**: GitHub Actions runs pip-audit on every push and PR to `master`
 - **Dependabot**: Alerts and automatic security PRs enabled
 
-See the [Security & Infrastructure](ROADMAP.md#security--infrastructure) section of the Roadmap for planned improvements.
+See the [Security & Infrastructure](ROADMAP.md#security--infrastructure) section of the Roadmap for planned improvements. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ### Tools / Disclosures
-This project was developed with assistance from AI tools for both code and wording. 
-For example: 
-1. Claude Code, JetBrain "AI" Tools, and Gemini 
+This project was developed with assistance from AI tools for both code and wording.
+For example:
+1. Claude Code, JetBrain "AI" Tools, and Gemini
 2. Grammerly was used for wordsmiting, and grammer..
 
 ## Contributing
 
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, and PR guidelines.
+
+Quick start:
 1. Fork the repo and create a feature branch
-2. Install dev dependencies: `pip install -r requirements-dev.txt`
-3. Install pre-commit hooks: `pre-commit install`
-4. Make changes and test locally
-5. Submit a PR for review
+2. `pip install -r requirements-dev.txt` and `pre-commit install`
+3. `cp .env.example .env` — dev login works out of the box, no OAuth setup needed
+4. `flask db upgrade` and `flask run`
+5. Make changes, run `pytest`, and submit a PR
 
-### A note on AI tools
-
-AI-assisted development tools (Copilot, Claude, etc.) are permitted. That said, we expect contributors to **understand and own what they submit**. PRs should reflect thoughtful changes, not bulk-generated code. Specifically:
-
-- You should be able to explain what your code does and why
-- Changes should be scoped and focused, not "rewrite everything" dumps
-- Test your changes locally before submitting
-- If AI helped, that's fine — just make sure the output makes sense for this codebase
+AI tools are permitted — see the contributing guide for expectations.
 
 ## License
 
