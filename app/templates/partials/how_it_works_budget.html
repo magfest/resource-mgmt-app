@@ -34,10 +34,20 @@
   <strong>After finalization:</strong> Your budget request becomes locked. If you need additional funds after your primary budget is finalized, you can create a supplementary request which follows the same review process.
 </div>
 
+{% set contacts_link = get_site_content('link_division_contacts') %}
+{% set policy_link = get_site_content('link_budget_policy') %}
+{% set finance_link = get_site_content('link_finance_guide') %}
+{% if contacts_link.content or policy_link.content or finance_link.content %}
 <div class="muted small" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-  <span>Questions? Reach out to your <a href="https://www.notion.so/magfest/Division-Head-Contact-List" target="_blank" rel="noopener" style="color: #3b82f6;">division head</a> or the <a href="mailto:accounting@magfest.org" style="color: #3b82f6;">budget team</a>.</span>
-  <span style="display: flex; gap: 12px;">
-    <a href="https://docs.google.com/document/d/1i59_3Pj9oquzFDaLd4dwd_XF0vUJYDP3hsXywYqumYA" target="_blank" rel="noopener" style="color: #3b82f6;">Budget Policy</a>
-    <a href="https://docs.google.com/document/d/1EKtTwlEpvo1Pnw0Yiwes-XN2qL6J8wo_sT9WyuLA8vo" target="_blank" rel="noopener" style="color: #3b82f6;">Finance Guide</a>
+  <span>Questions? Reach out to your
+    {% if contacts_link.content %}{{ contacts_link.content|markdown_links|safe }}{% else %}division head{% endif %}
+    or the <a href="mailto:accounting@magfest.org" style="color: #3b82f6;">budget team</a>.
   </span>
+  {% if policy_link.content or finance_link.content %}
+  <span style="display: flex; gap: 12px;">
+    {% if policy_link.content %}{{ policy_link.content|markdown_links|safe }}{% endif %}
+    {% if finance_link.content %}{{ finance_link.content|markdown_links|safe }}{% endif %}
+  </span>
+  {% endif %}
 </div>
+{% endif %}

@@ -214,6 +214,10 @@ def create_app() -> Flask:
             cache[user_id] = (user.display_name or user.email) if user else str(user_id)
         return cache[user_id]
 
+    # Make get_site_content available in all templates
+    from app.routes.admin.site_content import get_site_content
+    app.jinja_env.globals['get_site_content'] = get_site_content
+
     # Import models so migrations can detect them
     from . import models  # noqa: F401
 
@@ -437,12 +441,16 @@ def create_app() -> Flask:
         from .models import User, UserRole, ROLE_SUPER_ADMIN
         import uuid
 
-        # List of bootstrap admins: (email, display_name)
-        # These users will always be created/ensured as SUPER_ADMIN
-        bootstrap_admins = [
-            ("matthew.stoldal@magfest.org", "Matthew Stoldal"),
-            ("jason.spriggs@magfest.org", "Jason Spriggs")
-        ]
+        # Bootstrap admins from environment variable
+        # Format: "email1:Display Name 1,email2:Display Name 2"
+        # Falls back to empty list if not set (no admins auto-created)
+        bootstrap_admins_str = os.environ.get("BOOTSTRAP_ADMINS", "")
+        bootstrap_admins = []
+        for entry in bootstrap_admins_str.split(","):
+            entry = entry.strip()
+            if ":" in entry:
+                email, name = entry.split(":", 1)
+                bootstrap_admins.append((email.strip(), name.strip()))
 
 
         for email, display_name in bootstrap_admins:

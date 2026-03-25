@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.github/
+.env
+.env.*
+*.sqlite
+*.db
+Demo_Data/
+docs/
+tests/
+.pytest_cache/
+.claude/
+nul

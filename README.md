@@ -1,6 +1,6 @@
 # MAGFest Budget System
 
-> **Status: Active Development** — This application is functional and in use, but under active development. Features are still being added, UX is being refined, and some areas (contracts, supply orders, reporting) are incomplete. See the [outstanding items plan](docs/plan-outstanding-march2026.md) for what's in progress.
+> **Status: Active Development** — This application is functional and in use, but under active development. Features are still being added, UX is being refined, and some areas (contracts, supply orders, reporting) are incomplete. See the [Roadmap](ROADMAP.md) for what's planned and in progress.
 
 A budget request and approval workflow application for [MAGFest](https://www.magfest.org/) events. Built with Flask, it currently handles multi-departmental/event budget requests. Long term the goal is to support contracts and supply orders through a configurable review and approval pipeline.
 
@@ -130,7 +130,7 @@ pip-compile --generate-hashes requirements-dev.in -o requirements-dev.txt --upgr
 - **CI**: GitHub Actions runs pip-audit on every push and PR to `master`
 - **Dependabot**: Alerts and automatic security PRs enabled
 
-See [SECURITY_ROADMAP.md](SECURITY_ROADMAP.md) for the full security roadmap.
+See the [Security & Infrastructure](ROADMAP.md#security--infrastructure) section of the Roadmap for planned improvements.
 
 ### Tools / Disclosures
 This project was developed with assistance from AI tools for both code and wording. 

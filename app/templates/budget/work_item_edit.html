@@ -425,7 +425,8 @@
             </label>
           </div>
           <div class="muted small" style="margin-top: 12px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
-            Not sure which to pick? <strong>Departmental function</strong> is for suites critical to operations. <strong>Suite for staffers</strong> is for staff sleeping/gathering space (paid out-of-pocket). See the <a href="https://docs.google.com/document/d/1aZ4dZ-8MSvov4BWRZtBBs7NYBLbiEF18Saglg1zgCs0/edit?usp=sharing" target="_blank" rel="noopener">Suite Policy</a> for details.
+            {% set suite_link = get_site_content('link_suite_policy') %}
+            Not sure which to pick? <strong>Departmental function</strong> is for suites critical to operations. <strong>Suite for staffers</strong> is for staff sleeping/gathering space (paid out-of-pocket).{% if suite_link.content %} See the {{ suite_link.content|markdown_links|safe }} for details.{% endif %}
           </div>
         </div>
 
@@ -457,7 +458,7 @@
         {# Suite for Staffers Warning #}
         <div id="staff-suite-crash-warning" style="display: none; margin-bottom: 20px; padding: 12px 16px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px;">
           <strong style="color: #92400e;">Cost Reminder:</strong>
-          <span style="color: #78350f;">Unless critical for department function, suites for staffers must be paid out-of-pocket. MAGFest provides a ~$63/staffer/night credit toward the cost. You must submit this via the <a href="https://forms.gle/AsJLGfQtQ9cbaP2b9" target="_blank" rel="noopener">departmental suite request form</a>. See the <a href="https://docs.google.com/document/d/1aZ4dZ-8MSvov4BWRZtBBs7NYBLbiEF18Saglg1zgCs0/edit?usp=sharing" target="_blank" rel="noopener">Suite Policy</a> for rates and details.</span>
+          <span style="color: #78350f;">Unless critical for department function, suites for staffers must be paid out-of-pocket. MAGFest provides a per-staffer nightly credit toward the cost.{% if suite_link.content %} See the {{ suite_link.content|markdown_links|safe }} for rates, the request form, and details.{% endif %}</span>
         </div>
 
         {# Departmental Function Warning #}
@@ -899,11 +900,12 @@
   // ========== Hotel Room Wizard ==========
   const eventNights = {{ event_nights if event_nights else 0 }};
 
-  // Room prices in cents
+  // Room prices in cents — placeholder values for preview only
+  // Actual prices come from the expense account unit_price_cents in the database
   const roomPrices = {
-    'standard': 25200,
-    'executive': 51500,
-    'hospitality': 99500
+    'standard': 15000,
+    'executive': 30000,
+    'hospitality': 60000
   };
 
   const roomTypeNames = {

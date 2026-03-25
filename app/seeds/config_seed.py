@@ -636,13 +636,14 @@ def seed_expense_accounts_from_spreadsheet(
             # Create hotel room expense accounts for the wizard
             # Three room types: Standard, Executive Suite, Hospitality Suite
             # Three payment scenarios: MAGFest Paid, Third Party (Held), Staff Crash
-            # Prices are Super 2026 rates
+            # Placeholder prices for demo/dev — replace with real negotiated rates per event
+            # via admin UI (Expense Accounts > edit unit price)
 
             # MAGFest Paid variants (hits department budget)
             magfest_paid_variants = [
-                ("HTL_STD_MAGPAID", "Standard Room (MAGFest Paid)", 25200, "Standard hotel room - MAGFest covers cost"),
-                ("HTL_EXEC_MAGPAID", "Executive Suite (MAGFest Paid)", 51500, "Executive suite - MAGFest covers cost"),
-                ("HTL_HOSP_MAGPAID", "Hospitality Suite (MAGFest Paid)", 99500, "Hospitality suite with attached bedrooms - MAGFest covers cost"),
+                ("HTL_STD_MAGPAID", "Standard Room (MAGFest Paid)", 15000, "Standard hotel room - MAGFest covers cost"),
+                ("HTL_EXEC_MAGPAID", "Executive Suite (MAGFest Paid)", 30000, "Executive suite - MAGFest covers cost"),
+                ("HTL_HOSP_MAGPAID", "Hospitality Suite (MAGFest Paid)", 60000, "Hospitality suite with attached bedrooms - MAGFest covers cost"),
             ]
 
             for code, variant_name, price_cents, desc in magfest_paid_variants:
@@ -751,7 +752,7 @@ def seed_expense_accounts_from_spreadsheet(
                 is_admin_only=False,
                 is_contract_eligible=is_contract_eligible,
                 is_fixed_cost=True,
-                default_unit_price_cents=1900,  # $19/night
+                default_unit_price_cents=2500,  # Placeholder — replace with real rate
                 office_dept=office_dept,
                 sort_order=sort_order,
                 ui_display_group=UI_GROUP_HOTEL_SERVICES,

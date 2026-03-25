@@ -8,105 +8,62 @@
     <h1 style="margin: 0;">Edit Site Content</h1>
     <div class="muted mt-4">
       <strong>{{ defaults.name if defaults else content_key }}</strong>
+      {% if defaults and defaults.category %}
+        <span class="muted"> — {{ defaults.category }}</span>
+      {% endif %}
     </div>
   </div>
 </div>
 
-{% if defaults %}
 <div class="muted small mb-16" style="padding: 12px; background: #f8f9fa; border-radius: 6px;">
-  Leave fields blank to use defaults. Content supports basic markdown links: <code>[link text](url)</code>
+  Content supports basic markdown links: <code>[link text](url)</code>
 </div>
-{% endif %}
+
+{# Resolve the effective current values — what's actually shown to users right now #}
+{% set effective_title = content.title if content else (defaults.title if defaults else '') %}
+{% set effective_content = content.content if content else (defaults.content if defaults else '') %}
+{% set effective_style = content.display_style if content else (defaults.display_style if defaults else 'PLAIN') %}
 
 <form method="post" action="{{ url_for('admin_config.site_content.update_site_content', content_key=content_key) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="name" value="{{ content.name if content else defaults.name if defaults else content_key }}">
   <input type="hidden" name="category" value="{{ content.category if content else defaults.category if defaults else '' }}">
+  <input type="hidden" name="display_style" value="PLAIN">
 
   <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
     {# Left Column - Content Fields #}
     <div>
       <section class="card">
-        <h3 style="margin: 0 0 16px 0;">Tab Content</h3>
+        <h3 style="margin: 0 0 16px 0;">Content</h3>
 
         <div class="mb-16">
           <label for="title" class="form-label">Section Title</label>
           <input type="text" id="title" name="title"
-                 value="{{ content.title if content else '' }}"
-                 placeholder="{{ defaults.title if defaults else 'Section title' }}"
+                 value="{{ effective_title or '' }}"
+                 placeholder="Section title"
                  style="max-width: 400px;">
-          {% if defaults and defaults.title %}
-            <div class="muted small mt-4">Default: {{ defaults.title }}</div>
-          {% endif %}
         </div>
 
         <div class="mb-16">
           <label for="content" class="form-label">Content</label>
           <textarea id="content" name="content" rows="4"
-                    placeholder="{{ defaults.content if defaults else 'Descriptive text...' }}">{{ content.content if content else '' }}</textarea>
-          {% if defaults and defaults.content %}
-            <div class="muted small mt-4">Default: {{ defaults.content[:120] }}{% if defaults.content|length > 120 %}...{% endif %}</div>
-          {% endif %}
+                    placeholder="Enter text or a markdown link like [Link Text](https://...)">{{ effective_content or '' }}</textarea>
         </div>
 
-        <div>
-          <label for="display_style" class="form-label">Display Style</label>
-          <select id="display_style" name="display_style" style="max-width: 200px;">
-            {% set current_style = content.display_style if content else defaults.display_style if defaults else 'PLAIN' %}
-            <option value="PLAIN" {% if current_style == 'PLAIN' %}selected{% endif %}>Plain Text</option>
-            <option value="INFO_BOX" {% if current_style == 'INFO_BOX' %}selected{% endif %}>Info Box (blue callout)</option>
-          </select>
-          <div class="muted small mt-4">How the content is displayed in the tab</div>
-        </div>
-      </section>
-
-      {# Preview #}
-      <section class="card" style="margin-top: 16px;">
-        <h3 style="margin: 0 0 16px 0;">Preview</h3>
-        <div id="preview-area" style="border: 1px solid #ddd; border-radius: 6px; padding: 16px; background: #fff;">
-          <h3 id="preview-title" style="margin: 0 0 8px 0;">{{ content.title or defaults.title if defaults else 'Title' }}</h3>
-
-          {# Plain text preview #}
-          <div id="preview-plain" class="muted" style="margin-bottom: 12px; {% if current_style == 'INFO_BOX' %}display: none;{% endif %}">
-            {{ content.content or defaults.content if defaults else '' }}
-          </div>
-
-          {# Info box preview #}
-          <div id="preview-info-box" style="{% if current_style != 'INFO_BOX' %}display: none;{% endif %} padding: 10px 14px; background: #e0f2fe; border-radius: 6px; display: flex; align-items: flex-start; gap: 8px;">
-            <i class="bi bi-info-circle" style="color: #0a66c2; flex-shrink: 0; margin-top: 2px;"></i>
-            <span class="muted small">{{ content.content or defaults.content if defaults else '' }}</span>
-          </div>
-        </div>
       </section>
     </div>
 
     {# Right Column - Info #}
     <div>
-      {% if content %}
+      {% if content and content.updated_at %}
       <section class="card" style="background: #f8f9fa;">
-        <h3 style="margin: 0 0 12px 0; font-size: 14px;">Info</h3>
+        <h3 style="margin: 0 0 12px 0; font-size: 14px;">Last Edit</h3>
         <div class="muted small">
-          <div>Last updated: {{ content.updated_at.strftime('%Y-%m-%d %H:%M') if content.updated_at else 'Never' }}</div>
+          <div>{{ content.updated_at.strftime('%Y-%m-%d %H:%M') }}</div>
           {% if content.updated_by_user_id %}
             <div>By: {{ content.updated_by_user_id|user_display }}</div>
           {% endif %}
         </div>
-      </section>
-      {% endif %}
-
-      {% if content and defaults %}
-      <section class="card" style="margin-top: 16px; border: 1px solid #f59e0b;">
-        <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #b45309;">Reset to Defaults</h3>
-        <div class="muted small mb-12">
-          Remove customizations and use the default values.
-        </div>
-        <form method="post" action="{{ url_for('admin_config.site_content.reset_site_content', content_key=content_key) }}" style="display: inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn" style="font-size: 13px;"
-                  data-confirm="Reset to default values? Your customizations will be deleted.">
-            Reset to Defaults
-          </button>
-        </form>
       </section>
       {% endif %}
     </div>
@@ -121,40 +78,3 @@
 
 {% endblock %}
 
-{% block scripts %}
-<script nonce="{{ csp_nonce }}">
-  // Live preview
-  const titleInput = document.getElementById('title');
-  const contentInput = document.getElementById('content');
-  const styleSelect = document.getElementById('display_style');
-
-  const previewTitle = document.getElementById('preview-title');
-  const previewPlain = document.getElementById('preview-plain');
-  const previewInfoBox = document.getElementById('preview-info-box');
-
-  const defaultTitle = {{ (defaults.title or '')|tojson }};
-  const defaultContent = {{ (defaults.content or '')|tojson }};
-
-  function updatePreview() {
-    const title = titleInput.value || defaultTitle || 'Title';
-    const content = contentInput.value || defaultContent || '';
-    const style = styleSelect.value;
-
-    previewTitle.textContent = title;
-
-    if (style === 'INFO_BOX') {
-      previewPlain.style.display = 'none';
-      previewInfoBox.style.display = 'flex';
-      previewInfoBox.querySelector('span').textContent = content;
-    } else {
-      previewPlain.style.display = 'block';
-      previewInfoBox.style.display = 'none';
-      previewPlain.textContent = content;
-    }
-  }
-
-  titleInput.addEventListener('input', updatePreview);
-  contentInput.addEventListener('input', updatePreview);
-  styleSelect.addEventListener('change', updatePreview);
-</script>
-{% endblock %}

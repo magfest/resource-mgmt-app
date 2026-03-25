@@ -65,6 +65,34 @@ DEFAULT_CONTENT = {
         "content": "Add notes or context about this budget request for reviewers.",
         "display_style": DISPLAY_STYLE_PLAIN,
     },
+    "link_budget_policy": {
+        "name": "Budget Policy Link",
+        "category": "External Links",
+        "title": "Budget Policy",
+        "content": None,
+        "display_style": DISPLAY_STYLE_PLAIN,
+    },
+    "link_finance_guide": {
+        "name": "Finance Guide Link",
+        "category": "External Links",
+        "title": "Finance Guide",
+        "content": None,
+        "display_style": DISPLAY_STYLE_PLAIN,
+    },
+    "link_division_contacts": {
+        "name": "Division Head Contacts Link",
+        "category": "External Links",
+        "title": "Division Head Contact List",
+        "content": None,
+        "display_style": DISPLAY_STYLE_PLAIN,
+    },
+    "link_suite_policy": {
+        "name": "Suite Policy Link",
+        "category": "External Links",
+        "title": "Suite Policy",
+        "content": None,
+        "display_style": DISPLAY_STYLE_PLAIN,
+    },
 }
 
 
