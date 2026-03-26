@@ -403,6 +403,7 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
 
     # Process form data
     # Form fields are: fixed_qty_<account_id>
+    has_errors = False
     for key in request.form:
         if not key.startswith("fixed_qty_"):
             continue
@@ -471,6 +472,7 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
                         spend_type_id = allowed[0].id
                     else:
                         flash(f"No spend type configured for {expense_account.name}", "error")
+                        has_errors = True
                         continue
 
                 work_line = WorkLine(
@@ -499,7 +501,8 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
 
     db.session.commit()
 
-    flash("Fixed-cost items updated.", "success")
+    if not has_errors:
+        flash("Fixed-cost items updated.", "success")
     return redirect(url_for(
         "work.work_item_edit",
         event=event,
@@ -548,6 +551,7 @@ def work_item_badges_save(event: str, dept: str, public_id: str):
 
     # Process form data
     # Form fields are: badge_qty_<account_id>, badge_notes_<account_id>
+    has_errors = False
     for key in request.form:
         if not key.startswith("badge_qty_"):
             continue
@@ -613,6 +617,7 @@ def work_item_badges_save(event: str, dept: str, public_id: str):
                         spend_type_id = allowed[0].id
                     else:
                         flash(f"No spend type configured for {expense_account.name}", "error")
+                        has_errors = True
                         continue
 
                 work_line = WorkLine(
@@ -640,7 +645,8 @@ def work_item_badges_save(event: str, dept: str, public_id: str):
 
     db.session.commit()
 
-    flash("Badge requests updated.", "success")
+    if not has_errors:
+        flash("Badge requests updated.", "success")
     return redirect(url_for(
         "work.work_item_edit",
         event=event,

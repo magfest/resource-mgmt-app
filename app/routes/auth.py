@@ -103,10 +103,20 @@ def get_oauth():
 
 @auth_bp.get('/login')
 def login_page():
-    """Show login page with available authentication options."""
+    """Show login page with available authentication options.
+
+    If only one auth method is available, skips the login page
+    and redirects straight to the OAuth provider.
+    """
     # If user is already logged in, redirect to home
     if session.get('active_user_id'):
         return redirect(url_for('home.index'))
+
+    # If only one auth method, skip the button page and go straight to OAuth
+    auth_provider = current_app.config.get('AUTH_PROVIDER')
+    dev_login = current_app.config.get('DEV_LOGIN_ENABLED')
+    if auth_provider and not dev_login:
+        return redirect(url_for('auth.login'))
 
     return render_template('auth/login.html')
 
