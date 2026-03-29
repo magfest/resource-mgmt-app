@@ -436,6 +436,9 @@ def finalize_work_item(
     if not (note or "").strip():
         return False, "A note is required for finalization."
 
+    # Lock the work item row to prevent concurrent finalization
+    db.session.query(WorkItem).with_for_update().get(work_item.id)
+
     can_do, reason = can_finalize_work_item(work_item)
     if not can_do:
         return False, reason
@@ -561,11 +564,14 @@ def unfinalize_work_item(
     """
     require_budget_admin(user_ctx)
 
-    if work_item.status != WORK_ITEM_STATUS_FINALIZED:
-        return False, "Work item is not finalized."
-
     if not (reason or "").strip():
         return False, "Reason required for unfinalize."
+
+    # Lock the work item row to prevent concurrent state changes
+    db.session.query(WorkItem).with_for_update().get(work_item.id)
+
+    if work_item.status != WORK_ITEM_STATUS_FINALIZED:
+        return False, "Work item is not finalized."
 
     # Create audit event BEFORE changing state
     audit = WorkItemAuditEvent(

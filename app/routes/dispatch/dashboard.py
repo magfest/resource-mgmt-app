@@ -168,6 +168,9 @@ def assign_approval_groups(work_item_id: int):
         selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
     ).get_or_404(work_item_id)
 
+    # Lock the work item row to prevent concurrent assignment/dispatch
+    db.session.query(WorkItem).with_for_update().get(work_item_id)
+
     if work_item.status != WORK_ITEM_STATUS_AWAITING_DISPATCH:
         flash("This budget request is not pending review.", "error")
         return redirect(url_for("dispatch.dashboard"))
@@ -206,6 +209,9 @@ def dispatch_to_queue(work_item_id: int):
     work_item = WorkItem.query.options(
         selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
     ).get_or_404(work_item_id)
+
+    # Lock the work item row to prevent concurrent dispatch
+    db.session.query(WorkItem).with_for_update().get(work_item_id)
 
     if work_item.status != WORK_ITEM_STATUS_AWAITING_DISPATCH:
         flash("This budget request is not pending review.", "error")

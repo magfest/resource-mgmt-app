@@ -13,6 +13,7 @@ from app.models import (
     WorkItem,
     WorkLine,
     WorkLineReview,
+    WorkPortfolio,
     WorkItemAuditEvent,
     WorkLineAuditEvent,
     User,
@@ -79,9 +80,10 @@ def generate_public_id_for_portfolio(portfolio) -> str:
     if portfolio.work_type and portfolio.work_type.config:
         work_type_prefix = portfolio.work_type.config.public_id_prefix
 
-    # Get current sequence and increment
-    seq = portfolio.next_public_id_seq or 1
-    portfolio.next_public_id_seq = seq + 1
+    # Lock the portfolio row for atomic sequence increment
+    locked_portfolio = db.session.query(WorkPortfolio).with_for_update().get(portfolio.id)
+    seq = locked_portfolio.next_public_id_seq or 1
+    locked_portfolio.next_public_id_seq = seq + 1
 
     return f"{event_code}-{dept_code}-{work_type_prefix}-{seq}"
 

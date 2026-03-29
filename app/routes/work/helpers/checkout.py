@@ -126,16 +126,19 @@ def checkout_work_item(work_item: WorkItem, user_ctx: UserContext) -> bool:
 
     Returns True if checkout successful, False otherwise.
     """
-    can_do, _reason = can_checkout(work_item, user_ctx)
+    # Lock the work item row to prevent concurrent checkout
+    locked_item = db.session.query(WorkItem).with_for_update().get(work_item.id)
+
+    can_do, _reason = can_checkout(locked_item, user_ctx)
     if not can_do:
         return False
 
     timeout_minutes = get_checkout_timeout_minutes(user_ctx)
     now = datetime.utcnow()
 
-    work_item.checked_out_by_user_id = user_ctx.user_id
-    work_item.checked_out_at = now
-    work_item.checked_out_expires_at = now + timedelta(minutes=timeout_minutes)
+    locked_item.checked_out_by_user_id = user_ctx.user_id
+    locked_item.checked_out_at = now
+    locked_item.checked_out_expires_at = now + timedelta(minutes=timeout_minutes)
 
     return True
 
@@ -151,19 +154,22 @@ def checkin_work_item(work_item: WorkItem, user_ctx: UserContext, force: bool = 
 
     Returns True if checkin successful, False otherwise.
     """
-    if not work_item.checked_out_by_user_id:
+    # Lock the work item row to prevent concurrent checkin
+    locked_item = db.session.query(WorkItem).with_for_update().get(work_item.id)
+
+    if not locked_item.checked_out_by_user_id:
         return False  # Nothing to release
 
     # Check permission
-    is_current_holder = work_item.checked_out_by_user_id == user_ctx.user_id
+    is_current_holder = locked_item.checked_out_by_user_id == user_ctx.user_id
     is_admin = user_ctx.is_super_admin
 
     if not is_current_holder and not (is_admin and force):
         return False
 
-    work_item.checked_out_by_user_id = None
-    work_item.checked_out_at = None
-    work_item.checked_out_expires_at = None
+    locked_item.checked_out_by_user_id = None
+    locked_item.checked_out_at = None
+    locked_item.checked_out_expires_at = None
 
     return True
 

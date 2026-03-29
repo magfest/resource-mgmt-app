@@ -1,7 +1,8 @@
 """
-Integration tests for admin features: QuickBooks class fields, date visibility.
+Integration tests for admin features: QuickBooks class fields, date visibility,
+and race condition locking.
 """
-from datetime import date
+from datetime import date, datetime
 
 from app import db
 from app.models import (
@@ -10,7 +11,27 @@ from app.models import (
     Department,
     Division,
     EventCycle,
+    WorkType,
+    WorkTypeConfig,
+    WorkPortfolio,
+    WorkItem,
+    WorkLine,
+    WorkLineReview,
+    BudgetLineDetail,
+    ExpenseAccount,
+    ApprovalGroup,
     ROLE_SUPER_ADMIN,
+    ROUTING_STRATEGY_DIRECT,
+    REQUEST_KIND_PRIMARY,
+    WORK_ITEM_STATUS_DRAFT,
+    WORK_ITEM_STATUS_AWAITING_DISPATCH,
+    WORK_ITEM_STATUS_SUBMITTED,
+    WORK_ITEM_STATUS_FINALIZED,
+    WORK_LINE_STATUS_PENDING,
+    REVIEW_STAGE_APPROVAL_GROUP,
+    REVIEW_STATUS_PENDING,
+    REVIEW_STATUS_APPROVED,
+    SpendType,
 )
 
 
@@ -135,3 +156,217 @@ class TestDatesArePublic:
         assert cycle.dates_are_public is False
         assert cycle.event_start_date == date(2026, 6, 1)
         assert cycle.event_end_date == date(2026, 6, 5)
+
+
+def _seed_workflow_data(app):
+    """Seed data needed for workflow/race condition tests."""
+    with app.app_context():
+        admin = User(
+            id="test:admin", email="admin@test.local",
+            display_name="Test Admin", is_active=True,
+        )
+        reviewer = User(
+            id="test:reviewer", email="reviewer@test.local",
+            display_name="Test Reviewer", is_active=True,
+        )
+        db.session.add_all([admin, reviewer])
+        db.session.flush()
+
+        db.session.add(UserRole(user_id=admin.id, role_code=ROLE_SUPER_ADMIN))
+
+        cycle = EventCycle(
+            code="TST2026", name="Test Event 2026",
+            is_active=True, is_default=True, sort_order=1,
+        )
+        db.session.add(cycle)
+
+        dept = Department(
+            code="TESTDEPT", name="Test Department", is_active=True,
+        )
+        db.session.add(dept)
+
+        wt = WorkType(code="BUDGET", name="Budget", is_active=True)
+        db.session.add(wt)
+        db.session.flush()
+
+        wtc = WorkTypeConfig(
+            work_type_id=wt.id, url_slug="budget",
+            public_id_prefix="BUD", line_detail_type="budget",
+            routing_strategy=ROUTING_STRATEGY_DIRECT,
+        )
+        db.session.add(wtc)
+
+        ag = ApprovalGroup(
+            code="TECH", name="Tech Team", is_active=True,
+        )
+        db.session.add(ag)
+
+        ea = ExpenseAccount(
+            code="TEST_ACC", name="Test Account", is_active=True,
+        )
+        db.session.add(ea)
+
+        st = SpendType(
+            code="BANK", name="Bank", is_active=True,
+        )
+        db.session.add(st)
+
+        portfolio = WorkPortfolio(
+            work_type_id=wt.id, event_cycle_id=cycle.id,
+            department_id=dept.id, created_by_user_id=admin.id,
+        )
+        db.session.add(portfolio)
+        db.session.commit()
+
+
+class TestPublicIdLocking:
+    """Tests for public ID generation with row locking."""
+
+    def test_sequential_ids_are_unique(self, app, db_session):
+        """Two sequential calls should produce different IDs."""
+        _seed_workflow_data(app)
+        from app.routes.work.helpers.formatting import generate_public_id_for_portfolio
+
+        portfolio = WorkPortfolio.query.first()
+        id1 = generate_public_id_for_portfolio(portfolio)
+        id2 = generate_public_id_for_portfolio(portfolio)
+
+        assert id1 != id2
+        assert id1 == "TST2026-TESTDEPT-BUD-1"
+        assert id2 == "TST2026-TESTDEPT-BUD-2"
+
+    def test_sequence_counter_increments(self, app, db_session):
+        """next_public_id_seq should increment after each call."""
+        _seed_workflow_data(app)
+        from app.routes.work.helpers.formatting import generate_public_id_for_portfolio
+
+        portfolio = WorkPortfolio.query.first()
+        assert portfolio.next_public_id_seq == 1
+
+        generate_public_id_for_portfolio(portfolio)
+        assert portfolio.next_public_id_seq == 2
+
+        generate_public_id_for_portfolio(portfolio)
+        assert portfolio.next_public_id_seq == 3
+
+
+class TestCheckoutLocking:
+    """Tests for checkout/checkin with row locking."""
+
+    def test_checkout_then_second_checkout_fails(self, app, db_session):
+        """Second checkout by different user should fail."""
+        _seed_workflow_data(app)
+        from app.routes.work.helpers.checkout import checkout_work_item
+        from app.routes import UserContext
+
+        portfolio = WorkPortfolio.query.first()
+        work_item = WorkItem(
+            portfolio_id=portfolio.id, request_kind=REQUEST_KIND_PRIMARY,
+            status=WORK_ITEM_STATUS_SUBMITTED, public_id="TST2026-TESTDEPT-BUD-1",
+            created_by_user_id="test:admin",
+        )
+        db.session.add(work_item)
+        db.session.flush()
+
+        admin_ctx = UserContext(
+            user_id="test:admin", user=None,
+            roles=("SUPER_ADMIN",), is_super_admin=True,
+            approval_group_ids=set(),
+        )
+        reviewer_ctx = UserContext(
+            user_id="test:reviewer", user=None,
+            roles=(), is_super_admin=False,
+            approval_group_ids={1},
+        )
+
+        assert checkout_work_item(work_item, admin_ctx) is True
+        assert checkout_work_item(work_item, reviewer_ctx) is False
+
+    def test_checkin_then_checkout_succeeds(self, app, db_session):
+        """After checkin, a new checkout should succeed."""
+        _seed_workflow_data(app)
+        from app.routes.work.helpers.checkout import checkout_work_item, checkin_work_item
+        from app.routes import UserContext
+
+        portfolio = WorkPortfolio.query.first()
+        work_item = WorkItem(
+            portfolio_id=portfolio.id, request_kind=REQUEST_KIND_PRIMARY,
+            status=WORK_ITEM_STATUS_SUBMITTED, public_id="TST2026-TESTDEPT-BUD-1",
+            created_by_user_id="test:admin",
+        )
+        db.session.add(work_item)
+        db.session.flush()
+
+        admin_ctx = UserContext(
+            user_id="test:admin", user=None,
+            roles=("SUPER_ADMIN",), is_super_admin=True,
+            approval_group_ids=set(),
+        )
+
+        assert checkout_work_item(work_item, admin_ctx) is True
+        assert checkin_work_item(work_item, admin_ctx) is True
+        assert checkout_work_item(work_item, admin_ctx) is True
+
+
+class TestFinalizationLocking:
+    """Tests for finalization idempotency with row locking."""
+
+    def test_finalize_then_second_finalize_fails(self, app, db_session):
+        """Second finalization should fail with 'already finalized'."""
+        _seed_workflow_data(app)
+        from app.routes.admin_final.helpers import finalize_work_item
+        from app.routes import UserContext
+
+        portfolio = WorkPortfolio.query.first()
+        ag = ApprovalGroup.query.first()
+        ea = ExpenseAccount.query.first()
+
+        work_item = WorkItem(
+            portfolio_id=portfolio.id, request_kind=REQUEST_KIND_PRIMARY,
+            status=WORK_ITEM_STATUS_SUBMITTED, public_id="TST2026-TESTDEPT-BUD-1",
+            created_by_user_id="test:admin",
+        )
+        db.session.add(work_item)
+        db.session.flush()
+
+        line = WorkLine(
+            work_item_id=work_item.id, line_number=1,
+            status=WORK_LINE_STATUS_PENDING,
+            current_review_stage=REVIEW_STAGE_APPROVAL_GROUP,
+        )
+        db.session.add(line)
+        db.session.flush()
+
+        st = SpendType.query.filter_by(code="BANK").one()
+        detail = BudgetLineDetail(
+            work_line_id=line.id, expense_account_id=ea.id,
+            spend_type_id=st.id,
+            quantity=1, unit_price_cents=1000,
+            routed_approval_group_id=ag.id,
+        )
+        db.session.add(detail)
+
+        review = WorkLineReview(
+            work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP,
+            approval_group_id=ag.id, status=REVIEW_STATUS_APPROVED,
+            approved_amount_cents=1000,
+            decided_at=datetime.utcnow(),
+            decided_by_user_id="test:admin",
+            created_by_user_id="test:admin",
+        )
+        db.session.add(review)
+        db.session.flush()
+
+        admin_ctx = UserContext(
+            user_id="test:admin", user=None,
+            roles=("SUPER_ADMIN",), is_super_admin=True,
+            approval_group_ids=set(),
+        )
+
+        success, error = finalize_work_item(work_item, admin_ctx, note="First finalization")
+        assert success is True
+        db.session.commit()
+
+        success, error = finalize_work_item(work_item, admin_ctx, note="Second attempt")
+        assert success is False
+        assert "already finalized" in error.lower()
