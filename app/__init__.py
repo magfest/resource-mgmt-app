@@ -48,6 +48,15 @@ def create_app() -> Flask:
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+    # Connection pool settings (important for Heroku Postgres / production)
+    if db_url and "sqlite" not in db_url:
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+            "pool_size": 5,           # Connections per worker (default, safe for Heroku Essential plans)
+            "max_overflow": 3,        # Extra connections under burst load
+            "pool_recycle": 1800,     # Recycle connections every 30 min (Heroku recycles them server-side)
+            "pool_pre_ping": True,    # Verify connections are alive before use (prevents stale connection errors)
+        }
+
     # --- Session Cookie Security ---
     app.config["SESSION_COOKIE_SECURE"] = is_production  # HTTPS only in production
     app.config["SESSION_COOKIE_HTTPONLY"] = True  # Prevent JS access
