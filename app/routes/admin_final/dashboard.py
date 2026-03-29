@@ -109,10 +109,17 @@ def finalize(work_item_id: int):
         flash(f"Work item {work_item.public_id} finalized.", "success")
         db.session.commit()
 
-        # Send notification to department members
-        from app.services.notifications import notify_budget_finalized
-        notify_budget_finalized(work_item)
-        db.session.commit()  # Commit notification log
+        # Send notification to department members (non-blocking)
+        try:
+            from app.services.notifications import notify_budget_finalized
+            notify_budget_finalized(work_item)
+            db.session.commit()  # Commit notification log
+        except Exception:
+            db.session.rollback()
+            import logging
+            logging.getLogger(__name__).exception(
+                "Failed to send finalization notification for %s", work_item.public_id
+            )
 
     # Redirect back to referrer or dashboard
     from app.routes.admin.helpers import safe_redirect_url

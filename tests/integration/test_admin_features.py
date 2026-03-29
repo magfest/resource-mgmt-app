@@ -11,8 +11,6 @@ from app.models import (
     Department,
     Division,
     EventCycle,
-    WorkType,
-    WorkTypeConfig,
     WorkPortfolio,
     WorkItem,
     WorkLine,
@@ -21,15 +19,10 @@ from app.models import (
     ExpenseAccount,
     ApprovalGroup,
     ROLE_SUPER_ADMIN,
-    ROUTING_STRATEGY_DIRECT,
     REQUEST_KIND_PRIMARY,
-    WORK_ITEM_STATUS_DRAFT,
-    WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
-    WORK_ITEM_STATUS_FINALIZED,
     WORK_LINE_STATUS_PENDING,
     REVIEW_STAGE_APPROVAL_GROUP,
-    REVIEW_STATUS_PENDING,
     REVIEW_STATUS_APPROVED,
     SpendType,
 )
@@ -158,73 +151,11 @@ class TestDatesArePublic:
         assert cycle.event_end_date == date(2026, 6, 5)
 
 
-def _seed_workflow_data(app):
-    """Seed data needed for workflow/race condition tests."""
-    with app.app_context():
-        admin = User(
-            id="test:admin", email="admin@test.local",
-            display_name="Test Admin", is_active=True,
-        )
-        reviewer = User(
-            id="test:reviewer", email="reviewer@test.local",
-            display_name="Test Reviewer", is_active=True,
-        )
-        db.session.add_all([admin, reviewer])
-        db.session.flush()
-
-        db.session.add(UserRole(user_id=admin.id, role_code=ROLE_SUPER_ADMIN))
-
-        cycle = EventCycle(
-            code="TST2026", name="Test Event 2026",
-            is_active=True, is_default=True, sort_order=1,
-        )
-        db.session.add(cycle)
-
-        dept = Department(
-            code="TESTDEPT", name="Test Department", is_active=True,
-        )
-        db.session.add(dept)
-
-        wt = WorkType(code="BUDGET", name="Budget", is_active=True)
-        db.session.add(wt)
-        db.session.flush()
-
-        wtc = WorkTypeConfig(
-            work_type_id=wt.id, url_slug="budget",
-            public_id_prefix="BUD", line_detail_type="budget",
-            routing_strategy=ROUTING_STRATEGY_DIRECT,
-        )
-        db.session.add(wtc)
-
-        ag = ApprovalGroup(
-            code="TECH", name="Tech Team", is_active=True,
-        )
-        db.session.add(ag)
-
-        ea = ExpenseAccount(
-            code="TEST_ACC", name="Test Account", is_active=True,
-        )
-        db.session.add(ea)
-
-        st = SpendType(
-            code="BANK", name="Bank", is_active=True,
-        )
-        db.session.add(st)
-
-        portfolio = WorkPortfolio(
-            work_type_id=wt.id, event_cycle_id=cycle.id,
-            department_id=dept.id, created_by_user_id=admin.id,
-        )
-        db.session.add(portfolio)
-        db.session.commit()
-
-
 class TestPublicIdLocking:
     """Tests for public ID generation with row locking."""
 
-    def test_sequential_ids_are_unique(self, app, db_session):
+    def test_sequential_ids_are_unique(self, app, db_session, seed_workflow_data):
         """Two sequential calls should produce different IDs."""
-        _seed_workflow_data(app)
         from app.routes.work.helpers.formatting import generate_public_id_for_portfolio
 
         portfolio = WorkPortfolio.query.first()
@@ -235,9 +166,8 @@ class TestPublicIdLocking:
         assert id1 == "TST2026-TESTDEPT-BUD-1"
         assert id2 == "TST2026-TESTDEPT-BUD-2"
 
-    def test_sequence_counter_increments(self, app, db_session):
+    def test_sequence_counter_increments(self, app, db_session, seed_workflow_data):
         """next_public_id_seq should increment after each call."""
-        _seed_workflow_data(app)
         from app.routes.work.helpers.formatting import generate_public_id_for_portfolio
 
         portfolio = WorkPortfolio.query.first()
@@ -253,9 +183,8 @@ class TestPublicIdLocking:
 class TestCheckoutLocking:
     """Tests for checkout/checkin with row locking."""
 
-    def test_checkout_then_second_checkout_fails(self, app, db_session):
+    def test_checkout_then_second_checkout_fails(self, app, db_session, seed_workflow_data):
         """Second checkout by different user should fail."""
-        _seed_workflow_data(app)
         from app.routes.work.helpers.checkout import checkout_work_item
         from app.routes import UserContext
 
@@ -282,9 +211,8 @@ class TestCheckoutLocking:
         assert checkout_work_item(work_item, admin_ctx) is True
         assert checkout_work_item(work_item, reviewer_ctx) is False
 
-    def test_checkin_then_checkout_succeeds(self, app, db_session):
+    def test_checkin_then_checkout_succeeds(self, app, db_session, seed_workflow_data):
         """After checkin, a new checkout should succeed."""
-        _seed_workflow_data(app)
         from app.routes.work.helpers.checkout import checkout_work_item, checkin_work_item
         from app.routes import UserContext
 
@@ -311,9 +239,8 @@ class TestCheckoutLocking:
 class TestFinalizationLocking:
     """Tests for finalization idempotency with row locking."""
 
-    def test_finalize_then_second_finalize_fails(self, app, db_session):
+    def test_finalize_then_second_finalize_fails(self, app, db_session, seed_workflow_data):
         """Second finalization should fail with 'already finalized'."""
-        _seed_workflow_data(app)
         from app.routes.admin_final.helpers import finalize_work_item
         from app.routes import UserContext
 

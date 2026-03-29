@@ -107,10 +107,17 @@ def work_item_submit(event: str, dept: str, public_id: str):
 
     db.session.commit()
 
-    # Send notification to budget admins
-    from app.services.notifications import notify_budget_submitted
-    notify_budget_submitted(work_item)
-    db.session.commit()  # Commit notification log
+    # Send notification to budget admins (non-blocking)
+    try:
+        from app.services.notifications import notify_budget_submitted
+        notify_budget_submitted(work_item)
+        db.session.commit()  # Commit notification log
+    except Exception:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to send submission notification for %s", work_item.public_id
+        )
 
     flash(
         "Budget request submitted! A budget admin will assign reviewers and "
