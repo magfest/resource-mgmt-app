@@ -10,7 +10,7 @@ these are conditionally applied only on PostgreSQL. Application-level
 guards (SELECT ... FOR UPDATE) protect both databases.
 
 Revision ID: o5p6q7r8s9t0
-Revises: cb2f128f158d
+Revises: 3ef69c594552
 Create Date: 2026-03-29 23:30:00.000000
 
 """
@@ -18,7 +18,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'o5p6q7r8s9t0'
-down_revision = 'cb2f128f158d'
+down_revision = '3ef69c594552'
 branch_labels = None
 depends_on = None
 
