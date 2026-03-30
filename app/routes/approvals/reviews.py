@@ -281,9 +281,16 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
 
         # Send notification if line was kicked back (NEEDS_INFO or NEEDS_ADJUSTMENT)
         if action in (REVIEW_ACTION_NEEDS_INFO, REVIEW_ACTION_NEEDS_ADJUSTMENT):
-            from app.services.notifications import notify_needs_attention
-            notify_needs_attention(work_item)
-            db.session.commit()  # Commit notification log
+            try:
+                from app.services.notifications import notify_needs_attention
+                notify_needs_attention(work_item)
+                db.session.commit()  # Commit notification log
+            except Exception:
+                db.session.rollback()
+                import logging
+                logging.getLogger(__name__).exception(
+                    "Failed to send needs_attention notification for %s", work_item.public_id
+                )
 
         if is_ajax:
             return jsonify({
@@ -382,11 +389,18 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int):
         db.session.add(comment)
         db.session.commit()
 
-        # Notify the reviewer that a response was received
+        # Notify the reviewer that a response was received (non-blocking)
         if reviewer_user_id:
-            from app.services.notifications import notify_response_received
-            notify_response_received(work_item, reviewer_user_id)
-            db.session.commit()  # Commit notification log
+            try:
+                from app.services.notifications import notify_response_received
+                notify_response_received(work_item, reviewer_user_id)
+                db.session.commit()  # Commit notification log
+            except Exception:
+                db.session.rollback()
+                import logging
+                logging.getLogger(__name__).exception(
+                    "Failed to send response_received notification for %s", work_item.public_id
+                )
 
     return redirect(url_for(
         "approvals.line_review",
@@ -558,11 +572,18 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
         db.session.add(comment)
         db.session.commit()
 
-        # Notify the reviewer that a response was received
+        # Notify the reviewer that a response was received (non-blocking)
         if reviewer_user_id:
-            from app.services.notifications import notify_response_received
-            notify_response_received(work_item, reviewer_user_id)
-            db.session.commit()  # Commit notification log
+            try:
+                from app.services.notifications import notify_response_received
+                notify_response_received(work_item, reviewer_user_id)
+                db.session.commit()  # Commit notification log
+            except Exception:
+                db.session.rollback()
+                import logging
+                logging.getLogger(__name__).exception(
+                    "Failed to send response_received notification for %s", work_item.public_id
+                )
 
     return redirect(url_for(
         "approvals.line_review",

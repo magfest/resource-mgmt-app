@@ -18,12 +18,18 @@
             <span class="muted" style="font-size: 13px; margin-left: 6px;">{{ message }}</span>
           </div>
           <button type="button" class="flash-close" aria-label="Dismiss"
-                  style="background: none; border: none; cursor: pointer; padding: 0; font-size: 18px; line-height: 1; color: #666; opacity: 0.7;"
-                  onclick="this.closest('.flash-message').remove()">×</button>
+                  style="background: none; border: none; cursor: pointer; padding: 0; font-size: 18px; line-height: 1; color: #666; opacity: 0.7;">×</button>
         </div>
       {% endfor %}
     </div>
     <script nonce="{{ csp_nonce }}">
+      // Handle flash close button clicks (CSP blocks inline onclick handlers)
+      document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('flash-close')) {
+          var msg = e.target.closest('.flash-message');
+          if (msg) msg.remove();
+        }
+      });
       // Auto-dismiss flash messages after timeout
       document.querySelectorAll('.flash-message[data-auto-dismiss]').forEach(function(el) {
         var timeout = parseInt(el.getAttribute('data-auto-dismiss')) || 5000;

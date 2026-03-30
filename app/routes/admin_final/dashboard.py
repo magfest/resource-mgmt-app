@@ -109,10 +109,17 @@ def finalize(work_item_id: int):
         flash(f"Work item {work_item.public_id} finalized.", "success")
         db.session.commit()
 
-        # Send notification to department members
-        from app.services.notifications import notify_budget_finalized
-        notify_budget_finalized(work_item)
-        db.session.commit()  # Commit notification log
+        # Send notification to department members (non-blocking)
+        try:
+            from app.services.notifications import notify_budget_finalized
+            notify_budget_finalized(work_item)
+            db.session.commit()  # Commit notification log
+        except Exception:
+            db.session.rollback()
+            import logging
+            logging.getLogger(__name__).exception(
+                "Failed to send finalization notification for %s", work_item.public_id
+            )
 
     # Redirect back to referrer or dashboard
     from app.routes.admin.helpers import safe_redirect_url
@@ -335,7 +342,7 @@ def all_requests():
     page = request.args.get("page", 1, type=int)
     per_page = 25
 
-    # Build base query
+    # Build base query with eager loading to avoid N+1 queries
     query = WorkItem.query.filter(
         WorkItem.is_archived == False
     ).join(
@@ -344,6 +351,10 @@ def all_requests():
         Department, WorkPortfolio.department_id == Department.id
     ).join(
         EventCycle, WorkPortfolio.event_cycle_id == EventCycle.id
+    ).options(
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+        joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
+        selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
     )
 
     # Apply event filter

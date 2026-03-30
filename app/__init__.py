@@ -183,7 +183,12 @@ def create_app() -> Flask:
         """
         if not text:
             return ''
-        # First, convert markdown links: [text](url)
+        from markupsafe import escape
+
+        # First, escape the entire input to neutralize any raw HTML
+        text = str(escape(text))
+
+        # Convert markdown links: [text](url) — both groups are now HTML-safe
         md_pattern = r'\[([^\]]+)\]\((https?://[^\s\)]+)\)'
         result = re.sub(md_pattern, r'<a href="\2" target="_blank" rel="noopener">\1</a>', text)
         # Then, auto-link bare URLs that aren't already in an href

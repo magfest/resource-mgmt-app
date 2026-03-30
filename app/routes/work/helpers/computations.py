@@ -248,3 +248,57 @@ def compute_portfolio_status_summary(portfolio: WorkPortfolio) -> LineStatusSumm
         supplementary_draft_count=supp_draft,
         supplementary_needs_attention=supp_needs_attention,
     )
+
+
+def compute_portfolio_status_from_loaded(portfolio: WorkPortfolio) -> LineStatusSummary | None:
+    """
+    Compute portfolio status summary using already-loaded work items and lines.
+
+    Same logic as compute_portfolio_status_summary() but operates on
+    pre-loaded relationships (via selectinload) instead of issuing queries.
+    Use this when portfolios have been batch-loaded with eager loading.
+    """
+    primary = None
+    supplementary_items = []
+    for item in portfolio.work_items:
+        if item.is_archived:
+            continue
+        if item.request_kind == REQUEST_KIND_PRIMARY:
+            primary = item
+        elif item.request_kind == REQUEST_KIND_SUPPLEMENTARY:
+            supplementary_items.append(item)
+
+    if not primary:
+        return None
+
+    summary = compute_line_status_summary(primary)
+
+    supp_count = len(supplementary_items)
+    supp_draft = 0
+    supp_needs_attention = 0
+
+    for supp in supplementary_items:
+        if supp.status == WORK_ITEM_STATUS_DRAFT:
+            supp_draft += 1
+        elif supp.status == WORK_ITEM_STATUS_AWAITING_DISPATCH:
+            supp_needs_attention += 1
+        elif supp.status in (WORK_ITEM_STATUS_NEEDS_INFO, WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_UNDER_REVIEW):
+            supp_summary = compute_line_status_summary(supp)
+            if supp_summary.has_issues:
+                supp_needs_attention += 1
+
+    return LineStatusSummary(
+        line_count=summary.line_count,
+        pending_count=summary.pending_count,
+        needs_info_count=summary.needs_info_count,
+        needs_adjustment_count=summary.needs_adjustment_count,
+        approved_count=summary.approved_count,
+        rejected_count=summary.rejected_count,
+        ag_approved_count=summary.ag_approved_count,
+        final_approved_count=summary.final_approved_count,
+        effective_status=summary.effective_status,
+        has_issues=summary.has_issues,
+        supplementary_count=supp_count,
+        supplementary_draft_count=supp_draft,
+        supplementary_needs_attention=supp_needs_attention,
+    )

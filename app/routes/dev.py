@@ -108,16 +108,17 @@ def set_role_override():
     """Set a role override for testing (super-admins only, beta mode only)."""
     from flask import current_app
     from app.models import ApprovalGroup
+    from app.routes.admin.helpers import safe_redirect_url
 
     # Security check: only super-admins in beta mode can use this
     if not current_app.config.get("BETA_TESTING_MODE"):
         flash("Role override not available", "error")
-        return redirect(request.referrer or url_for("home.index"))
+        return redirect(safe_redirect_url(request.referrer))
 
     # Check actual database role, ignoring any current override
     if not h.has_super_admin_role():
         flash("Only super-admins can override roles", "error")
-        return redirect(request.referrer or url_for("home.index"))
+        return redirect(safe_redirect_url(request.referrer))
 
     override = request.form.get("role_override", "").strip()
 
@@ -137,17 +138,17 @@ def set_role_override():
             group = db.session.get(ApprovalGroup, group_id)
             if not group:
                 flash("Invalid approval group", "error")
-                return redirect(request.referrer or url_for("home.index"))
+                return redirect(safe_redirect_url(request.referrer))
             session["role_override"] = "approver"
             session["role_override_approval_group_id"] = group_id
             flash(f"Role override: Approver for {group.name} only", "info")
         except (ValueError, IndexError):
             flash("Invalid approval group format", "error")
-            return redirect(request.referrer or url_for("home.index"))
+            return redirect(safe_redirect_url(request.referrer))
     else:
         flash("Unknown role override option", "error")
 
-    return redirect(request.referrer or url_for("home.index"))
+    return redirect(safe_redirect_url(request.referrer))
 
 
 @dev_bp.get("/dev/impersonate")

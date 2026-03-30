@@ -11,13 +11,15 @@ from app.models import (
     Division,
     Department,
     DivisionMembership,
-    WorkType,
+    WorkItem,
     WorkPortfolio,
 )
 from app.routes import get_user_ctx, render_page
+from sqlalchemy.orm import selectinload
+
 from app.routes.work.helpers import (
     get_active_work_types,
-    compute_portfolio_status_summary,
+    compute_portfolio_status_from_loaded,
     is_budget_admin,
     get_enabled_department_ids_for_event,
 )
@@ -70,18 +72,33 @@ def division_home(event: str, div_code: str):
     active_work_types = get_active_work_types()
     dept_work_type_status = {}
 
-    for dept in departments:
-        for wt in active_work_types:
-            portfolio = WorkPortfolio.query.filter_by(
-                work_type_id=wt.id,
-                event_cycle_id=event_cycle.id,
-                department_id=dept.id,
-                is_archived=False,
-            ).first()
-            if portfolio:
-                status = compute_portfolio_status_summary(portfolio)
-                if status:
-                    dept_work_type_status[(dept.id, wt.id)] = status
+    # Batch-load all portfolios for this division's departments in one query
+    dept_ids = [dept.id for dept in departments]
+    if dept_ids:
+        all_portfolios = (
+            WorkPortfolio.query
+            .filter(
+                WorkPortfolio.event_cycle_id == event_cycle.id,
+                WorkPortfolio.department_id.in_(dept_ids),
+                WorkPortfolio.is_archived == False,
+            )
+            .options(
+                selectinload(WorkPortfolio.work_items)
+                .selectinload(WorkItem.lines)
+            )
+            .all()
+        )
+        portfolio_lookup = {
+            (p.department_id, p.work_type_id): p for p in all_portfolios
+        }
+
+        for dept in departments:
+            for wt in active_work_types:
+                portfolio = portfolio_lookup.get((dept.id, wt.id))
+                if portfolio:
+                    status = compute_portfolio_status_from_loaded(portfolio)
+                    if status:
+                        dept_work_type_status[(dept.id, wt.id)] = status
 
     return render_page(
         "budget/division_home.html",

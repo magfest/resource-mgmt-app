@@ -81,6 +81,7 @@ from .computations import (
     LineStatusSummary,
     compute_line_status_summary,
     compute_portfolio_status_summary,
+    compute_portfolio_status_from_loaded,
 )
 
 # Re-export formatting/utility functions
@@ -180,6 +181,7 @@ __all__ = [
     # Line status
     "compute_line_status_summary",
     "compute_portfolio_status_summary",
+    "compute_portfolio_status_from_loaded",
     # Public ID
     "generate_public_id",
     "generate_public_id_for_work_type",

@@ -49,6 +49,7 @@ from app.models import (
     REQUEST_KIND_SUPPLEMENTARY,
 )
 from app.routes import UserContext
+from app.routes.work.helpers.checkout import is_checked_out
 
 
 @dataclass(frozen=True)
@@ -180,9 +181,18 @@ def get_or_create_admin_review(line: WorkLine, user_ctx: UserContext) -> Tuple[W
     """
     Get or create an ADMIN_FINAL WorkLineReview.
 
+    Uses SELECT ... FOR UPDATE to prevent duplicate ADMIN_FINAL reviews
+    from concurrent requests (the standard unique constraint doesn't protect
+    rows where approval_group_id IS NULL due to SQL NULL semantics).
+
     Returns (review, created) tuple.
     """
-    review = get_admin_final_review(line)
+    # Lock existing review row if present, preventing concurrent creation
+    review = WorkLineReview.query.filter_by(
+        work_line_id=line.id,
+        stage=REVIEW_STAGE_ADMIN_FINAL,
+    ).with_for_update().first()
+
     if review:
         return review, False
 
@@ -218,6 +228,10 @@ def can_finalize_work_item(work_item: WorkItem) -> Tuple[bool, str]:
     # Allow finalization from AWAITING_DISPATCH (admin bypass) or SUBMITTED
     if work_item.status not in (WORK_ITEM_STATUS_AWAITING_DISPATCH, WORK_ITEM_STATUS_SUBMITTED):
         return False, "Work item must be submitted before finalization."
+
+    # Block finalization while a reviewer has an active checkout
+    if is_checked_out(work_item):
+        return False, "Cannot finalize: a reviewer currently has this item checked out."
 
     # Batch-load all reviews for all lines (1 query instead of 2N)
     line_ids = [line.id for line in work_item.lines]

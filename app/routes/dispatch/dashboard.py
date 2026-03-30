@@ -301,10 +301,17 @@ def dispatch_to_queue(work_item_id: int):
         if line.budget_detail and line.budget_detail.routed_approval_group_id:
             approval_group_ids.add(line.budget_detail.routed_approval_group_id)
 
-    # Send notification to approval group members
-    from app.services.notifications import notify_budget_dispatched
-    notify_budget_dispatched(work_item, list(approval_group_ids))
-    db.session.commit()  # Commit notification log
+    # Send notification to approval group members (non-blocking)
+    try:
+        from app.services.notifications import notify_budget_dispatched
+        notify_budget_dispatched(work_item, list(approval_group_ids))
+        db.session.commit()  # Commit notification log
+    except Exception:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to send dispatch notification for %s", work_item.public_id
+        )
 
     # Build redirect URL to work item detail
     portfolio = work_item.portfolio

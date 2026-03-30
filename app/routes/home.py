@@ -26,10 +26,10 @@ from app.models import (
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
 )
 from app.routes.work.helpers import (
-    compute_portfolio_status_summary,
     get_active_work_types,
     is_budget_admin,
     get_enabled_department_ids_for_event,
+    compute_portfolio_status_from_loaded,
 )
 from app.routes import h, get_user_ctx, render_page
 
@@ -231,13 +231,21 @@ def index():
                 })
 
         # Then, add departments from division memberships (if not already added)
-        for div_m in div_memberships:
-            division_depts = (
+        # Batch-load all departments for all divisions in one query
+        division_ids = [div_m.division_id for div_m in div_memberships]
+        all_division_depts = {}
+        if division_ids:
+            depts_for_divs = (
                 db.session.query(Department)
-                .filter(Department.division_id == div_m.division_id)
+                .filter(Department.division_id.in_(division_ids))
                 .filter(Department.is_active == True)
                 .all()
             )
+            for dept in depts_for_divs:
+                all_division_depts.setdefault(dept.division_id, []).append(dept)
+
+        for div_m in div_memberships:
+            division_depts = all_division_depts.get(div_m.division_id, [])
 
             for dept in division_depts:
                 if dept.id not in seen_dept_ids:
@@ -263,11 +271,11 @@ def index():
                             "is_head": div_m.is_division_head,
                         })
 
-        # Sort by division, then department
+        # Sort by division, then department (handle None sort_order from nullable columns)
         accessible_depts.sort(key=lambda x: (
-            x["department"].division.sort_order if x["department"].division else 999,
+            x["department"].division.sort_order if x["department"].division and x["department"].division.sort_order is not None else 999,
             x["department"].division.name if x["department"].division else "ZZZ",
-            x["department"].sort_order,
+            x["department"].sort_order if x["department"].sort_order is not None else 999,
             x["department"].name,
         ))
 
@@ -279,7 +287,25 @@ def index():
                 if d["department"].id in enabled_dept_ids
             ]
 
-        # Get status for each work type for each accessible department (only if user has access)
+        # Batch-load all portfolios for this event cycle with work items and lines
+        # This replaces N×M individual queries with 1 eager-loaded query
+        from sqlalchemy.orm import selectinload
+        all_portfolios = (
+            WorkPortfolio.query
+            .filter_by(event_cycle_id=default_cycle.id, is_archived=False)
+            .options(
+                selectinload(WorkPortfolio.work_items)
+                .selectinload(WorkItem.lines)
+            )
+            .all()
+        )
+
+        # Build lookup: (dept_id, work_type_id) -> portfolio
+        portfolio_lookup = {
+            (p.department_id, p.work_type_id): p for p in all_portfolios
+        }
+
+        # Compute status for each accessible (dept, work_type) pair using pre-loaded data
         for work_type in active_work_types:
             for dept_info in accessible_depts:
                 dept = dept_info["department"]
@@ -289,17 +315,10 @@ def index():
                 if not access and not is_super_admin:
                     continue  # No access to this work type
 
-                # Find the portfolio for this dept/cycle/work_type
-                portfolio = WorkPortfolio.query.filter_by(
-                    work_type_id=work_type.id,
-                    event_cycle_id=default_cycle.id,
-                    department_id=dept.id,
-                    is_archived=False,
-                ).first()
-
+                portfolio = portfolio_lookup.get((dept.id, work_type.id))
                 if portfolio:
-                    # Compute portfolio-level status (includes supplementary items)
-                    portfolio_status = compute_portfolio_status_summary(portfolio)
+                    # Compute status using already-loaded work items and lines (no queries)
+                    portfolio_status = compute_portfolio_status_from_loaded(portfolio)
                     if portfolio_status:
                         dept_work_type_status[(dept.id, work_type.id)] = portfolio_status
 

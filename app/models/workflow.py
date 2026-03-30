@@ -190,16 +190,12 @@ class UserRole(db.Model):
     approval_group = db.relationship("ApprovalGroup", foreign_keys=[approval_group_id])
 
     __table_args__ = (
-        # NOTE: This unique constraint has NULL semantics issue - SQL treats NULL != NULL.
-        # A user could technically have duplicate (user_id, role_code) rows if work_type_id
-        # and/or approval_group_id are NULL. In production PostgreSQL, add partial unique indexes:
-        #   CREATE UNIQUE INDEX ix_user_roles_global_unique ON user_roles (user_id, role_code)
-        #       WHERE work_type_id IS NULL AND approval_group_id IS NULL;
-        #   CREATE UNIQUE INDEX ix_user_roles_worktype_unique ON user_roles (user_id, role_code, work_type_id)
-        #       WHERE work_type_id IS NOT NULL AND approval_group_id IS NULL;
-        #   CREATE UNIQUE INDEX ix_user_roles_approvalgroup_unique ON user_roles (user_id, role_code, approval_group_id)
-        #       WHERE work_type_id IS NULL AND approval_group_id IS NOT NULL;
-        # For SQLite dev, enforce uniqueness at application layer.
+        # NOTE: This constraint doesn't prevent duplicates when nullable columns are NULL
+        # (SQL treats NULL != NULL). Protection is two-layered:
+        #   1. PostgreSQL partial indexes (migration o5p6q7r8s9t0):
+        #      ix_user_roles_global_unique, ix_user_roles_worktype_unique,
+        #      ix_user_roles_approvalgroup_unique
+        #   2. Application-level checks in admin role assignment routes
         db.UniqueConstraint(
             "user_id", "role_code", "work_type_id", "approval_group_id",
             name="uq_user_role_scoped_once",
@@ -499,12 +495,10 @@ class WorkLineReview(db.Model):
     approval_group = db.relationship("ApprovalGroup", foreign_keys=[approval_group_id])
 
     __table_args__ = (
-        # NOTE: This unique constraint has NULL semantics issue - SQL treats NULL != NULL.
-        # For ADMIN_FINAL stage where approval_group_id is NULL, duplicates are technically possible.
-        # In production PostgreSQL, add partial unique indexes:
-        #   CREATE UNIQUE INDEX ix_wlr_admin_final_unique ON work_line_reviews (work_line_id, stage)
-        #   WHERE approval_group_id IS NULL;
-        # For SQLite dev, enforce uniqueness at application layer.
+        # NOTE: This constraint doesn't prevent duplicates when approval_group_id IS NULL
+        # (SQL treats NULL != NULL). Protection is two-layered:
+        #   1. PostgreSQL partial index ix_wlr_admin_final_unique (migration o5p6q7r8s9t0)
+        #   2. Application-level SELECT ... FOR UPDATE in get_or_create_admin_review()
         db.UniqueConstraint("work_line_id", "stage", "approval_group_id", name="uq_work_line_review_per_stage"),
         # Composite index for approval queue queries
         db.Index("ix_work_line_reviews_stage_status", "stage", "status"),
