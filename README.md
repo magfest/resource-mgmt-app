@@ -129,7 +129,7 @@ pip-compile --generate-hashes requirements-dev.in -o requirements-dev.txt --upgr
 - **CI**: GitHub Actions runs pip-audit on every push and PR to `master`
 - **Dependabot**: Alerts and automatic security PRs enabled
 
-See the [Security & Infrastructure](ROADMAP.md#security--infrastructure) section of the Roadmap for planned improvements. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ### Tools / Disclosures
 
