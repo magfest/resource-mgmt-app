@@ -51,31 +51,6 @@ Lower priority items that would improve the app but aren't blocking anything.
 - [ ] **"Falling through cracks" report** — Needs requirements definition; would surface requests that are stuck or forgotten
 - [ ] **AV packages on fixed costs** — Future enhancement for audio/visual equipment budgeting
 
----
-
-## Security & Infrastructure
-
-Items from the dependency supply chain review (2026-03-24). The basics are in place (pip-audit, Dependabot, CI scanning). These are the next steps.
-
-### Short-Term
-- [ ] **Branch protection on `master`** — Require status checks to pass and PRs before merging, so CI is enforceable not just advisory
-- [ ] **Hash-pinned dependencies** — `pip-compile --generate-hashes` to verify package integrity against supply chain tampering
-- [ ] **Keep prod/dev requirements in sync** — Always compile both files together to prevent version drift
-
-### Medium-Term
-- [ ] **SAST in CI** — Add Bandit or Semgrep to catch common Python/Flask vulnerabilities (SQL injection, hardcoded secrets, open redirects)
-- [ ] **Evaluate psycopg2-binary vs source build** — With Docker, source builds are practical and avoid trusting PyPI's pre-built binaries
-- [ ] **File upload hardening** — Max file size at the web server level, keep openpyxl updated for XML parsing vulnerabilities
-- [ ] **Docker image scanning** — Add Trivy or Grype to CI to catch OS-level vulnerabilities in the container image
-
-### Long-Term
-- [ ] **Authlib maintainer risk** — Single-maintainer project handling all authentication. Monitor health, have a migration path ready
-- [ ] **K8s secrets management** — External Secrets Operator backed by AWS Secrets Manager, credential rotation
-- [ ] **CSP hardening** — Audit for remaining inline handlers, consider `strict-dynamic`, add `Permissions-Policy` headers
-- [ ] **Dependency review process** — Lightweight checklist for adding new packages (maintainer count, CVE history, transitive deps)
-
----
-
 ## Recently Completed
 
 ### March 2026 (Launch)
