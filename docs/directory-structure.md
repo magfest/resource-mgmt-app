@@ -81,6 +81,7 @@ routes/
 └── work/                # Requester workflow (all work types)
     ├── __init__.py      # Blueprint setup
     ├── department.py    # Department landing page
+    ├── division.py      # Division landing page (all departments in a division)
     ├── portfolio.py     # Portfolio landing, placeholder routes
     ├── lines.py         # Line item CRUD
     ├── helpers/         # Helper functions (package)
@@ -101,8 +102,8 @@ routes/
 
 The `work/` folder handles ALL work types via the generic system. The URL structure is:
 - `/<event>/<dept>/budget/` → Budget requests
-- `/<event>/<dept>/contracts/` → Contract requests (placeholder for now)
-- `/<event>/<dept>/supply/` → Supply requests (placeholder for now)
+- `/<event>/<dept>/contracts/` → Contract requests (future release)
+- `/<event>/<dept>/supply/` → Supply requests (future release)
 
 The blueprint is registered as `work` so URL generation uses `url_for('work.<route_name>')`.
 

@@ -91,10 +91,10 @@ Lines go through two review stages:
 
 ### 1. Approval Group Review
 
-Lines are routed to approval groups based on:
-- Budget: Expense account
-- Contracts: Contract type
-- Supply: Item category
+Lines are routed to approval groups based on the work type's routing strategy:
+- **Budget** (live): Routed via expense account
+- **Contracts** (future): Will route via contract type
+- **Supply Orders** (future): Will route via item category
 
 Approvers in that group can:
 - Approve the line
@@ -168,11 +168,15 @@ Supplementary requests are common for:
 
 ## Notifications
 
-The system tracks notifications (not yet fully implemented):
+Email notifications are sent at key workflow transitions via AWS SES:
 
-- Requester notified when lines need response
-- Approvers notified of new lines in their queue
-- Admins notified when requests ready for final review
+- **Budget admins** notified when a request is submitted (awaiting dispatch)
+- **Approval group members** notified when lines are dispatched to their group
+- **Requesters** notified when a line needs their response (NEEDS_INFO or NEEDS_ADJUSTMENT)
+- **Reviewers** notified when a requester responds to their feedback
+- **Department members** notified when a request is finalized
+
+Notification failures are non-blocking — the workflow operation completes even if email delivery fails. Failures are logged for troubleshooting.
 
 ## Key Routes
 
@@ -189,7 +193,8 @@ The system tracks notifications (not yet fully implemented):
 
 | Function | File |
 |----------|------|
-| Submit logic | `app/routes/budget/work_items.py` |
+| Submit logic | `app/routes/work/work_items/actions.py` |
 | Approval actions | `app/routes/approvals/reviews.py` |
-| Admin finalization | `app/routes/admin_final/reviews.py` |
-| Status computation | `app/routes/budget/helpers.py` |
+| Admin finalization | `app/routes/admin_final/helpers.py` |
+| Status computation | `app/routes/work/helpers/computations.py` |
+| Notifications | `app/services/notifications.py` |

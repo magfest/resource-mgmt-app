@@ -6,9 +6,9 @@ The system supports multiple **work types** - different categories of requests t
 
 | Code | Name | URL Slug | Status | Contact |
 |------|------|----------|--------|---------|
-| BUDGET | Budget Requests | `/budget/` | Active | biz@magfest.org |
-| CONTRACT | Contracts | `/contracts/` | Coming Soon | biz@magfest.org |
-| SUPPLY | Supply Orders | `/supply/` | Coming Soon | festops@magfest.org |
+| BUDGET | Budget Requests | `/budget/` | **Live** | biz@magfest.org |
+| CONTRACT | Contracts | `/contracts/` | Future release (data model exists, no UI yet) | biz@magfest.org |
+| SUPPLY | Supply Orders | `/supply/` | Future release (data model exists, no UI yet) | festops@magfest.org |
 
 ## How It Works
 
@@ -33,7 +33,7 @@ Configuration is stored separately for flexibility:
 WorkTypeConfig(
     work_type_id=1,
     url_slug="budget",                    # URL path segment
-    public_id_prefix="BUD",               # For IDs like BUD-A3F9K2
+    public_id_prefix="BUD",               # For IDs like SMF27-TECHOPS-BUD-1
     line_detail_type="budget",            # Which detail model to use
     routing_strategy="expense_account",   # How to route to approvers
     supports_supplementary=True,          # Allow supplementary requests?
@@ -58,7 +58,7 @@ unit_price_cents        # Price per unit
 routed_approval_group_id  # Computed from expense_account
 ```
 
-### ContractLineDetail (Coming Soon)
+### ContractLineDetail (Future Release)
 
 ```python
 contract_type_id        # Type of contract
@@ -71,7 +71,7 @@ terms_summary           # Key terms
 routed_approval_group_id  # Computed from contract_type
 ```
 
-### SupplyOrderLineDetail (Coming Soon)
+### SupplyOrderLineDetail (Future Release)
 
 ```python
 item_id                 # Warehouse item from catalog

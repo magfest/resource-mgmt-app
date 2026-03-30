@@ -28,9 +28,9 @@ Current work types:
 
 | Code | Name | Status |
 |------|------|--------|
-| BUDGET | Budget Requests | Active |
-| CONTRACT | Contracts | Coming Soon |
-| SUPPLY | Supply Orders | Coming Soon |
+| BUDGET | Budget Requests | **Live** |
+| CONTRACT | Contracts | Future release (data model exists, no UI yet) |
+| SUPPLY | Supply Orders | Future release (data model exists, no UI yet) |
 
 ### Portfolio
 
@@ -192,8 +192,8 @@ DepartmentMembership
 /<event>/<dept>/                     # Department landing (all work types)
 /<event>/<dept>/budget/              # Budget portfolio
 /<event>/<dept>/budget/item/<id>     # Budget work item detail
-/<event>/<dept>/contracts/           # Contracts (placeholder)
-/<event>/<dept>/supply/              # Supply orders (placeholder)
+/<event>/<dept>/contracts/           # Contracts (future release)
+/<event>/<dept>/supply/              # Supply orders (future release)
 
 /approvals/                          # Approver dashboard
 /approvals/<group>/                  # Approval group queue

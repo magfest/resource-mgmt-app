@@ -2,7 +2,7 @@
 
 What's planned, what's in progress, and what's done. This is a living document — items move between sections as priorities shift.
 
-Last updated: 2026-03-24
+Last updated: 2026-03-30
 
 ---
 
@@ -18,9 +18,6 @@ Items the team is actively working on or planning for the near term.
 
 ### Workflow
 - [ ] **Submission deadline policy** — Soft-block submissions after the event deadline with an admin override. Show a warning banner when the deadline is approaching (within 7 days)
-
-### Request IDs
-- [ ] **Friendlier request ID format** — More intuitive IDs (e.g., `BUD-SUP27-AUTO-1`) instead of the current format
 
 ---
 
@@ -81,8 +78,11 @@ Items from the dependency supply chain review (2026-03-24). The basics are in pl
 
 ## Recently Completed
 
-### March 2026
+### March 2026 (Launch)
 
+- **Production launch** — Budget system released to MAGFest staff community
+- **Pre-production hardening** — Security fixes (XSS, open redirects), data integrity improvements (NULL-safe unique constraints, finalization guards), and performance optimization (N+1 query elimination on dashboards)
+- **Meaningful request IDs** — Human-readable IDs like `SMF27-TECHOPS-BUD-1` replacing random codes
 - **Income tracking** — Departments can record estimated income and notes on the Notes tab, with an Income Report for admins
 - **RAMS-style navigation** — Persistent top nav bar with role-gated dropdown menus, replacing the old hub-and-spoke pattern
 - **Wording consistency pass** — Volunteer-friendly status labels ("Pending Review", "Changes Requested", "Start Reviewing"), consistent terminology throughout

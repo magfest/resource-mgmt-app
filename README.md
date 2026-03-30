@@ -1,6 +1,6 @@
 # MAGFest Budget System
 
-> **Status: Active Development** — This application is functional and in use, but under active development. Features are still being added, UX is being refined, and some areas (contracts, supply orders, reporting) are incomplete. See the [Roadmap](ROADMAP.md) for what's planned and in progress.
+> **Status: Production** — This application is live and in use by MAGFest staff for budget requests. Features are actively being added (supply orders, contracts). See the [Roadmap](ROADMAP.md) for what's planned.
 
 A budget request and approval workflow application for [MAGFest](https://www.magfest.org/) events. Built with Flask, it currently handles multi-departmental/event budget requests. Long term the goal is to support contracts and supply orders through a configurable review and approval pipeline.
 
@@ -132,10 +132,8 @@ pip-compile --generate-hashes requirements-dev.in -o requirements-dev.txt --upgr
 See the [Security & Infrastructure](ROADMAP.md#security--infrastructure) section of the Roadmap for planned improvements. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ### Tools / Disclosures
-This project was developed with assistance from AI tools for both code and wording.
-For example:
-1. Claude Code, JetBrain "AI" Tools, and Gemini
-2. Grammerly was used for wordsmiting, and grammer..
+
+This project was developed with assistance from AI coding tools (Claude Code, JetBrains AI, Gemini) and writing tools (Grammarly). 
 
 ## Contributing
 
@@ -147,8 +145,6 @@ Quick start:
 3. `cp .env.example .env` — dev login works out of the box, no OAuth setup needed
 4. `flask db upgrade` and `flask run`
 5. Make changes, run `pytest`, and submit a PR
-
-AI tools are permitted — see the contributing guide for expectations.
 
 ## License
 

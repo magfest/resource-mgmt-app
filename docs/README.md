@@ -2,7 +2,7 @@
 
 ## Overview
 
-This application manages budget requests, contracts, and supply orders for MAGFest events. It uses a **generic work type architecture** that allows multiple request types (Budget, Contracts, Supply Orders) to share the same workflow engine.
+This application manages budget requests for MAGFest events. It uses a **generic work type architecture** designed to eventually support multiple request types (contracts, supply orders) through the same workflow engine. Currently, only **Budget Requests** are live — contracts and supply orders are planned for future releases.
 
 ## Documentation Index
 
@@ -13,6 +13,9 @@ This application manages budget requests, contracts, and supply orders for MAGFe
 | [Work Types](./work-types.md) | How the multi-work-type system works |
 | [Permissions](./permissions.md) | RBAC, memberships, and access control |
 | [Workflow](./workflow.md) | Request lifecycle: draft → submit → review → finalize |
+| [Security](./security.md) | CSP, inline scripts, audit logging |
+| [Design Language](./design-language.md) | UI patterns, buttons, pills, spacing |
+| [Scaling & Monitoring](./scaling-and-monitoring.md) | Infrastructure, connection pooling, capacity |
 
 ## Quick Reference
 
@@ -26,27 +29,27 @@ This application manages budget requests, contracts, and supply orders for MAGFe
 
 ### Tech Stack
 
-- **Backend**: Python 3.11+, Flask, SQLAlchemy
+- **Backend**: Python 3.13, Flask 3.1, SQLAlchemy 2.0, Alembic
 - **Database**: SQLite (dev), PostgreSQL (prod)
 - **Templates**: Jinja2
-- **Auth**: Google OAuth (prod), Dev login (local)
+- **Auth**: Keycloak SSO or Google OAuth (prod), Dev login (local)
+- **Deployment**: Docker (GHCR), Gunicorn
 
 ## Getting Started
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (use dev requirements for local development)
+pip install -r requirements-dev.txt
 
-# Run locally
+# Set up environment
+cp .env.example .env
+
+# Initialize database and run locally
+flask db upgrade
 flask run
 
-# Run seeds (creates demo data)
+# Run seeds (creates demo data, optional)
 python -c "from app import create_app; from app.seeds.config_seed import run_all_seeds; app = create_app(); app.app_context().push(); run_all_seeds()"
 ```
 
-## Questions?
-
-- **Budget questions**: biz@magfest.org
-- **Contracts questions**: biz@magfest.org
-- **Supply/Warehouse questions**: festops@magfest.org
-- **Technical issues**: File an issue or contact the dev team
+Dev login is enabled by default — no OAuth setup needed for local development.

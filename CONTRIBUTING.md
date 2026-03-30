@@ -42,7 +42,7 @@ Thanks for your interest in contributing! MAGFest is volunteer-run, and this pro
 
 - No strict linter enforced yet, but try to match the style of surrounding code
 - Use meaningful variable names — this is a workflow app, clarity matters more than brevity
-- Follow existing patterns for routes, templates, and models (see `CLAUDE.md` for architecture reference)
+- Follow existing patterns for routes, templates, and models (see the [docs/](docs/) folder for architecture reference)
 
 ### Templates and frontend
 
