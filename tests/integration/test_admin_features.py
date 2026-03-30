@@ -21,6 +21,7 @@ from app.models import (
     ROLE_SUPER_ADMIN,
     REQUEST_KIND_PRIMARY,
     WORK_ITEM_STATUS_SUBMITTED,
+    WORK_ITEM_STATUS_FINALIZED,
     WORK_LINE_STATUS_PENDING,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STATUS_APPROVED,
@@ -297,3 +298,147 @@ class TestFinalizationLocking:
         success, error = finalize_work_item(work_item, admin_ctx, note="Second attempt")
         assert success is False
         assert "already finalized" in error.lower()
+
+    def test_finalize_blocked_while_checked_out(self, app, db_session, seed_workflow_data):
+        """Finalization should fail if a reviewer has an active checkout."""
+        from app.routes.admin_final.helpers import can_finalize_work_item
+        from app.routes.work.helpers.checkout import checkout_work_item, checkin_work_item
+        from app.routes import UserContext
+
+        portfolio = WorkPortfolio.query.first()
+        ag = ApprovalGroup.query.first()
+        ea = ExpenseAccount.query.first()
+
+        work_item = WorkItem(
+            portfolio_id=portfolio.id, request_kind=REQUEST_KIND_PRIMARY,
+            status=WORK_ITEM_STATUS_SUBMITTED, public_id="TST2026-TESTDEPT-BUD-1",
+            created_by_user_id="test:admin",
+        )
+        db.session.add(work_item)
+        db.session.flush()
+
+        line = WorkLine(
+            work_item_id=work_item.id, line_number=1,
+            status=WORK_LINE_STATUS_PENDING,
+            current_review_stage=REVIEW_STAGE_APPROVAL_GROUP,
+        )
+        db.session.add(line)
+        db.session.flush()
+
+        st = SpendType.query.filter_by(code="BANK").one()
+        detail = BudgetLineDetail(
+            work_line_id=line.id, expense_account_id=ea.id,
+            spend_type_id=st.id,
+            quantity=1, unit_price_cents=1000,
+            routed_approval_group_id=ag.id,
+        )
+        db.session.add(detail)
+
+        review = WorkLineReview(
+            work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP,
+            approval_group_id=ag.id, status=REVIEW_STATUS_APPROVED,
+            approved_amount_cents=1000,
+            decided_at=datetime.utcnow(),
+            decided_by_user_id="test:reviewer",
+            created_by_user_id="test:reviewer",
+        )
+        db.session.add(review)
+        db.session.flush()
+
+        reviewer_ctx = UserContext(
+            user_id="test:reviewer", user=None,
+            roles=(), is_super_admin=False,
+            approval_group_ids={ag.id},
+        )
+        admin_ctx = UserContext(
+            user_id="test:admin", user=None,
+            roles=("SUPER_ADMIN",), is_super_admin=True,
+            approval_group_ids=set(),
+        )
+
+        # Reviewer checks out the work item
+        assert checkout_work_item(work_item, reviewer_ctx) is True
+
+        # Admin tries to finalize — should be blocked
+        can_do, reason = can_finalize_work_item(work_item)
+        assert can_do is False
+        assert "checked out" in reason.lower()
+
+        # Reviewer checks in
+        assert checkin_work_item(work_item, reviewer_ctx) is True
+
+        # Now finalization should be allowed
+        can_do, reason = can_finalize_work_item(work_item)
+        assert can_do is True
+
+    def test_admin_force_checkin_then_finalize(self, app, db_session, seed_workflow_data):
+        """Admin can force-release a reviewer's checkout, then finalize."""
+        from app.routes.admin_final.helpers import can_finalize_work_item, finalize_work_item
+        from app.routes.work.helpers.checkout import checkout_work_item, checkin_work_item
+        from app.routes import UserContext
+
+        portfolio = WorkPortfolio.query.first()
+        ag = ApprovalGroup.query.first()
+        ea = ExpenseAccount.query.first()
+
+        work_item = WorkItem(
+            portfolio_id=portfolio.id, request_kind=REQUEST_KIND_PRIMARY,
+            status=WORK_ITEM_STATUS_SUBMITTED, public_id="TST2026-TESTDEPT-BUD-1",
+            created_by_user_id="test:admin",
+        )
+        db.session.add(work_item)
+        db.session.flush()
+
+        line = WorkLine(
+            work_item_id=work_item.id, line_number=1,
+            status=WORK_LINE_STATUS_PENDING,
+            current_review_stage=REVIEW_STAGE_APPROVAL_GROUP,
+        )
+        db.session.add(line)
+        db.session.flush()
+
+        st = SpendType.query.filter_by(code="BANK").one()
+        detail = BudgetLineDetail(
+            work_line_id=line.id, expense_account_id=ea.id,
+            spend_type_id=st.id,
+            quantity=1, unit_price_cents=1000,
+            routed_approval_group_id=ag.id,
+        )
+        db.session.add(detail)
+
+        review = WorkLineReview(
+            work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP,
+            approval_group_id=ag.id, status=REVIEW_STATUS_APPROVED,
+            approved_amount_cents=1000,
+            decided_at=datetime.utcnow(),
+            decided_by_user_id="test:reviewer",
+            created_by_user_id="test:reviewer",
+        )
+        db.session.add(review)
+        db.session.flush()
+
+        reviewer_ctx = UserContext(
+            user_id="test:reviewer", user=None,
+            roles=(), is_super_admin=False,
+            approval_group_ids={ag.id},
+        )
+        admin_ctx = UserContext(
+            user_id="test:admin", user=None,
+            roles=("SUPER_ADMIN",), is_super_admin=True,
+            approval_group_ids=set(),
+        )
+
+        # Reviewer checks out the work item
+        assert checkout_work_item(work_item, reviewer_ctx) is True
+
+        # Finalization blocked
+        can_do, _ = can_finalize_work_item(work_item)
+        assert can_do is False
+
+        # Admin force-releases the checkout
+        assert checkin_work_item(work_item, admin_ctx, force=True) is True
+
+        # Now finalization succeeds
+        success, error = finalize_work_item(work_item, admin_ctx, note="Finalized after force checkin")
+        assert success is True
+        assert work_item.status == WORK_ITEM_STATUS_FINALIZED

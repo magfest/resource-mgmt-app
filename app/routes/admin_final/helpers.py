@@ -49,6 +49,7 @@ from app.models import (
     REQUEST_KIND_SUPPLEMENTARY,
 )
 from app.routes import UserContext
+from app.routes.work.helpers.checkout import is_checked_out
 
 
 @dataclass(frozen=True)
@@ -218,6 +219,10 @@ def can_finalize_work_item(work_item: WorkItem) -> Tuple[bool, str]:
     # Allow finalization from AWAITING_DISPATCH (admin bypass) or SUBMITTED
     if work_item.status not in (WORK_ITEM_STATUS_AWAITING_DISPATCH, WORK_ITEM_STATUS_SUBMITTED):
         return False, "Work item must be submitted before finalization."
+
+    # Block finalization while a reviewer has an active checkout
+    if is_checked_out(work_item):
+        return False, "Cannot finalize: a reviewer currently has this item checked out."
 
     # Batch-load all reviews for all lines (1 query instead of 2N)
     line_ids = [line.id for line in work_item.lines]
