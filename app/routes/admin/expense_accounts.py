@@ -566,18 +566,20 @@ def create_override(account_id: int):
         flash("An override for this event cycle already exists", "error")
         return redirect(url_for(".new_override", account_id=account_id))
 
+    is_fixed, ui_group, price_locked = _parse_override_account_type(
+        request.form.get("account_type")
+    )
+
     override = ExpenseAccountEventOverride(
         expense_account_id=account_id,
         event_cycle_id=int(event_cycle_id),
-        is_fixed_cost=_parse_optional_bool(request.form.get("is_fixed_cost")),
+        is_fixed_cost=is_fixed,
+        ui_display_group=ui_group,
+        unit_price_locked=price_locked,
         default_unit_price_cents=_parse_price_cents(request.form.get("default_unit_price")),
-        unit_price_locked=_parse_optional_bool(request.form.get("unit_price_locked")),
         default_frequency_id=safe_int_or_none(request.form.get("default_frequency_id")),
-        frequency_locked=_parse_optional_bool(request.form.get("frequency_locked")),
-        warehouse_default=_parse_optional_bool(request.form.get("warehouse_default")),
         default_spend_type_id=safe_int_or_none(request.form.get("default_spend_type_id")),
-        ui_display_group=request.form.get("ui_display_group") or None,
-        prompt_mode=request.form.get("prompt_mode") or None,
+        warehouse_default=_parse_optional_bool(request.form.get("warehouse_default")),
         description=request.form.get("description") or None,
     )
 
@@ -634,15 +636,16 @@ def update_override(account_id: int, override_id: int):
     if not override or override.expense_account_id != account_id:
         abort(404, "Override not found")
 
-    override.is_fixed_cost = _parse_optional_bool(request.form.get("is_fixed_cost"))
+    is_fixed, ui_group, price_locked = _parse_override_account_type(
+        request.form.get("account_type")
+    )
+    override.is_fixed_cost = is_fixed
+    override.ui_display_group = ui_group
+    override.unit_price_locked = price_locked
     override.default_unit_price_cents = _parse_price_cents(request.form.get("default_unit_price"))
-    override.unit_price_locked = _parse_optional_bool(request.form.get("unit_price_locked"))
     override.default_frequency_id = safe_int_or_none(request.form.get("default_frequency_id"))
-    override.frequency_locked = _parse_optional_bool(request.form.get("frequency_locked"))
-    override.warehouse_default = _parse_optional_bool(request.form.get("warehouse_default"))
     override.default_spend_type_id = safe_int_or_none(request.form.get("default_spend_type_id"))
-    override.ui_display_group = request.form.get("ui_display_group") or None
-    override.prompt_mode = request.form.get("prompt_mode") or None
+    override.warehouse_default = _parse_optional_bool(request.form.get("warehouse_default"))
     override.description = request.form.get("description") or None
 
     log_config_change("expense_account_override", override.id, CONFIG_AUDIT_UPDATE)
@@ -703,6 +706,31 @@ def _parse_account_type(account_type: str) -> tuple[bool, str | None, bool]:
     Returns:
         Tuple of (is_fixed_cost, ui_display_group, unit_price_locked)
     """
+    if account_type == "hotel_service":
+        return True, UI_GROUP_HOTEL_SERVICES, True
+    elif account_type == "fixed_cost":
+        return True, UI_GROUP_KNOWN_COSTS, True
+    elif account_type == "badge":
+        return True, UI_GROUP_BADGES, True
+    else:  # standard
+        return False, None, False
+
+
+def _parse_override_account_type(
+    account_type: str | None,
+) -> tuple[bool | None, str | None, bool | None]:
+    """
+    Parse the account_type form field for an event override.
+
+    Same mapping as _parse_account_type, but returns (None, None, None)
+    when the value is blank/missing, meaning "inherit from base."
+
+    Returns:
+        Tuple of (is_fixed_cost, ui_display_group, unit_price_locked)
+        All None if inheriting from base.
+    """
+    if not account_type:
+        return None, None, None
     if account_type == "hotel_service":
         return True, UI_GROUP_HOTEL_SERVICES, True
     elif account_type == "fixed_cost":

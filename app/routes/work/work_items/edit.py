@@ -28,6 +28,8 @@ from ..helpers import (
     get_hotel_service_expense_accounts,
     get_badge_expense_accounts,
     get_non_hotel_fixed_cost_accounts,
+    get_effective_account_type,
+    get_categorized_expense_accounts,
     get_effective_fixed_cost_settings,
     get_effective_description,
     get_allowed_spend_types,
@@ -54,7 +56,23 @@ def work_item_edit(event: str, dept: str, public_id: str):
     # Compute totals
     totals = compute_work_item_totals(work_item)
 
+    # Get all visible accounts categorized by effective type (override-aware)
+    categorized = get_categorized_expense_accounts(
+        department_id=ctx.department.id,
+        event_cycle_id=ctx.event_cycle.id,
+    )
+    expense_accounts = categorized["standard"]
+    non_hotel_fixed_accounts = categorized["fixed_cost"]
+    hotel_accounts = categorized["hotel"]
+    badge_accounts = categorized["badge"]
+
+    # Build a set of account IDs per category for sorting existing lines
+    fixed_account_ids = {acc.id for acc in non_hotel_fixed_accounts}
+    hotel_account_ids = {acc.id for acc in hotel_accounts}
+    badge_account_ids = {acc.id for acc in badge_accounts}
+
     # Get lines - separate into regular, fixed-cost, hotel, and badge lines
+    # using the same effective account type categorization
     all_lines = work_item.lines
     regular_lines = []
     fixed_cost_lines = []
@@ -67,48 +85,20 @@ def work_item_edit(event: str, dept: str, public_id: str):
             regular_lines.append(line)
             continue
 
-        acc = line.budget_detail.expense_account
-        # Lines with hotel service accounts go to hotel section
-        if acc.is_fixed_cost and acc.ui_display_group == UI_GROUP_HOTEL_SERVICES:
+        acc_id = line.budget_detail.expense_account_id
+        if acc_id in hotel_account_ids:
             hotel_lines.append(line)
-        # Lines with badge accounts go to badges section
-        elif acc.is_fixed_cost and acc.ui_display_group == UI_GROUP_BADGES:
+        elif acc_id in badge_account_ids:
             badge_lines.append(line)
-        # Lines with other fixed-cost accounts go to fixed section
-        elif acc.is_fixed_cost:
+        elif acc_id in fixed_account_ids:
             fixed_cost_lines.append(line)
         else:
             regular_lines.append(line)
-
-    # Get expense accounts for dropdown (non-fixed)
-    expense_accounts = get_visible_expense_accounts(
-        department_id=ctx.department.id,
-        event_cycle_id=ctx.event_cycle.id,
-        exclude_fixed=True,
-    )
 
     # Build spend types map for each expense account
     spend_types_by_account = {
         acc.id: get_allowed_spend_types(acc) for acc in expense_accounts
     }
-
-    # Get non-hotel fixed-cost expense accounts (for Fixed Costs tab)
-    non_hotel_fixed_accounts = get_non_hotel_fixed_cost_accounts(
-        department_id=ctx.department.id,
-        event_cycle_id=ctx.event_cycle.id,
-    )
-
-    # Get hotel service expense accounts (for Hotel/Gaylord tab)
-    hotel_accounts = get_hotel_service_expense_accounts(
-        department_id=ctx.department.id,
-        event_cycle_id=ctx.event_cycle.id,
-    )
-
-    # Get badge expense accounts (for Badges tab)
-    badge_accounts = get_badge_expense_accounts(
-        department_id=ctx.department.id,
-        event_cycle_id=ctx.event_cycle.id,
-    )
 
     # Build map of existing lines by account ID (for fixed-cost, hotel, and badges)
     existing_fixed_by_account_id = {
@@ -380,21 +370,21 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
     perms = require_work_item_edit(work_item, ctx)
     user_ctx = get_user_ctx()
 
-    # Get available fixed-cost accounts for this department
-    fixed_cost_accounts = get_fixed_cost_expense_accounts(
+    # Get available fixed-cost accounts for this department (override-aware)
+    categorized = get_categorized_expense_accounts(
         department_id=ctx.department.id,
         event_cycle_id=ctx.event_cycle.id,
     )
-    valid_account_ids = {acc.id for acc in fixed_cost_accounts}
+    # Fixed costs tab includes non-hotel, non-badge fixed accounts
+    valid_account_ids = {acc.id for acc in categorized["fixed_cost"]}
 
     # Build map of existing fixed-cost line IDs by expense_account_id
     # Store IDs only to avoid SQLAlchemy relationship caching issues
     existing_line_ids_by_account = {}
     for line in work_item.lines:
         if line.budget_detail and line.budget_detail.expense_account_id:
-            acc = line.budget_detail.expense_account
-            if acc and acc.is_fixed_cost:
-                existing_line_ids_by_account[acc.id] = line.id
+            if line.budget_detail.expense_account_id in valid_account_ids:
+                existing_line_ids_by_account[line.budget_detail.expense_account_id] = line.id
 
     # Track next line number for new lines (must increment manually in loop)
     next_line_number = get_next_line_number(work_item)
@@ -529,20 +519,19 @@ def work_item_badges_save(event: str, dept: str, public_id: str):
     perms = require_work_item_edit(work_item, ctx)
     user_ctx = get_user_ctx()
 
-    # Get available badge accounts for this department
-    badge_accounts = get_badge_expense_accounts(
+    # Get available badge accounts for this department (override-aware)
+    categorized = get_categorized_expense_accounts(
         department_id=ctx.department.id,
         event_cycle_id=ctx.event_cycle.id,
     )
-    valid_account_ids = {acc.id for acc in badge_accounts}
+    valid_account_ids = {acc.id for acc in categorized["badge"]}
 
     # Build map of existing badge line IDs by expense_account_id
     existing_line_ids_by_account = {}
     for line in work_item.lines:
         if line.budget_detail and line.budget_detail.expense_account_id:
-            acc = line.budget_detail.expense_account
-            if acc and acc.is_fixed_cost and acc.ui_display_group == UI_GROUP_BADGES:
-                existing_line_ids_by_account[acc.id] = line.id
+            if line.budget_detail.expense_account_id in valid_account_ids:
+                existing_line_ids_by_account[line.budget_detail.expense_account_id] = line.id
 
     # Track next line number for new lines
     next_line_number = get_next_line_number(work_item)
