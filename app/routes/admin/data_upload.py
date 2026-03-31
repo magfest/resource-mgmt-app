@@ -68,11 +68,13 @@ DEPT_DIV_COLS = ['division', 'division_name', 'division_code']
 DEPT_DESC_COLS = ['description', 'desc', 'notes']
 DEPT_EMAIL_COLS = ['mailing_list', 'email', 'contact_email', 'group_email']
 DEPT_SLACK_COLS = ['slack_channel', 'slack', 'channel']
+DEPT_QB_CLASS_COLS = ['qb_class', 'quickbooks_class', 'qb class']
 
 # Division column aliases
 DIV_NAME_COLS = ['name', 'division', 'division_name']
 DIV_CODE_COLS = ['code', 'div_code', 'division_code']
 DIV_DESC_COLS = ['description', 'desc', 'notes']
+DIV_QB_CLASS_COLS = ['qb_class', 'quickbooks_class', 'qb class']
 
 # Expense account column aliases
 EA_NAME_COLS = ['name', 'account_name', 'expense_account', 'account']
@@ -401,6 +403,7 @@ def departments_upload():
     desc_col = _find_column(df, DEPT_DESC_COLS)
     email_col = _find_column(df, DEPT_EMAIL_COLS)
     slack_col = _find_column(df, DEPT_SLACK_COLS)
+    qb_class_col = _find_column(df, DEPT_QB_CLASS_COLS)
 
     if not name_col:
         flash(f"Could not find a name column. Expected one of: {', '.join(DEPT_NAME_COLS)}", "error")
@@ -443,6 +446,8 @@ def departments_upload():
                 existing.mailing_list = _get_cell_value(row, email_col)
             if slack_col:
                 existing.slack_channel = _get_cell_value(row, slack_col)
+            if qb_class_col:
+                existing.qb_class = _get_cell_value(row, qb_class_col)
             existing.updated_by_user_id = user_id
 
             log_config_change("department", existing.id, CONFIG_AUDIT_UPDATE, {
@@ -459,6 +464,7 @@ def departments_upload():
                 description=_get_cell_value(row, desc_col),
                 mailing_list=_get_cell_value(row, email_col),
                 slack_channel=_get_cell_value(row, slack_col),
+                qb_class=_get_cell_value(row, qb_class_col),
                 is_active=True,
                 sort_order=0,
                 created_by_user_id=user_id,
@@ -514,6 +520,7 @@ def divisions_upload():
     name_col = _find_column(df, DIV_NAME_COLS)
     code_col = _find_column(df, DIV_CODE_COLS)
     desc_col = _find_column(df, DIV_DESC_COLS)
+    qb_class_col = _find_column(df, DIV_QB_CLASS_COLS)
 
     if not name_col:
         flash(f"Could not find a name column. Expected one of: {', '.join(DIV_NAME_COLS)}", "error")
@@ -543,6 +550,8 @@ def divisions_upload():
             existing.name = name
             if desc_col:
                 existing.description = _get_cell_value(row, desc_col)
+            if qb_class_col:
+                existing.qb_class = _get_cell_value(row, qb_class_col)
 
             log_config_change("division", existing.id, CONFIG_AUDIT_UPDATE, {
                 "name": {"old": old_name, "new": name},
@@ -555,6 +564,7 @@ def divisions_upload():
                 code=code,
                 name=name,
                 description=_get_cell_value(row, desc_col),
+                qb_class=_get_cell_value(row, qb_class_col),
                 is_active=True,
                 sort_order=0,
             )
@@ -1258,10 +1268,10 @@ def _make_csv_response(csv_content: str, filename: str) -> Response:
 @require_super_admin
 def download_divisions_template():
     """Download a CSV template for divisions."""
-    csv_content = """code,name,description
-OPERATIONS,Operations,"Departments that handle event operations"
-ENTERTAINMENT,Entertainment,"Departments focused on attendee entertainment"
-SUPPORT,Support Services,"Back-office and support departments"
+    csv_content = """code,name,description,qb_class
+OPERATIONS,Operations,"Departments that handle event operations",Operations
+ENTERTAINMENT,Entertainment,"Departments focused on attendee entertainment",Entertainment
+SUPPORT,Support Services,"Back-office and support departments",Support
 """
     return _make_csv_response(csv_content, 'divisions_template.csv')
 
@@ -1270,12 +1280,12 @@ SUPPORT,Support Services,"Back-office and support departments"
 @require_super_admin
 def download_departments_template():
     """Download a CSV template for departments."""
-    csv_content = """code,name,division,description,mailing_list,slack_channel
-TECHOPS,TechOps,OPERATIONS,"Technical operations and infrastructure",techops@example.org,#techops
-REGISTRATION,Registration,OPERATIONS,"Attendee registration and badges",reg@example.org,#registration
-PANELS,Panels,ENTERTAINMENT,"Panel programming and scheduling",panels@example.org,#panels
-GUESTS,Guests,ENTERTAINMENT,"Guest relations and management",guests@example.org,#guests
-FINANCE,Finance,SUPPORT,"Financial operations and budgeting",finance@example.org,#finance
+    csv_content = """code,name,division,description,mailing_list,slack_channel,qb_class
+TECHOPS,TechOps,OPERATIONS,"Technical operations and infrastructure",techops@example.org,#techops,TechOps
+REGISTRATION,Registration,OPERATIONS,"Attendee registration and badges",reg@example.org,#registration,Registration
+PANELS,Panels,ENTERTAINMENT,"Panel programming and scheduling",panels@example.org,#panels,Panels
+GUESTS,Guests,ENTERTAINMENT,"Guest relations and management",guests@example.org,#guests,Guests
+FINANCE,Finance,SUPPORT,"Financial operations and budgeting",finance@example.org,#finance,Finance
 """
     return _make_csv_response(csv_content, 'departments_template.csv')
 
