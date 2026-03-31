@@ -6,118 +6,180 @@
 <h1>{% if override %}Edit Event Override{% else %}New Event Override{% endif %}</h1>
 <div class="muted" style="margin: 8px 0 16px;">
   Account: <strong>{{ account.code }}</strong> - {{ account.name }}
+  &nbsp;&middot;&nbsp;
+  <a href="{{ url_for('admin_config.expense_accounts.edit_expense_account', account_id=account.id) }}">View base account</a>
 </div>
 
-<div class="card" style="max-width: 700px;">
+<div class="callout" style="max-width: 650px; margin-bottom: 20px; background: #f0f4ff; border-left: 3px solid #3b82f6; padding: 12px 16px;">
+  <strong>About event overrides</strong><br>
+  The base account defines the default configuration for all events. This page lets you change
+  specific settings for a single event. Any field set to "Inherit from base" will use the base account value.
+</div>
+
+<div class="card" style="max-width: 650px;">
   <form method="post"
     action="{% if override %}{{ url_for('admin_config.expense_accounts.update_override', account_id=account.id, override_id=override.id) }}{% else %}{{ url_for('admin_config.expense_accounts.create_override', account_id=account.id) }}{% endif %}"
   >
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
 
-      <div>
-        <label for="event_cycle_id" class="form-label">Event Cycle</label>
-        <select id="event_cycle_id" name="event_cycle_id" required {% if override %}disabled{% endif %}>
-          <option value="" disabled {% if not override %}selected{% endif %}>Select...</option>
-          {% if event_cycles %}
-            {% for cycle in event_cycles %}
-              <option value="{{ cycle.id }}" {% if override and override.event_cycle_id == cycle.id %}selected{% endif %}>
-                {{ cycle.name }} ({{ cycle.code }})
-              </option>
-            {% endfor %}
-          {% elif override %}
-            <option value="{{ override.event_cycle_id }}" selected>
-              {{ override.event_cycle.name }} ({{ override.event_cycle.code }})
+    {# ── Event Cycle ── #}
+    <div style="margin-bottom: 24px;">
+      <label for="event_cycle_id" class="form-label">Event Cycle</label>
+      <select id="event_cycle_id" name="event_cycle_id" required {% if override %}disabled{% endif %} style="max-width: 320px;">
+        <option value="" disabled {% if not override %}selected{% endif %}>Select event...</option>
+        {% if event_cycles %}
+          {% for cycle in event_cycles %}
+            <option value="{{ cycle.id }}" {% if override and override.event_cycle_id == cycle.id %}selected{% endif %}>
+              {{ cycle.name }} ({{ cycle.code }})
             </option>
-          {% endif %}
-        </select>
-        {% if override %}
-          <input type="hidden" name="event_cycle_id" value="{{ override.event_cycle_id }}" />
-        {% endif %}
-      </div>
-
-      <div>
-        <label for="default_unit_price" class="form-label">Default Unit Price ($)</label>
-        <input id="default_unit_price" name="default_unit_price" type="text"
-               value="{% if override and override.default_unit_price_cents is not none %}{{ '%.2f'|format(override.default_unit_price_cents / 100) }}{% endif %}"
-               placeholder="blank = inherit from base" />
-        <div class="muted small mt-4">
-          Base: {% if account.default_unit_price_cents %}${{ '%.2f'|format(account.default_unit_price_cents / 100) }}{% else %}Not set{% endif %}
-        </div>
-      </div>
-
-      <div>
-        <label for="default_spend_type_id" class="form-label">Default Spend Type</label>
-        <select id="default_spend_type_id" name="default_spend_type_id">
-          <option value="">Inherit from base</option>
-          {% for st in spend_types %}
-            <option value="{{ st.id }}" {% if override and override.default_spend_type_id == st.id %}selected{% endif %}>{{ st.name }}</option>
           {% endfor %}
-        </select>
-        <div class="muted small mt-4">
-          Base: {{ account.default_spend_type.name if account.default_spend_type else 'Not set' }}
-        </div>
-      </div>
-
-      <div>
-        <label for="ui_display_group" class="form-label">UI Display Group</label>
-        <input id="ui_display_group" name="ui_display_group" type="text"
-               value="{{ override.ui_display_group if override else '' }}"
-               placeholder="blank = inherit from base" />
-        <div class="muted small mt-4">
-          Base: {{ account.ui_display_group or 'Not set' }}
-        </div>
-      </div>
-
-      <div style="grid-column: 1 / -1;">
-        <label for="description" class="form-label">Description Override</label>
-        <textarea id="description" name="description" rows="3"
-                  placeholder="Leave empty to use base account description. Supports [link text](url) format.">{{ override.description if override else '' }}</textarea>
-        <div class="muted small mt-4">
-          Base: {{ account.description[:100] ~ '...' if account.description and account.description|length > 100 else account.description or 'Not set' }}
-        </div>
-      </div>
-
-      <div style="grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 16px; margin-top: 8px;">
-        <strong style="display: block; margin-bottom: 12px;">Override Settings</strong>
-        <div class="muted small" style="margin-bottom: 12px;">Leave unchecked to inherit from base account.</div>
-
-        <div class="row" style="gap: 24px; flex-wrap: wrap;">
-          <label style="display: flex; gap: 8px; align-items: center; font-weight: normal;">
-            <input type="checkbox" name="is_fixed_cost" value="1"
-                   {% if override and override.is_fixed_cost %}checked{% endif %} />
-            Fixed cost
-          </label>
-
-          <label style="display: flex; gap: 8px; align-items: center; font-weight: normal;">
-            <input type="checkbox" name="unit_price_locked" value="1"
-                   {% if override and override.unit_price_locked %}checked{% endif %} />
-            Lock unit price
-          </label>
-
-          <label style="display: flex; gap: 8px; align-items: center; font-weight: normal;">
-            <input type="checkbox" name="frequency_locked" value="1"
-                   {% if override and override.frequency_locked %}checked{% endif %} />
-            Lock frequency
-          </label>
-
-          <label style="display: flex; gap: 8px; align-items: center; font-weight: normal;">
-            <input type="checkbox" name="warehouse_default" value="1"
-                   {% if override and override.warehouse_default %}checked{% endif %} />
-            Warehouse default
-          </label>
-        </div>
-      </div>
-
+        {% elif override %}
+          <option value="{{ override.event_cycle_id }}" selected>
+            {{ override.event_cycle.name }} ({{ override.event_cycle.code }})
+          </option>
+        {% endif %}
+      </select>
+      {% if override %}
+        <input type="hidden" name="event_cycle_id" value="{{ override.event_cycle_id }}" />
+        <div class="muted small mt-4">Cannot be changed. To override a different event, create a new override.</div>
+      {% else %}
+        <div class="muted small mt-4">Only events without an existing override for this account are listed.</div>
+      {% endif %}
     </div>
 
-    <div class="btn-row" style="margin-top: 20px;">
+    {# ── Account Type ── #}
+    <div style="border-top: 1px solid #eee; padding-top: 16px; margin-bottom: 16px;">
+      <strong>Account Type</strong>
+      <div class="muted small" style="margin-bottom: 12px;">
+        Change how this account behaves for this event. This controls which tab the account appears in
+        and whether the price is admin-set or requester-entered.
+      </div>
+
+      {% set current_override_type = '' %}
+      {% if override %}
+        {% if override.ui_display_group == 'HOTEL_SERVICES' %}
+          {% set current_override_type = 'hotel_service' %}
+        {% elif override.ui_display_group == 'BADGES' %}
+          {% set current_override_type = 'badge' %}
+        {% elif override.is_fixed_cost is not none and override.is_fixed_cost %}
+          {% set current_override_type = 'fixed_cost' %}
+        {% elif override.is_fixed_cost is not none and not override.is_fixed_cost %}
+          {% set current_override_type = 'standard' %}
+        {% endif %}
+      {% endif %}
+
+      {# Derive base type for display #}
+      {% set base_type_label = 'Standard' %}
+      {% if account.ui_display_group == 'HOTEL_SERVICES' %}
+        {% set base_type_label = 'Hotel/Gaylord Service' %}
+      {% elif account.ui_display_group == 'BADGES' %}
+        {% set base_type_label = 'Badge (Informational)' %}
+      {% elif account.is_fixed_cost %}
+        {% set base_type_label = 'Fixed Cost' %}
+      {% endif %}
+
+      <select id="account_type" name="account_type" style="max-width: 300px;">
+        <option value="" {% if not current_override_type %}selected{% endif %}>Inherit from base</option>
+        <option value="standard" {% if current_override_type == 'standard' %}selected{% endif %}>Standard</option>
+        <option value="fixed_cost" {% if current_override_type == 'fixed_cost' %}selected{% endif %}>Fixed Cost</option>
+        <option value="hotel_service" {% if current_override_type == 'hotel_service' %}selected{% endif %}>Hotel/Gaylord Service</option>
+        <option value="badge" {% if current_override_type == 'badge' %}selected{% endif %}>Badge (Informational)</option>
+      </select>
+      <div class="muted small mt-4">
+        <strong>Standard:</strong> User enters price and quantity.
+        <strong>Fixed Cost:</strong> Price is set by admin; user only enters quantity.<br>
+        <strong>Hotel/Gaylord:</strong> Same as Fixed Cost, with duration calculator.
+        <strong>Badge:</strong> Informational only ($0 cost).<br>
+        Base: <strong>{{ base_type_label }}</strong>
+      </div>
+    </div>
+
+    {# ── Pricing ── #}
+    <div style="border-top: 1px solid #eee; padding-top: 16px; margin-bottom: 16px;">
+      <strong>Pricing &amp; Frequency</strong>
+      <div class="muted small" style="margin-bottom: 12px;">Override the default unit price or frequency for this event.</div>
+
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="default_unit_price" class="form-label">Default Unit Price ($)</label>
+          <input id="default_unit_price" name="default_unit_price" type="text"
+                 value="{% if override and override.default_unit_price_cents is not none %}{{ '%.2f'|format(override.default_unit_price_cents / 100) }}{% endif %}"
+                 placeholder="Inherit from base" />
+          <div class="muted small mt-4">
+            Base: {% if account.default_unit_price_cents %}<strong>${{ '%.2f'|format(account.default_unit_price_cents / 100) }}</strong>{% else %}<em>Not set</em>{% endif %}
+          </div>
+        </div>
+
+        <div>
+          <label for="default_frequency_id" class="form-label">Default Frequency</label>
+          <select id="default_frequency_id" name="default_frequency_id">
+            <option value="">Inherit from base</option>
+            {% for f in frequencies %}
+              <option value="{{ f.id }}" {% if override and override.default_frequency_id == f.id %}selected{% endif %}>{{ f.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="muted small mt-4">
+            Base: <strong>{{ account.default_frequency.name if account.default_frequency else 'Not set' }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Spend Type & Defaults ── #}
+    <div style="border-top: 1px solid #eee; padding-top: 16px; margin-bottom: 16px;">
+      <strong>Requester Defaults</strong>
+      <div class="muted small" style="margin-bottom: 12px;">Pre-set options for requesters using this account in this event.</div>
+
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="default_spend_type_id" class="form-label">Default Spend Type</label>
+          <select id="default_spend_type_id" name="default_spend_type_id">
+            <option value="">Inherit from base</option>
+            {% for st in spend_types %}
+              <option value="{{ st.id }}" {% if override and override.default_spend_type_id == st.id %}selected{% endif %}>{{ st.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="muted small mt-4">
+            Payment method auto-selected for new lines.<br>
+            Base: <strong>{{ account.default_spend_type.name if account.default_spend_type else 'Not set' }}</strong>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: flex-end; padding-bottom: 4px;">
+          <label style="display: flex; gap: 8px; align-items: center; font-weight: normal; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+            <input type="checkbox" name="warehouse_default" value="1"
+                   {% if override and override.warehouse_default %}checked{% endif %} />
+            <span>
+              <strong style="font-size: 13px;">Warehouse default</strong>
+              <span class="muted small" style="display: block;">Pre-check for new lines.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    {# ── Description ── #}
+    <div style="border-top: 1px solid #eee; padding-top: 16px; margin-bottom: 16px;">
+      <strong>Description</strong>
+      <div class="muted small" style="margin-bottom: 12px;">
+        Event-specific guidance shown to requesters. Leave blank to use the base description.
+      </div>
+
+      <textarea id="description" name="description" rows="3"
+                placeholder="Inherit from base. Supports [link text](url) format.">{{ override.description if override else '' }}</textarea>
+      <div class="muted small mt-4">
+        Base: <strong>{{ account.description[:120] ~ '...' if account.description and account.description|length > 120 else account.description or 'Not set' }}</strong>
+      </div>
+    </div>
+
+    {# ── Actions ── #}
+    <div class="btn-row" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #eee;">
       <button class="btn btn-primary" type="submit">{% if override %}Save Changes{% else %}Create Override{% endif %}</button>
       <a class="btn" href="{{ url_for('admin_config.expense_accounts.list_overrides', account_id=account.id) }}">Cancel</a>
       {% if override %}
         <form method="post" action="{{ url_for('admin_config.expense_accounts.delete_override', account_id=account.id, override_id=override.id) }}" style="display: inline;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn" type="submit" data-confirm="Delete this override?" style="color: #c00;">Delete</button>
+          <button class="btn" type="submit" data-confirm="Delete this override? The base account settings will apply for this event instead." style="color: #c00;">Delete</button>
         </form>
       {% endif %}
     </div>

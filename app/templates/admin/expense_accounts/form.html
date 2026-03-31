@@ -58,7 +58,7 @@
                    maxlength="16"
                    style="text-transform: uppercase;"
                    {% if not can_modify %}disabled{% endif %} />
-            <div class="muted small mt-4">Unique identifier (max 16 chars)</div>
+            <div class="muted small mt-4">Unique identifier (max 16 chars). Used in reports and exports.</div>
           </div>
 
           <div>
@@ -67,6 +67,7 @@
                    value="{{ account.name if account else '' }}"
                    placeholder="Hotel Room - Regular"
                    {% if not can_modify %}disabled{% endif %} />
+            <div class="muted small mt-4">Displayed to requesters when selecting an expense account.</div>
           </div>
         </div>
 
@@ -75,6 +76,7 @@
           <textarea id="description" name="description" rows="2"
                     placeholder="Optional notes shown to requesters..."
                     {% if not can_modify %}disabled{% endif %}>{{ account.description if account else '' }}</textarea>
+          <div class="muted small mt-4">Help text shown to requesters. Supports [link text](url) format. Can be overridden per event.</div>
         </div>
 
         <div style="margin-top: 16px;">
@@ -160,7 +162,8 @@
           {% endfor %}
         </div>
         <div class="muted small" style="margin-top: 8px;">
-          Check to allow, select radio to set default. Default is auto-selected for new lines.
+          Check to allow, select radio to set default. Default is auto-selected for new lines.<br>
+          The default spend type can be overridden per event via Event Overrides.
         </div>
       </section>
     </div>
@@ -179,7 +182,7 @@
               <option value="{{ g.id }}" {% if account and account.approval_group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
             {% endfor %}
           </select>
-          <div class="muted small mt-4">Who reviews budget lines for this account</div>
+          <div class="muted small mt-4">Budget lines using this account are routed to this group for review. Cannot be overridden per event.</div>
         </div>
       </section>
 
@@ -193,6 +196,7 @@
             <option value="ALL_DEPARTMENTS" {% if not account or account.visibility_mode == 'ALL_DEPARTMENTS' %}selected{% endif %}>All Departments</option>
             <option value="RESTRICTED" {% if account and account.visibility_mode == 'RESTRICTED' %}selected{% endif %}>Specific Departments Only</option>
           </select>
+          <div class="muted small mt-4">Restrict which departments can select this account when creating budget lines.</div>
         </div>
 
         <div id="department-selection" style="margin-top: 16px; {% if not account or account.visibility_mode != 'RESTRICTED' %}display: none;{% endif %}">
@@ -243,7 +247,11 @@
                 <option value="SUGGEST" {% if account and account.prompt_mode == 'SUGGEST' %}selected{% endif %}>Suggest</option>
                 <option value="REQUIRE_EXPLICIT_NA" {% if account and account.prompt_mode == 'REQUIRE_EXPLICIT_NA' %}selected{% endif %}>Require Explicit N/A</option>
               </select>
-              <div class="muted small mt-4">Controls how this account is prompted during budget entry</div>
+              <div class="muted small mt-4">
+                <strong>None:</strong> Account appears in list but isn't highlighted.<br>
+                <strong>Suggest:</strong> Account is suggested to requesters during entry.<br>
+                <strong>Require N/A:</strong> Requester must add a line or explicitly mark N/A.
+              </div>
             </div>
           </div>
         </details>

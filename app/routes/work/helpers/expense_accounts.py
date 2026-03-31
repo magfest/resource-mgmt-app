@@ -6,6 +6,7 @@ Functions for retrieving expense accounts with visibility filtering.
 from __future__ import annotations
 
 from sqlalchemy import or_
+from sqlalchemy.orm import selectinload
 
 from app.models import (
     ExpenseAccount,
@@ -201,6 +202,87 @@ def get_non_hotel_fixed_cost_accounts(
     return accounts
 
 
+def _find_override(expense_account: ExpenseAccount, event_cycle_id: int):
+    """Find the event override for an account, or None."""
+    for o in expense_account.event_overrides:
+        if o.event_cycle_id == event_cycle_id:
+            return o
+    return None
+
+
+def get_effective_account_type(
+    expense_account: ExpenseAccount,
+    event_cycle_id: int | None = None,
+) -> tuple[bool, str | None]:
+    """
+    Get effective (is_fixed_cost, ui_display_group) for an expense account,
+    considering event-specific overrides.
+
+    If an override exists for the event cycle and has is_fixed_cost set,
+    the override values are used. Otherwise, the base account values are used.
+
+    Returns:
+        Tuple of (is_fixed_cost, ui_display_group)
+    """
+    is_fixed = expense_account.is_fixed_cost
+    ui_group = expense_account.ui_display_group
+
+    if event_cycle_id:
+        override = _find_override(expense_account, event_cycle_id)
+        if override and override.is_fixed_cost is not None:
+            is_fixed = override.is_fixed_cost
+            ui_group = override.ui_display_group
+
+    return is_fixed, ui_group
+
+
+def get_categorized_expense_accounts(
+    department_id: int,
+    event_cycle_id: int,
+) -> dict[str, list[ExpenseAccount]]:
+    """
+    Get all visible expense accounts for a department, categorized by
+    their effective account type (considering event overrides).
+
+    Returns dict with keys:
+        - "standard": Regular accounts (user enters price + qty)
+        - "fixed_cost": Fixed-cost accounts (not hotel or badge)
+        - "hotel": Hotel/Gaylord service accounts
+        - "badge": Badge (informational) accounts
+    """
+    # Fetch ALL active, visible accounts in one query.
+    # Eager-load event_overrides to avoid N+1 queries during categorization.
+    all_accounts = ExpenseAccount.query.filter(
+        ExpenseAccount.is_active == True,
+    ).filter(
+        or_(
+            ExpenseAccount.visibility_mode == VISIBILITY_MODE_ALL,
+            ExpenseAccount.visible_to_departments.any(id=department_id),
+        )
+    ).options(
+        selectinload(ExpenseAccount.event_overrides),
+    ).order_by(
+        ExpenseAccount.sort_order.asc(),
+        ExpenseAccount.name.asc(),
+    ).all()
+
+    result = {"standard": [], "fixed_cost": [], "hotel": [], "badge": []}
+
+    for acc in all_accounts:
+        is_fixed, ui_group = get_effective_account_type(acc, event_cycle_id)
+
+        if is_fixed and ui_group == UI_GROUP_HOTEL_SERVICES:
+            result["hotel"].append(acc)
+        elif is_fixed and ui_group == UI_GROUP_BADGES:
+            result["badge"].append(acc)
+        elif is_fixed:
+            result["fixed_cost"].append(acc)
+        else:
+            result["standard"].append(acc)
+
+    return result
+
+
 def get_effective_fixed_cost_settings(
     expense_account: ExpenseAccount,
     event_cycle_id: int | None = None,
@@ -221,13 +303,7 @@ def get_effective_fixed_cost_settings(
 
     # Check for event-specific override
     if event_cycle_id:
-        # Find override matching this event cycle
-        override = None
-        for o in expense_account.event_overrides:
-            if o.event_cycle_id == event_cycle_id:
-                override = o
-                break
-
+        override = _find_override(expense_account, event_cycle_id)
         if override:
             if override.default_unit_price_cents is not None:
                 unit_price_cents = override.default_unit_price_cents
@@ -263,12 +339,9 @@ def get_effective_description(
         The effective description, or None if not set.
     """
     if event_cycle_id:
-        # Find override matching this event cycle
-        for o in expense_account.event_overrides:
-            if o.event_cycle_id == event_cycle_id:
-                if o.description:
-                    return o.description
-                break
+        override = _find_override(expense_account, event_cycle_id)
+        if override and override.description:
+            return override.description
 
     return expense_account.description
 

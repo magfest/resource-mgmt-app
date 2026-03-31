@@ -27,6 +27,8 @@ from .helpers import (
     require_work_item_edit,
     build_work_item_perms,
     get_visible_expense_accounts,
+    get_categorized_expense_accounts,
+    get_effective_account_type,
     get_allowed_spend_types,
     get_confidence_levels,
     get_frequency_options,
@@ -176,20 +178,21 @@ def line_create(event: str, dept: str, public_id: str):
                 errors.append("Invalid expense account.")
             elif not expense_account.is_active:
                 errors.append("Selected expense account is not active.")
-            elif expense_account.is_fixed_cost:
-                errors.append("Fixed-cost expense accounts cannot be used in this form.")
+            else:
+                is_fixed, _ = get_effective_account_type(expense_account, ctx.event_cycle.id)
+                if is_fixed:
+                    errors.append("Fixed-cost expense accounts cannot be used in this form.")
         except ValueError:
             errors.append("Invalid expense account ID.")
 
-    # Validate expense account visibility
+    # Validate expense account visibility (override-aware)
     if expense_account:
-        visible_accounts = get_visible_expense_accounts(
+        categorized = get_categorized_expense_accounts(
             department_id=ctx.department.id,
             event_cycle_id=ctx.event_cycle.id,
-            exclude_fixed=True,
         )
-        visible_ids = {acc.id for acc in visible_accounts}
-        if expense_account.id not in visible_ids:
+        standard_ids = {acc.id for acc in categorized["standard"]}
+        if expense_account.id not in standard_ids:
             errors.append("Selected expense account is not available for this department.")
 
     # Validate spend type
@@ -487,20 +490,21 @@ def line_update(event: str, dept: str, public_id: str, line_num: int):
                 errors.append("Invalid expense account.")
             elif not expense_account.is_active:
                 errors.append("Selected expense account is not active.")
-            elif expense_account.is_fixed_cost:
-                errors.append("Fixed-cost expense accounts cannot be used in this form.")
+            else:
+                is_fixed, _ = get_effective_account_type(expense_account, ctx.event_cycle.id)
+                if is_fixed:
+                    errors.append("Fixed-cost expense accounts cannot be used in this form.")
         except ValueError:
             errors.append("Invalid expense account ID.")
 
-    # Validate expense account visibility
+    # Validate expense account visibility (override-aware)
     if expense_account:
-        visible_accounts = get_visible_expense_accounts(
+        categorized = get_categorized_expense_accounts(
             department_id=ctx.department.id,
             event_cycle_id=ctx.event_cycle.id,
-            exclude_fixed=True,
         )
-        visible_ids = {acc.id for acc in visible_accounts}
-        if expense_account.id not in visible_ids:
+        standard_ids = {acc.id for acc in categorized["standard"]}
+        if expense_account.id not in standard_ids:
             errors.append("Selected expense account is not available for this department.")
 
     # Validate spend type
