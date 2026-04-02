@@ -287,6 +287,72 @@ def create_app() -> Flask:
 
         return response
 
+    # --- Scanner / bot flood protection ---
+    # Two layers:
+    #   1. Block known scanner paths instantly (no DB, no template).
+    #   2. Track 404-per-IP in memory; auto-block IPs that trip the threshold.
+    # This prevents scanner floods from exhausting the DB connection pool.
+    from collections import defaultdict
+    import time as _time
+
+    _SCANNER_EXTENSIONS = ('.env', '.php', '.git/config', '.git/HEAD', '.asp', '.aspx', '.jsp', '.cgi')
+    _SCANNER_PATHS = {
+        '/wp-login.php', '/wp-admin', '/administrator', '/xmlrpc.php',
+        '/wp-content', '/wp-includes', '/.well-known/security.txt',
+    }
+
+    _BLOCK_THRESHOLD = 10       # 404s from one IP before blocking
+    _BLOCK_WINDOW = 60          # seconds to track 404 counts
+    _BLOCK_DURATION = 300       # seconds to block an IP after threshold hit
+    _ip_404_counts: dict[str, list] = defaultdict(list)  # IP -> list of timestamps
+    _ip_blocked_until: dict[str, float] = {}             # IP -> unblock time
+
+    @app.before_request
+    def block_scanners():
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if ip and ',' in ip:
+            ip = ip.split(',')[0].strip()
+        now = _time.monotonic()
+
+        # Check if IP is currently blocked
+        if ip in _ip_blocked_until:
+            if now < _ip_blocked_until[ip]:
+                return '', 403
+            else:
+                del _ip_blocked_until[ip]
+                _ip_404_counts.pop(ip, None)
+
+        # Fast reject: known scanner paths/extensions
+        path = request.path.rstrip('/')
+        if (any(path.endswith(ext) for ext in _SCANNER_EXTENSIONS)
+                or path in _SCANNER_PATHS):
+            _record_ip_404(ip, now)
+            return 'Not Found', 404
+
+    def _record_ip_404(ip: str, now: float):
+        """Track a 404 hit for an IP and block if threshold exceeded."""
+        hits = _ip_404_counts[ip]
+        hits.append(now)
+        # Trim old entries outside the window
+        cutoff = now - _BLOCK_WINDOW
+        _ip_404_counts[ip] = [t for t in hits if t > cutoff]
+        if len(_ip_404_counts[ip]) >= _BLOCK_THRESHOLD:
+            _ip_blocked_until[ip] = now + _BLOCK_DURATION
+            current_app.logger.warning(
+                f"Blocked IP {ip} for {_BLOCK_DURATION}s after {_BLOCK_THRESHOLD} "
+                f"scanner hits in {_BLOCK_WINDOW}s"
+            )
+
+    @app.after_request
+    def track_404_ips(response):
+        """Track IPs that generate 404s from normal routes too."""
+        if response.status_code == 404:
+            ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if ip and ',' in ip:
+                ip = ip.split(',')[0].strip()
+            _record_ip_404(ip, _time.monotonic())
+        return response
+
     # --- Session Management ---
     @app.before_request
     def make_session_permanent():
@@ -804,6 +870,36 @@ def create_app() -> Flask:
 
     @app.context_processor
     def inject_active_user():
+        # Skip expensive DB queries if we're handling an error response
+        # (the scanner early-return already catches most, but this handles
+        # any other error paths that still render templates)
+        if getattr(g, '_skip_nav_queries', False):
+            return {
+                "csp_nonce": getattr(g, 'csp_nonce', ''),
+                "active_user": None,
+                "active_user_id": None,
+                "active_user_roles": [],
+                "is_super_admin": False,
+                "beta_testing_mode": False,
+                "can_override_role": False,
+                "role_override": None,
+                "role_override_approval_group_id": None,
+                "_get_approval_groups": lambda: [],
+                "dev_login_enabled": app.config.get("DEV_LOGIN_ENABLED", False),
+                "google_auth_enabled": app.config.get("GOOGLE_AUTH_ENABLED", False),
+                "keycloak_auth_enabled": app.config.get("KEYCLOAK_AUTH_ENABLED", False),
+                "auth_provider": app.config.get("AUTH_PROVIDER"),
+                "is_impersonating": False,
+                "real_user_id": None,
+                "env_banner_enabled": app.config.get("ENV_BANNER_ENABLED", False),
+                "env_banner_message": app.config.get("ENV_BANNER_MESSAGE", ""),
+                "nav_is_budget_admin": False,
+                "nav_approval_groups": [],
+                "nav_event_cycle": None,
+                "nav_dept_memberships": [],
+                "nav_div_memberships": [],
+            }
+
         u = get_active_user()
         roles = active_user_roles()
         has_super_admin = _has_super_admin_role()
@@ -966,6 +1062,7 @@ def create_app() -> Flask:
 
     @app.errorhandler(400)
     def bad_request_error(error):
+        g._skip_nav_queries = True
         return render_template('errors/404.html', error=error), 400
 
     @app.errorhandler(403)
@@ -997,18 +1094,26 @@ def create_app() -> Flask:
 
     @app.errorhandler(404)
     def not_found_error(error):
+        g._skip_nav_queries = True
         return render_template('errors/404.html', error=error), 404
+
+    @app.errorhandler(405)
+    def method_not_allowed_error(error):
+        g._skip_nav_queries = True
+        return render_template('errors/404.html', error=error), 405
 
     @app.errorhandler(500)
     def internal_error(error):
         # Rollback any pending database transaction to avoid connection issues
         db.session.rollback()
+        g._skip_nav_queries = True
         return render_template('errors/500.html', error=error), 500
 
     @app.errorhandler(OperationalError)
     def database_connection_error(error):
         # Database connection issues (connection refused, timeout, etc.)
         db.session.rollback()
+        g._skip_nav_queries = True
         app.logger.error(f"Database connection error: {error}")
         return render_template('errors/503.html', error=error if app.debug else None), 503
 
@@ -1016,6 +1121,7 @@ def create_app() -> Flask:
     def database_error(error):
         # Other database errors
         db.session.rollback()
+        g._skip_nav_queries = True
         app.logger.error(f"Database error: {error}")
         return render_template('errors/500.html', error=error if app.debug else None), 500
 
@@ -1024,6 +1130,7 @@ def create_app() -> Flask:
         @app.errorhandler(Exception)
         def unhandled_exception(error):
             db.session.rollback()
+            g._skip_nav_queries = True
             app.logger.error(f"Unhandled exception: {error}", exc_info=True)
             return render_template('errors/500.html', error=None), 500
 

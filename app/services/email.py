@@ -275,6 +275,15 @@ def send_email(
             # Use default credential chain (IAM role, env vars, etc.)
             client = boto3.client('ses', region_name=region)
 
+        # Append standard footer to all emails
+        footer = (
+            "\n\n---\n"
+            "This is an automated message from the MAGFest Budget System "
+            "\u2014 replies here disappear into the void! "
+            "For help, reach out on Slack or email accounting@magfest.org."
+        )
+        body_text = body_text + footer
+
         # Build email body - support both HTML and plain text
         # If body contains HTML tags, send as HTML with plain text fallback
         body_content = {}

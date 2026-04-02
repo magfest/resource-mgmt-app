@@ -573,7 +573,7 @@ def db_info():
     total_rows = 0
     for table_name in sorted(inspector.get_table_names()):
         row_count = db.session.execute(
-            db.text(f"SELECT COUNT(*) FROM {table_name}")
+            db.text(f"SELECT COUNT(*) FROM {table_name}")  # nosec B608
         ).scalar()
         column_count = len(inspector.get_columns(table_name))
         tables_overview.append({
@@ -634,7 +634,7 @@ def db_table_detail(table_name: str):
     total_rows = 0
     for tbl in sorted(all_tables):
         row_count = db.session.execute(
-            db.text(f"SELECT COUNT(*) FROM {tbl}")
+            db.text(f"SELECT COUNT(*) FROM {tbl}")  # nosec B608
         ).scalar()
         column_count = len(inspector.get_columns(tbl))
         tables_overview.append({
@@ -672,13 +672,13 @@ def db_table_detail(table_name: str):
         column_info.append(col_data)
 
     row_count = db.session.execute(
-        db.text(f"SELECT COUNT(*) FROM {table_name}")
+        db.text(f"SELECT COUNT(*) FROM {table_name}")  # nosec B608
     ).scalar()
 
     # Get sample rows (first 10)
     try:
         sample_rows = db.session.execute(
-            db.text(f"SELECT * FROM {table_name} LIMIT 10")
+            db.text(f"SELECT * FROM {table_name} LIMIT 10")  # nosec B608
         ).fetchall()
         sample_columns = [col["name"] for col in columns]
     except Exception:

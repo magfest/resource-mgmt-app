@@ -130,7 +130,7 @@ def render_email_template(
 
     try:
         # Create a Jinja2 environment for string template rendering
-        env = Environment(loader=BaseLoader())
+        env = Environment(loader=BaseLoader(), autoescape=True)
 
         # Render subject
         subject_template = env.from_string(template.subject)
@@ -164,7 +164,7 @@ def validate_jinja2_template(template_str: str) -> tuple[bool, str | None]:
         - (False, "error description") if invalid
     """
     try:
-        env = Environment(loader=BaseLoader())
+        env = Environment(loader=BaseLoader(), autoescape=True)
         env.parse(template_str)
         return True, None
     except TemplateSyntaxError as e:
@@ -212,7 +212,7 @@ def preview_template(template: EmailTemplate) -> RenderedEmail | None:
     context = get_sample_context()
 
     try:
-        env = Environment(loader=BaseLoader())
+        env = Environment(loader=BaseLoader(), autoescape=True)
 
         subject_template = env.from_string(template.subject)
         rendered_subject = subject_template.render(**context)

@@ -231,7 +231,7 @@ def test_email_template(template_id: int):
     context = get_sample_context()
 
     try:
-        env = Environment(loader=BaseLoader())
+        env = Environment(loader=BaseLoader(), autoescape=True)
         rendered_subject = env.from_string(subject).render(**context)
         rendered_body = env.from_string(body_text).render(**context)
     except Exception as e:
