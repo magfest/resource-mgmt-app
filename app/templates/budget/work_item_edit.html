@@ -406,21 +406,21 @@
 
         {# Step 1: Purpose #}
         <div style="margin-bottom: 24px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 12px;">What is this suite for?</label>
+          <label style="display: block; font-weight: 600; margin-bottom: 12px;">What is the primary purpose of the room(s) in this line?</label>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
             <label style="display: block; cursor: pointer; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px; background: #fff;" class="purpose-option" data-value="external_partner">
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
                 <input type="radio" name="purpose" value="external_partner" checked>
-                <strong>External partner</strong>
+                <strong>External partner room or suite</strong>
               </div>
               <div class="muted small" style="margin-left: 24px;">
-                A suite for performers, guests, contractors, or other external partners. Departments may use their budget to cover some or all of the cost.
+                For performers, guests, contractors, or other external partners. Departments may use their budget to cover some or all of the cost, or the partner may cover the cost.
               </div>
             </label>
             <label style="display: block; cursor: pointer; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px; background: #fff;" class="purpose-option" data-value="dept_operations">
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
                 <input type="radio" name="purpose" value="dept_operations">
-                <strong>Departmental function</strong>
+                <strong>Departmental function room or suite</strong>
               </div>
               <div class="muted small" style="margin-left: 24px;">
                 A suite critical for your department to function &mdash; e.g., Treasury, Staff Suite. Not for general staff housing.
@@ -429,22 +429,22 @@
             <label style="display: block; cursor: pointer; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px; background: #fff;" class="purpose-option" data-value="staff_crash">
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
                 <input type="radio" name="purpose" value="staff_crash">
-                <strong>Suite for staffers</strong>
+                <strong>Self-paid suite for staff</strong>
               </div>
               <div class="muted small" style="margin-left: 24px;">
-                A suite as gathering or sleeping space for staffers. Must be paid out-of-pocket; department budget cannot be used. MAGFest provides a credit per staffer housed.
+                A suite as gathering or sleeping space for staffers. Must be paid out-of-pocket; department budgeA suite used as gathering or sleeping space for staffers. Must be paid out-of-pocket; department budget cannot be used. MAGFest provides a credit per staffer housed.t cannot be used. MAGFest provides a credit per staffer housed.
               </div>
             </label>
           </div>
           <div class="muted small" style="margin-top: 12px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
             {% set suite_link = get_site_content('link_suite_policy') %}
-            Not sure which to pick? <strong>Departmental function</strong> is for suites critical to operations. <strong>Suite for staffers</strong> is for staff sleeping/gathering space (paid out-of-pocket).{% if suite_link.content %} See the {{ suite_link.content|markdown_links|safe }} for details.{% endif %}
+            Not sure which to pick? {% if suite_link.content %} See the {{ suite_link.content|markdown_links|safe }} for details.{% else %} See the Suite Policy for details. {% endif %}
           </div>
         </div>
 
         {# Step 2: Who Pays (only for external partner) #}
         <div id="who-pays-section" style="margin-bottom: 24px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 12px;">Who pays for this room?</label>
+          <label style="display: block; font-weight: 600; margin-bottom: 12px;">Who pays for the room(s) in this line?</label>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
             <label style="display: block; cursor: pointer; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px; background: #fff;">
               <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
@@ -476,7 +476,7 @@
         {# Departmental Function Warning #}
         <div id="staff-crash-warning" style="display: none; margin-bottom: 20px; padding: 12px 16px; background: #e0f2fe; border: 1px solid #0ea5e9; border-radius: 8px;">
           <strong style="color: #0369a1;">Note:</strong>
-          <span style="color: #0c4a6e;">Suites critical for department function (e.g., Treasury, Staff Suite) may be covered by budget. Standard staff sleeping rooms are provided separately through STOPS.</span>
+          <span style="color: #0c4a6e;">Note: Suites critical for department function (e.g., Treasury, Staff Suite) may be covered by budget. Standard staff sleeping rooms are provided separately through STOPS and do not need to be requested here by departments. (Unless you are STOPS. Hi, STOPS!)</span>
         </div>
 
         {# Step 3: Room Type #}
@@ -518,13 +518,13 @@
 
         {# Step 4: How Many Rooms #}
         <div style="margin-bottom: 20px;">
-          <label for="room_count" style="display: block; font-weight: 600; margin-bottom: 8px;">How many rooms?</label>
+          <label for="room_count" style="display: block; font-weight: 600; margin-bottom: 8px;">How many rooms of this type do you need?</label>
           <input type="number" name="room_count" id="room_count" value="1" min="1" step="1" style="width: 80px;">
         </div>
 
         {# Step 5: Dates #}
         <div style="margin-bottom: 20px; padding: 16px; background: #f8f9fa; border-radius: 6px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 12px;">When do you need this room?</label>
+          <label style="display: block; font-weight: 600; margin-bottom: 12px;">What is the duration of the stay for the room(s) in this line?</label>
 
           {% if event_start_date and event_end_date %}
             <div style="margin-bottom: 12px;">
@@ -541,12 +541,12 @@
               </label>
             </div>
 
-            <div class="muted small" style="margin-top: 8px;">Early arrival and late departure options are for cost estimation only.</div>
+            <div class="muted small" style="margin-top: 8px;">Below you may add shoulder nights to the room(s) in this line. Shoulder nights are for estimation purposes only; you will confirm & provide detailed information later in the season.</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
               <div>
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 8px;">
                   <input type="checkbox" name="early_arrival" id="early_arrival">
-                  <strong>Early arrival</strong>
+                  <strong>Add pre-event nights</strong>
                 </label>
                 <div id="early-arrival-input" style="display: none;">
                   <label for="early_nights" class="muted small">Extra nights before event:</label>
@@ -556,7 +556,7 @@
               <div>
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 8px;">
                   <input type="checkbox" name="late_departure" id="late_departure">
-                  <strong>Late departure</strong>
+                  <strong>Add post-event nights</strong>
                 </label>
                 <div id="late-departure-input" style="display: none;">
                   <label for="late_nights" class="muted small">Extra nights after event:</label>
@@ -580,7 +580,7 @@
         {# Step 6: Description #}
         <div style="margin-bottom: 20px;">
           <label for="description" style="display: block; font-weight: 600; margin-bottom: 8px;">Brief description (who is this for?)</label>
-          <input type="text" name="description" id="description" placeholder="e.g., Room for keynote speaker Jane Doe" style="width: 100%; max-width: 500px;">
+          <input type="text" name="description" id="description" placeholder="e.g. contracted suite for Saturday's headliner Ivan & the Ivans; self-paid rooms for indie devs" style="width: 100%; max-width: 500px;">
         </div>
 
         {# Preview #}
@@ -598,7 +598,8 @@
 
         {# Submit #}
         <div class="btn-row">
-          <button type="submit" class="btn btn-primary">Add Hotel Request</button>
+          <button type="submit" class="btn btn-primary">Add Line to Request</button>
+          <button type="button" class="btn" id="finished-adding-rooms">Finished Adding Rooms</button>
         </div>
 
         <div class="muted small" style="margin-top: 16px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
@@ -1060,7 +1061,16 @@
 
     // Update preview
     document.getElementById('preview-rooms').textContent = roomCount;
-    document.getElementById('preview-room-type').textContent = roomTypeNames[roomType] || roomType;
+    // Show payment type after room name for clarity
+    let payLabel = '';
+    if (purpose === 'staff_crash') {
+      payLabel = ' (self-paid)';
+    } else if (purpose === 'external_partner' && whoPays === 'third_party') {
+      payLabel = ' (partner-paid)';
+    } else {
+      payLabel = ' (MAG-paid)';
+    }
+    document.getElementById('preview-room-type').textContent = (roomTypeNames[roomType] || roomType) + payLabel;
 
     // Build nights breakdown
     let breakdown = totalNights + ' total nights';
@@ -1098,6 +1108,11 @@
     const dollars = cents / 100;
     return '$' + dollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+
+  // ========== Finished Adding Rooms ==========
+  document.getElementById('finished-adding-rooms')?.addEventListener('click', function() {
+    switchToTab('badges');
+  });
 
   // ========== Reason Inline Edit ==========
   const editReasonBtn = document.getElementById('edit-reason-btn');

@@ -70,7 +70,7 @@ def get_departments_without_budgets(event_cycle_id: int) -> List[MissingBudgetRo
         .outerjoin(Division, Department.division_id == Division.id)
         .filter(Department.is_active == True)
         .filter(Department.id.in_(enabled_dept_ids))  # Only enabled departments
-        .filter(~Department.id.in_(departments_with_budgets))
+        .filter(~Department.id.in_(departments_with_budgets.select()))
         .order_by(
             Division.name.asc().nulls_last(),
             Department.name.asc(),
