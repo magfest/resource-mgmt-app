@@ -1,0 +1,15 @@
+{
+  "name": "MAGFest Budget System",
+  "image": "mcr.microsoft.com/devcontainers/python:3.13",
+  "forwardPorts": [5000],
+  "postCreateCommand": "pip install -r requirements.txt && cp .env.example .env && flask db upgrade",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter"
+      ]
+    }
+  }
+}
