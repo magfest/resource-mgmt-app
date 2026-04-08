@@ -105,18 +105,20 @@ def log_login_success(user_id: str, provider: str, email: str) -> SecurityAuditL
     )
 
 
-def log_login_failure(reason: str, email: str = None, provider: str = None) -> SecurityAuditLog:
+def log_login_failure(reason: str, email: str = None, provider: str = None,
+                      severity: str = SEVERITY_WARNING) -> SecurityAuditLog:
     """Log failed authentication attempt.
 
     Args:
-        reason: Why the login failed (e.g., 'domain_restricted', 'oauth_error')
+        reason: Why the login failed (e.g., 'domain_restricted', 'oauth_error', 'stale_session')
         email: Email that attempted to log in (if known)
         provider: OAuth provider that was used (if known)
+        severity: Severity level (default WARNING, use INFO for benign failures like stale_session)
     """
     return log_security_event(
         EVENT_LOGIN_FAILURE,
         CATEGORY_AUTH,
-        SEVERITY_WARNING,
+        severity,
         user_id=None,
         details={"reason": reason, "email": email, "provider": provider},
     )

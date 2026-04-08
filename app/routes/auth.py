@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 
 from flask import Blueprint, redirect, url_for, session, flash, current_app, request, render_template
 from authlib.integrations.flask_client import OAuth
+from authlib.integrations.base_client import MismatchingStateError
 
 from app import db
 
@@ -171,6 +172,11 @@ def _handle_google_callback():
 
     try:
         token = oauth.google.authorize_access_token()
+    except MismatchingStateError:
+        current_app.logger.info('Google state mismatch — stale session, retrying OAuth')
+        log_login_failure("stale_session", provider="google", severity="INFO")
+        db.session.commit()
+        return redirect(url_for('auth.login'))
     except Exception as e:
         current_app.logger.error(f'Google OAuth error: {e}')
         log_login_failure("oauth_error", provider="google")
@@ -217,6 +223,14 @@ def _handle_keycloak_callback():
 
     try:
         token = oauth.keycloak.authorize_access_token()
+    except MismatchingStateError:
+        # Stale session: user's Flask session expired but Keycloak SSO session
+        # was still active, so the callback state doesn't match. This is benign
+        # — just re-initiate the OAuth flow and it will succeed on the retry.
+        current_app.logger.info('Keycloak state mismatch — stale session, retrying OAuth')
+        log_login_failure("stale_session", provider="keycloak", severity="INFO")
+        db.session.commit()
+        return redirect(url_for('auth.login'))
     except Exception as e:
         current_app.logger.error(f'Keycloak OAuth error: {e}')
         log_login_failure("oauth_error", provider="keycloak")

@@ -155,7 +155,7 @@ def create_app() -> Flask:
     app.config["SLACK_BOT_TOKEN"] = os.environ.get("SLACK_BOT_TOKEN")
     app.config["SLACK_CHANNEL_ID"] = os.environ.get("SLACK_CHANNEL_ID")
 
-    # --- Proxy Fix for AWS AppRunner ---
+    # --- Proxy Fix for reverse proxies (Heroku, AWS, etc.) ---
     if os.environ.get("BEHIND_PROXY", "false").lower() == "true":
         from werkzeug.middleware.proxy_fix import ProxyFix
         app.wsgi_app = ProxyFix(
