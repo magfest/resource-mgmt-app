@@ -7,6 +7,7 @@ SupplyOrderLineDetail). This module provides generic access to these details.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
@@ -49,7 +50,7 @@ def get_line_amount_cents(line: "WorkLine") -> int:
 
     # Budget lines: unit_price_cents * quantity
     if hasattr(detail, "unit_price_cents") and hasattr(detail, "quantity"):
-        return int(detail.unit_price_cents * float(detail.quantity))
+        return int(Decimal(detail.unit_price_cents) * detail.quantity)
 
     # Contract lines: contract_amount_cents
     if hasattr(detail, "contract_amount_cents"):

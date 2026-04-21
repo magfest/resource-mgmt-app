@@ -3,6 +3,8 @@ Admin routes for expense account management.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from flask import Blueprint, redirect, url_for, request, abort, flash
 
 from app import db
@@ -684,8 +686,8 @@ def _parse_price_cents(value: str | None) -> int | None:
         return None
 
     try:
-        return int(float(value) * 100)
-    except ValueError:
+        return int(Decimal(value) * 100)
+    except (ValueError, InvalidOperation):
         return None
 
 
