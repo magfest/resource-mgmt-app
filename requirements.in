@@ -6,6 +6,7 @@ python-dotenv
 pandas
 openpyxl
 psycopg2-binary
+greenlet
 Authlib
 requests
 boto3

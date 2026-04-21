@@ -783,7 +783,10 @@ def create_app() -> Flask:
 
     def get_active_user():
         from .models import User
-        return db.session.get(User, get_active_user_id())
+        uid = get_active_user_id()
+        if uid is None:
+            return None
+        return db.session.get(User, uid)
 
     def active_user_roles() -> list[str]:
         from .models import UserRole

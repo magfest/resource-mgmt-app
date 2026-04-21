@@ -3,6 +3,8 @@ Admin routes for supply item (catalog) management.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from flask import Blueprint, redirect, url_for, request, abort, flash
 
 from app import db
@@ -123,8 +125,8 @@ def create_supply_item():
     unit_cost_cents = None
     if unit_cost:
         try:
-            unit_cost_cents = int(float(unit_cost) * 100)
-        except ValueError:
+            unit_cost_cents = int(Decimal(unit_cost) * 100)
+        except (ValueError, InvalidOperation):
             flash("Invalid unit cost format.", "error")
             return redirect(url_for('.new_supply_item'))
 
@@ -189,8 +191,8 @@ def update_supply_item(item_id: int):
     unit_cost_cents = None
     if unit_cost:
         try:
-            unit_cost_cents = int(float(unit_cost) * 100)
-        except ValueError:
+            unit_cost_cents = int(Decimal(unit_cost) * 100)
+        except (ValueError, InvalidOperation):
             flash("Invalid unit cost format.", "error")
             return redirect(url_for('.edit_supply_item', item_id=item_id))
 

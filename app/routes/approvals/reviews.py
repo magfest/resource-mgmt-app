@@ -1,6 +1,8 @@
 """
 Line review routes - individual line review with decision actions.
 """
+from decimal import Decimal, InvalidOperation
+
 from flask import render_template, redirect, url_for, request, abort, flash, jsonify
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -228,9 +230,9 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
     if amount_str:
         try:
             # Parse as dollars, convert to cents
-            amount_dollars = float(amount_str.replace(",", "").replace("$", ""))
+            amount_dollars = Decimal(amount_str.replace(",", "").replace("$", ""))
             amount_cents = int(amount_dollars * 100)
-        except ValueError:
+        except (ValueError, InvalidOperation):
             pass  # Ignore invalid amounts
 
     # Apply the decision
@@ -513,13 +515,13 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
     price_str = (request.form.get("unit_price") or "").strip()
     if price_str:
         try:
-            new_price_dollars = float(price_str)
+            new_price_dollars = Decimal(price_str)
             new_price_cents = int(new_price_dollars * 100)
             if new_price_cents != detail.unit_price_cents:
                 old_price = detail.unit_price_cents / 100
                 changes.append(f"Unit price: ${old_price:.2f} → ${new_price_dollars:.2f}")
                 detail.unit_price_cents = new_price_cents
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, InvalidOperation):
             flash("Invalid unit price value.", "error")
             return redirect(url_for(
                 "approvals.line_review",
