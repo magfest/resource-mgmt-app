@@ -29,8 +29,14 @@
       </div>
       <div class="muted" style="margin-top:4px;">
         Created {{ work_item.created_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if work_item.created_by_user_id %}
+          by {{ work_item.created_by_user_id|user_display }}
+        {% endif %}
         {% if work_item.submitted_at %}
           &middot; Submitted {{ work_item.submitted_at.strftime('%Y-%m-%d %H:%M') }}
+          {% if work_item.submitted_by_user_id %}
+            by {{ work_item.submitted_by_user_id|user_display }}
+          {% endif %}
         {% endif %}
       </div>
       {# Reason display for supplementals #}
