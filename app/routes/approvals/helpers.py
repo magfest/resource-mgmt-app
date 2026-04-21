@@ -15,6 +15,7 @@ from app.models import (
     WorkLine,
     WorkLineReview,
     WorkLineAuditEvent,
+    WorkItemAuditEvent,
     WorkItem,
     WorkPortfolio,
     ApprovalGroup,
@@ -41,6 +42,9 @@ from app.models import (
     REVIEW_ACTION_RESPOND,
     AUDIT_EVENT_REVIEW_DECISION,
     AUDIT_EVENT_REQUESTER_RESPONSE,
+    AUDIT_EVENT_LINE_CREATED,
+    AUDIT_EVENT_FIELD_CHANGE,
+    AUDIT_EVENT_LINE_DELETED,
     ROLE_APPROVER,
 )
 from app.routes import get_user_ctx, UserContext
@@ -399,15 +403,109 @@ def create_line_audit_event(
     new_value: str,
     note: Optional[str],
     user_ctx: UserContext,
+    field_name: str = "status",
 ) -> WorkLineAuditEvent:
     """Create an audit event for a line."""
     event = WorkLineAuditEvent(
         work_line_id=line.id,
         event_type=event_type,
-        field_name="status",
+        field_name=field_name,
         old_value=old_value,
         new_value=new_value,
         note=note,
+        created_by_user_id=user_ctx.user_id,
+    )
+    db.session.add(event)
+    return event
+
+
+def audit_line_created(
+    line: WorkLine,
+    detail: BudgetLineDetail,
+    user_ctx: UserContext,
+) -> WorkLineAuditEvent:
+    """Create an audit event for a newly created line."""
+    parts = [f"Line #{line.line_number}"]
+    if detail.expense_account:
+        parts.append(detail.expense_account.name)
+    parts.append(f"qty={detail.quantity}")
+    parts.append(f"price=${detail.unit_price_cents / 100:,.2f}")
+    summary = ", ".join(parts)
+
+    return create_line_audit_event(
+        line=line,
+        event_type=AUDIT_EVENT_LINE_CREATED,
+        old_value=None,
+        new_value=summary,
+        note=detail.description,
+        user_ctx=user_ctx,
+        field_name="line",
+    )
+
+
+def audit_line_field_changes(
+    line: WorkLine,
+    changes: List[Tuple[str, str, str]],
+    user_ctx: UserContext,
+) -> List[WorkLineAuditEvent]:
+    """
+    Create FIELD_CHANGE audit events for each changed field.
+
+    Args:
+        line: The work line that was changed
+        changes: List of (field_name, old_value, new_value) tuples
+        user_ctx: Current user context
+
+    Returns:
+        List of created audit events
+    """
+    events = []
+    for field_name, old_val, new_val in changes:
+        event = create_line_audit_event(
+            line=line,
+            event_type=AUDIT_EVENT_FIELD_CHANGE,
+            old_value=str(old_val) if old_val is not None else None,
+            new_value=str(new_val),
+            note=None,
+            user_ctx=user_ctx,
+            field_name=field_name,
+        )
+        events.append(event)
+    return events
+
+
+def audit_line_deleted(
+    work_item: WorkItem,
+    line: WorkLine,
+    detail: Optional[BudgetLineDetail],
+    user_ctx: UserContext,
+) -> WorkItemAuditEvent:
+    """
+    Create a LINE_DELETED audit event at the work item level.
+
+    Uses WorkItemAuditEvent so it survives the cascade delete of the line.
+    """
+    snapshot = {
+        "line_number": line.line_number,
+    }
+    if detail:
+        snapshot["description"] = detail.description
+        snapshot["quantity"] = str(detail.quantity)
+        snapshot["unit_price_cents"] = detail.unit_price_cents
+        if detail.expense_account:
+            snapshot["expense_account"] = detail.expense_account.name
+        if detail.spend_type:
+            snapshot["spend_type"] = detail.spend_type.name
+        if detail.confidence_level:
+            snapshot["confidence_level"] = detail.confidence_level.name
+
+    event = WorkItemAuditEvent(
+        work_item_id=work_item.id,
+        event_type=AUDIT_EVENT_LINE_DELETED,
+        old_value=f"Line #{line.line_number}",
+        new_value=None,
+        reason=None,
+        snapshot=snapshot,
         created_by_user_id=user_ctx.user_id,
     )
     db.session.add(event)

@@ -466,13 +466,48 @@
                       {% endif %}
                     {% elif event.event_type == 'REQUESTER_RESPONSE' %}
                       <span class="pill" style="background: #d1fae5; color: #065f46;">RESPONDED</span>
+                    {% elif event.event_type == 'LINE_CREATED' %}
+                      <span class="pill pill-approved">LINE ADDED</span>
+                    {% elif event.event_type == 'FIELD_CHANGE' %}
+                      <span class="pill pill-submitted">FIELD CHANGE</span>
+                    {% elif event.event_type == 'LINE_DELETED' %}
+                      <span class="pill tag-kicked">LINE DELETED</span>
                     {% else %}
                       <span class="pill">{{ event.event_type }}</span>
                     {% endif %}
                   </td>
                   <td>
+                    {# Handle new budget line audit event types #}
+                    {% if event.event_type == 'LINE_CREATED' %}
+                      {{ event.new_value }}
+                      {% if event.reason %}
+                        <div class="small muted" style="margin-top: 4px;">{{ event.reason }}</div>
+                      {% endif %}
+                    {% elif event.event_type == 'FIELD_CHANGE' %}
+                      {% if event.snapshot and event.snapshot.field %}
+                        <strong>{{ event.snapshot.description }}:</strong>
+                        {{ event.snapshot.field }} <span class="muted">{{ event.old_value }}</span> &rarr; <strong>{{ event.new_value }}</strong>
+                      {% elif event.field_name %}
+                        <strong>{{ event.field_name }}:</strong>
+                        <span class="muted">{{ event.old_value }}</span> &rarr; <strong>{{ event.new_value }}</strong>
+                      {% else %}
+                        <span class="muted">{{ event.old_value }}</span> &rarr; <strong>{{ event.new_value }}</strong>
+                      {% endif %}
+                    {% elif event.event_type == 'LINE_DELETED' %}
+                      {% if event.snapshot %}
+                        Line #{{ event.snapshot.line_number }}
+                        {% if event.snapshot.expense_account %} — {{ event.snapshot.expense_account }}{% endif %}
+                        {% if event.snapshot.description %} ({{ event.snapshot.description }}){% endif %}
+                        {% if event.snapshot.quantity and event.snapshot.unit_price_cents %}
+                          <div class="small muted" style="margin-top: 4px;">
+                            qty={{ event.snapshot.quantity }}, price=${{ "%.2f"|format(event.snapshot.unit_price_cents / 100) }}
+                          </div>
+                        {% endif %}
+                      {% else %}
+                        {{ event.old_value }}
+                      {% endif %}
                     {# Handle snapshot data for work item events #}
-                    {% if event.snapshot %}
+                    {% elif event.snapshot %}
                       {% if event.event_type == 'SUBMIT' %}
                         {{ event.snapshot.line_count }} line{% if event.snapshot.line_count != 1 %}s{% endif %},
                         {{ format_currency(event.snapshot.total_requested_cents) }} total
@@ -498,7 +533,7 @@
                         <span class="muted">{{ event.old_value }}</span>
                       {% endif %}
                     {% endif %}
-                    {% if event.reason %}
+                    {% if event.reason and event.event_type not in ('LINE_CREATED',) %}
                       <div class="small muted" style="margin-top: 4px;">{{ event.reason }}</div>
                     {% endif %}
                   </td>

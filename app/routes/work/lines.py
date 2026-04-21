@@ -21,6 +21,11 @@ from app.models import (
     SPEND_TYPE_MODE_ALLOW_LIST,
 )
 from app.routes import get_user_ctx
+from app.routes.approvals.helpers import (
+    audit_line_created,
+    audit_line_field_changes,
+    audit_line_deleted,
+)
 from . import work_bp
 from .helpers import (
     get_portfolio_context,
@@ -348,6 +353,9 @@ def line_create(event: str, dept: str, public_id: str):
         description=description,
     )
     db.session.add(budget_detail)
+    db.session.flush()
+
+    audit_line_created(work_line, budget_detail, user_ctx)
     db.session.commit()
 
     flash("Budget line added successfully.", "success")
@@ -634,6 +642,19 @@ def line_update(event: str, dept: str, public_id: str, line_num: int):
             },
         )
 
+    # Capture old values for audit before applying changes
+    old_values = {
+        "expense_account": detail.expense_account.name if detail.expense_account else str(detail.expense_account_id),
+        "spend_type": detail.spend_type.name if detail.spend_type else str(detail.spend_type_id),
+        "unit_price": f"${detail.unit_price_cents / 100:,.2f}",
+        "quantity": str(detail.quantity),
+        "confidence_level": detail.confidence_level.name if detail.confidence_level else str(detail.confidence_level_id),
+        "frequency": detail.frequency.name if detail.frequency else str(detail.frequency_id),
+        "priority": detail.priority.name if detail.priority else str(detail.priority_id),
+        "warehouse_flag": str(detail.warehouse_flag),
+        "description": detail.description or "",
+    }
+
     # Update the budget line detail
     detail.expense_account_id = expense_account.id
     detail.spend_type_id = spend_type.id
@@ -644,6 +665,28 @@ def line_update(event: str, dept: str, public_id: str, line_num: int):
     detail.priority_id = priority.id
     detail.warehouse_flag = warehouse_flag
     detail.description = description
+
+    # Compute changes for audit
+    new_values = {
+        "expense_account": expense_account.name,
+        "spend_type": spend_type.name,
+        "unit_price": f"${unit_price_cents / 100:,.2f}",
+        "quantity": str(quantity),
+        "confidence_level": confidence_level.name,
+        "frequency": frequency.name,
+        "priority": priority.name,
+        "warehouse_flag": str(warehouse_flag),
+        "description": description or "",
+    }
+
+    changes = [
+        (field, old_values[field], new_values[field])
+        for field in old_values
+        if old_values[field] != new_values[field]
+    ]
+
+    if changes:
+        audit_line_field_changes(line, changes, user_ctx)
 
     # Update the line's updated_by
     line.updated_by_user_id = user_ctx.user_id
@@ -670,6 +713,7 @@ def line_delete(event: str, dept: str, public_id: str, line_num: int):
     """
     work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
     perms = require_work_item_edit(work_item, ctx)
+    user_ctx = get_user_ctx()
 
     # Get the line
     line = WorkLine.query.filter_by(
@@ -686,8 +730,11 @@ def line_delete(event: str, dept: str, public_id: str, line_num: int):
             public_id=public_id
         ))
 
-    # Delete budget detail first
+    # Create audit event before deletion (survives cascade as WorkItemAuditEvent)
     detail = BudgetLineDetail.query.filter_by(work_line_id=line.id).first()
+    audit_line_deleted(work_item, line, detail, user_ctx)
+
+    # Delete budget detail first
     if detail:
         db.session.delete(detail)
         db.session.flush()
