@@ -189,19 +189,49 @@
         {% endif %}
       </section>
 
-      {# Review History #}
+      {# Line History — create, edits, and review activity #}
       {% if audit_events %}
         <section class="card">
-          <h3 style="margin:0 0 12px 0;">Review History</h3>
+          <h3 style="margin:0 0 12px 0;">Line History</h3>
           {% for event in audit_events %}
             <div class="comment" style="font-size: 13px;">
               <div class="muted small">
                 {{ event.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
                 {{ event.created_by_user_id|user_display }}
               </div>
-              <div>
-                <strong>{{ event.event_type }}</strong>:
-                {{ event.old_value or '-' }} &rarr; {{ event.new_value or '-' }}
+              <div style="margin-top: 4px;">
+                {% if event.event_type == 'LINE_CREATED' %}
+                  <span class="pill pill-approved">LINE ADDED</span>
+                  <span style="margin-left: 6px;">{{ event.new_value }}</span>
+                {% elif event.event_type == 'FIELD_CHANGE' %}
+                  <span class="pill pill-submitted">FIELD CHANGE</span>
+                  <span style="margin-left: 6px;">
+                    {% if event.field_name %}<strong>{{ event.field_name }}:</strong>{% endif %}
+                    <span class="muted">{{ event.old_value or '-' }}</span> &rarr; <strong>{{ event.new_value or '-' }}</strong>
+                  </span>
+                {% elif event.event_type == 'REVIEW_DECISION' %}
+                  {% if event.new_value == 'APPROVED' %}
+                    <span class="pill pill-approved">APPROVED</span>
+                  {% elif event.new_value == 'REJECTED' %}
+                    <span class="pill tag-kicked">REJECTED</span>
+                  {% elif event.new_value == 'NEEDS_INFO' %}
+                    <span class="pill pill-needs">NEEDS INFO</span>
+                  {% elif event.new_value == 'NEEDS_ADJUSTMENT' %}
+                    <span class="pill pill-needs">CHANGES REQUESTED</span>
+                  {% elif event.new_value == 'PENDING' %}
+                    <span class="pill">RESET TO PENDING</span>
+                  {% else %}
+                    <span class="pill">REVIEW: {{ event.new_value }}</span>
+                  {% endif %}
+                {% elif event.event_type == 'REQUESTER_RESPONSE' %}
+                  <span class="pill" style="background: #d1fae5; color: #065f46;">RESPONDED</span>
+                  {% if event.old_value and event.new_value %}
+                    <span class="muted" style="margin-left: 6px;">{{ event.old_value }} &rarr; {{ event.new_value }}</span>
+                  {% endif %}
+                {% else %}
+                  <strong>{{ event.event_type }}</strong>:
+                  <span class="muted">{{ event.old_value or '-' }}</span> &rarr; <strong>{{ event.new_value or '-' }}</strong>
+                {% endif %}
               </div>
               {% if event.note %}
                 <div class="muted mt-4">{{ event.note }}</div>
