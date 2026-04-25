@@ -26,6 +26,7 @@ from app.models import (
 from app.routes import get_user_ctx
 from app.routes.work.helpers import (
     get_portfolio_context,
+    require_budget_work_type,
     require_work_item_view,
     build_work_item_perms,
     format_currency,
@@ -54,13 +55,14 @@ from app.routes.admin_final.helpers import (
 # Helper Functions
 # ============================================================
 
-def get_work_item_and_line(event: str, dept: str, public_id: str, line_num: int):
+def get_work_item_and_line(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """
     Get work item and line, validating they exist and belong together.
 
     Returns tuple of (work_item, line, ctx).
     """
-    ctx = get_portfolio_context(event, dept)
+    ctx = get_portfolio_context(event, dept, work_type_slug)
+    require_budget_work_type(ctx)
 
     work_item = WorkItem.query.filter_by(
         public_id=public_id,
@@ -93,13 +95,14 @@ def get_work_item_and_line(event: str, dept: str, public_id: str, line_num: int)
 # Line Review View
 # ============================================================
 
+@approvals_bp.get("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/review")
 @approvals_bp.get("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/review")
-def line_review(event: str, dept: str, public_id: str, line_num: int):
+def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """
     View and review a specific budget line.
     """
     user_ctx = get_user_ctx()
-    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num)
+    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
     # Check view permission
     perms = require_work_item_view(work_item, ctx)
@@ -178,43 +181,48 @@ def line_review(event: str, dept: str, public_id: str, line_num: int):
 # Review Decision Actions
 # ============================================================
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/approve")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/approve")
-def line_approve(event: str, dept: str, public_id: str, line_num: int):
+def line_approve(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Approve a line."""
-    return _handle_review_action(event, dept, public_id, line_num, REVIEW_ACTION_APPROVE)
+    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_APPROVE)
 
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reject")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/reject")
-def line_reject(event: str, dept: str, public_id: str, line_num: int):
+def line_reject(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Reject a line."""
-    return _handle_review_action(event, dept, public_id, line_num, REVIEW_ACTION_REJECT)
+    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_REJECT)
 
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/needs-info")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/needs-info")
-def line_needs_info(event: str, dept: str, public_id: str, line_num: int):
+def line_needs_info(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Request more information for a line."""
-    return _handle_review_action(event, dept, public_id, line_num, REVIEW_ACTION_NEEDS_INFO)
+    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_NEEDS_INFO)
 
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/needs-adjustment")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/needs-adjustment")
-def line_needs_adjustment(event: str, dept: str, public_id: str, line_num: int):
+def line_needs_adjustment(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Request adjustment for a line."""
-    return _handle_review_action(event, dept, public_id, line_num, REVIEW_ACTION_NEEDS_ADJUSTMENT)
+    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_NEEDS_ADJUSTMENT)
 
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reset")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/reset")
-def line_reset(event: str, dept: str, public_id: str, line_num: int):
+def line_reset(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Reset a line back to pending (admin only)."""
-    return _handle_review_action(event, dept, public_id, line_num, REVIEW_ACTION_RESET)
+    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_RESET)
 
 
-def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, action: str):
+def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str, action: str):
     """
     Common handler for all review actions.
     Returns JSON if ajax=1 in form data, otherwise redirects.
     """
     user_ctx = get_user_ctx()
-    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num)
+    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
     # Check if this is an AJAX request
     is_ajax = request.form.get("ajax") == "1"
@@ -318,13 +326,14 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
 # Requester Response Route
 # ============================================================
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/respond")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/respond")
-def line_respond(event: str, dept: str, public_id: str, line_num: int):
+def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """
     Requester responds to NEEDS_INFO or NEEDS_ADJUSTMENT.
     """
     user_ctx = get_user_ctx()
-    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num)
+    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
     # Get review
     review = get_review_for_line(line)
@@ -414,15 +423,16 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int):
     ))
 
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/adjust")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/adjust")
-def line_adjust(event: str, dept: str, public_id: str, line_num: int):
+def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """
     Requester adjusts line details and responds to NEEDS_ADJUSTMENT.
     """
     from decimal import Decimal, InvalidOperation
 
     user_ctx = get_user_ctx()
-    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num)
+    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
     # Get review
     review = get_review_for_line(line)
@@ -615,11 +625,12 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
 # Standalone Comment Route
 # ============================================================
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/comment")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/comment")
-def line_comment(event: str, dept: str, public_id: str, line_num: int):
+def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Add a standalone comment to a line."""
     user_ctx = get_user_ctx()
-    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num)
+    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
     # Permission check: must be reviewer for this line
     if not is_reviewer_for_line(line, user_ctx):

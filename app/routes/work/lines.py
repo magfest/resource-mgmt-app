@@ -29,6 +29,7 @@ from app.routes.approvals.helpers import (
 from . import work_bp
 from .helpers import (
     get_portfolio_context,
+    require_budget_work_type,
     require_work_item_edit,
     build_work_item_perms,
     get_visible_expense_accounts,
@@ -44,14 +45,15 @@ from .helpers import (
 )
 
 
-def get_work_item_by_public_id(event: str, dept: str, public_id: str):
+def get_work_item_by_public_id(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Get a work item by public_id and verify it belongs to the correct portfolio.
 
     Returns tuple of (work_item, ctx) or aborts with 404.
     Eager loads lines with budget details.
     """
-    ctx = get_portfolio_context(event, dept)
+    ctx = get_portfolio_context(event, dept, work_type_slug)
+    require_budget_work_type(ctx)
 
     work_item = WorkItem.query.filter_by(
         public_id=public_id,
@@ -108,12 +110,13 @@ def build_spend_types_by_account(expense_accounts: list) -> dict:
 # Line Creation Routes
 # ============================================================
 
+@work_bp.get("/<event>/<dept>/<work_type_slug>/item/<public_id>/lines/new")
 @work_bp.get("/<event>/<dept>/budget/item/<public_id>/lines/new")
-def line_new(event: str, dept: str, public_id: str):
+def line_new(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Show form for adding a new budget line.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     # Get expense accounts for dropdown
@@ -148,12 +151,13 @@ def line_new(event: str, dept: str, public_id: str):
     )
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/lines")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/lines")
-def line_create(event: str, dept: str, public_id: str):
+def line_create(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Create a new budget line.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     user_ctx = get_user_ctx()
@@ -371,12 +375,13 @@ def line_create(event: str, dept: str, public_id: str):
 # Line Edit Routes
 # ============================================================
 
+@work_bp.get("/<event>/<dept>/<work_type_slug>/item/<public_id>/lines/<int:line_num>/edit")
 @work_bp.get("/<event>/<dept>/budget/item/<public_id>/lines/<int:line_num>/edit")
-def line_edit(event: str, dept: str, public_id: str, line_num: int):
+def line_edit(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """
     Show form for editing an existing budget line.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     # Get the line
@@ -444,12 +449,13 @@ def line_edit(event: str, dept: str, public_id: str, line_num: int):
     )
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/lines/<int:line_num>/edit")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/lines/<int:line_num>/edit")
-def line_update(event: str, dept: str, public_id: str, line_num: int):
+def line_update(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """
     Update an existing budget line.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     user_ctx = get_user_ctx()
@@ -706,12 +712,13 @@ def line_update(event: str, dept: str, public_id: str, line_num: int):
 # Line Delete Route
 # ============================================================
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/lines/<int:line_num>/delete")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/lines/<int:line_num>/delete")
-def line_delete(event: str, dept: str, public_id: str, line_num: int):
+def line_delete(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """
     Delete a budget line.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
     user_ctx = get_user_ctx()
 

@@ -47,12 +47,13 @@ from .common import get_work_item_by_public_id, calculate_event_nights
 # Work Item Edit Routes
 # ============================================================
 
+@work_bp.get("/<event>/<dept>/<work_type_slug>/item/<public_id>/edit")
 @work_bp.get("/<event>/<dept>/budget/item/<public_id>/edit")
-def work_item_edit(event: str, dept: str, public_id: str):
+def work_item_edit(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Edit form for a DRAFT work item.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     # Compute totals
@@ -253,13 +254,14 @@ def work_item_edit(event: str, dept: str, public_id: str):
     )
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/reason")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/reason")
-def work_item_reason_save(event: str, dept: str, public_id: str):
+def work_item_reason_save(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Save reason/description for a DRAFT work item.
     Primarily used for supplementary requests.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     # Get reason from form
@@ -279,13 +281,14 @@ def work_item_reason_save(event: str, dept: str, public_id: str):
     ))
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/income")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/income")
-def work_item_income_save(event: str, dept: str, public_id: str):
+def work_item_income_save(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Save income information for a DRAFT work item.
     Income is informational only — does not affect approval workflow.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     # Parse dollar amount and convert to cents
@@ -316,12 +319,13 @@ def work_item_income_save(event: str, dept: str, public_id: str):
     ))
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/edit")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/edit")
-def work_item_edit_save(event: str, dept: str, public_id: str):
+def work_item_edit_save(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Save edits to a DRAFT work item (delete lines checked for deletion).
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     # Process line deletions
@@ -358,8 +362,9 @@ def work_item_edit_save(event: str, dept: str, public_id: str):
     ))
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/fixed-costs")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/fixed-costs")
-def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
+def work_item_fixed_costs_save(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Save fixed-cost line items.
 
@@ -368,7 +373,7 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
     - If quantity > 0 and existing line: update quantity
     - If quantity = 0 and existing line: delete line
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
     user_ctx = get_user_ctx()
 
@@ -539,8 +544,9 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str):
     ))
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/badges")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/badges")
-def work_item_badges_save(event: str, dept: str, public_id: str):
+def work_item_badges_save(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Save badge line items.
 
@@ -551,7 +557,7 @@ def work_item_badges_save(event: str, dept: str, public_id: str):
 
     Badge items are informational only ($0 cost).
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
     user_ctx = get_user_ctx()
 
@@ -720,14 +726,15 @@ def work_item_badges_save(event: str, dept: str, public_id: str):
 # Hotel Wizard Route
 # ============================================================
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/hotel/add")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/hotel/add")
-def hotel_wizard_add(event: str, dept: str, public_id: str):
+def hotel_wizard_add(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Add a hotel room request via the wizard form.
 
     Maps wizard selections to the appropriate expense account and creates a line item.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
     user_ctx = get_user_ctx()
 

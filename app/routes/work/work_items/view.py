@@ -39,12 +39,13 @@ from .common import get_work_item_by_public_id
 # Work Item Detail/View Routes
 # ============================================================
 
+@work_bp.get("/<event>/<dept>/<work_type_slug>/item/<public_id>")
 @work_bp.get("/<event>/<dept>/budget/item/<public_id>")
-def work_item_detail(event: str, dept: str, public_id: str):
+def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     View a work item and its lines.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_view(work_item, ctx)
     user_ctx = get_user_ctx()
 
@@ -125,11 +126,12 @@ def work_item_detail(event: str, dept: str, public_id: str):
     )
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/comment")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/comment")
-def work_item_comment(event: str, dept: str, public_id: str):
+def work_item_comment(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """Add a standalone comment to a work item."""
     user_ctx = get_user_ctx()
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_view(work_item, ctx)
 
     # Get return URL (for redirecting back to edit page if that's where they came from)
@@ -177,14 +179,15 @@ def work_item_comment(event: str, dept: str, public_id: str):
 # Quick Review Route
 # ============================================================
 
+@work_bp.get("/<event>/<dept>/<work_type_slug>/item/<public_id>/quick-review")
 @work_bp.get("/<event>/<dept>/budget/item/<public_id>/quick-review")
-def quick_review(event: str, dept: str, public_id: str):
+def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Quick review page - shows all lines with inline action buttons.
     Designed for rapid review without navigating into each line.
     """
     user_ctx = get_user_ctx()
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_view(work_item, ctx)
 
     # Must be a reviewer or admin to use quick review

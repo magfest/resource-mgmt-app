@@ -15,6 +15,7 @@ from app.routes import get_user_ctx
 from .. import work_bp
 from ..helpers import (
     get_portfolio_context,
+    require_budget_work_type,
     require_portfolio_view,
     require_portfolio_edit,
     generate_public_id_for_portfolio,
@@ -25,12 +26,14 @@ from ..helpers import (
 # Create PRIMARY Routes
 # ============================================================
 
+@work_bp.get("/<event>/<dept>/<work_type_slug>/primary/new")
 @work_bp.get("/<event>/<dept>/budget/primary/new")
-def primary_new(event: str, dept: str):
+def primary_new(event: str, dept: str, work_type_slug: str = "budget"):
     """
     Show confirmation page for creating a PRIMARY request.
     """
-    ctx = get_portfolio_context(event, dept)
+    ctx = get_portfolio_context(event, dept, work_type_slug)
+    require_budget_work_type(ctx)
     perms = require_portfolio_view(ctx)
 
     # Check if user can create primary
@@ -60,12 +63,14 @@ def primary_new(event: str, dept: str):
     )
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/primary")
 @work_bp.post("/<event>/<dept>/budget/primary")
-def primary_create(event: str, dept: str):
+def primary_create(event: str, dept: str, work_type_slug: str = "budget"):
     """
     Create a new PRIMARY work item.
     """
-    ctx = get_portfolio_context(event, dept)
+    ctx = get_portfolio_context(event, dept, work_type_slug)
+    require_budget_work_type(ctx)
     perms = require_portfolio_edit(ctx)
 
     # Validate: no existing PRIMARY
@@ -112,12 +117,14 @@ def primary_create(event: str, dept: str):
 # Create SUPPLEMENTARY Routes
 # ============================================================
 
+@work_bp.get("/<event>/<dept>/<work_type_slug>/supplementary/new")
 @work_bp.get("/<event>/<dept>/budget/supplementary/new")
-def supplementary_new(event: str, dept: str):
+def supplementary_new(event: str, dept: str, work_type_slug: str = "budget"):
     """
     Show confirmation page for creating a SUPPLEMENTARY request.
     """
-    ctx = get_portfolio_context(event, dept)
+    ctx = get_portfolio_context(event, dept, work_type_slug)
+    require_budget_work_type(ctx)
     perms = require_portfolio_view(ctx)
 
     # Check if user can create supplementary
@@ -163,12 +170,14 @@ def supplementary_new(event: str, dept: str):
     )
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/supplementary")
 @work_bp.post("/<event>/<dept>/budget/supplementary")
-def supplementary_create(event: str, dept: str):
+def supplementary_create(event: str, dept: str, work_type_slug: str = "budget"):
     """
     Create a new SUPPLEMENTARY work item.
     """
-    ctx = get_portfolio_context(event, dept)
+    ctx = get_portfolio_context(event, dept, work_type_slug)
+    require_budget_work_type(ctx)
     perms = require_portfolio_edit(ctx)
 
     # Validate: PRIMARY must exist and be FINALIZED

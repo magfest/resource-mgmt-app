@@ -36,12 +36,13 @@ from .common import get_work_item_by_public_id
 # Submit Route
 # ============================================================
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/submit")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/submit")
-def work_item_submit(event: str, dept: str, public_id: str):
+def work_item_submit(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Submit a DRAFT work item for review.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_edit(work_item, ctx)
 
     # Validate: status must be DRAFT
@@ -136,12 +137,13 @@ def work_item_submit(event: str, dept: str, public_id: str):
 # Checkout Routes
 # ============================================================
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/checkout")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/checkout")
-def work_item_checkout(event: str, dept: str, public_id: str):
+def work_item_checkout(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Checkout a work item for review.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_view(work_item, ctx)
 
     # Get optional return_to URL from form data
@@ -179,12 +181,13 @@ def work_item_checkout(event: str, dept: str, public_id: str):
     return redirect(return_to or default_redirect)
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/checkin")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/checkin")
-def work_item_checkin(event: str, dept: str, public_id: str):
+def work_item_checkin(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Release checkout (check-in) on a work item.
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_view(work_item, ctx)
 
     # Get optional return_to URL from form data
@@ -232,12 +235,13 @@ def work_item_checkin(event: str, dept: str, public_id: str):
 # NEEDS_INFO Routes
 # ============================================================
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/request-info")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/request-info")
-def work_item_request_info(event: str, dept: str, public_id: str):
+def work_item_request_info(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Request information from the requester (sets status to NEEDS_INFO).
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_view(work_item, ctx)
 
     if not perms.can_request_info:
@@ -300,12 +304,13 @@ def work_item_request_info(event: str, dept: str, public_id: str):
     ))
 
 
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/respond-info")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/respond-info")
-def work_item_respond_info(event: str, dept: str, public_id: str):
+def work_item_respond_info(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Respond to information request (sets status back to SUBMITTED).
     """
-    work_item, ctx = get_work_item_by_public_id(event, dept, public_id)
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_view(work_item, ctx)
 
     if not perms.can_respond_to_info:

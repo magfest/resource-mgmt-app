@@ -9,17 +9,22 @@ from app.models import (
     WorkLine,
     BudgetLineDetail,
 )
-from ..helpers import get_portfolio_context
+from ..helpers import get_portfolio_context, require_budget_work_type
 
 
-def get_work_item_by_public_id(event: str, dept: str, public_id: str):
+def get_work_item_by_public_id(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Get a work item by public_id and verify it belongs to the correct portfolio.
 
     Returns tuple of (work_item, ctx) or aborts with 404.
     Eager loads lines with budget details, expense accounts, spend types, etc.
+
+    Aborts 404 for non-budget work types since the eager-load pattern below
+    is budget-specific (BudgetLineDetail joins). This guard is the seam
+    where per-work-type handlers will plug in during Phase 2.
     """
-    ctx = get_portfolio_context(event, dept)
+    ctx = get_portfolio_context(event, dept, work_type_slug)
+    require_budget_work_type(ctx)
 
     work_item = WorkItem.query.filter_by(
         public_id=public_id,

@@ -319,6 +319,19 @@ def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:
 # Permission Enforcement Functions
 # ============================================================
 
+def require_budget_work_type(ctx: PortfolioContext) -> None:
+    """Abort 404 if the portfolio's work type is not BUDGET.
+
+    Used by handlers that still contain budget-specific logic (line CRUD,
+    edit, submit, dispatch, review). Until those handlers are generalized
+    per work type, they must reject non-budget portfolios cleanly so that
+    URLs like /<event>/<dept>/techops/item/... return 404 rather than
+    crash on BudgetLineDetail queries.
+    """
+    if ctx.work_type.code != "BUDGET":
+        abort(404)
+
+
 def require_portfolio_view(ctx: PortfolioContext) -> PortfolioPerms:
     """Abort 403 if user cannot view the portfolio."""
     perms = build_portfolio_perms(ctx)
