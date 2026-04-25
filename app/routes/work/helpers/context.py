@@ -43,6 +43,10 @@ class PortfolioContext:
     membership: DepartmentMembership | None
     division_membership: DivisionMembership | None  # Division-level access
 
+    @property
+    def work_type_slug(self) -> str:
+        return self.work_type.config.url_slug
+
 
 @dataclass(frozen=True)
 class PortfolioPerms:

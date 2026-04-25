@@ -152,6 +152,10 @@ class WorkPortfolio(db.Model):
         ),
     )
 
+    @property
+    def work_type_slug(self) -> str:
+        return self.work_type.config.url_slug
+
 
 class UserRole(db.Model):
     __tablename__ = "user_roles"

@@ -44,6 +44,7 @@ from app.models import (
     ROUTING_STRATEGY_EXPENSE_ACCOUNT,
     ROUTING_STRATEGY_CONTRACT_TYPE,
     ROUTING_STRATEGY_CATEGORY,
+    ROUTING_STRATEGY_DIRECT,
 )
 
 
@@ -84,17 +85,21 @@ def seed_approval_groups() -> dict[str, ApprovalGroup]:
 
 
 def seed_work_types() -> dict[str, WorkType]:
-    """Seed work types (BUDGET, CONTRACT, SUPPLY)."""
+    """Seed work types (BUDGET, CONTRACT, SUPPLY, TECHOPS, AV)."""
     print("Seeding work types...")
 
+    # is_active=False for work types whose UI isn't built yet — keeps them
+    # out of user-facing pickers but lets URL routing resolve their slugs.
     work_types_data = [
-        ("BUDGET", "Budget Requests", 10),
-        ("CONTRACT", "Contracts", 20),
-        ("SUPPLY", "Supply Orders", 30),
+        ("BUDGET", "Budget Requests", 10, True),
+        ("CONTRACT", "Contracts", 20, True),
+        ("SUPPLY", "Supply Orders", 30, True),
+        ("TECHOPS", "TechOps Services", 40, False),
+        ("AV", "AV Requests", 50, False),
     ]
 
     work_types = {}
-    for code, name, sort_order in work_types_data:
+    for code, name, sort_order, is_active in work_types_data:
         existing = db.session.query(WorkType).filter_by(code=code).first()
         if existing:
             work_types[code] = existing
@@ -103,7 +108,7 @@ def seed_work_types() -> dict[str, WorkType]:
         wt = WorkType(
             code=code,
             name=name,
-            is_active=True,
+            is_active=is_active,
             sort_order=sort_order,
         )
         db.session.add(wt)
@@ -171,6 +176,44 @@ def seed_work_type_configs(work_types: dict[str, WorkType]) -> None:
             supports_fixed_costs=False,
             item_singular="Supply Order",
             item_plural="Supply Orders",
+            line_singular="Item",
+            line_plural="Items",
+        )
+        db.session.add(config)
+        configs_created += 1
+
+    # TECHOPS config (inactive — UI not yet built)
+    techops_wt = work_types.get("TECHOPS")
+    if techops_wt and not techops_wt.config:
+        config = WorkTypeConfig(
+            work_type_id=techops_wt.id,
+            url_slug="techops",
+            public_id_prefix="TEC",
+            line_detail_type="techops",
+            routing_strategy=ROUTING_STRATEGY_DIRECT,
+            supports_supplementary=False,
+            supports_fixed_costs=False,
+            item_singular="TechOps Request",
+            item_plural="TechOps Requests",
+            line_singular="Item",
+            line_plural="Items",
+        )
+        db.session.add(config)
+        configs_created += 1
+
+    # AV config (inactive — UI not yet built)
+    av_wt = work_types.get("AV")
+    if av_wt and not av_wt.config:
+        config = WorkTypeConfig(
+            work_type_id=av_wt.id,
+            url_slug="av",
+            public_id_prefix="AV",
+            line_detail_type="av",
+            routing_strategy=ROUTING_STRATEGY_DIRECT,
+            supports_supplementary=False,
+            supports_fixed_costs=False,
+            item_singular="AV Request",
+            item_plural="AV Requests",
             line_singular="Item",
             line_plural="Items",
         )
