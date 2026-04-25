@@ -1,6 +1,8 @@
 """
 Admin Final Review line review routes.
 """
+from decimal import Decimal, InvalidOperation
+
 from flask import render_template, redirect, url_for, request, abort, flash, jsonify
 
 from app import db
@@ -171,9 +173,9 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
     amount_str = (request.form.get("approved_amount") or "").strip()
     if amount_str:
         try:
-            amount_dollars = float(amount_str.replace(",", "").replace("$", ""))
+            amount_dollars = Decimal(amount_str.replace(",", "").replace("$", ""))
             amount_cents = int(amount_dollars * 100)
-        except ValueError:
+        except (ValueError, InvalidOperation):
             if is_ajax:
                 return jsonify({"success": False, "error": "Invalid amount format."})
             flash("Invalid amount format.", "error")

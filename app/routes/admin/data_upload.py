@@ -7,6 +7,7 @@ and updates existing records (matched by code) or creates new ones.
 from __future__ import annotations
 
 import re
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 from flask import Blueprint, redirect, url_for, request, flash, Response
@@ -318,9 +319,9 @@ def _parse_dollars_to_cents(value: str | None) -> int | None:
     if not cleaned:
         return None
     try:
-        dollars = float(cleaned)
-        return int(round(dollars * CENTS_PER_DOLLAR))
-    except ValueError:
+        dollars = Decimal(cleaned)
+        return int(dollars * CENTS_PER_DOLLAR)
+    except (ValueError, InvalidOperation):
         return None
 
 

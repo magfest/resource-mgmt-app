@@ -1,6 +1,8 @@
 """
 Line review routes - individual line review with decision actions.
 """
+from decimal import Decimal, InvalidOperation
+
 from flask import render_template, redirect, url_for, request, abort, flash, jsonify
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -40,6 +42,7 @@ from .helpers import (
     get_review_for_line,
     get_or_create_review,
     apply_review_decision,
+    audit_line_field_changes,
 )
 from app.routes.admin_final.helpers import (
     get_admin_final_review,
@@ -228,9 +231,9 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
     if amount_str:
         try:
             # Parse as dollars, convert to cents
-            amount_dollars = float(amount_str.replace(",", "").replace("$", ""))
+            amount_dollars = Decimal(amount_str.replace(",", "").replace("$", ""))
             amount_cents = int(amount_dollars * 100)
-        except ValueError:
+        except (ValueError, InvalidOperation):
             pass  # Ignore invalid amounts
 
     # Apply the decision
@@ -481,6 +484,13 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
 
     # Track what changed for the comment
     changes = []
+    # Track structured changes for audit events
+    audit_changes = []
+
+    # Capture old values before mutations
+    old_qty = detail.quantity
+    old_price_cents = detail.unit_price_cents
+    old_description = detail.description or ""
 
     # Quantity
     qty_str = (request.form.get("quantity") or "").strip()
@@ -498,6 +508,7 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
                 ))
             if new_qty != detail.quantity:
                 changes.append(f"Quantity: {detail.quantity} → {new_qty}")
+                audit_changes.append(("quantity", str(old_qty), str(new_qty)))
                 detail.quantity = new_qty
         except InvalidOperation:
             flash("Invalid quantity value.", "error")
@@ -513,13 +524,14 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
     price_str = (request.form.get("unit_price") or "").strip()
     if price_str:
         try:
-            new_price_dollars = float(price_str)
+            new_price_dollars = Decimal(price_str)
             new_price_cents = int(new_price_dollars * 100)
             if new_price_cents != detail.unit_price_cents:
                 old_price = detail.unit_price_cents / 100
                 changes.append(f"Unit price: ${old_price:.2f} → ${new_price_dollars:.2f}")
+                audit_changes.append(("unit_price", f"${old_price_cents / 100:,.2f}", f"${new_price_cents / 100:,.2f}"))
                 detail.unit_price_cents = new_price_cents
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, InvalidOperation):
             flash("Invalid unit price value.", "error")
             return redirect(url_for(
                 "approvals.line_review",
@@ -536,6 +548,7 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
             changes.append("Description updated")
         else:
             changes.append("Description added")
+        audit_changes.append(("description", old_description, new_description))
         detail.description = new_description or None
 
     # Apply the status transition (back to PENDING)
@@ -555,6 +568,10 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int):
     else:
         # Capture reviewer before committing (may be cleared by apply_review_decision)
         reviewer_user_id = review.decided_by_user_id
+
+        # Create structured audit events for field changes
+        if audit_changes:
+            audit_line_field_changes(line, audit_changes, user_ctx)
 
         flash("Adjustment submitted. The line is back in review.", "success")
 

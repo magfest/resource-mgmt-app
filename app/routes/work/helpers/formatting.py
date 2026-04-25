@@ -320,6 +320,7 @@ def get_unified_audit_events(work_item: WorkItem) -> list[dict]:
             "new_value": e.new_value,
             "reason": e.note,  # Line events use 'note' field
             "snapshot": None,
+            "field_name": e.field_name,
             "line_number": line_number_map.get(e.work_line_id),
             "is_line_event": True,
         })
