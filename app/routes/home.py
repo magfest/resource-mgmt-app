@@ -112,7 +112,6 @@ def health_check():
 @home_bp.get("/")
 def index():
     """Home page - shows personalized dashboard based on user role."""
-    from flask import current_app
     from app.routes.admin.helpers import sort_with_override
 
     # Check if user is authenticated
@@ -121,9 +120,8 @@ def index():
         # Not logged in - redirect to login page
         return redirect(url_for('auth.login_page'))
 
-    # Ensure demo users exist (only in dev mode)
-    if current_app.config.get("DEV_LOGIN_ENABLED"):
-        h.ensure_demo_users()
+    # Structural data is auto-seeded by run_seed_once in app/__init__.py.
+    # Demo user creation lives in /dev/login (the only context that needs it).
 
     user = user_ctx.user
     if not user:

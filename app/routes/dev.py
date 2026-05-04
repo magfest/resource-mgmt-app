@@ -64,8 +64,9 @@ def dev_login():
     _require_dev_login_enabled()
 
     from app.models import User
+    from app.seeds.demo_users import ensure_demo_users
 
-    h.ensure_demo_users()
+    ensure_demo_users()
 
     users = (
         db.session.query(User)
@@ -86,8 +87,9 @@ def dev_login_post():
     _require_dev_login_enabled()
 
     from app.models import User
+    from app.seeds.demo_users import ensure_demo_users
 
-    h.ensure_demo_users()
+    ensure_demo_users()
 
     chosen = (request.form.get("user_id") or "").strip()
     if not chosen:
