@@ -33,12 +33,6 @@ from app.models import (
 )
 from app.seeds.bootstrap import create_expense_account
 
-
-# Code constants — these are the public-ID fragments. Once a work item is
-# created against any of these depts, the code is locked (per CLAUDE.md).
-# Demo prefix is intentional: makes ugly public IDs like
-# DEMO-DEMO_ADMIN-BUD-1, which motivates operators to delete demo rows
-# before creating real work items.
 DEMO_DIVISION_CODE = "DEMO_DIV"
 DEMO_EVENT_CYCLE_CODE = "DEMO"
 DEMO_DEPT_CODES = {

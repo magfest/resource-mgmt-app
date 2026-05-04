@@ -34,9 +34,6 @@ from app.seeds.demo_data import (
     DEMO_EVENT_CYCLE_CODE,
 )
 
-
-# Reference codes the membership plan attaches to. Must match what
-# demo_data.py creates.
 _DEMO_DEPT_ARCADE = DEMO_DEPT_CODES["ARCADE"][0]   # "DEMO_ARCADE"
 _DEMO_DEPT_GUESTS = DEMO_DEPT_CODES["GUESTS"][0]   # "DEMO_GUESTS"
 

@@ -13,6 +13,7 @@ from app.models import (
     ROUTING_STRATEGY_DIRECT,
 )
 from app.routes.work.helpers.context import PortfolioContext
+from app.seeds.bootstrap import seed_work_types, seed_work_type_configs
 
 
 class TestWorkPortfolioSlug:
@@ -71,8 +72,6 @@ class TestSeedConfigWorkTypeActivation:
     activation state so URL routing resolves cleanly."""
 
     def test_techops_seeded_active_and_av_seeded_inactive(self, app):
-        from app.seeds.config_seed import seed_work_types, seed_work_type_configs
-
         work_types = seed_work_types()
         seed_work_type_configs(work_types)
         db.session.commit()
@@ -88,8 +87,6 @@ class TestSeedConfigWorkTypeActivation:
         assert av.config.public_id_prefix == "AV"
 
     def test_existing_active_work_types_remain_active(self, app):
-        from app.seeds.config_seed import seed_work_types, seed_work_type_configs
-
         work_types = seed_work_types()
         seed_work_type_configs(work_types)
         db.session.commit()
