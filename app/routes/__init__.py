@@ -12,9 +12,6 @@ from .. import db
 
 @dataclass
 class RouteHelpers:
-    ensure_demo_users: Callable[[], None]
-    ensure_demo_budget_data: Callable[[], None]
-    ensure_demo_org_data: Callable[[], None]
     get_active_user_id: Callable[[], str]
     get_active_user: Callable[[], Any]
     active_user_roles: Callable[[], list[str]]
