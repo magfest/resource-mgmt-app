@@ -14,6 +14,9 @@ from app.models import (
     WorkItemAuditEvent,
     BudgetLineDetail,
     ApprovalGroup,
+    User,
+    UserRole,
+    ROLE_APPROVER,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_LINE_STATUS_PENDING,
@@ -255,6 +258,48 @@ def dispatch_to_queue(work_item_id: int):
     if unassigned_lines:
         flash(
             f"Cannot dispatch: lines {', '.join(map(str, unassigned_lines))} have no approval group assigned.",
+            "error"
+        )
+        return redirect(url_for("dispatch.dispatch_item", work_item_id=work_item_id))
+
+    # Validate that every routed approval group is usable: active and has at
+    # least one active APPROVER. Without this, lines silently route to a group
+    # that can't act on them and the request stalls in SUBMITTED indefinitely.
+    routed_group_ids = {
+        line.budget_detail.routed_approval_group_id
+        for line in work_item.lines
+        if line.budget_detail and line.budget_detail.routed_approval_group_id
+    }
+
+    unusable_groups = []
+    for group_id in routed_group_ids:
+        group = ApprovalGroup.query.get(group_id)
+        if group is None:
+            unusable_groups.append((f"#{group_id}", "not found"))
+            continue
+        if not group.is_active:
+            unusable_groups.append((group.name, "inactive"))
+            continue
+        has_active_approver = (
+            db.session.query(UserRole)
+            .join(User, User.id == UserRole.user_id)
+            .filter(
+                UserRole.role_code == ROLE_APPROVER,
+                UserRole.approval_group_id == group_id,
+                User.is_active == True,
+            )
+            .first()
+            is not None
+        )
+        if not has_active_approver:
+            unusable_groups.append((group.name, "no active approvers"))
+
+    if unusable_groups:
+        parts = [f"{name} ({reason})" for name, reason in unusable_groups]
+        flash(
+            f"Cannot dispatch — these approval groups can't accept reviews: "
+            f"{', '.join(parts)}. Fix in Admin → Approval Groups, or reassign "
+            f"affected lines to other groups, then retry.",
             "error"
         )
         return redirect(url_for("dispatch.dispatch_item", work_item_id=work_item_id))

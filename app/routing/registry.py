@@ -1,4 +1,4 @@
-"""
+    """
 Strategy registry - lookup and instantiate routing strategies.
 """
 
