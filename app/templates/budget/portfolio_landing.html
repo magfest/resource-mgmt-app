@@ -53,6 +53,12 @@
   <section>
     <h2>Supplementary Requests</h2>
 
+    {% if ctx.event_cycle.allow_early_supplementary %}
+      <div class="callout callout-info" style="margin-bottom: 12px;">
+        This event allows supplementary requests before the primary is finalized.
+      </div>
+    {% endif %}
+
     {% if supplementary %}
       {% for item in supplementary %}
         {% set item_totals = supplementary_totals.get(item.id) %}
@@ -60,7 +66,15 @@
         {% include "components/_work_item_card.html" %}
       {% endfor %}
 
-    {% elif primary and primary.status == "FINALIZED" and perms.can_create_supplementary %}
+      {% if perms.can_create_supplementary %}
+        <div class="card" style="margin-top: 12px;">
+          <a class="btn" href="{{ url_for('work.supplementary_new', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+            Create Another Supplementary Request
+          </a>
+        </div>
+      {% endif %}
+
+    {% elif perms.can_create_supplementary %}
       <div class="card">
         <div class="muted" style="margin-bottom: 12px;">
           No supplementary requests yet.
