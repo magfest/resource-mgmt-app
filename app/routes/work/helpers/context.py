@@ -316,11 +316,15 @@ def build_portfolio_perms(ctx: PortfolioContext) -> PortfolioPerms:
     # Can create PRIMARY: can_edit AND no existing PRIMARY
     can_create_primary = can_edit and (existing_primary is None)
 
-    # Can create SUPPLEMENTARY: can_edit AND PRIMARY is FINALIZED
-    can_create_supplementary = can_edit and (
-        existing_primary is not None and
-        existing_primary.status == WORK_ITEM_STATUS_FINALIZED
+    # Can create SUPPLEMENTARY: can_edit AND PRIMARY exists.
+    # By default the PRIMARY must also be FINALIZED, but events with
+    # ``allow_early_supplementary`` (e.g. FY corporate-budget cycles)
+    # waive the FINALIZED gate.
+    primary_ready = existing_primary is not None and (
+        ctx.event_cycle.allow_early_supplementary
+        or existing_primary.status == WORK_ITEM_STATUS_FINALIZED
     )
+    can_create_supplementary = can_edit and primary_ready
 
     return PortfolioPerms(
         can_view=can_view,

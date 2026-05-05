@@ -67,30 +67,36 @@ class TestPortfolioContextSlug:
 
 
 class TestSeedConfigWorkTypeActivation:
-    """The seed creates TECHOPS active (T6 activation) and AV still inactive
-    (UI not yet built). Both have their slugs configured regardless of
-    activation state so URL routing resolves cleanly."""
+    """Only BUDGET ships seeded-active. CONTRACT and SUPPLY have no requester
+    UI yet and stay inactive to keep them out of pickers; TECHOPS ships
+    inactive because it is still in beta and is enabled per-environment via
+    the admin Work Types page (staging flips it on, production leaves it
+    off). All five worktypes still get their config rows created so URL
+    routing resolves cleanly even when the worktype is inactive."""
 
-    def test_techops_seeded_active_and_av_seeded_inactive(self, app):
+    def test_only_budget_seeded_active(self, app):
+        work_types = seed_work_types()
+        seed_work_type_configs(work_types)
+        db.session.commit()
+
+        budget = WorkType.query.filter_by(code="BUDGET").one()
+        assert budget.is_active is True
+
+        for code in ("CONTRACT", "SUPPLY", "TECHOPS", "AV"):
+            wt = WorkType.query.filter_by(code=code).one()
+            assert wt.is_active is False, f"{code} should ship seeded-inactive"
+
+    def test_inactive_worktypes_still_have_configs(self, app):
+        """Slugs and prefixes are still configured for inactive worktypes
+        so existing URLs and public IDs resolve."""
         work_types = seed_work_types()
         seed_work_type_configs(work_types)
         db.session.commit()
 
         techops = WorkType.query.filter_by(code="TECHOPS").one()
-        assert techops.is_active is True
         assert techops.config.url_slug == "techops"
         assert techops.config.public_id_prefix == "TEC"
 
         av = WorkType.query.filter_by(code="AV").one()
-        assert av.is_active is False
         assert av.config.url_slug == "av"
         assert av.config.public_id_prefix == "AV"
-
-    def test_existing_active_work_types_remain_active(self, app):
-        work_types = seed_work_types()
-        seed_work_type_configs(work_types)
-        db.session.commit()
-
-        for code in ("BUDGET", "CONTRACT", "SUPPLY"):
-            wt = WorkType.query.filter_by(code=code).one()
-            assert wt.is_active is True, f"{code} should remain active"

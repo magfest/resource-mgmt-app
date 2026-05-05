@@ -78,6 +78,22 @@
     </div>
 
     <div style="border-top: 1px solid #eee; margin-top: 20px; padding-top: 20px;">
+      <h3 style="margin: 0 0 16px 0; font-size: 1rem;">Budget Workflow Options</h3>
+
+      <label style="display: flex; gap: 8px; align-items: flex-start; font-weight: normal;">
+        <input type="checkbox" name="allow_early_supplementary" value="1"
+               style="margin-top: 4px;"
+               {% if cycle and cycle.allow_early_supplementary %}checked{% endif %} />
+        <span>
+          Allow supplementary budget requests before the primary is finalized
+          <div class="muted small mt-4">
+            By default, departments must wait for the Primary Budget Request to be finalized before creating supplementaries. Enable this for events like the FY corporate-budget cycle, where a department intentionally splits its budget across sibling requests (e.g. capex + opex). A primary request must still exist; only the FINALIZED gate is removed.
+          </div>
+        </span>
+      </label>
+    </div>
+
+    <div style="border-top: 1px solid #eee; margin-top: 20px; padding-top: 20px;">
       <h3 style="margin: 0 0 16px 0; font-size: 1rem;">Key Dates</h3>
       <div class="muted small mb-16">
         Budget timeline dates are always shown on the homepage. Event dates (start/end) are only shown when marked as public below.

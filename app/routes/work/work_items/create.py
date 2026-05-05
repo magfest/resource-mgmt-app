@@ -144,7 +144,10 @@ def supplementary_new(event: str, dept: str, work_type_slug: str = "budget"):
                 dept=dept,
             ))
 
-        if existing.status != WORK_ITEM_STATUS_FINALIZED:
+        if (
+            existing.status != WORK_ITEM_STATUS_FINALIZED
+            and not ctx.event_cycle.allow_early_supplementary
+        ):
             flash("The Primary Budget Request must be finalized before creating a supplementary.", "warning")
             return redirect(url_for(
                 "work.work_item_detail",
@@ -195,7 +198,10 @@ def supplementary_create(event: str, dept: str, work_type_slug: str = "budget"):
             dept=dept,
         ))
 
-    if existing_primary.status != WORK_ITEM_STATUS_FINALIZED:
+    if (
+        existing_primary.status != WORK_ITEM_STATUS_FINALIZED
+        and not ctx.event_cycle.allow_early_supplementary
+    ):
         flash("The Primary Budget Request must be finalized before creating a supplementary.", "warning")
         return redirect(url_for(
             "work.work_item_detail",
