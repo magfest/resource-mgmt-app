@@ -146,9 +146,19 @@
         This budget request is waiting for reviewer groups to be assigned.
         Assign reviewer groups to each line and send it for review.
       </p>
-      <a class="btn btn-primary" href="{{ url_for('dispatch.dispatch_item', work_item_id=work_item.id) }}">
-        Assign &amp; Dispatch
-      </a>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="{{ url_for('dispatch.dispatch_item', work_item_id=work_item.id) }}">
+          Assign &amp; Dispatch
+        </a>
+        {% if perms.can_recall %}
+          <form method="post" action="{{ url_for('work.work_item_recall', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn" data-confirm="Recall this request to draft? The requester will need to resubmit.">
+              Recall to Draft
+            </button>
+          </form>
+        {% endif %}
+      </div>
     </div>
   {% endif %}
 
@@ -244,8 +254,19 @@
     <div class="callout" style="margin-bottom: 16px; background: #fef3c7; border-left: 4px solid #d97706;">
       <strong>Pending Review</strong>
       <div class="muted" style="margin-top:4px;">
-        Your budget request has been submitted. A budget admin will assign reviewers shortly — no action needed from you right now.
+        Your budget request has been submitted and a budget admin will assign reviewers shortly.
+        {% if perms.can_recall %}
+          If you submitted by mistake or need to make changes before reviewers see it, you can recall it back to draft now.
+        {% endif %}
       </div>
+      {% if perms.can_recall %}
+        <form method="post" action="{{ url_for('work.work_item_recall', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline; margin-top: 12px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn" data-confirm="Recall this request back to draft? You'll be able to edit and resubmit it.">
+            Recall to Draft
+          </button>
+        </form>
+      {% endif %}
     </div>
   {% endif %}
 

@@ -18,12 +18,14 @@ from app.models import (
     WorkLine,
     WorkLineReview,
     AUDIT_EVENT_FINALIZE,
+    AUDIT_EVENT_RECALL_TO_DRAFT,
     AUDIT_EVENT_SUBMIT,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STATUS_PENDING,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
+    WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_SUBMITTED,
 )
@@ -92,6 +94,32 @@ def submit_work_item(work_item: "WorkItem", user_ctx: "UserContext") -> str:
     db.session.add(audit_event)
 
     return work_item.status
+
+
+def recall_to_draft(work_item: "WorkItem", user_ctx: "UserContext") -> None:
+    """
+    Reverse a submit while still in AWAITING_DISPATCH.
+
+    Caller is responsible for committing the session and for gating
+    eligibility (status == AWAITING_DISPATCH, uses_dispatch=True, and the
+    user holds either portfolio edit rights or worktype-admin role).
+
+    The original AUDIT_EVENT_SUBMIT row is preserved — the audit log will
+    read SUBMIT → RECALL_TO_DRAFT → SUBMIT if the requester resubmits later.
+    """
+    prior_status = work_item.status
+
+    work_item.status = WORK_ITEM_STATUS_DRAFT
+    work_item.submitted_at = None
+    work_item.submitted_by_user_id = None
+
+    audit_event = WorkItemAuditEvent(
+        work_item_id=work_item.id,
+        event_type=AUDIT_EVENT_RECALL_TO_DRAFT,
+        created_by_user_id=user_ctx.user_id,
+        snapshot={"from_status": prior_status},
+    )
+    db.session.add(audit_event)
 
 
 def try_auto_finalize(work_item: "WorkItem", user_ctx: "UserContext") -> bool:

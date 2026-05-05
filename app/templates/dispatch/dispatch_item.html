@@ -105,6 +105,14 @@
       </table>
     </section>
 
+    <div class="callout" style="margin-top: 16px; margin-bottom: 12px; background: #fef3c7; border-left: 4px solid #d97706;">
+      <strong>Heads up:</strong>
+      <span class="muted">
+        Once dispatched, reviewer groups start working on this request and recalling it back to draft becomes much harder.
+        If the requester needs changes, recall the request before dispatching.
+      </span>
+    </div>
+
     <div class="btn-row">
       <button type="submit" class="btn btn-primary" formaction="{{ url_for('dispatch.dispatch_to_queue', work_item_id=work_item.id) }}"
               data-confirm="Dispatch this request to the review queue?">
@@ -114,6 +122,17 @@
         Save Assignments
       </button>
     </div>
+  </form>
+
+  {# Recall is its own form so it doesn't submit the assignment form's data. #}
+  <form method="post"
+        action="{{ url_for('work.work_item_recall', event=portfolio.event_cycle.code, dept=portfolio.department.code, public_id=work_item.public_id) }}"
+        style="margin-top: 12px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn"
+            data-confirm="Recall this request to draft? The requester will need to edit and resubmit before it can be dispatched.">
+      Recall to Draft
+    </button>
   </form>
 
 {% endblock %}

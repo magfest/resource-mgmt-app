@@ -13,6 +13,8 @@ import pytest
 from app import db
 from app.models import (
     ApprovalGroup,
+    AUDIT_EVENT_RECALL_TO_DRAFT,
+    AUDIT_EVENT_SUBMIT,
     BudgetLineDetail,
     Department,
     EventCycle,
@@ -22,6 +24,7 @@ from app.models import (
     TechOpsServiceType,
     User,
     WorkItem,
+    WorkItemAuditEvent,
     WorkLine,
     WorkLineReview,
     WorkPortfolio,
@@ -40,6 +43,7 @@ from app.models import (
     WORK_LINE_STATUS_PENDING,
 )
 from app.routes.work.helpers.lifecycle import (
+    recall_to_draft,
     submit_work_item,
     try_auto_finalize,
 )
@@ -335,3 +339,107 @@ def test_auto_finalize_skips_item_with_no_reviews(techops_setup):
 
     assert fired is False
     assert work_item.status == WORK_ITEM_STATUS_SUBMITTED
+
+
+# ============================================================
+# recall_to_draft
+# ============================================================
+
+def test_recall_from_awaiting_dispatch_returns_to_draft(budget_setup):
+    """Happy path: an AWAITING_DISPATCH budget request returns to DRAFT with
+    submitted_at and submitted_by_user_id cleared so reports/sorting don't
+    see stale timestamps."""
+    work_item = budget_setup["work_item"]
+    user_ctx = budget_setup["user_ctx"]
+
+    submit_work_item(work_item, user_ctx)
+    db.session.commit()
+    assert work_item.status == WORK_ITEM_STATUS_AWAITING_DISPATCH
+    assert work_item.submitted_at is not None
+    assert work_item.submitted_by_user_id is not None
+
+    recall_to_draft(work_item, user_ctx)
+    db.session.commit()
+
+    assert work_item.status == WORK_ITEM_STATUS_DRAFT
+    assert work_item.submitted_at is None
+    assert work_item.submitted_by_user_id is None
+
+
+def test_recall_writes_audit_event_with_from_status_snapshot(budget_setup):
+    """Recall writes an AUDIT_EVENT_RECALL_TO_DRAFT row whose snapshot
+    captures the prior status, so the audit log explains the transition."""
+    work_item = budget_setup["work_item"]
+    user_ctx = budget_setup["user_ctx"]
+
+    submit_work_item(work_item, user_ctx)
+    db.session.commit()
+
+    recall_to_draft(work_item, user_ctx)
+    db.session.commit()
+
+    recall_events = (
+        db.session.query(WorkItemAuditEvent)
+        .filter_by(
+            work_item_id=work_item.id,
+            event_type=AUDIT_EVENT_RECALL_TO_DRAFT,
+        )
+        .all()
+    )
+    assert len(recall_events) == 1
+    assert recall_events[0].created_by_user_id == user_ctx.user_id
+    assert recall_events[0].snapshot == {"from_status": WORK_ITEM_STATUS_AWAITING_DISPATCH}
+
+
+def test_recall_preserves_original_submit_audit_row(budget_setup):
+    """submit → recall → resubmit should leave both AUDIT_EVENT_SUBMIT rows
+    plus the AUDIT_EVENT_RECALL_TO_DRAFT row in the log. The original SUBMIT
+    is never rewritten or deleted."""
+    work_item = budget_setup["work_item"]
+    user_ctx = budget_setup["user_ctx"]
+
+    submit_work_item(work_item, user_ctx)
+    db.session.commit()
+    recall_to_draft(work_item, user_ctx)
+    db.session.commit()
+    submit_work_item(work_item, user_ctx)
+    db.session.commit()
+
+    submit_events = (
+        db.session.query(WorkItemAuditEvent)
+        .filter_by(work_item_id=work_item.id, event_type=AUDIT_EVENT_SUBMIT)
+        .all()
+    )
+    recall_events = (
+        db.session.query(WorkItemAuditEvent)
+        .filter_by(work_item_id=work_item.id, event_type=AUDIT_EVENT_RECALL_TO_DRAFT)
+        .all()
+    )
+    assert len(submit_events) == 2
+    assert len(recall_events) == 1
+
+
+def test_recall_does_not_touch_lines_or_reviews(budget_setup):
+    """Recall is a metadata-only transition: line/detail rows are untouched
+    and no WorkLineReview rows are created or deleted (BUDGET still has zero
+    reviews at AWAITING_DISPATCH; dispatch is what creates them)."""
+    work_item = budget_setup["work_item"]
+    line = budget_setup["line"]
+    user_ctx = budget_setup["user_ctx"]
+
+    detail = line.budget_detail
+    quantity_before = detail.quantity
+    unit_price_before = detail.unit_price_cents
+    line_count_before = len(work_item.lines)
+
+    submit_work_item(work_item, user_ctx)
+    db.session.commit()
+    assert db.session.query(WorkLineReview).count() == 0
+
+    recall_to_draft(work_item, user_ctx)
+    db.session.commit()
+
+    assert len(work_item.lines) == line_count_before
+    assert detail.quantity == quantity_before
+    assert detail.unit_price_cents == unit_price_before
+    assert db.session.query(WorkLineReview).count() == 0

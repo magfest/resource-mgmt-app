@@ -13,6 +13,7 @@ from app import db
 from app.models import (
     WorkItem,
     REQUEST_KIND_PRIMARY,
+    WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_NEEDS_INFO,
@@ -245,6 +246,16 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
     # Submit: can_edit AND has_lines
     can_submit = can_edit and has_lines
 
+    # Recall to draft: only meaningful while AWAITING_DISPATCH on a uses_dispatch
+    # worktype, since uses_dispatch=False (TechOps/AV) skips that state entirely.
+    # Allowed for portfolio editors and worktype admins (option B from design).
+    config = item.portfolio.work_type.config if item.portfolio and item.portfolio.work_type else None
+    can_recall = (
+        item.status == WORK_ITEM_STATUS_AWAITING_DISPATCH
+        and bool(config and config.uses_dispatch)
+        and (portfolio_perms.can_edit or portfolio_perms.is_worktype_admin)
+    )
+
     # Add lines: can_edit (implies DRAFT only)
     can_add_lines = can_edit
 
@@ -274,6 +285,7 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
         can_view=can_view,
         can_edit=can_edit,
         can_submit=can_submit,
+        can_recall=can_recall,
         can_add_lines=can_add_lines,
         can_delete=can_delete,
         can_checkout=can_checkout_item,
