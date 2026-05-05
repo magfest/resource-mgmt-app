@@ -1,0 +1,63 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Work Types - Admin{% endblock %}
+
+{% block content %}
+<h1>Work Types</h1>
+<div class="muted mb-16">
+  Activate or deactivate work types. Inactive work types are hidden from request-creation pickers, division/department access editors, and role assignment forms, but already-created portfolios remain reachable by direct URL. Work type codes, slugs, and IDs are seed-only and cannot be changed.
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 100px;">Code</th>
+      <th style="width: 220px;">Name</th>
+      <th style="width: 80px;">Priority</th>
+      <th style="width: 100px;">Portfolios</th>
+      <th style="width: 110px;">Reviewer Groups</th>
+      <th style="width: 90px;">Status</th>
+      <th style="width: 140px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for wt in work_types %}
+      <tr>
+        <td class="num">{{ wt.code }}</td>
+        <td>{{ wt.name }}</td>
+        <td class="num">{{ wt.sort_order if wt.sort_order is not none else '—' }}</td>
+        <td class="num">{{ portfolio_counts.get(wt.id, 0) }}</td>
+        <td class="num">{{ approval_group_counts.get(wt.id, 0) }}</td>
+        <td>
+          {% if wt.is_active %}
+            <span class="pill" style="background: #e9f7ef;">Active</span>
+          {% else %}
+            <span class="pill" style="background: #fbeaea;">Inactive</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if wt.is_active %}
+            <form method="post" action="{{ url_for('admin_config.work_types.deactivate_work_type', work_type_id=wt.id) }}" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn" type="submit" data-confirm="Deactivate {{ wt.name }}? It will be hidden from new-entry pickers.">Deactivate</button>
+            </form>
+          {% else %}
+            <form method="post" action="{{ url_for('admin_config.work_types.activate_work_type', work_type_id=wt.id) }}" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-primary" type="submit">Activate</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="7" class="muted">No work types found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ work_types|length }} work type(s) shown
+</div>
+{% endblock %}

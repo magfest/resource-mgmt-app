@@ -22,6 +22,11 @@ class EventCycle(db.Model):
     sort_order = db.Column(db.Integer, nullable=True, default=None)
     qb_class = db.Column(db.String(128), nullable=True)
 
+    # When True, supplementary budget requests can be created before the
+    # primary is FINALIZED. Used for events like the FY corporate-budget
+    # cycle where a department splits its budget across sibling requests.
+    allow_early_supplementary = db.Column(db.Boolean, nullable=False, default=False)
+
     # Key dates for the budget cycle
     dates_are_public = db.Column(db.Boolean, nullable=False, default=False)
     event_start_date = db.Column(db.Date, nullable=True)          # When the event starts

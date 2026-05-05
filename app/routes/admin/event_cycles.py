@@ -84,6 +84,7 @@ def _cycle_to_dict(cycle: EventCycle) -> dict:
         "is_default": cycle.is_default,
         "sort_order": cycle.sort_order,
         "qb_class": cycle.qb_class,
+        "allow_early_supplementary": cycle.allow_early_supplementary,
         "dates_are_public": cycle.dates_are_public,
         "event_start_date": cycle.event_start_date.isoformat() if cycle.event_start_date else None,
         "event_end_date": cycle.event_end_date.isoformat() if cycle.event_end_date else None,
@@ -195,6 +196,7 @@ def create_event_cycle():
         is_default=is_default,
         sort_order=safe_int_or_none(request.form.get("sort_order")),
         qb_class=(request.form.get("qb_class") or "").strip() or None,
+        allow_early_supplementary=request.form.get("allow_early_supplementary") == "1",
         dates_are_public=request.form.get("dates_are_public") == "1",
         event_start_date=_parse_date(request.form.get("event_start_date")),
         event_end_date=_parse_date(request.form.get("event_end_date")),
@@ -295,6 +297,7 @@ def update_event_cycle(cycle_id: int):
     cycle.is_default = is_default
     cycle.sort_order = safe_int_or_none(request.form.get("sort_order"))
     cycle.qb_class = (request.form.get("qb_class") or "").strip() or None
+    cycle.allow_early_supplementary = request.form.get("allow_early_supplementary") == "1"
     cycle.dates_are_public = request.form.get("dates_are_public") == "1"
     cycle.event_start_date = _parse_date(request.form.get("event_start_date"))
     cycle.event_end_date = _parse_date(request.form.get("event_end_date"))
