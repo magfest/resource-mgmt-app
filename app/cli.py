@@ -1,9 +1,10 @@
 """Flask CLI commands.
 
-Currently exposes `flask seed` for manual seed control. Auto-seeding still
-happens via the run_seed_once hook in app/__init__.py for the common case
-(empty DB on first request). This CLI is the manual override for when an
-operator wants to re-seed after a partial wipe or add demo content back.
+- `flask seed`: manual seed control. Auto-seeding also fires via the
+  run_seed_once hook in app/__init__.py for empty DBs on first request.
+- `flask release-expired-checkouts`: scheduled cleanup of stale review
+  checkouts; intended to run on Heroku Scheduler so stale locks don't
+  linger in dashboards/audit logs past their expiration window.
 """
 from __future__ import annotations
 
@@ -48,3 +49,20 @@ def register_cli(app: Flask) -> None:
             run_demo_data()
 
         click.echo(f"\nflask seed {target}: done.")
+
+    @app.cli.command("release-expired-checkouts")
+    @with_appcontext
+    def release_expired_checkouts_command():
+        """Release work-item checkouts whose expiration has passed.
+
+        Idempotent — running twice in a row releases zero on the second pass.
+        The release_expired_checkouts() helper mutates rows but does not
+        commit (see app/routes/admin/locks.py for the manual-trigger pattern),
+        so this command commits explicitly.
+        """
+        from app import db
+        from app.routes.work.helpers.checkout import release_expired_checkouts
+
+        count = release_expired_checkouts()
+        db.session.commit()
+        click.echo(f"Released {count} expired checkout(s).")

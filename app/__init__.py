@@ -70,9 +70,10 @@ def create_app() -> Flask:
     app.config["SESSION_REFRESH_EACH_REQUEST"] = True  # Reset timeout on each request (sliding window)
 
     # --- Beta Testing Mode ---
-    # Enables role override dropdown for super-admins to test different permission levels
-    beta_mode = os.environ.get("BETA_TESTING_MODE", "").lower()
-    app.config["BETA_TESTING_MODE"] = beta_mode == "true" or (not is_production and beta_mode != "false")
+    # Enables role override dropdown for super-admins to test different permission levels.
+    # Explicit opt-in: requires BETA_TESTING_MODE=true; always disabled in production.
+    beta_mode = os.environ.get("BETA_TESTING_MODE", "false").lower()
+    app.config["BETA_TESTING_MODE"] = beta_mode == "true" and not is_production
 
     # --- Environment Banner ---
     # Show a warning banner for non-production environments
