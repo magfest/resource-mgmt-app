@@ -74,6 +74,7 @@ class WorkItemPerms:
     can_view: bool
     can_edit: bool
     can_submit: bool
+    can_recall: bool
     can_add_lines: bool
     can_delete: bool
     can_checkout: bool

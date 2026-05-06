@@ -28,7 +28,7 @@ from ..helpers import (
     checkout_work_item,
     checkin_work_item,
 )
-from ..helpers.lifecycle import submit_work_item
+from ..helpers.lifecycle import recall_to_draft, submit_work_item
 from .common import get_work_item_by_public_id
 
 
@@ -118,6 +118,43 @@ def work_item_submit(event: str, dept: str, public_id: str, work_type_slug: str 
         public_id=public_id,
         work_type_slug=work_type_slug,
     ))
+
+
+# ============================================================
+# Recall Route
+# ============================================================
+
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/recall")
+@work_bp.post("/<event>/<dept>/budget/item/<public_id>/recall")
+def work_item_recall(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
+    """
+    Recall an AWAITING_DISPATCH work item back to DRAFT.
+
+    Allowed for portfolio editors and worktype admins. The submit transition
+    only set timestamps and a single audit row at this state — no reviews
+    exist yet, so this is a clean reversal.
+    """
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
+    perms = require_work_item_view(work_item, ctx)
+
+    redirect_to_detail = redirect(url_for(
+        "work.work_item_detail",
+        event=event,
+        dept=dept,
+        public_id=public_id,
+        work_type_slug=work_type_slug,
+    ))
+
+    if not perms.can_recall:
+        flash("This request can't be recalled to draft right now.", "error")
+        return redirect_to_detail
+
+    user_ctx = get_user_ctx()
+    recall_to_draft(work_item, user_ctx)
+    db.session.commit()
+
+    flash("Request recalled to draft. You can edit it now.", "success")
+    return redirect_to_detail
 
 
 # ============================================================
