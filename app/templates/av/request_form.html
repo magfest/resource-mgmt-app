@@ -1,0 +1,431 @@
+{# templates/av/request_form.html
+   New AV Request form — 6 sections, sticky on-this-page nav, conditional JS.
+   Only save_draft is wired to the backend (Task 24).
+   Submit is rendered but falls through to save_draft until Task 25.
+#}
+{% extends "layout/base.html" %}
+
+{% block title %}New AV Request — {{ dept.name }} ({{ event.code }}){% endblock %}
+
+{% block content %}
+
+  {# ── Breadcrumb ───────────────────────────────────────────── #}
+  <nav class="muted small" style="margin-bottom: 12px;">
+    <a href="{{ url_for('home.index') }}">Home</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.department_home', event=event.code, dept=dept.code) }}">{{ dept.name }}</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.av_portfolio_landing', event=event.code, dept=dept.code) }}">AV Requests</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <span>New Request</span>
+  </nav>
+
+  {# ── Page header ──────────────────────────────────────────── #}
+  <div style="margin-bottom: 20px;">
+    <h1 style="margin: 0;">New AV Request</h1>
+    <div class="muted" style="margin-top: 4px;">
+      {{ dept.name }} &middot; {{ event.name }} ({{ event.code }})
+    </div>
+  </div>
+
+  {# ── Layout: sticky nav sidebar + main form ───────────────── #}
+  <div style="display: flex; gap: 32px; align-items: flex-start;">
+
+    {# Sticky on-this-page nav #}
+    <nav id="av-form-nav" style="
+        flex: 0 0 180px;
+        position: sticky;
+        top: 16px;
+        align-self: flex-start;
+      ">
+      <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;">
+        On this page
+      </div>
+      <ol style="margin: 0; padding-left: 20px; line-height: 2;">
+        <li><a href="#section-space">Space</a></li>
+        <li><a href="#section-needs">What you need</a></li>
+        <li><a href="#section-priority">Priority</a></li>
+        <li><a href="#section-gear">Gear detail</a></li>
+        <li><a href="#section-dept-gear">Dept-sourced gear</a></li>
+        <li><a href="#section-contact">Primary contact</a></li>
+      </ol>
+    </nav>
+
+    {# ── Main form ────────────────────────────────────────────── #}
+    <div style="flex: 1; min-width: 0;">
+
+      {# Flash messages #}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}" style="margin-bottom: 12px;">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      {# WTForms field-level errors summary #}
+      {% set all_errors = [] %}
+      {% for field in form if field.errors %}
+        {% for err in field.errors %}
+          {% set _ = all_errors.append(field.label.text ~ ": " ~ err) %}
+        {% endfor %}
+      {% endfor %}
+      {% if all_errors %}
+        <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px 16px; margin-bottom: 16px; border-radius: 4px;">
+          <strong>Please correct the following:</strong>
+          <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+            {% for err in all_errors %}
+              <li>{{ err }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('work.av_request_create', event=event.code, dept=dept.code) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ form.action(id="av-action-field") }}
+
+        {# ── Section 1: Space ─────────────────────────────── #}
+        <section id="section-space" class="card" style="margin-bottom: 16px;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+            1 &middot; Space
+          </div>
+          <p class="muted small" style="margin: 0 0 12px 0;">
+            Select the space this request covers. Each request covers one space.
+          </p>
+
+          <div>
+            <label for="{{ form.space_id.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.space_id.label.text }} <span style="color: #b00;">*</span>
+            </label>
+            {% if assignable_spaces %}
+              {{ form.space_id(style="max-width: 420px;") }}
+            {% else %}
+              <div style="background: #fef3c7; border-left: 4px solid #d97706; padding: 10px 14px; border-radius: 4px;">
+                No spaces are currently assigned to {{ dept.name }} for this event.
+                Contact AV administration if your department needs a space assignment.
+              </div>
+            {% endif %}
+            {% for err in form.space_id.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        {# ── Section 2: What you need ─────────────────────── #}
+        <section id="section-needs" class="card" style="margin-bottom: 16px;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+            2 &middot; What You Need
+          </div>
+
+          {# Description #}
+          <div style="margin-bottom: 16px;">
+            <label for="{{ form.description.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.description.label.text }} <span style="color: #b00;">*</span>
+            </label>
+            <div class="muted small" style="margin-bottom: 6px;">
+              Describe what AV support your department needs in this space.
+              Include the purpose, audience, and any technical context that helps the AV team plan.
+            </div>
+            {{ form.description(rows=5, style="width: 100%; max-width: 720px;") }}
+            {% for err in form.description.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          {# Duration model #}
+          <div style="margin-bottom: 12px;">
+            <fieldset style="border: none; padding: 0; margin: 0;">
+              <legend style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">
+                {{ form.duration_model.label.text }} <span style="color: #b00;">*</span>
+              </legend>
+              {% for subfield in form.duration_model %}
+                <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; cursor: pointer;">
+                  {{ subfield(data_duration_radio="1") }}
+                  <span>{{ subfield.label.text }}</span>
+                </label>
+              {% endfor %}
+            </fieldset>
+            {% for err in form.duration_model.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          {# Duration hours — shown when HOURS_OF_CONTENT #}
+          <div id="duration-hours-row" style="margin-bottom: 12px;">
+            <label for="{{ form.duration_hours.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.duration_hours.label.text }} <span style="color: #b00;">*</span>
+            </label>
+            {{ form.duration_hours(step="0.5", min="0", max="999", style="width: 120px;") }}
+            {% for err in form.duration_hours.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          {# Duration slots — shown when MULTIPLE_SLOTS #}
+          <div id="duration-slots-row" style="margin-bottom: 12px; display: none;">
+            <label for="{{ form.duration_slots.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.duration_slots.label.text }} <span style="color: #b00;">*</span>
+            </label>
+            {{ form.duration_slots(min="0", max="999", style="width: 120px;") }}
+            {% for err in form.duration_slots.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          {# Duration notes — optional, always visible #}
+          <div>
+            <label for="{{ form.duration_notes.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.duration_notes.label.text }}
+              <span class="muted small">(optional)</span>
+            </label>
+            {{ form.duration_notes(rows=3, placeholder="Any additional context about timing, schedule, or duration.", style="width: 100%; max-width: 720px;") }}
+            {% for err in form.duration_notes.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        {# ── Section 3: Priority ──────────────────────────── #}
+        <section id="section-priority" class="card" style="margin-bottom: 16px;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+            3 &middot; Priority
+          </div>
+          <p class="muted small" style="margin: 0 0 12px 0;">
+            How critical is this AV support to your programming?
+          </p>
+          <fieldset style="border: none; padding: 0; margin: 0;">
+            <legend class="sr-only">{{ form.priority.label.text }}</legend>
+            {% for subfield in form.priority %}
+              <label style="display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; cursor: pointer;">
+                {{ subfield() }}
+                <span>
+                  <strong>{{ subfield.label.text }}</strong>
+                  {% if subfield.data == "MUST_HAVE" %}
+                    <div class="muted small">This programming cannot happen without AV support.</div>
+                  {% elif subfield.data == "STRONG_PREFERENCE" %}
+                    <div class="muted small">Significantly better with AV, but could function without.</div>
+                  {% elif subfield.data == "NICE_TO_HAVE" %}
+                    <div class="muted small">Would be a nice enhancement, but not essential.</div>
+                  {% endif %}
+                </span>
+              </label>
+            {% endfor %}
+          </fieldset>
+          {% for err in form.priority.errors %}
+            <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+          {% endfor %}
+        </section>
+
+        {# ── Section 4: Gear detail ───────────────────────── #}
+        <section id="section-gear" class="card" style="margin-bottom: 16px;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+            4 &middot; Gear Detail
+          </div>
+
+          <fieldset style="border: none; padding: 0; margin: 0 0 12px 0;">
+            <legend style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">
+              {{ form.gear_specificity.label.text }} <span style="color: #b00;">*</span>
+            </legend>
+            {% for subfield in form.gear_specificity %}
+              <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; cursor: pointer;">
+                {{ subfield(data_gear_radio="1") }}
+                <span>{{ subfield.label.text }}</span>
+              </label>
+            {% endfor %}
+          </fieldset>
+          {% for err in form.gear_specificity.errors %}
+            <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+          {% endfor %}
+
+          {# Suggested gear — shown when SUGGESTIONS or REQUIRED #}
+          <div id="suggested-gear-row" style="display: none;">
+            <label for="{{ form.suggested_gear_text.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.suggested_gear_text.label.text }} <span style="color: #b00;">*</span>
+            </label>
+            <div class="muted small" style="margin-bottom: 6px;">
+              List the specific items or models you're requesting or suggesting.
+            </div>
+            {{ form.suggested_gear_text(rows=4, style="width: 100%; max-width: 720px;") }}
+            {% for err in form.suggested_gear_text.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        {# ── Section 5: Dept-sourced gear ─────────────────── #}
+        <section id="section-dept-gear" class="card" style="margin-bottom: 16px;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+            5 &middot; Department-Sourced Gear
+          </div>
+
+          <fieldset style="border: none; padding: 0; margin: 0 0 12px 0;">
+            <legend style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">
+              {{ form.dept_sourced_gear_mode.label.text }} <span style="color: #b00;">*</span>
+            </legend>
+            {% for subfield in form.dept_sourced_gear_mode %}
+              <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; cursor: pointer;">
+                {{ subfield(data_dept_gear_radio="1") }}
+                <span>{{ subfield.label.text }}</span>
+              </label>
+            {% endfor %}
+          </fieldset>
+          {% for err in form.dept_sourced_gear_mode.errors %}
+            <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+          {% endfor %}
+
+          {# Dept-sourced description — shown when SOME #}
+          <div id="dept-gear-text-row" style="display: none;">
+            <label for="{{ form.dept_sourced_gear_text.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.dept_sourced_gear_text.label.text }} <span style="color: #b00;">*</span>
+            </label>
+            {{ form.dept_sourced_gear_text(rows=3, placeholder="Describe what your department is bringing or renting.", style="width: 100%; max-width: 720px;") }}
+            {% for err in form.dept_sourced_gear_text.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        {# ── Section 6: Primary contact ───────────────────── #}
+        <section id="section-contact" class="card" style="margin-bottom: 16px;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+            6 &middot; Primary Contact
+          </div>
+          <p class="muted small" style="margin: 0 0 12px 0;">
+            Who should the AV team contact with questions about this specific request?
+            Defaults to your account — change if a different team member is the right contact.
+          </p>
+
+          <div style="margin-bottom: 12px;">
+            <label for="{{ form.primary_contact_name.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.primary_contact_name.label.text }} <span style="color: #b00;">*</span>
+            </label>
+            {{ form.primary_contact_name(maxlength=256, style="width: 100%; max-width: 420px;") }}
+            {% for err in form.primary_contact_name.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div>
+            <label for="{{ form.primary_contact_email.id }}" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+              {{ form.primary_contact_email.label.text }} <span style="color: #b00;">*</span>
+            </label>
+            {{ form.primary_contact_email(type="email", maxlength=256, style="width: 100%; max-width: 420px;") }}
+            {% for err in form.primary_contact_email.errors %}
+              <div class="field-error" style="color: #dc2626; font-size: 13px; margin-top: 4px;">{{ err }}</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        {# ── Buttons ──────────────────────────────────────── #}
+        <div class="btn-row" style="margin-top: 20px;">
+          <button type="submit" class="btn btn-primary" id="av-save-draft-btn">
+            Save Draft
+          </button>
+          <button type="submit" class="btn btn-success" id="av-submit-btn">
+            Submit for AV Review
+          </button>
+          <a class="btn btn-muted" href="{{ url_for('work.av_portfolio_landing', event=event.code, dept=dept.code) }}">
+            Cancel
+          </a>
+        </div>
+
+      </form>
+    </div>{# end main form column #}
+  </div>{# end flex layout #}
+
+  {# ── Conditional-field JS ─────────────────────────────────── #}
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    // ── Duration model ────────────────────────────────────────
+    var durationRadios = document.querySelectorAll('[data-duration-radio]');
+    var hoursRow  = document.getElementById('duration-hours-row');
+    var slotsRow  = document.getElementById('duration-slots-row');
+    var hoursInput = document.getElementById('{{ form.duration_hours.id }}');
+    var slotsInput = document.getElementById('{{ form.duration_slots.id }}');
+
+    function applyDurationState() {
+      var selected = document.querySelector('[data-duration-radio]:checked');
+      var val = selected ? selected.value : '';
+
+      var showHours = (val === 'HOURS_OF_CONTENT');
+      var showSlots = (val === 'MULTIPLE_SLOTS');
+
+      hoursRow.style.display = showHours ? '' : 'none';
+      slotsRow.style.display = showSlots ? '' : 'none';
+
+      if (hoursInput) {
+        hoursInput.required = showHours;
+        if (!showHours) hoursInput.value = '';
+      }
+      if (slotsInput) {
+        slotsInput.required = showSlots;
+        if (!showSlots) slotsInput.value = '';
+      }
+    }
+
+    durationRadios.forEach(function (radio) {
+      radio.addEventListener('change', applyDurationState);
+    });
+    applyDurationState();
+
+    // ── Gear specificity ──────────────────────────────────────
+    var gearRadios = document.querySelectorAll('[data-gear-radio]');
+    var suggestedGearRow = document.getElementById('suggested-gear-row');
+    var suggestedGearInput = document.getElementById('{{ form.suggested_gear_text.id }}');
+
+    function applyGearState() {
+      var selected = document.querySelector('[data-gear-radio]:checked');
+      var val = selected ? selected.value : '';
+      var show = (val === 'SUGGESTIONS' || val === 'REQUIRED');
+      suggestedGearRow.style.display = show ? '' : 'none';
+      if (suggestedGearInput) {
+        suggestedGearInput.required = show;
+        if (!show) suggestedGearInput.value = '';
+      }
+    }
+
+    gearRadios.forEach(function (radio) {
+      radio.addEventListener('change', applyGearState);
+    });
+    applyGearState();
+
+    // ── Dept-sourced gear mode ────────────────────────────────
+    var deptGearRadios = document.querySelectorAll('[data-dept-gear-radio]');
+    var deptGearTextRow = document.getElementById('dept-gear-text-row');
+    var deptGearTextInput = document.getElementById('{{ form.dept_sourced_gear_text.id }}');
+
+    function applyDeptGearState() {
+      var selected = document.querySelector('[data-dept-gear-radio]:checked');
+      var val = selected ? selected.value : '';
+      var show = (val === 'SOME');
+      deptGearTextRow.style.display = show ? '' : 'none';
+      if (deptGearTextInput) {
+        deptGearTextInput.required = show;
+        if (!show) deptGearTextInput.value = '';
+      }
+    }
+
+    deptGearRadios.forEach(function (radio) {
+      radio.addEventListener('change', applyDeptGearState);
+    });
+    applyDeptGearState();
+
+    // ── Submit button wiring ──────────────────────────────────
+    var saveDraftBtn = document.getElementById('av-save-draft-btn');
+    var submitBtn    = document.getElementById('av-submit-btn');
+    var actionField  = document.getElementById('av-action-field');
+
+    if (saveDraftBtn && actionField) {
+      saveDraftBtn.addEventListener('click', function () {
+        actionField.value = 'save_draft';
+      });
+    }
+
+    if (submitBtn && actionField) {
+      submitBtn.addEventListener('click', function () {
+        actionField.value = 'submit';
+      });
+    }
+  })();
+  </script>
+
+{% endblock %}

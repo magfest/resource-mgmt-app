@@ -7,7 +7,7 @@ and configuration changes.
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import BigInteger
+from sqlalchemy import BigInteger, Integer
 
 from app import db
 from .constants import NOTIF_STATUS_QUEUED
@@ -17,7 +17,10 @@ class ActivityEvent(db.Model):
     """High-volume access/action telemetry. Option 1 scope: log work item views/exports."""
     __tablename__ = "activity_events"
 
-    id = db.Column(BigInteger, primary_key=True)
+    id = db.Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True, autoincrement=True,
+    )
 
     occurred_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
 
@@ -44,6 +47,13 @@ class ActivityEvent(db.Model):
         index=True,
     )
 
+    space_id = db.Column(
+        db.Integer,
+        db.ForeignKey("spaces.id", name="fk_activity_events_space_id"),
+        nullable=True,
+        index=True,
+    )
+
     event_type = db.Column(db.String(64), nullable=False, index=True)
 
     # anonymized identifiers (HMAC-derived). Do not store raw IP or raw UA.
@@ -60,6 +70,7 @@ class ActivityEvent(db.Model):
     work_type = db.relationship("WorkType")
     work_item = db.relationship("WorkItem")
     work_line = db.relationship("WorkLine")
+    space = db.relationship("Space")
 
     __table_args__ = (
         # Composite index for time-series analytics queries
@@ -71,7 +82,10 @@ class NotificationLog(db.Model):
     """Proof of notifications sent (email now, other channels later)."""
     __tablename__ = "notification_logs"
 
-    id = db.Column(BigInteger, primary_key=True)
+    id = db.Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True, autoincrement=True,
+    )
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
     sent_at = db.Column(db.DateTime, nullable=True, index=True)

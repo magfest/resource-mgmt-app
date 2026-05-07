@@ -1,0 +1,81 @@
+{% extends "layout/base.html" %}
+
+{% block title %}AV Spaces - Admin{% endblock %}
+
+{% block content %}
+<h1>AV Spaces</h1>
+<div class="muted mb-16">
+  Manage physical spaces for AV requests.
+  {% if event_cycle %}
+    Showing spaces for <strong>{{ event_cycle.name }}</strong>.
+  {% else %}
+    <span style="color: #c00;">No default event cycle is set.</span>
+  {% endif %}
+</div>
+
+<div class="row mb-16">
+  <a class="btn btn-primary" href="{{ url_for('av_spaces.new_space') }}">+ New Space</a>
+
+  <form method="get" action="{{ url_for('av_spaces.list_spaces') }}" class="row" style="margin: 0; gap: 8px;">
+    <label class="muted" style="display: flex; gap: 6px; align-items: center;">
+      <input type="checkbox" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %}>
+      show archived
+    </label>
+    <button class="btn" type="submit">Filter</button>
+    {% if show_inactive %}
+      <a class="btn" href="{{ url_for('av_spaces.list_spaces') }}">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 120px;">Code</th>
+      <th style="width: 200px;">Name</th>
+      <th style="width: 200px;">Location</th>
+      <th style="width: 80px;">Sq Ft</th>
+      <th style="width: 70px;">Status</th>
+      <th style="width: 140px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for space in spaces %}
+      <tr>
+        <td class="num">{{ space.code }}</td>
+        <td>{{ space.name }}</td>
+        <td>{{ space.location or '—' }}</td>
+        <td class="num">{{ space.square_feet if space.square_feet is not none else '—' }}</td>
+        <td>
+          {% if space.is_active %}
+            <span class="pill" style="background: #e9f7ef;">Active</span>
+          {% else %}
+            <span class="pill" style="background: #fbeaea;">Archived</span>
+          {% endif %}
+        </td>
+        <td class="btn-row">
+          <a class="btn" href="{{ url_for('av_spaces.edit_space', space_id=space.id) }}">Edit</a>
+          <a class="btn" href="{{ url_for('av_spaces.manage_assignments', space_id=space.id) }}">Assignments</a>
+          {% if space.is_active %}
+            <form method="post"
+                  action="{{ url_for('av_spaces.archive_space', space_id=space.id) }}"
+                  style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn" type="submit"
+                      data-confirm="Archive space {{ space.name }}?">Archive</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="6" class="muted">No spaces found{% if not show_inactive %} (archived spaces hidden){% endif %}.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ spaces|length }} space(s) shown
+</div>
+{% endblock %}

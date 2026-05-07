@@ -18,12 +18,14 @@ if TYPE_CHECKING:
         TechOpsLineDetail,
         WorkLine,
     )
+    from app.models.av import AVLineDetail
 
 LineDetail = Union[
     "BudgetLineDetail",
     "ContractLineDetail",
     "SupplyOrderLineDetail",
     "TechOpsLineDetail",
+    "AVLineDetail",
 ]
 
 
@@ -42,6 +44,7 @@ def get_line_detail(line: "WorkLine") -> Optional[LineDetail]:
         or line.contract_detail
         or line.supply_detail
         or line.techops_detail
+        or line.av_line_detail
     )
 
 
@@ -139,6 +142,8 @@ def get_line_type_name(line: "WorkLine") -> str:
         return "supply"
     if line.techops_detail:
         return "techops"
+    if line.av_line_detail:
+        return "av"
     return "unknown"
 
 

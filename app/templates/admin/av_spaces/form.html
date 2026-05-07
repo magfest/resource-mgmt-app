@@ -1,0 +1,111 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{% if space %}Edit Space{% else %}New Space{% endif %} - Admin{% endblock %}
+
+{% block content %}
+<h1>{% if space %}Edit Space{% else %}New Space{% endif %}</h1>
+<div class="muted" style="margin: 8px 0 16px;">
+  {% if space %}
+    Editing space: <strong>{{ space.code }}</strong>
+    {% if av_request_count %}
+      <span class="pill" style="margin-left: 8px;">{{ av_request_count }} AV request(s)</span>
+    {% endif %}
+  {% else %}
+    Create a new physical space for AV requests.
+    {% if event_cycle %}
+      For event: <strong>{{ event_cycle.name }}</strong>.
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="card" style="max-width: 700px;">
+  <form method="post"
+    action="{% if space %}{{ url_for('av_spaces.update_space', space_id=space.id) }}{% else %}{{ url_for('av_spaces.create_space') }}{% endif %}"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+
+      <div>
+        <label for="code" class="form-label">Code</label>
+        {% if code_locked %}
+          <input id="code" type="text" value="{{ space.code }}" readonly disabled
+                 style="background-color: #f5f5f5; cursor: not-allowed;" />
+          <input type="hidden" name="code" value="{{ space.code }}" />
+          <div class="muted small mt-4">
+            Code is locked because {{ av_request_count }} AV request{% if av_request_count != 1 %}s{% endif %} reference{% if av_request_count == 1 %}s{% endif %} this space.
+          </div>
+        {% else %}
+          <input id="code" name="code" type="text" required maxlength="64"
+                 value="{{ space.code if space else '' }}"
+                 placeholder="e.g. PANELS_4" />
+          <div class="muted small mt-4">Unique identifier (max 64 chars). Will be uppercased.</div>
+        {% endif %}
+      </div>
+
+      <div>
+        <label for="name" class="form-label">Name</label>
+        <input id="name" name="name" type="text" required maxlength="128"
+               value="{{ space.name if space else '' }}"
+               placeholder="e.g. Panels 4" />
+      </div>
+
+      <div style="grid-column: span 2;">
+        <label for="location" class="form-label">Location</label>
+        <input id="location" name="location" type="text" maxlength="256"
+               value="{{ space.location if space else '' }}"
+               placeholder="e.g. Chesapeake A/B/C" />
+        <div class="muted small mt-4">Optional. Building, room, or area description.</div>
+      </div>
+
+      <div>
+        <label for="square_feet" class="form-label">Square Feet</label>
+        <input id="square_feet" name="square_feet" type="number" min="0"
+               value="{{ space.square_feet if space and space.square_feet is not none else '' }}"
+               placeholder="e.g. 4200" />
+        <div class="muted small mt-4">Optional. Floor area in sq ft.</div>
+      </div>
+
+      <div></div>
+
+      <div>
+        <label for="push_in_at" class="form-label">Push-in At</label>
+        <input id="push_in_at" name="push_in_at" type="datetime-local"
+               value="{{ space.push_in_at.strftime('%Y-%m-%dT%H:%M') if space and space.push_in_at else '' }}" />
+        <div class="muted small mt-4">Optional. When AV crew can enter.</div>
+      </div>
+
+      <div>
+        <label for="push_out_at" class="form-label">Push-out At</label>
+        <input id="push_out_at" name="push_out_at" type="datetime-local"
+               value="{{ space.push_out_at.strftime('%Y-%m-%dT%H:%M') if space and space.push_out_at else '' }}" />
+        <div class="muted small mt-4">Optional. When AV gear must be removed.</div>
+      </div>
+
+      <div style="grid-column: span 2;">
+        <label for="notes" class="form-label">Notes</label>
+        <textarea id="notes" name="notes" rows="4"
+                  placeholder="Optional notes about this space...">{{ space.notes if space else '' }}</textarea>
+      </div>
+
+    </div>
+
+    <div class="btn-row" style="margin-top: 20px;">
+      <button class="btn btn-primary" type="submit">
+        {% if space %}Save Changes{% else %}Create Space{% endif %}
+      </button>
+      <a class="btn" href="{{ url_for('av_spaces.list_spaces') }}">Cancel</a>
+      {% if space and space.is_active %}
+        <form method="post"
+              action="{{ url_for('av_spaces.archive_space', space_id=space.id) }}"
+              style="display: inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn" type="submit"
+                  data-confirm="Archive this space?">Archive</button>
+        </form>
+      {% endif %}
+    </div>
+
+  </form>
+</div>
+{% endblock %}

@@ -70,6 +70,17 @@
     </div>
     {% endif %}
 
+    {# AV Admin menu (AV worktype admins + super admins).
+       AV doesn't have dispatch or admin_final stages — just Space management. #}
+    {% if "AV" in nav_admin_work_types %}
+    <div class="top-nav-dropdown">
+      <button type="button" class="top-nav-link top-nav-toggle">AV Admin <span class="top-nav-caret">&#9662;</span></button>
+      <div class="top-nav-menu">
+        <a href="{{ url_for('av_spaces.list_spaces') }}">Manage Spaces</a>
+      </div>
+    </div>
+    {% endif %}
+
     {# Admin menu (super admins only) #}
     {% if is_super_admin %}
     <div class="top-nav-dropdown">

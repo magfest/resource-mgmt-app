@@ -1,0 +1,185 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.2, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\Mstoldal\PycharmProjects\magfest-budget
+configfile: pytest.ini
+plugins: cov-7.1.0
+collected 197 items
+
+tests\integration\test_admin_features.py FEFF.F..E..EEEEEE               [  7%]
+tests\integration\test_av_admin_pages.py EEEE.EEEEEEEFE.EEEEEEEEEEE..... [ 20%]
+                                                                         [ 20%]
+tests\integration\test_notification_resilience.py ...                    [ 21%]
+tests\integration\test_permissions.py ................                   [ 29%]
+tests\integration\test_route_migration.py .....                          [ 32%]
+tests\integration\test_routes.py ..                                      [ 33%]
+tests\integration\test_work_types_admin.py ....                          [ 35%]
+tests\unit\test_admin_helpers.py ....................                    [ 45%]
+tests\unit\test_av_activity_events.py .                                  [ 46%]
+tests\unit\test_av_models.py ..............                              [ 53%]
+tests\unit\test_av_permissions.py ...........                            [ 58%]
+tests\unit\test_av_seed.py ..                                            [ 59%]
+tests\unit\test_category_routing.py ...                                  [ 61%]
+tests\unit\test_early_supplementary.py .....                             [ 63%]
+tests\unit\test_event_cycle_av_sla.py ..                                 [ 64%]
+tests\unit\test_financial_math.py ........................               [ 77%]
+tests\unit\test_lifecycle.py ...........                                 [ 82%]
+tests\unit\test_report_utils.py ......                                   [ 85%]
+tests\unit\test_route_helpers_init.py ....                               [ 87%]
+tests\unit\test_space_model.py EE.E                                      [ 89%]
+tests\unit\test_techops_models.py EEEEEEEE                               [ 92%]
+tests\unit\test_template_filters.py ...E.....                            [ 97%]
+tests\unit\test_work_type_slug.py E..EFF                                 [100%]
+
+============================== warnings summary ===============================
+tests/integration/test_admin_features.py: 120 warnings
+tests/integration/test_av_admin_pages.py: 166 warnings
+tests/integration/test_notification_resilience.py: 85 warnings
+tests/integration/test_permissions.py: 218 warnings
+tests/integration/test_route_migration.py: 84 warnings
+tests/integration/test_work_types_admin.py: 20 warnings
+tests/unit/test_admin_helpers.py: 22 warnings
+tests/unit/test_av_models.py: 240 warnings
+tests/unit/test_av_permissions.py: 336 warnings
+tests/unit/test_av_seed.py: 40 warnings
+tests/unit/test_category_routing.py: 46 warnings
+tests/unit/test_early_supplementary.py: 73 warnings
+tests/unit/test_event_cycle_av_sla.py: 4 warnings
+tests/unit/test_lifecycle.py: 234 warnings
+tests/unit/test_space_model.py: 10 warnings
+tests/unit/test_techops_models.py: 16 warnings
+tests/unit/test_work_type_slug.py: 52 warnings
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\.venv\Lib\site-packages\sqlalchemy\sql\schema.py:3624: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    return util.wrap_callable(lambda ctx: fn(), fn)  # type: ignore
+
+tests/integration/test_admin_features.py::TestPublicIdLocking::test_sequential_ids_are_unique
+tests/integration/test_admin_features.py::TestPublicIdLocking::test_sequential_ids_are_unique
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\work\helpers\formatting.py:84: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    locked_portfolio = db.session.query(WorkPortfolio).with_for_update().get(portfolio.id)
+
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkout_then_second_checkout_fails
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkout_then_second_checkout_fails
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkin_then_checkout_succeeds
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkin_then_checkout_succeeds
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\work\helpers\checkout.py:131: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    locked_item = db.session.query(WorkItem).with_for_update().get(work_item.id)
+
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkout_then_second_checkout_fails
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkin_then_checkout_succeeds
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkin_then_checkout_succeeds
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\work\helpers\checkout.py:138: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow()
+
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkout_then_second_checkout_fails
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\work\helpers\checkout.py:66: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    return work_item.checked_out_expires_at > datetime.utcnow()
+
+tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkin_then_checkout_succeeds
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\work\helpers\checkout.py:159: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    locked_item = db.session.query(WorkItem).with_for_update().get(work_item.id)
+
+tests/integration/test_av_admin_pages.py::TestArchiveSpace::test_regular_user_cannot_archive
+tests/integration/test_permissions.py::TestPortfolioPermissions::test_outsider_cannot_access_portfolio
+tests/integration/test_permissions.py::TestAdminRoutePermissions::test_member_cannot_access_config
+tests/integration/test_permissions.py::TestAdminRoutePermissions::test_outsider_cannot_access_config
+tests/integration/test_permissions.py::TestDispatchPermissions::test_member_cannot_access_dispatch
+tests/integration/test_permissions.py::TestDispatchPermissions::test_outsider_cannot_access_dispatch
+tests/integration/test_work_types_admin.py::TestWorkTypesAdmin::test_non_admin_blocked
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\security_audit.py:76: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    timestamp=datetime.utcnow(),
+
+tests/integration/test_notification_resilience.py: 2 warnings
+tests/unit/test_lifecycle.py: 9 warnings
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\work\helpers\lifecycle.py:59: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    work_item.submitted_at = datetime.utcnow()
+
+tests/integration/test_notification_resilience.py::TestNotificationResilience::test_finalize_succeeds_when_notification_raises
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\tests\integration\test_notification_resilience.py:90: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    work_item.submitted_at = datetime.utcnow()
+
+tests/integration/test_notification_resilience.py::TestNotificationResilience::test_finalize_succeeds_when_notification_raises
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\tests\integration\test_notification_resilience.py:99: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    decided_at=datetime.utcnow(),
+
+tests/integration/test_notification_resilience.py::TestNotificationResilience::test_finalize_succeeds_when_notification_raises
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\.venv\Lib\site-packages\flask_sqlalchemy\query.py:30: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    rv = self.get(ident)
+
+tests/integration/test_notification_resilience.py::TestNotificationResilience::test_finalize_succeeds_when_notification_raises
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\admin_final\helpers.py:474: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    db.session.query(WorkItem).with_for_update().get(work_item.id)
+
+tests/integration/test_notification_resilience.py::TestNotificationResilience::test_finalize_succeeds_when_notification_raises
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\admin_final\helpers.py:494: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    review.decided_at = datetime.utcnow()
+
+tests/integration/test_notification_resilience.py::TestNotificationResilience::test_finalize_succeeds_when_notification_raises
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\admin_final\helpers.py:500: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    line.status_changed_at = datetime.utcnow()
+
+tests/integration/test_notification_resilience.py::TestNotificationResilience::test_finalize_succeeds_when_notification_raises
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\admin_final\helpers.py:509: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    work_item.finalized_at = datetime.utcnow()
+
+tests/unit/test_lifecycle.py::test_techops_auto_finalizes_when_last_review_decided
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\app\routes\work\helpers\lifecycle.py:170: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    work_item.finalized_at = datetime.utcnow()
+
+tests/unit/test_space_model.py::test_space_dept_assignment
+  C:\Users\Mstoldal\PycharmProjects\magfest-budget\tests\unit\test_space_model.py:71: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    assigned_at=datetime.utcnow(),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/integration/test_admin_features.py::TestQuickBooksClassFields::test_event_cycle_qb_class_persists
+FAILED tests/integration/test_admin_features.py::TestQuickBooksClassFields::test_department_qb_class_persists
+FAILED tests/integration/test_admin_features.py::TestQuickBooksClassFields::test_multiple_entities_share_qb_class
+FAILED tests/integration/test_admin_features.py::TestDatesArePublic::test_toggle_persists
+FAILED tests/integration/test_av_admin_pages.py::TestCreateSpace::test_super_admin_can_create_space
+FAILED tests/unit/test_work_type_slug.py::TestSeedConfigWorkTypeActivation::test_only_budget_seeded_active
+FAILED tests/unit/test_work_type_slug.py::TestSeedConfigWorkTypeActivation::test_inactive_worktypes_still_have_configs
+ERROR tests/integration/test_admin_features.py::TestQuickBooksClassFields::test_division_qb_class_persists
+ERROR tests/integration/test_admin_features.py::TestPublicIdLocking::test_sequence_counter_increments
+ERROR tests/integration/test_admin_features.py::TestCheckoutLocking::test_checkin_then_checkout_succeeds
+ERROR tests/integration/test_admin_features.py::TestFinalizationLocking::test_finalize_then_second_finalize_fails
+ERROR tests/integration/test_admin_features.py::TestFinalizationLocking::test_finalize_then_second_finalize_fails
+ERROR tests/integration/test_admin_features.py::TestFinalizationLocking::test_finalize_blocked_while_checked_out
+ERROR tests/integration/test_admin_features.py::TestFinalizationLocking::test_finalize_blocked_while_checked_out
+ERROR tests/integration/test_admin_features.py::TestFinalizationLocking::test_admin_force_checkin_then_finalize
+ERROR tests/integration/test_av_admin_pages.py::TestListSpaces::test_av_admin_can_view_list
+ERROR tests/integration/test_av_admin_pages.py::TestListSpaces::test_av_admin_can_view_list
+ERROR tests/integration/test_av_admin_pages.py::TestListSpaces::test_super_admin_can_view_list
+ERROR tests/integration/test_av_admin_pages.py::TestListSpaces::test_regular_user_gets_403
+ERROR tests/integration/test_av_admin_pages.py::TestListSpaces::test_unauthenticated_redirected
+ERROR tests/integration/test_av_admin_pages.py::TestListSpaces::test_list_shows_existing_space
+ERROR tests/integration/test_av_admin_pages.py::TestListSpaces::test_list_shows_existing_space
+ERROR tests/integration/test_av_admin_pages.py::TestListSpaces::test_list_shows_new_space_button
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_av_admin_can_view_new_form
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_av_admin_can_view_new_form
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_av_admin_can_create_space
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_regular_user_cannot_create_space
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_unauthenticated_cannot_create_space
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_create_missing_code_rejected
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_create_missing_name_rejected
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_create_duplicate_code_rejected
+ERROR tests/integration/test_av_admin_pages.py::TestCreateSpace::test_create_logs_activity_event
+ERROR tests/integration/test_av_admin_pages.py::TestEditSpace::test_av_admin_can_view_edit_form
+ERROR tests/integration/test_av_admin_pages.py::TestEditSpace::test_av_admin_can_edit_space
+ERROR tests/integration/test_av_admin_pages.py::TestEditSpace::test_regular_user_cannot_edit
+ERROR tests/integration/test_av_admin_pages.py::TestEditSpace::test_edit_nonexistent_space_returns_404
+ERROR tests/integration/test_av_admin_pages.py::TestEditSpace::test_code_field_shown_for_unlocked_space
+ERROR tests/integration/test_av_admin_pages.py::TestEditSpace::test_code_locked_when_av_requests_exist
+ERROR tests/unit/test_space_model.py::test_space_create - sqlalchemy.exc.Oper...
+ERROR tests/unit/test_space_model.py::test_space_code_unique_per_event - sqla...
+ERROR tests/unit/test_space_model.py::test_space_dept_assignment - sqlalchemy...
+ERROR tests/unit/test_techops_models.py::test_service_type_persists_with_default_group
+ERROR tests/unit/test_techops_models.py::test_service_type_code_is_unique - s...
+ERROR tests/unit/test_techops_models.py::test_line_detail_persists_with_relationships
+ERROR tests/unit/test_techops_models.py::test_line_detail_persists_with_relationships
+ERROR tests/unit/test_techops_models.py::test_line_detail_back_ref_from_work_line
+ERROR tests/unit/test_techops_models.py::test_line_detail_cascade_on_work_line_delete
+ERROR tests/unit/test_techops_models.py::test_request_detail_persists_with_back_ref
+ERROR tests/unit/test_techops_models.py::test_request_detail_cascade_on_work_item_delete
+ERROR tests/unit/test_template_filters.py::TestMarkdownLinks::test_plain_text_unchanged
+ERROR tests/unit/test_work_type_slug.py::TestWorkPortfolioSlug::test_returns_budget_slug_for_budget_portfolio
+ERROR tests/unit/test_work_type_slug.py::TestPortfolioContextSlug::test_returns_slug_from_work_type_config
+===== 7 failed, 156 passed, 1804 warnings, 45 errors in 493.95s (0:08:13) =====

@@ -35,6 +35,11 @@ class EventCycle(db.Model):
     approval_target_date = db.Column(db.Date, nullable=True)      # Target for completing approvals
     finalization_date = db.Column(db.Date, nullable=True)         # When budgets are locked/finalized
 
+    # AV-specific settings
+    # Advisory SLA: how many days departments have to acknowledge a published AV scope.
+    # UI shows a countdown from publish date; no automatic enforcement.
+    av_ack_sla_days = db.Column(db.Integer, nullable=False, default=7)
+
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by_user_id = db.Column(db.String(64), nullable=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -12,6 +12,8 @@ Module organization:
 - contract.py: ContractType, ContractLineDetail
 - supply.py: SupplyCategory, SupplyItem, SupplyOrderLineDetail
 - techops.py: TechOpsServiceType, TechOpsLineDetail, TechOpsRequestDetail
+- space.py: Space, SpaceDepartmentAssignment
+- av.py: AVRequestDetail, AVLineDetail, AVRequestPlan, AVScope, AVAcknowledgment, AVScopeIncorporatedRequest
 - telemetry.py: ActivityEvent, NotificationLog, SecurityAuditLog, ConfigAuditEvent
 """
 
@@ -107,6 +109,17 @@ from .constants import (
     ROUTING_STRATEGY_CONTRACT_TYPE,
     ROUTING_STRATEGY_CATEGORY,
     ROUTING_STRATEGY_DIRECT,
+    # AV Scope states
+    AV_SCOPE_STATE_DRAFT,
+    AV_SCOPE_STATE_OPEN_FOR_INPUT,
+    AV_SCOPE_STATE_LOCKED,
+    AV_SCOPE_STATE_SUPERSEDED,
+    AV_SCOPE_STATES,
+    # AV Acknowledgment states
+    AV_ACK_STATE_PENDING,
+    AV_ACK_STATE_NO_CONCERNS,
+    AV_ACK_STATE_CONCERNS,
+    AV_ACK_STATES,
 )
 
 # Re-export organization models
@@ -170,6 +183,22 @@ from .techops import (
     TechOpsServiceType,
     TechOpsLineDetail,
     TechOpsRequestDetail,
+)
+
+# Re-export space models
+from .space import (
+    Space,
+    SpaceDepartmentAssignment,
+)
+
+# Re-export AV models
+from .av import (
+    AVRequestDetail,
+    AVLineDetail,
+    AVRequestPlan,
+    AVScope,
+    AVAcknowledgment,
+    AVScopeIncorporatedRequest,
 )
 
 # Re-export telemetry models
@@ -274,6 +303,17 @@ __all__ = [
     "ROUTING_STRATEGY_CONTRACT_TYPE",
     "ROUTING_STRATEGY_CATEGORY",
     "ROUTING_STRATEGY_DIRECT",
+    # Constants - AV Scope states
+    "AV_SCOPE_STATE_DRAFT",
+    "AV_SCOPE_STATE_OPEN_FOR_INPUT",
+    "AV_SCOPE_STATE_LOCKED",
+    "AV_SCOPE_STATE_SUPERSEDED",
+    "AV_SCOPE_STATES",
+    # Constants - AV Acknowledgment states
+    "AV_ACK_STATE_PENDING",
+    "AV_ACK_STATE_NO_CONCERNS",
+    "AV_ACK_STATE_CONCERNS",
+    "AV_ACK_STATES",
     # Organization models
     "EventCycle",
     "Division",
@@ -319,6 +359,16 @@ __all__ = [
     "TechOpsServiceType",
     "TechOpsLineDetail",
     "TechOpsRequestDetail",
+    # Space models
+    "Space",
+    "SpaceDepartmentAssignment",
+    # AV models
+    "AVRequestDetail",
+    "AVLineDetail",
+    "AVRequestPlan",
+    "AVScope",
+    "AVAcknowledgment",
+    "AVScopeIncorporatedRequest",
     # Telemetry models
     "ActivityEvent",
     "NotificationLog",

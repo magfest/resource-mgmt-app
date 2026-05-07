@@ -1,0 +1,166 @@
+{# templates/av/portfolio_landing.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}{{ dept.name }} AV — {{ event.code }}{% endblock %}
+
+{% block content %}
+
+  {# Breadcrumb #}
+  <nav class="muted small" style="margin-bottom: 12px;">
+    <a href="{{ url_for('home.index') }}">Home</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.department_home', event=event.code, dept=dept.code) }}">{{ dept.name }}</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <span>AV Requests</span>
+  </nav>
+
+  {# Header #}
+  <section class="card">
+    <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+      <div>
+        <h1 style="margin:0;">AV Requests for {{ dept.name }}</h1>
+        <div class="muted" style="margin-top:4px;">
+          <strong>Event:</strong> {{ event.name }} ({{ event.code }})
+        </div>
+        <div class="muted small" style="margin-top:8px;">
+          File AV requests for spaces assigned to your department.
+          Each request covers one space and its AV requirements for this event.
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div class="muted small">Requests on file</div>
+        <div style="font-weight:700; font-size:1.4em;">{{ requests | length }}</div>
+      </div>
+    </div>
+  </section>
+
+  {# ── Assigned Spaces ─────────────────────────────────────── #}
+  <section style="margin-top: 24px;">
+    <h2>Spaces assigned to your department</h2>
+
+    {% if assigned_spaces %}
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">
+        {% for space in assigned_spaces %}
+          <div class="card" style="padding: 14px 16px;">
+            <div style="font-weight:600; font-size:1em;">{{ space.name }}</div>
+            {% if space.location %}
+              <div class="muted small" style="margin-top:2px;">{{ space.location }}</div>
+            {% endif %}
+            <div class="muted small" style="margin-top:2px;">
+              Code: <code>{{ space.code }}</code>
+            </div>
+            <div style="margin-top: 10px;">
+              <a class="btn btn-primary btn-sm"
+                 href="{{ url_for('work.av_request_new', event=event.code, dept=dept.code) }}?space_id={{ space.id }}">
+                File request for this space
+              </a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card">
+        <div class="muted">
+          No spaces are currently assigned to {{ dept.name }} for this event.
+          Contact AV administration if your department needs a space assignment.
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  {# ── Existing Requests ────────────────────────────────────── #}
+  <section style="margin-top: 24px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <h2 style="margin:0;">Your AV requests</h2>
+      <a class="btn btn-primary"
+         href="{{ url_for('work.av_request_new', event=event.code, dept=dept.code) }}">
+        + New AV Request
+      </a>
+    </div>
+
+    {% if requests %}
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="text-align:left; border-bottom: 2px solid #e5e7eb; font-size:0.85em; color:#666;">
+            <th style="padding: 6px 8px;">ID</th>
+            <th style="padding: 6px 8px;">Space</th>
+            <th style="padding: 6px 8px;">Priority</th>
+            <th style="padding: 6px 8px;">Status</th>
+            <th style="padding: 6px 8px;">Created</th>
+            <th style="padding: 6px 8px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in requests %}
+            {% set detail = item.av_request_detail %}
+            {% set status = item.status | upper %}
+            {% set status_pill =
+              "pill-approved" if status == "FINALIZED"
+              else "pill-submitted" if status in ("SUBMITTED", "UNDER_REVIEW", "AWAITING_DISPATCH")
+              else "pill-needs" if status in ("NEEDS_INFO", "NEEDS_ADJUSTMENT", "PAUSED")
+              else "pill-draft" %}
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 8px; font-family: monospace; white-space:nowrap;">
+                {{ item.public_id or "—" }}
+              </td>
+              <td style="padding: 8px;">
+                {% if detail and detail.space %}
+                  {{ detail.space.name }}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td style="padding: 8px;">
+                {% if detail %}
+                  {% if detail.priority == "MUST_HAVE" %}Must Have
+                  {% elif detail.priority == "STRONG_PREFERENCE" %}Strong Preference
+                  {% elif detail.priority == "NICE_TO_HAVE" %}Nice to Have
+                  {% else %}{{ detail.priority }}
+                  {% endif %}
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td style="padding: 8px;">
+                <span class="pill {{ status_pill }}">
+                  {% if status == "DRAFT" %}Draft
+                  {% elif status == "AWAITING_DISPATCH" %}Pending Review
+                  {% elif status in ("SUBMITTED", "UNDER_REVIEW") %}Under Review
+                  {% elif status == "NEEDS_INFO" %}Info Requested
+                  {% elif status == "NEEDS_ADJUSTMENT" %}Changes Requested
+                  {% elif status == "FINALIZED" %}Finalized
+                  {% elif status == "PAUSED" %}Paused
+                  {% else %}{{ status | title }}
+                  {% endif %}
+                </span>
+              </td>
+              <td style="padding: 8px; color:#666; font-size:0.9em; white-space:nowrap;">
+                {{ item.created_at.strftime('%b %d, %Y') }}
+              </td>
+              <td style="padding: 8px; white-space:nowrap;">
+                {# View link deferred to Task 27 — placeholder href for now #}
+                <a class="btn btn-sm" href="#">View</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="card">
+        <div class="muted" style="margin-bottom:12px;">
+          No AV requests yet for {{ dept.name }} this event.
+        </div>
+        <a class="btn btn-primary"
+           href="{{ url_for('work.av_request_new', event=event.code, dept=dept.code) }}">
+          Create First Request
+        </a>
+      </div>
+    {% endif %}
+  </section>
+
+  {# Footer navigation #}
+  <div class="btn-row" style="margin-top: 24px;">
+    <a class="btn" href="{{ url_for('work.department_home', event=event.code, dept=dept.code) }}">&larr; Back to {{ dept.name }}</a>
+  </div>
+
+{% endblock %}

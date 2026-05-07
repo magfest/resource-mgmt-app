@@ -1,0 +1,84 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Assignments — {{ space.name }} - Admin{% endblock %}
+
+{% block content %}
+<h1>Assignments — {{ space.name }}</h1>
+<div class="muted" style="margin: 8px 0 16px;">
+  <a href="{{ url_for('av_spaces.list_spaces') }}">AV Spaces</a>
+  &rsaquo;
+  <a href="{{ url_for('av_spaces.edit_space', space_id=space.id) }}">{{ space.name }}</a>
+  &rsaquo; Assignments
+</div>
+
+<div class="card" style="max-width: 800px; margin-bottom: 24px;">
+  <p class="muted">
+    Assigned departments can file AV requests for this space.
+    Unassigning a department preserves history and can be re-assigned later.
+  </p>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Department</th>
+      <th style="width: 120px;">Code</th>
+      <th style="width: 120px;">Status</th>
+      <th style="width: 100px;">Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for dept in departments %}
+      <tr>
+        <td>{{ dept.name }}</td>
+        <td class="num">{{ dept.code }}</td>
+        <td>
+          {% if dept.id in assigned_ids %}
+            <span class="pill" style="background: #e9f7ef;">Assigned</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if dept.id in assigned_ids %}
+            <form method="post"
+                  action="{{ url_for('av_spaces.manage_assignments', space_id=space.id) }}"
+                  style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="department_id" value="{{ dept.id }}">
+              <button class="btn" name="action" value="unassign"
+                      data-confirm="Unassign {{ dept.name }} from {{ space.name }}?">
+                Unassign
+              </button>
+            </form>
+          {% else %}
+            <form method="post"
+                  action="{{ url_for('av_spaces.manage_assignments', space_id=space.id) }}"
+                  style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="department_id" value="{{ dept.id }}">
+              <button class="btn btn-primary" name="action" value="assign">
+                Assign
+              </button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="4" class="muted">No active departments found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="muted small" style="margin-top: 16px;">
+  {{ departments|length }} department(s) shown &mdash;
+  {{ assigned_ids|length }} assigned to this space
+</div>
+
+<div style="margin-top: 24px;">
+  <a class="btn" href="{{ url_for('av_spaces.edit_space', space_id=space.id) }}">Back to Space</a>
+  <a class="btn" href="{{ url_for('av_spaces.list_spaces') }}">All Spaces</a>
+</div>
+{% endblock %}

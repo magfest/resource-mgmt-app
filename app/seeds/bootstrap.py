@@ -115,6 +115,9 @@ def seed_approval_groups(work_types: dict[str, WorkType]) -> dict[str, ApprovalG
             ("TECHOPS_NET", "TechOps Networking", "Reviews network and phone services (WiFi, ethernet, bandwidth, phone lines)", 10),
             ("TECHOPS_GEN", "TechOps Generic", "Reviews dedicated radio channels, consultations, and any other TechOps requests", 20),
         ],
+        "AV": [
+            ("AV_TEAM", "AV Team", "Reviews and plans AV requests for shared spaces", 10),
+        ],
     }
 
     groups: dict[str, ApprovalGroup] = {}
@@ -258,6 +261,15 @@ def seed_work_type_configs(work_types: dict[str, WorkType]) -> None:
             line_plural="Items",
         )
         db.session.add(config)
+        db.session.flush()  # need ID for next step
+
+        # Set default approval group to AV_TEAM (just seeded)
+        av_team = db.session.query(ApprovalGroup).filter_by(
+            work_type_id=av_wt.id, code="AV_TEAM",
+        ).first()
+        if av_team:
+            config.default_approval_group_id = av_team.id
+
         configs_created += 1
 
     db.session.flush()
