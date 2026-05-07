@@ -5,7 +5,7 @@
 #}
 {% extends "layout/base.html" %}
 
-{% block title %}New AV Request — {{ dept.name }} ({{ event.code }}){% endblock %}
+{% block title %}{% if editing %}Edit AV Request — {{ work_item.public_id }}{% else %}New AV Request — {{ dept.name }} ({{ event.code }}){% endif %}{% endblock %}
 
 {% block content %}
 
@@ -17,12 +17,12 @@
     <span style="margin: 0 6px;">&rsaquo;</span>
     <a href="{{ url_for('work.av_portfolio_landing', event=event.code, dept=dept.code) }}">AV Requests</a>
     <span style="margin: 0 6px;">&rsaquo;</span>
-    <span>New Request</span>
+    <span>{% if editing %}Edit {{ work_item.public_id }}{% else %}New Request{% endif %}</span>
   </nav>
 
   {# ── Page header ──────────────────────────────────────────── #}
   <div style="margin-bottom: 20px;">
-    <h1 style="margin: 0;">New AV Request</h1>
+    <h1 style="margin: 0;">{% if editing %}Edit AV Request — {{ work_item.public_id }}{% else %}New AV Request{% endif %}</h1>
     <div class="muted" style="margin-top: 4px;">
       {{ dept.name }} &middot; {{ event.name }} ({{ event.code }})
     </div>
@@ -79,7 +79,7 @@
         </div>
       {% endif %}
 
-      <form method="post" action="{{ url_for('work.av_request_create', event=event.code, dept=dept.code) }}">
+      <form method="post" action="{% if editing %}{{ url_for('work.av_request_edit', event=event.code, dept=dept.code, public_id=work_item.public_id) }}{% else %}{{ url_for('work.av_request_create', event=event.code, dept=dept.code) }}{% endif %}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {{ form.action(id="av-action-field") }}
 

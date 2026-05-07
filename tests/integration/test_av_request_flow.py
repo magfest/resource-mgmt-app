@@ -800,3 +800,756 @@ class TestSubmit:
         av_team = ApprovalGroup.query.filter_by(code="AV_TEAM").first()
         assert review.approval_group_id == av_team.id
         assert line.av_line_detail.routed_approval_group_id == av_team.id
+
+
+# ---------------------------------------------------------------------------
+# Helpers for edit tests
+# ---------------------------------------------------------------------------
+
+def _edit_url(event, dept, public_id):
+    return f"/{event.code}/{dept.code}/av/item/{public_id}/edit"
+
+
+def _minimal_edit_payload(space_id, overrides=None):
+    """Minimal valid edit POST payload (save_draft)."""
+    data = {
+        "space_id": str(space_id),
+        "description": "Updated description",
+        "priority": "NICE_TO_HAVE",
+        "duration_model": "FULL_EVENT",
+        "gear_specificity": "USAGE_ONLY",
+        "dept_sourced_gear_mode": "NONE",
+        "primary_contact_name": "Updated Name",
+        "primary_contact_email": "updated@x.z",
+        "action": "save_draft",
+    }
+    if overrides:
+        data.update(overrides)
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Tests: edit request
+# ---------------------------------------------------------------------------
+
+class TestEdit:
+    def test_get_edit_form_prefills_fields(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """GET /edit renders the form pre-filled with the saved record's values."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.get(
+            _edit_url(event, dept, av_draft_request.public_id)
+        )
+        assert response.status_code == 200
+        # Page header references the public_id
+        assert av_draft_request.public_id.encode() in response.data
+        # Field value from fixture (priority=MUST_HAVE) should appear checked
+        assert b"MUST_HAVE" in response.data
+
+    def test_dept_member_can_edit_draft(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """Dept member can POST a valid edit and all changed fields are persisted."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.post(
+            _edit_url(event, dept, av_draft_request.public_id),
+            data=_minimal_edit_payload(space.id),
+            follow_redirects=False,
+        )
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_draft_request.id)
+        assert item.av_request_detail.priority == "NICE_TO_HAVE"
+        assert item.av_request_detail.primary_contact_name == "Updated Name"
+        assert item.av_request_detail.primary_contact_email == "updated@x.z"
+        assert item.lines[0].av_line_detail.description == "Updated description"
+
+    def test_edit_preserves_draft_status(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """save_draft action leaves the request in DRAFT status."""
+        event, dept, space = dept_with_av_space
+        dept_member_client.post(
+            _edit_url(event, dept, av_draft_request.public_id),
+            data=_minimal_edit_payload(space.id),
+            follow_redirects=False,
+        )
+        db.session.expire_all()
+        item = WorkItem.query.get(av_draft_request.id)
+        assert item.status == WORK_ITEM_STATUS_DRAFT
+
+    def test_cannot_edit_submitted(
+        self, dept_member_client, av_submitted_request, dept_with_av_space,
+    ):
+        """Editing a SUBMITTED request redirects with an error flash;
+        the original data is NOT modified."""
+        event, dept, space = dept_with_av_space
+        original_priority = av_submitted_request.av_request_detail.priority
+
+        response = dept_member_client.post(
+            _edit_url(event, dept, av_submitted_request.public_id),
+            data=_minimal_edit_payload(space.id),
+            follow_redirects=False,
+        )
+        # Redirect (flash-based error) rather than saving
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_submitted_request.id)
+        assert item.av_request_detail.priority == original_priority
+
+    def test_other_dept_cannot_edit(
+        self, other_dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """User with access only to a different dept gets 403."""
+        event, dept, space = dept_with_av_space
+        response = other_dept_member_client.post(
+            _edit_url(event, dept, av_draft_request.public_id),
+            data=_minimal_edit_payload(space.id),
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    def test_edit_with_action_submit_submits(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """action=submit on the edit form saves changes AND transitions to SUBMITTED."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.post(
+            _edit_url(event, dept, av_draft_request.public_id),
+            data=_minimal_edit_payload(space.id, overrides={
+                "priority": "STRONG_PREFERENCE",
+                "action": "submit",
+            }),
+            follow_redirects=False,
+        )
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_draft_request.id)
+        assert item.status == WORK_ITEM_STATUS_SUBMITTED
+        # Saved change is also persisted
+        assert item.av_request_detail.priority == "STRONG_PREFERENCE"
+        # WorkLineReview created
+        assert len(item.lines[0].reviews) == 1
+
+    def test_edit_validation_error_rerenders_form(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """Invalid POST (missing required field) re-renders the form, no DB change."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.post(
+            _edit_url(event, dept, av_draft_request.public_id),
+            data=_minimal_edit_payload(space.id, overrides={"description": ""}),
+            follow_redirects=False,
+        )
+        assert response.status_code in (200, 400)
+        # Original description unchanged
+        db.session.expire_all()
+        item = WorkItem.query.get(av_draft_request.id)
+        assert item.lines[0].av_line_detail.description == "Need a projector and screen"
+
+    def test_edit_duration_hours_model_updates_correctly(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """Switching from FULL_EVENT to HOURS_OF_CONTENT persists duration_hours."""
+        event, dept, space = dept_with_av_space
+        dept_member_client.post(
+            _edit_url(event, dept, av_draft_request.public_id),
+            data=_minimal_edit_payload(space.id, overrides={
+                "duration_model": "HOURS_OF_CONTENT",
+                "duration_hours": "4.5",
+            }),
+            follow_redirects=False,
+        )
+        db.session.expire_all()
+        item = WorkItem.query.get(av_draft_request.id)
+        assert item.av_request_detail.duration_model == "HOURS_OF_CONTENT"
+        assert float(item.av_request_detail.duration_hours) == 4.5
+
+    def test_edit_switching_to_full_event_clears_hours(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """Switching duration_model to FULL_EVENT clears duration_hours."""
+        event, dept, space = dept_with_av_space
+        # av_draft_request already has FULL_EVENT, but we re-save to be explicit
+        dept_member_client.post(
+            _edit_url(event, dept, av_draft_request.public_id),
+            data=_minimal_edit_payload(space.id, overrides={
+                "duration_model": "FULL_EVENT",
+                "duration_hours": "",
+            }),
+            follow_redirects=False,
+        )
+        db.session.expire_all()
+        item = WorkItem.query.get(av_draft_request.id)
+        assert item.av_request_detail.duration_model == "FULL_EVENT"
+        assert item.av_request_detail.duration_hours is None
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for view-detail tests (Task 27)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def other_dept_b_user(av_base):
+    """A user who belongs to a THIRD dept (dept_b) with no shared space with dept_a.
+
+    Used in test_unrelated_dept_blocked.
+    """
+    seed = av_base
+    wt = seed["work_type"]
+
+    dept_b = Department(code="DEPTB", name="Dept B", is_active=True)
+    db.session.add(dept_b)
+    db.session.flush()
+
+    user_b = User(
+        id="test:dept_b_member", email="dept_b@test.local",
+        auth_subject="test:dept_b_member", display_name="Dept B Member",
+        is_active=True,
+    )
+    db.session.add(user_b)
+    db.session.flush()
+
+    membership = DepartmentMembership(
+        user_id=user_b.id,
+        department_id=dept_b.id,
+        event_cycle_id=seed["cycle"].id,
+    )
+    db.session.add(membership)
+    db.session.flush()
+    db.session.add(DepartmentMembershipWorkTypeAccess(
+        department_membership_id=membership.id,
+        work_type_id=wt.id,
+        can_view=True,
+        can_edit=True,
+    ))
+    db.session.commit()
+
+    return user_b, dept_b
+
+
+@pytest.fixture
+def unrelated_dept_member_client(client, av_base, other_dept_b_user):
+    """Client logged in as a member of a dept with no shared space with dept_a."""
+    user_b, dept_b = other_dept_b_user
+    with client.session_transaction() as sess:
+        sess["active_user_id"] = user_b.id
+    return client
+
+
+@pytest.fixture
+def other_assigned_dept_user(av_base):
+    """A user assigned to dept_c, which will be given the SAME space as dept_a.
+
+    The fixture itself doesn't assign the space — that's done by
+    av_submitted_request_in_shared_space to keep setup localised.
+    """
+    seed = av_base
+    wt = seed["work_type"]
+
+    dept_c = Department(code="DEPTC", name="Dept C", is_active=True)
+    db.session.add(dept_c)
+    db.session.flush()
+
+    user_c = User(
+        id="test:dept_c_member", email="dept_c@test.local",
+        auth_subject="test:dept_c_member", display_name="Dept C Member",
+        is_active=True,
+    )
+    db.session.add(user_c)
+    db.session.flush()
+
+    membership = DepartmentMembership(
+        user_id=user_c.id,
+        department_id=dept_c.id,
+        event_cycle_id=seed["cycle"].id,
+    )
+    db.session.add(membership)
+    db.session.flush()
+    db.session.add(DepartmentMembershipWorkTypeAccess(
+        department_membership_id=membership.id,
+        work_type_id=wt.id,
+        can_view=True,
+        can_edit=True,
+    ))
+    db.session.commit()
+
+    return user_c, dept_c
+
+
+@pytest.fixture
+def other_assigned_dept_member_client(client, av_base, other_assigned_dept_user):
+    """Client logged in as a member of dept_c (shared-space scenario)."""
+    user_c, dept_c = other_assigned_dept_user
+    with client.session_transaction() as sess:
+        sess["active_user_id"] = user_c.id
+    return client
+
+
+@pytest.fixture
+def av_submitted_request_in_shared_space(
+    av_base, av_submitted_request, other_assigned_dept_user,
+):
+    """An SUBMITTED AV request for dept_a where dept_c is ALSO assigned to the same space.
+
+    Enables the cross-dept visibility test:
+    - dept_a filed the request for the space.
+    - dept_c is also assigned to the same space → should be able to view it.
+    """
+    seed = av_base
+    _, dept_c = other_assigned_dept_user
+
+    # Retrieve the space from the submitted request's detail
+    db.session.expire_all()
+    item = WorkItem.query.get(av_submitted_request.id)
+    space_id = item.av_request_detail.space_id
+
+    assignment = SpaceDepartmentAssignment(
+        space_id=space_id,
+        department_id=dept_c.id,
+        assigned_by_user_id=seed["av_admin"].id,
+    )
+    db.session.add(assignment)
+    db.session.commit()
+
+    return item
+
+
+# ---------------------------------------------------------------------------
+# Tests: view detail page (Task 27)
+# ---------------------------------------------------------------------------
+
+def _view_url(event, dept, public_id):
+    return f"/{event.code}/{dept.code}/av/item/{public_id}"
+
+
+class TestViewDetail:
+    def test_dept_member_views_own_draft_request(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """Dept member can view their own DRAFT request detail page."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.get(
+            _view_url(event, dept, av_draft_request.public_id)
+        )
+        assert response.status_code == 200
+        assert av_draft_request.public_id.encode() in response.data
+
+    def test_renders_request_fields(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """All key submitted form fields are visible on the detail page."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.get(
+            _view_url(event, dept, av_draft_request.public_id)
+        )
+        assert response.status_code == 200
+        # Contact name from fixture
+        assert b"Dept Member" in response.data
+        # Description from fixture
+        assert b"Need a projector and screen" in response.data
+        # Space name
+        assert space.name.encode() in response.data
+
+    def test_edit_button_visible_on_draft(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """Edit Draft button is visible when status is DRAFT."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.get(
+            _view_url(event, dept, av_draft_request.public_id)
+        )
+        assert response.status_code == 200
+        assert b"Edit Draft" in response.data
+
+    def test_edit_button_absent_on_submitted(
+        self, dept_member_client, av_submitted_request, dept_with_av_space,
+    ):
+        """Edit Draft button is NOT shown when request is SUBMITTED."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.get(
+            _view_url(event, dept, av_submitted_request.public_id)
+        )
+        assert response.status_code == 200
+        assert b"Edit Draft" not in response.data
+
+    def test_recall_button_when_submitted_pending(
+        self, dept_member_client, av_submitted_request, dept_with_av_space,
+    ):
+        """SUBMITTED request with PENDING review shows Recall to Draft button."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.get(
+            _view_url(event, dept, av_submitted_request.public_id)
+        )
+        assert response.status_code == 200
+        # Case-insensitive check for "recall" text
+        lower = response.data.lower()
+        assert b"recall" in lower
+
+    def test_no_plans_shows_placeholder(
+        self, dept_member_client, av_draft_request, dept_with_av_space,
+    ):
+        """When no AV plans exist, a placeholder message is shown."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.get(
+            _view_url(event, dept, av_draft_request.public_id)
+        )
+        assert response.status_code == 200
+        assert b"not yet published" in response.data.lower()
+
+    def test_unrelated_dept_blocked(
+        self, unrelated_dept_member_client, av_submitted_request, dept_with_av_space,
+    ):
+        """User with access only to an unrelated dept (no shared space) gets 403."""
+        event, dept, space = dept_with_av_space
+        response = unrelated_dept_member_client.get(
+            _view_url(event, dept, av_submitted_request.public_id)
+        )
+        assert response.status_code == 403
+
+    def test_other_assigned_dept_can_view(
+        self, other_assigned_dept_member_client,
+        av_submitted_request_in_shared_space,
+        dept_with_av_space,
+    ):
+        """A user whose dept is ALSO assigned to the same space can view the request."""
+        event, dept, space = dept_with_av_space
+        item = av_submitted_request_in_shared_space
+        response = other_assigned_dept_member_client.get(
+            _view_url(event, dept, item.public_id)
+        )
+        assert response.status_code == 200
+
+    def test_super_admin_can_view_any_request(
+        self, super_admin_client, av_draft_request, dept_with_av_space,
+    ):
+        """Super admin can view any request regardless of space membership."""
+        event, dept, space = dept_with_av_space
+        response = super_admin_client.get(
+            _view_url(event, dept, av_draft_request.public_id)
+        )
+        assert response.status_code == 200
+
+    def test_invalid_public_id_returns_404(
+        self, dept_member_client, dept_with_av_space,
+    ):
+        """Non-existent public_id returns 404."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.get(
+            _view_url(event, dept, "TST2026-ATEST-AV-9999")
+        )
+        assert response.status_code == 404
+
+    def test_unauthenticated_redirected(self, client, av_draft_request, dept_with_av_space):
+        """Unauthenticated request is redirected or blocked."""
+        event, dept, space = dept_with_av_space
+        response = client.get(
+            _view_url(event, dept, av_draft_request.public_id)
+        )
+        assert response.status_code in (302, 401, 403)
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for recall tests (Task 29)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def av_logged_request(av_base, av_submitted_request):
+    """An AV WorkItem that is SUBMITTED and has an AVRequestPlan published.
+
+    Simulates the AV team having already logged/planned the request, which
+    should block recall.  The WorkLineReview status is left PENDING (the
+    block comes from the plan existing, not the review status in this fixture).
+    """
+    from app.models.av import AVRequestPlan
+
+    seed = av_base
+
+    plan = AVRequestPlan(
+        work_item_id=av_submitted_request.id,
+        revision=1,
+        gear_spec="Projector + screen",
+        authored_by_user_id=seed["av_admin"].id,
+    )
+    db.session.add(plan)
+    db.session.commit()
+    db.session.expire_all()
+
+    return WorkItem.query.get(av_submitted_request.id)
+
+
+# ---------------------------------------------------------------------------
+# Helper for recall
+# ---------------------------------------------------------------------------
+
+def _post_recall(client, event, dept, public_id):
+    """POST the recall endpoint for an existing request."""
+    return client.post(
+        f"/{event.code}/{dept.code}/av/item/{public_id}/recall",
+        follow_redirects=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests: recall to draft (Task 29)
+# ---------------------------------------------------------------------------
+
+class TestRecall:
+    def test_dept_member_can_recall_pending_submitted(
+        self, dept_member_client, av_base, av_submitted_request, dept_with_av_space,
+    ):
+        """Dept member can recall a SUBMITTED request with a PENDING review → DRAFT."""
+        event, dept, space = dept_with_av_space
+        response = _post_recall(
+            dept_member_client, event, dept, av_submitted_request.public_id,
+        )
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_submitted_request.id)
+        assert item.status == WORK_ITEM_STATUS_DRAFT
+
+    def test_recall_deletes_pending_review(
+        self, dept_member_client, av_base, av_submitted_request, dept_with_av_space,
+    ):
+        """After recall, the PENDING WorkLineReview row is deleted."""
+        event, dept, space = dept_with_av_space
+
+        # Verify a review exists before recall
+        item_before = WorkItem.query.get(av_submitted_request.id)
+        assert len(item_before.lines[0].reviews) == 1
+
+        _post_recall(dept_member_client, event, dept, av_submitted_request.public_id)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_submitted_request.id)
+        assert len(item.lines[0].reviews) == 0
+
+    def test_recall_clears_submitted_fields(
+        self, dept_member_client, av_base, av_submitted_request, dept_with_av_space,
+    ):
+        """After recall, submitted_at and submitted_by_user_id are cleared."""
+        event, dept, space = dept_with_av_space
+        _post_recall(dept_member_client, event, dept, av_submitted_request.public_id)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_submitted_request.id)
+        assert item.submitted_at is None
+        assert item.submitted_by_user_id is None
+
+    def test_cannot_recall_when_plan_exists(
+        self, dept_member_client, av_base, av_logged_request, dept_with_av_space,
+    ):
+        """Once the AV team has published a Plan, recall is blocked."""
+        event, dept, space = dept_with_av_space
+        response = _post_recall(
+            dept_member_client, event, dept, av_logged_request.public_id,
+        )
+        # Status must not change to DRAFT
+        db.session.expire_all()
+        item = WorkItem.query.get(av_logged_request.id)
+        assert item.status == WORK_ITEM_STATUS_SUBMITTED
+
+    def test_cannot_recall_draft(
+        self, dept_member_client, av_base, av_draft_request, dept_with_av_space,
+    ):
+        """Recalling a DRAFT request is a no-op (wrong status → flash + redirect)."""
+        event, dept, space = dept_with_av_space
+        response = _post_recall(
+            dept_member_client, event, dept, av_draft_request.public_id,
+        )
+        db.session.expire_all()
+        item = WorkItem.query.get(av_draft_request.id)
+        assert item.status == WORK_ITEM_STATUS_DRAFT  # unchanged
+
+    def test_other_dept_cannot_recall(
+        self, other_dept_member_client, av_base, av_submitted_request, dept_with_av_space,
+    ):
+        """User with access only to a different dept gets 403."""
+        event, dept, space = dept_with_av_space
+        response = _post_recall(
+            other_dept_member_client, event, dept, av_submitted_request.public_id,
+        )
+        assert response.status_code == 403
+        # Status must not change
+        db.session.expire_all()
+        item = WorkItem.query.get(av_submitted_request.id)
+        assert item.status == WORK_ITEM_STATUS_SUBMITTED
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for respond-to-kickback tests (Task 30)
+# ---------------------------------------------------------------------------
+
+def _make_kickback_request(av_submitted_request, review_status):
+    """Mutate the latest WorkLineReview to the given kickback status.
+
+    Returns the WorkItem (refreshed from DB).
+    """
+    db.session.expire_all()
+    item = WorkItem.query.get(av_submitted_request.id)
+    line = item.lines[0]
+    review = max(line.reviews, key=lambda r: r.id)
+    review.status = review_status
+    db.session.commit()
+    db.session.expire_all()
+    return WorkItem.query.get(item.id)
+
+
+@pytest.fixture
+def av_request_with_needs_info(av_submitted_request):
+    """A SUBMITTED AV request whose latest WorkLineReview is NEEDS_INFO."""
+    return _make_kickback_request(av_submitted_request, "NEEDS_INFO")
+
+
+@pytest.fixture
+def av_request_with_needs_adjustment(av_submitted_request):
+    """A SUBMITTED AV request whose latest WorkLineReview is NEEDS_ADJUSTMENT."""
+    return _make_kickback_request(av_submitted_request, "NEEDS_ADJUSTMENT")
+
+
+def _respond_url(event, dept, public_id):
+    return f"/{event.code}/{dept.code}/av/item/{public_id}/respond"
+
+
+# ---------------------------------------------------------------------------
+# Tests: respond to kickback (Task 30)
+# ---------------------------------------------------------------------------
+
+class TestRespond:
+    def test_dept_member_responds_to_needs_info(
+        self, dept_member_client, av_base, av_request_with_needs_info, dept_with_av_space,
+    ):
+        """Dept member can respond to a NEEDS_INFO kickback; review returns to PENDING."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.post(
+            _respond_url(event, dept, av_request_with_needs_info.public_id),
+            data={"response_text": "We need stereo audio for the video clips"},
+            follow_redirects=False,
+        )
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_request_with_needs_info.id)
+        line = item.lines[0]
+        latest_review = max(line.reviews, key=lambda r: r.id)
+        assert latest_review.status == "PENDING"
+
+    def test_response_requires_text(
+        self, dept_member_client, av_base, av_request_with_needs_info, dept_with_av_space,
+    ):
+        """Empty response_text is rejected; review status stays NEEDS_INFO."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.post(
+            _respond_url(event, dept, av_request_with_needs_info.public_id),
+            data={"response_text": ""},
+            follow_redirects=False,
+        )
+        # Should redirect back with a flash error, not 4xx
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_request_with_needs_info.id)
+        line = item.lines[0]
+        latest_review = max(line.reviews, key=lambda r: r.id)
+        assert latest_review.status == "NEEDS_INFO"  # unchanged
+
+    def test_cannot_respond_when_pending(
+        self, dept_member_client, av_base, av_submitted_request, dept_with_av_space,
+    ):
+        """Responding to a PENDING review (not in kickback state) is rejected."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.post(
+            _respond_url(event, dept, av_submitted_request.public_id),
+            data={"response_text": "A response to nothing"},
+            follow_redirects=False,
+        )
+        # Should redirect with flash error
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_submitted_request.id)
+        line = item.lines[0]
+        latest_review = max(line.reviews, key=lambda r: r.id)
+        assert latest_review.status == "PENDING"  # unchanged
+
+    def test_other_dept_cannot_respond(
+        self, other_dept_member_client, av_base, av_request_with_needs_info, dept_with_av_space,
+    ):
+        """User with access only to a different dept gets 403."""
+        event, dept, space = dept_with_av_space
+        response = other_dept_member_client.post(
+            _respond_url(event, dept, av_request_with_needs_info.public_id),
+            data={"response_text": "Unauthorized response"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_request_with_needs_info.id)
+        line = item.lines[0]
+        latest_review = max(line.reviews, key=lambda r: r.id)
+        assert latest_review.status == "NEEDS_INFO"  # unchanged
+
+    def test_edit_resets_needs_adjustment_to_pending(
+        self, dept_member_client, av_base, av_request_with_needs_adjustment, dept_with_av_space,
+    ):
+        """Saving the edit form resets a NEEDS_ADJUSTMENT review back to PENDING."""
+        event, dept, space = dept_with_av_space
+        response = dept_member_client.post(
+            _edit_url(event, dept, av_request_with_needs_adjustment.public_id),
+            data=_minimal_edit_payload(space.id),
+            follow_redirects=False,
+        )
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_request_with_needs_adjustment.id)
+        line = item.lines[0]
+        latest_review = max(line.reviews, key=lambda r: r.id)
+        assert latest_review.status == "PENDING"
+
+    def test_edit_blocked_for_submitted_pending_review(
+        self, dept_member_client, av_base, av_submitted_request, dept_with_av_space,
+    ):
+        """Editing a SUBMITTED request with a PENDING review is still blocked."""
+        event, dept, space = dept_with_av_space
+        original_priority = av_submitted_request.av_request_detail.priority
+
+        response = dept_member_client.post(
+            _edit_url(event, dept, av_submitted_request.public_id),
+            data=_minimal_edit_payload(space.id, overrides={"priority": "NICE_TO_HAVE"}),
+            follow_redirects=False,
+        )
+        assert response.status_code in (302, 303)
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_submitted_request.id)
+        # Priority must be unchanged — edit was blocked
+        assert item.av_request_detail.priority == original_priority
+
+    def test_respond_creates_audit_event(
+        self, dept_member_client, av_base, av_request_with_needs_info, dept_with_av_space,
+    ):
+        """A REQUESTER_RESPONSE audit event is created on the work line."""
+        from app.models import WorkLineAuditEvent
+
+        event, dept, space = dept_with_av_space
+        dept_member_client.post(
+            _respond_url(event, dept, av_request_with_needs_info.public_id),
+            data={"response_text": "Here is the info you asked for."},
+            follow_redirects=False,
+        )
+
+        db.session.expire_all()
+        item = WorkItem.query.get(av_request_with_needs_info.id)
+        line = item.lines[0]
+        audit_events = WorkLineAuditEvent.query.filter_by(
+            work_line_id=line.id,
+            event_type="REQUESTER_RESPONSE",
+        ).all()
+        assert len(audit_events) == 1

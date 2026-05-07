@@ -138,8 +138,10 @@
                 {{ item.created_at.strftime('%b %d, %Y') }}
               </td>
               <td style="padding: 8px; white-space:nowrap;">
-                {# View link deferred to Task 27 — placeholder href for now #}
-                <a class="btn btn-sm" href="#">View</a>
+                <a class="btn btn-sm"
+                   href="{{ url_for('work.av_request_view', event=event.code, dept=dept.code, public_id=item.public_id) }}">
+                  View
+                </a>
               </td>
             </tr>
           {% endfor %}

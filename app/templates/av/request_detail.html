@@ -1,0 +1,418 @@
+{# templates/av/request_detail.html
+   Read-only detail view for an AV request (Task 27).
+   Two-column layout: main content (left) + sidebar (right).
+#}
+{% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
+
+{% block title %}AV Request {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+
+  {# ── Breadcrumb ───────────────────────────────────────────── #}
+  <nav class="muted small" style="margin-bottom: 12px;">
+    <a href="{{ url_for('home.index') }}">Home</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.department_home', event=event.code, dept=dept.code) }}">{{ dept.name }}</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.av_portfolio_landing', event=event.code, dept=dept.code) }}">AV Requests</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <span>{{ work_item.public_id }}</span>
+  </nav>
+
+  {# ── Page header ──────────────────────────────────────────── #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:16px;">
+    <div>
+      <h1 style="margin:0;">
+        AV Request {{ work_item.public_id }}
+        {{ render_status_pill(work_item.status, extra_style="margin-left: 8px; font-weight: normal;") }}
+      </h1>
+      <div class="muted" style="margin-top:4px; line-height:1.5;">
+        {{ dept.name }} &middot; {{ event.name }} ({{ event.code }})
+      </div>
+      <div class="muted" style="margin-top:4px;">
+        Created {{ work_item.created_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if work_item.created_by_user_id %}
+          by {{ work_item.created_by_user_id|user_display }}
+        {% endif %}
+        {% if work_item.submitted_at %}
+          &middot; Submitted {{ work_item.submitted_at.strftime('%Y-%m-%d %H:%M') }}
+          {% if work_item.submitted_by_user_id %}
+            by {{ work_item.submitted_by_user_id|user_display }}
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Action buttons ───────────────────────────────────────── #}
+  <div class="btn-row mb-16">
+    {% if can_edit_draft %}
+      <a class="btn btn-primary"
+         href="{{ url_for('work.av_request_edit', event=event.code, dept=dept.code, public_id=work_item.public_id) }}">
+        Edit Draft
+      </a>
+    {% endif %}
+
+    {% if can_recall %}
+      <form method="post"
+            id="recall-form"
+            action="{{ url_for('work.av_request_recall', event=event.code, dept=dept.code, public_id=work_item.public_id) }}"
+            style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" id="recall-btn" class="btn btn-warning"
+                title="Recall this request back to draft for editing">
+          Recall to Draft
+        </button>
+      </form>
+      <script nonce="{{ csp_nonce }}">
+        document.getElementById('recall-btn').addEventListener('click', function (e) {
+          if (!confirm('Recall this request to draft? The AV team will be notified that you have pulled it back.')) {
+            e.preventDefault();
+          }
+        });
+      </script>
+    {% endif %}
+
+    {% if can_respond_to_kickback and latest_review and latest_review.status == "NEEDS_ADJUSTMENT" %}
+      <a class="btn btn-warning"
+         href="{{ url_for('work.av_request_edit', event=event.code, dept=dept.code, public_id=work_item.public_id) }}">
+        Edit &amp; Resubmit
+      </a>
+    {% elif can_respond_to_kickback %}
+      {# NEEDS_INFO — inline response form shown below; just scroll anchor here #}
+      <a class="btn btn-warning" href="#kickback-response">
+        Respond to AV Team
+      </a>
+    {% endif %}
+
+    <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
+    <a class="btn" href="{{ url_for('work.av_portfolio_landing', event=event.code, dept=dept.code) }}">
+      &larr; Back to AV Requests
+    </a>
+  </div>
+
+  {# ── Two-column layout ────────────────────────────────────── #}
+  <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
+
+    {# ── Main content ─────────────────────────────────────── #}
+    <div style="flex: 1 1 580px; min-width: 0;">
+
+      {# Flash messages #}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}" style="margin-bottom: 12px;">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      {# ── YOUR REQUEST · as submitted ───────────────────── #}
+      <section class="card" style="margin-bottom: 16px;">
+        <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+          Your Request &middot; as submitted
+        </div>
+
+        {% if detail %}
+
+          {# Space #}
+          <div style="margin-bottom: 14px;">
+            <div class="muted small" style="margin-bottom:2px;">Space</div>
+            {% if detail.space %}
+              {# Space detail page is Task 47 — link to # for now #}
+              <strong>{{ detail.space.name }}</strong>
+              <span class="muted small">({{ detail.space.code }})</span>
+              {% if detail.space.location %}
+                <span class="muted small">&middot; {{ detail.space.location }}</span>
+              {% endif %}
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </div>
+
+          {# Description #}
+          {% if line_detail %}
+            <div style="margin-bottom: 14px;">
+              <div class="muted small" style="margin-bottom:2px;">Description</div>
+              <div style="white-space:pre-wrap;">{{ line_detail.description|markdown_links|safe }}</div>
+            </div>
+          {% endif %}
+
+          {# Priority #}
+          <div style="margin-bottom: 14px;">
+            <div class="muted small" style="margin-bottom:4px;">Priority</div>
+            {% if detail.priority == "MUST_HAVE" %}
+              <span class="pill pill-submitted">Must Have</span>
+              <span class="muted small" style="margin-left:6px;">This programming cannot happen without AV support.</span>
+            {% elif detail.priority == "STRONG_PREFERENCE" %}
+              <span class="pill pill-warning">Strong Preference</span>
+              <span class="muted small" style="margin-left:6px;">Significantly better with AV, but could function without.</span>
+            {% elif detail.priority == "NICE_TO_HAVE" %}
+              <span class="pill pill-draft">Nice to Have</span>
+              <span class="muted small" style="margin-left:6px;">Would be a nice enhancement, but not essential.</span>
+            {% else %}
+              <span class="muted">{{ detail.priority }}</span>
+            {% endif %}
+          </div>
+
+          {# Duration #}
+          <div style="margin-bottom: 14px;">
+            <div class="muted small" style="margin-bottom:2px;">Duration</div>
+            {% if detail.duration_model == "HOURS_OF_CONTENT" %}
+              <span>{{ detail.duration_hours }} hour{{ "s" if detail.duration_hours != 1 else "" }} of content</span>
+            {% elif detail.duration_model == "FULL_EVENT" %}
+              <span>Full event</span>
+            {% elif detail.duration_model == "MULTIPLE_SLOTS" %}
+              <span>{{ detail.duration_slots }} slot{{ "s" if detail.duration_slots != 1 else "" }}</span>
+            {% else %}
+              <span class="muted">{{ detail.duration_model }}</span>
+            {% endif %}
+            {% if detail.duration_notes %}
+              <div class="muted small" style="margin-top:4px; white-space:pre-wrap;">{{ detail.duration_notes }}</div>
+            {% endif %}
+          </div>
+
+          {# Gear specificity #}
+          {% if line_detail %}
+            <div style="margin-bottom: 14px;">
+              <div class="muted small" style="margin-bottom:2px;">Gear Preference</div>
+              {% if line_detail.gear_specificity == "USAGE_ONLY" %}
+                <span>AV team chooses gear (usage description only)</span>
+              {% elif line_detail.gear_specificity == "SUGGESTIONS" %}
+                <span>Suggestions provided</span>
+              {% elif line_detail.gear_specificity == "REQUIRED" %}
+                <span>Specific gear required</span>
+              {% else %}
+                <span class="muted">{{ line_detail.gear_specificity }}</span>
+              {% endif %}
+
+              {% if line_detail.suggested_gear_text %}
+                <div style="margin-top:6px; background:#f8fafc; border-left:3px solid #a7f3d0; padding:8px 12px; border-radius:3px;">
+                  <div class="muted small" style="margin-bottom:4px;">Suggested / required gear:</div>
+                  <div style="white-space:pre-wrap;">{{ line_detail.suggested_gear_text|markdown_links|safe }}</div>
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+
+          {# Dept-sourced gear #}
+          {% if detail.dept_sourced_gear_mode == "SOME" %}
+            <div style="margin-bottom: 14px;">
+              <div class="muted small" style="margin-bottom:2px;">Department-sourced gear</div>
+              {% if detail.dept_sourced_gear_text %}
+                <div style="white-space:pre-wrap;">{{ detail.dept_sourced_gear_text|markdown_links|safe }}</div>
+              {% else %}
+                <span class="muted">(department indicated they are sourcing some gear, no description provided)</span>
+              {% endif %}
+            </div>
+          {% endif %}
+
+          {# Primary contact #}
+          <div>
+            <div class="muted small" style="margin-bottom:2px;">Primary contact</div>
+            <strong>{{ detail.primary_contact_name }}</strong>
+            &middot;
+            <a href="mailto:{{ detail.primary_contact_email }}">{{ detail.primary_contact_email }}</a>
+          </div>
+
+        {% else %}
+          <div class="muted">No request details on file.</div>
+        {% endif %}
+      </section>
+
+      {# ── KICKBACK RESPONSE ────────────────────────────── #}
+      {% if can_respond_to_kickback and latest_review %}
+        <section id="kickback-response" class="card" style="margin-bottom: 16px; border-left: 3px solid #f59e0b;">
+
+          {% if latest_review.status == "NEEDS_INFO" %}
+            <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:10px; color:#b45309;">
+              AV Team Needs More Information
+            </div>
+            {% if latest_review.note %}
+              <div style="margin-bottom: 12px; padding: 10px; background:#fffbeb; border-radius: 3px; white-space:pre-wrap;">{{ latest_review.note }}</div>
+            {% endif %}
+            <p class="muted small" style="margin-bottom: 10px;">
+              Please provide a response below. The request will return to AV team review after you submit.
+            </p>
+            <form method="POST"
+                  action="{{ url_for('work.av_request_respond', event=event.code, dept=dept.code, public_id=work_item.public_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div style="margin-bottom: 10px;">
+                <textarea name="response_text" rows="4" required
+                          placeholder="Describe the additional information or context…"
+                          style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em; resize:vertical;"></textarea>
+              </div>
+              <button type="submit" class="btn btn-primary">Submit Response</button>
+            </form>
+
+          {% elif latest_review.status == "NEEDS_ADJUSTMENT" %}
+            <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:10px; color:#b45309;">
+              AV Team Requested an Adjustment
+            </div>
+            {% if latest_review.note %}
+              <div style="margin-bottom: 12px; padding: 10px; background:#fffbeb; border-radius: 3px; white-space:pre-wrap;">{{ latest_review.note }}</div>
+            {% endif %}
+            <p class="muted small" style="margin-bottom: 10px;">
+              Please edit your request to address the AV team's feedback. When you save, the request will return to AV team review.
+            </p>
+            <a class="btn btn-primary"
+               href="{{ url_for('work.av_request_edit', event=event.code, dept=dept.code, public_id=work_item.public_id) }}">
+              Edit &amp; Resubmit
+            </a>
+          {% endif %}
+
+        </section>
+      {% endif %}
+
+      {# ── AV TEAM'S PLAN ────────────────────────────────── #}
+      <section class="card" style="margin-bottom: 16px;">
+        <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+          AV Team's Plan
+          {% if latest_plan %}
+            &middot; Rev. {{ latest_plan.revision }}
+          {% endif %}
+        </div>
+
+        {% if not plans %}
+          <div class="muted">
+            AV team has not yet published a plan for this request.
+          </div>
+        {% else %}
+          {# Latest plan (most prominent) #}
+          <div style="margin-bottom: {% if plans|length > 1 %}16{% else %}0{% endif %}px;">
+            <div style="margin-bottom: 8px;">
+              <span class="muted small">
+                Rev. {{ latest_plan.revision }}
+                &middot; {{ latest_plan.created_at.strftime('%Y-%m-%d %H:%M') }}
+                {% if latest_plan.authored_by_user_id %}
+                  &middot; {{ latest_plan.authored_by_user_id|user_display }}
+                {% endif %}
+              </span>
+            </div>
+
+            {% if latest_plan.gear_spec %}
+              <div style="margin-bottom: 10px;">
+                <div class="muted small" style="margin-bottom:2px;">Gear Spec</div>
+                <div style="white-space:pre-wrap;">{{ latest_plan.gear_spec|markdown_links|safe }}</div>
+              </div>
+            {% endif %}
+
+            {% if latest_plan.planning_notes %}
+              <div>
+                <div class="muted small" style="margin-bottom:2px;">Planning Notes</div>
+                <div style="white-space:pre-wrap;">{{ latest_plan.planning_notes|markdown_links|safe }}</div>
+              </div>
+            {% endif %}
+          </div>
+
+          {# Older revisions (collapsible accordion) — only shown if more than 1 plan #}
+          {% if plans|length > 1 %}
+            <details>
+              <summary class="muted small" style="cursor:pointer; user-select:none; margin-bottom:8px;">
+                Show {{ plans|length - 1 }} older revision{{ "s" if plans|length - 1 != 1 else "" }}
+              </summary>
+              {% for plan in plans[:-1]|reverse %}
+                <div style="border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 12px;">
+                  <div class="muted small" style="margin-bottom: 6px;">
+                    Rev. {{ plan.revision }}
+                    &middot; {{ plan.created_at.strftime('%Y-%m-%d %H:%M') }}
+                    {% if plan.authored_by_user_id %}
+                      &middot; {{ plan.authored_by_user_id|user_display }}
+                    {% endif %}
+                  </div>
+                  {% if plan.gear_spec %}
+                    <div style="margin-bottom: 8px;">
+                      <div class="muted small" style="margin-bottom:2px;">Gear Spec</div>
+                      <div style="white-space:pre-wrap;">{{ plan.gear_spec|markdown_links|safe }}</div>
+                    </div>
+                  {% endif %}
+                  {% if plan.planning_notes %}
+                    <div>
+                      <div class="muted small" style="margin-bottom:2px;">Planning Notes</div>
+                      <div style="white-space:pre-wrap;">{{ plan.planning_notes|markdown_links|safe }}</div>
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </details>
+          {% endif %}
+
+        {% endif %}
+      </section>
+
+    </div>{# end main content column #}
+
+    {# ── Sidebar ──────────────────────────────────────────── #}
+    <div style="flex: 0 0 240px; min-width: 200px;">
+
+      {# Linked context card #}
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;">
+          Context
+        </div>
+        <div style="margin-bottom: 8px;">
+          <div class="muted small">Space</div>
+          {% if detail and detail.space %}
+            {# Space detail page is Task 47 — link to # for now #}
+            <a href="#" title="Space detail page coming in Task 47">
+              {{ detail.space.name }}
+            </a>
+            <span class="muted small">({{ detail.space.code }})</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </div>
+        <div>
+          <div class="muted small">Work type</div>
+          <span>AV Request</span>
+        </div>
+        {# Budget link deferred to sub-project 2 #}
+      </div>
+
+      {# Status timeline card — driven by build_status_timeline() (Task 28) #}
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:10px;">
+          Timeline
+        </div>
+        {% if timeline_events %}
+          <ol style="margin:0; padding-left:18px; line-height:1.8; font-size:0.9em;">
+            {% for event in timeline_events %}
+              <li class="timeline-event timeline-event-{{ event.kind }}">
+                <span class="muted small">{{ event.label }}</span><br>
+                {{ event.timestamp.strftime('%b %d, %Y %H:%M') }}
+                {% if event.actor_user_id %}
+                  <span class="muted small">by {{ event.actor_user_id|user_display }}</span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <div class="muted small">No timeline events yet.</div>
+        {% endif %}
+      </div>
+
+      {# Current review status #}
+      {% if latest_review %}
+        <div class="card" style="margin-bottom: 16px;">
+          <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;">
+            Review Status
+          </div>
+          {{ render_status_pill(latest_review.status) }}
+          {% if latest_review.status == "NEEDS_INFO" %}
+            <div class="muted small" style="margin-top:6px;">
+              The AV team has a question. See the response form above.
+            </div>
+          {% elif latest_review.status == "NEEDS_ADJUSTMENT" %}
+            <div class="muted small" style="margin-top:6px;">
+              The AV team has requested changes. Use "Edit &amp; Resubmit" above.
+            </div>
+          {% endif %}
+          {% if latest_review.note %}
+            <div style="margin-top:8px; padding:8px; background:#f8fafc; border-radius:3px; font-size:0.9em; white-space:pre-wrap;">{{ latest_review.note }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+    </div>{# end sidebar #}
+
+  </div>{# end two-column layout #}
+
+{% endblock %}
