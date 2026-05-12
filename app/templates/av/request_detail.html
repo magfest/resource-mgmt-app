@@ -262,6 +262,163 @@
         </section>
       {% endif %}
 
+      {# ── AV TEAM ACTIONS ──────────────────────────────── #}
+      {# Shown to AV team members when the request is SUBMITTED.              #}
+      {# can_publish_plan: PENDING or LOGGED (rev N+1 revision case, Task 34) #}
+      {# can_kickback / can_reject: PENDING only (not relaxed)                #}
+      {% if can_publish_plan or can_kickback or can_reject %}
+        <section class="card" style="margin-bottom: 16px; border-left: 3px solid #3b82f6;">
+          <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:16px; color:#1d4ed8;">
+            AV Team Action
+          </div>
+
+          {# ── Publish Plan / Revise Plan ───────────────── #}
+          {% if can_publish_plan %}
+            <div style="margin-bottom: 16px;">
+              {% if existing_plans_count > 0 %}
+                <div style="font-weight:600; margin-bottom:6px;">Revise Plan</div>
+                <p class="muted small" style="margin-bottom: 12px;">
+                  A plan has already been published (Rev. {{ existing_plans_count }}).
+                  Submit a revision to update the gear spec. A new revision will be
+                  created and this request will remain in <strong>Logged</strong> status.
+                </p>
+              {% else %}
+                <div style="font-weight:600; margin-bottom:6px;">Publish Plan</div>
+                <p class="muted small" style="margin-bottom: 12px;">
+                  Describe the gear you will provide for this request. A published Plan
+                  transitions this request to <strong>Logged</strong> status.
+                </p>
+              {% endif %}
+              <form method="POST"
+                    action="{{ url_for('work.av_publish_plan', event=event.code, dept=dept.code, public_id=work_item.public_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div style="margin-bottom: 12px;">
+                  <label for="gear-spec" style="display:block; font-weight:600; margin-bottom:4px;">
+                    Gear Spec <span style="color:#dc2626;">*</span>
+                  </label>
+                  <textarea id="gear-spec" name="gear_spec" rows="5" required
+                            placeholder="- 2x wireless lavs&#10;- HDMI capture card&#10;- 16:9 projection screen"
+                            style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em; resize:vertical;">{% if latest_plan %}{{ latest_plan.gear_spec }}{% endif %}</textarea>
+                  <div class="muted small" style="margin-top:3px;">
+                    Markdown bullet lists are supported.
+                  </div>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                  <label for="planning-notes" style="display:block; font-weight:600; margin-bottom:4px;">
+                    Planning Notes <span class="muted small">(optional)</span>
+                  </label>
+                  <textarea id="planning-notes" name="planning_notes" rows="3"
+                            placeholder="Substitutions, caveats, AV-internal logistics…"
+                            style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em; resize:vertical;">{% if latest_plan %}{{ latest_plan.planning_notes or '' }}{% endif %}</textarea>
+                  <div class="muted small" style="margin-top:3px;">
+                    Internal notes visible to AV team and admins. Not shown to the requesting department.
+                  </div>
+                </div>
+
+                {% if existing_plans_count > 0 %}
+                  <button type="submit" class="btn btn-primary">Publish Revision</button>
+                {% else %}
+                  <button type="submit" class="btn btn-primary">Publish Plan</button>
+                {% endif %}
+              </form>
+            </div>
+          {% endif %}
+
+          {# ── Kickback divider ──────────────────────────── #}
+          {% if can_kickback %}
+            {% if can_publish_plan %}
+              <hr style="border:none; border-top:1px solid #e5e7eb; margin: 16px 0;">
+              <div class="muted small" style="text-align:center; margin-bottom: 16px; font-style:italic;">— OR —</div>
+            {% endif %}
+
+            {# Needs Info #}
+            <div style="margin-bottom: 16px;">
+              <div style="font-weight:600; margin-bottom:6px;">Request more information from the department</div>
+              <p class="muted small" style="margin-bottom: 10px;">
+                Use this if you need clarification before you can plan gear. The requesting
+                department will be prompted to respond before the request returns to your queue.
+              </p>
+              <form method="POST"
+                    action="{{ url_for('work.av_kickback_needs_info', event=event.code, dept=dept.code, public_id=work_item.public_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div style="margin-bottom: 10px;">
+                  <label for="needs-info-note" style="display:block; font-weight:600; margin-bottom:4px;">
+                    Note to department <span style="color:#dc2626;">*</span>
+                  </label>
+                  <textarea id="needs-info-note" name="note" rows="3" required
+                            placeholder="What information do you need from the department?"
+                            style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em; resize:vertical;"></textarea>
+                </div>
+                <button type="submit" class="btn btn-warning">Send &ldquo;Needs Info&rdquo;</button>
+              </form>
+            </div>
+
+            <hr style="border:none; border-top:1px solid #e5e7eb; margin: 16px 0;">
+
+            {# Needs Adjustment #}
+            <div>
+              <div style="font-weight:600; margin-bottom:6px;">Request an adjustment to the request</div>
+              <p class="muted small" style="margin-bottom: 10px;">
+                Use this if the department needs to change what they submitted (e.g., reduce
+                scope, clarify details, or remove an item). The department will be directed to
+                edit and resubmit their request.
+              </p>
+              <form method="POST"
+                    action="{{ url_for('work.av_kickback_needs_adjustment', event=event.code, dept=dept.code, public_id=work_item.public_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div style="margin-bottom: 10px;">
+                  <label for="needs-adjustment-note" style="display:block; font-weight:600; margin-bottom:4px;">
+                    Note to department <span style="color:#dc2626;">*</span>
+                  </label>
+                  <textarea id="needs-adjustment-note" name="note" rows="3" required
+                            placeholder="What should the department adjust in their request?"
+                            style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em; resize:vertical;"></textarea>
+                </div>
+                <button type="submit" class="btn btn-warning">Send &ldquo;Needs Adjustment&rdquo;</button>
+              </form>
+            </div>
+
+          {% endif %}{# end can_kickback #}
+
+          {# ── Reject ───────────────────────────────────────── #}
+          {% if can_reject %}
+            <hr style="border:none; border-top:1px solid #e5e7eb; margin: 16px 0;">
+
+            <div>
+              <div style="font-weight:600; margin-bottom:6px; color:#dc2626;">Reject Request</div>
+              <p class="muted small" style="margin-bottom: 10px;">
+                Use this if this request cannot be accommodated at all. This is a
+                <strong>terminal decision</strong> — the request cannot be reopened via this form.
+              </p>
+              <form method="POST"
+                    id="reject-form"
+                    action="{{ url_for('work.av_reject_request', event=event.code, dept=dept.code, public_id=work_item.public_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div style="margin-bottom: 10px;">
+                  <label for="reject-note" style="display:block; font-weight:600; margin-bottom:4px;">
+                    Reason for rejection <span style="color:#dc2626;">*</span>
+                  </label>
+                  <textarea id="reject-note" name="note" rows="3" required
+                            placeholder="Explain why this request can't be accommodated…"
+                            style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em; resize:vertical;"></textarea>
+                </div>
+                <button type="submit" id="reject-btn" class="btn btn-danger">Reject Request</button>
+              </form>
+              <script nonce="{{ csp_nonce }}">
+                document.getElementById('reject-btn').addEventListener('click', function (e) {
+                  if (!confirm('Reject this request? This is a terminal decision and cannot be undone via this form.')) {
+                    e.preventDefault();
+                  }
+                });
+              </script>
+            </div>
+          {% endif %}{# end can_reject #}
+
+        </section>
+      {% endif %}{# end AV team actions block #}
+
       {# ── AV TEAM'S PLAN ────────────────────────────────── #}
       <section class="card" style="margin-bottom: 16px;">
         <div class="muted small" style="text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">

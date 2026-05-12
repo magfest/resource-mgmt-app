@@ -95,13 +95,23 @@
     </h3>
 
     {% if queues.pending_requests %}
+      {# Detect work type from the first item to drive per-type column rendering. #}
+      {% set pending_work_type = queues.pending_requests[0].work_item.portfolio.work_type.code %}
+      {% set pending_is_av = pending_work_type == "AV" %}
+      {% set pending_is_budget = pending_work_type == "BUDGET" %}
       <table>
         <thead>
           <tr>
             <th style="width: 110px;">Request</th>
             <th>Department</th>
+            {% if pending_is_av %}
+              <th style="width: 160px;">Space</th>
+              <th style="width: 110px;">Priority</th>
+            {% endif %}
             <th style="width: 100px;" class="right">Lines</th>
-            <th style="width: 120px;" class="right">Total</th>
+            {% if pending_is_budget %}
+              <th style="width: 120px;" class="right">Total</th>
+            {% endif %}
             <th style="width: 130px;">Submitted</th>
             <th style="width: 80px;"></th>
           </tr>
@@ -119,13 +129,39 @@
                 {{ item.department.name }}
                 <div class="muted small">{{ item.event_cycle.name }}</div>
               </td>
+              {% if pending_is_av %}
+                {% set av_detail = wi.av_request_detail %}
+                <td>
+                  {% if av_detail and av_detail.space %}
+                    {{ av_detail.space.name }}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if av_detail %}
+                    {% set pri = av_detail.priority %}
+                    {% if pri == "MUST_HAVE" %}
+                      <span class="pill" style="background:#fee2e2;color:#991b1b;">MUST HAVE</span>
+                    {% elif pri == "STRONG_PREFERENCE" %}
+                      <span class="pill" style="background:#fef3c7;color:#92400e;">STRONG PREF</span>
+                    {% else %}
+                      <span class="pill" style="background:#f3f4f6;color:#6b7280;">NICE TO HAVE</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+              {% endif %}
               <td class="right num">
                 <span class="pill pill-submitted">{{ item.pending_line_count }}</span>
                 {% if item.pending_line_count != item.total_line_count %}
                   <span class="muted small">/ {{ item.total_line_count }}</span>
                 {% endif %}
               </td>
-              <td class="right num">{{ format_currency(item.total_requested_cents) }}</td>
+              {% if pending_is_budget %}
+                <td class="right num">{{ format_currency(item.total_requested_cents) }}</td>
+              {% endif %}
               <td class="muted small">
                 {% if wi.submitted_at %}
                   {{ wi.submitted_at.strftime('%Y-%m-%d %H:%M') }}

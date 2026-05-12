@@ -602,6 +602,23 @@ class TestCreateRequest:
         response = _post_draft(client, event, dept, space.id)
         assert response.status_code in (302, 401, 403)
 
+    def test_super_admin_can_create_request_without_dept_membership(
+        self, super_admin_client, dept_with_av_space,
+    ):
+        """Super admin can file an AV request for any dept even without dept membership.
+
+        Regression test for the bug where can_create_av_request_for lacked an
+        is_super_admin short-circuit, causing super-admins to hit 403.
+        """
+        event, dept, space = dept_with_av_space
+        response = _post_draft(super_admin_client, event, dept, space.id)
+        assert response.status_code in (302, 303), (
+            f"Expected redirect, got {response.status_code}; "
+            f"body: {response.data[:500]}"
+        )
+        item = WorkItem.query.filter_by(status="DRAFT").first()
+        assert item is not None
+
 
 # ---------------------------------------------------------------------------
 # Fixtures for submit tests

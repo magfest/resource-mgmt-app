@@ -1,0 +1,62 @@
+{% extends "layout/base.html" %}
+
+{% block title %}AV Spaces — {{ event.name }}{% endblock %}
+
+{% block content %}
+<h1>AV Spaces &middot; {{ event.name }}</h1>
+
+{% if not space_rows %}
+  <p class="muted">
+    No spaces are currently visible to you. AV admins can grant your department
+    access via the <a href="{{ url_for('av_spaces.list_spaces') }}">Spaces admin</a> pages.
+  </p>
+{% else %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 120px;">Code</th>
+        <th style="width: 200px;">Name</th>
+        <th style="width: 200px;">Location</th>
+        <th style="width: 100px;">Scope</th>
+        <th style="width: 120px;">Acks</th>
+        <th>Departments</th>
+        <th style="width: 60px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in space_rows %}
+        <tr>
+          <td class="num"><code>{{ row.space.code }}</code></td>
+          <td><strong>{{ row.space.name }}</strong></td>
+          <td>{{ row.space.location or '&mdash;' }}</td>
+          <td>
+            {# Phase 6 placeholder #}
+            <span class="muted">No scope yet</span>
+          </td>
+          <td>
+            {# Phase 7 placeholder — show dept count as proxy for pending acks #}
+            {% if row.active_assignments %}
+              <span class="muted">0&thinsp;/&thinsp;{{ row.active_assignments|length }}</span>
+            {% else %}
+              <span class="muted">&mdash;</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.assigned_dept_codes %}
+              {{ row.assigned_dept_codes | join(', ') }}
+            {% else %}
+              <em class="muted">No depts assigned</em>
+            {% endif %}
+          </td>
+          <td>
+            <a class="btn" href="{{ url_for('av_cross_dept.space_detail', event_code=event.code, space_code=row.space.code) }}">View</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="muted small" style="margin-top: 16px;">
+    {{ space_rows|length }} space(s) visible to you
+  </div>
+{% endif %}
+{% endblock %}

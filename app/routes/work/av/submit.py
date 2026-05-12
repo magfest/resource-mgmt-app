@@ -20,6 +20,7 @@ from flask import flash, redirect, url_for
 
 from app import db
 from app.models import (
+    ActivityEvent,
     WorkItem,
     WorkLine,
     WorkLineReview,
@@ -28,6 +29,10 @@ from app.models import (
     REVIEW_STATUS_PENDING,
 )
 from app.models.av import AVLineDetail
+from app.models.constants import (
+    ACTIVITY_AV_REQUEST_SUBMITTED,
+    ACTIVITY_AV_REQUEST_RECALLED,
+)
 from app.routes import get_user_ctx
 from .. import work_bp
 from .permissions import can_edit_av_request, require_edit_av_request
@@ -47,6 +52,15 @@ def _do_submit(work_item: WorkItem, user_ctx) -> bool:
     (leaves caller to handle redirect).
     """
     submit_work_item(work_item, user_ctx)
+
+    # Log space-scoped activity event for the Space detail page activity feed.
+    db.session.add(ActivityEvent(
+        event_type=ACTIVITY_AV_REQUEST_SUBMITTED,
+        work_item_id=work_item.id,
+        space_id=work_item.av_request_detail.space_id,
+        actor_user_id=user_ctx.user_id,
+    ))
+
     db.session.commit()
 
     try:
@@ -222,6 +236,14 @@ def av_request_recall(event: str, dept: str, public_id: str):
     # Engine helper: sets status=DRAFT, clears submitted_at/submitted_by,
     # logs AUDIT_EVENT_RECALL_TO_DRAFT.
     recall_to_draft(work_item, user_ctx)
+
+    # Log space-scoped activity event for the Space detail page activity feed.
+    db.session.add(ActivityEvent(
+        event_type=ACTIVITY_AV_REQUEST_RECALLED,
+        work_item_id=work_item.id,
+        space_id=work_item.av_request_detail.space_id,
+        actor_user_id=user_ctx.user_id,
+    ))
 
     db.session.commit()
 

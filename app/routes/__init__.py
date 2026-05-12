@@ -120,6 +120,7 @@ def register_all_routes(app: Flask, helpers: RouteHelpers) -> None:
     from .dispatch import dispatch_bp
     from .dev import dev_bp
     from .auth import auth_bp
+    from .av.spaces import bp as av_cross_dept_bp
 
     app.register_blueprint(home_bp)
     app.register_blueprint(admin_config_bp)
@@ -131,4 +132,5 @@ def register_all_routes(app: Flask, helpers: RouteHelpers) -> None:
     app.register_blueprint(dispatch_bp)
     app.register_blueprint(dev_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(av_cross_dept_bp)
 

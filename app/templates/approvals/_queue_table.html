@@ -15,6 +15,7 @@
 {% set work_type_code = items[0].work_item.portfolio.work_type.code if items else "BUDGET" %}
 {% set is_budget = work_type_code == "BUDGET" %}
 {% set is_techops = work_type_code == "TECHOPS" %}
+{% set is_av = work_type_code == "AV" %}
 
 <table>
   <thead>
@@ -27,6 +28,9 @@
       {% elif is_techops %}
         <th style="width: 180px;">Service</th>
         <th>Details</th>
+      {% elif is_av %}
+        <th style="width: 160px;">Space</th>
+        <th>Description</th>
       {% else %}
         <th>Description</th>
       {% endif %}
@@ -107,6 +111,31 @@
                 <div class="muted small">{{ (detail.usage or '-')[:80] }}{% if detail.usage and detail.usage|length > 80 %}...{% endif %}</div>
               {% endif %}
             {% elif detail and detail.description %}
+              {{ detail.description[:80] }}{% if detail.description|length > 80 %}...{% endif %}
+            {% else %}
+              <span class="muted">-</span>
+            {% endif %}
+          </td>
+        {% elif is_av %}
+          {% set av_item_detail = wi.av_request_detail %}
+          <td>
+            {% if av_item_detail and av_item_detail.space %}
+              <strong>{{ av_item_detail.space.name }}</strong>
+              {# Show priority badge so AV team can triage by importance #}
+              {% set pri = av_item_detail.priority %}
+              {% if pri == "MUST_HAVE" %}
+                <div><span class="pill" style="background:#fee2e2;color:#991b1b;font-size:11px;">MUST HAVE</span></div>
+              {% elif pri == "STRONG_PREFERENCE" %}
+                <div><span class="pill" style="background:#fef3c7;color:#92400e;font-size:11px;">STRONG PREF</span></div>
+              {% else %}
+                <div><span class="pill" style="background:#f3f4f6;color:#6b7280;font-size:11px;">NICE TO HAVE</span></div>
+              {% endif %}
+            {% else %}
+              <span class="muted">-</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if detail and detail.description %}
               {{ detail.description[:80] }}{% if detail.description|length > 80 %}...{% endif %}
             {% else %}
               <span class="muted">-</span>

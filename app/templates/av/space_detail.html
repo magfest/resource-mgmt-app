@@ -1,0 +1,254 @@
+{# templates/av/space_detail.html
+   Cross-dept Space detail page (Task 47).
+   Two-column layout: main content (left) + sidebar (right).
+   READ-ONLY. Admin write actions (author scope, lock scope) are Phase 6.
+#}
+{% extends "layout/base.html" %}
+
+{% block title %}{{ space.name }} &middot; AV Spaces &middot; {{ event.name }}{% endblock %}
+
+{% block content %}
+
+  {# ── Breadcrumb ──────────────────────────────────────────────── #}
+  <nav class="muted small" style="margin-bottom: 12px;">
+    <a href="{{ url_for('home.index') }}">Home</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('av_cross_dept.space_list', event_code=event.code) }}">AV Spaces</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <span>{{ space.name }}</span>
+  </nav>
+
+  {# ── Page header ─────────────────────────────────────────────── #}
+  <div style="margin-bottom: 20px;">
+    <h1 style="margin: 0;">
+      {{ space.name }}
+      <code class="muted" style="font-size: 0.65em; font-weight: normal; margin-left: 8px;">{{ space.code }}</code>
+    </h1>
+    <div class="muted" style="margin-top: 6px; line-height: 1.6;">
+      {{ event.name }}
+      {% if space.location %}
+        &middot; {{ space.location }}
+      {% endif %}
+      {% if space.square_feet %}
+        &middot; {{ space.square_feet }} sq ft
+      {% endif %}
+    </div>
+    {% if space.push_in_at or space.push_out_at %}
+      <div class="muted small" style="margin-top: 4px;">
+        {% if space.push_in_at %}
+          Push-in: {{ space.push_in_at.strftime('%b %d, %Y %H:%M') }}
+        {% endif %}
+        {% if space.push_in_at and space.push_out_at %}
+          &middot;
+        {% endif %}
+        {% if space.push_out_at %}
+          Push-out: {{ space.push_out_at.strftime('%b %d, %Y %H:%M') }}
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {# ── File-for-dept CTA ───────────────────────────────────────── #}
+  {# PRIMARY UX REQUIREMENT: make this prominent for dept members #}
+  {% if user_can_file_for %}
+    <div class="card" style="margin-bottom: 20px; border-left: 3px solid #10b981; background: #f0fdf4;">
+      <div style="font-weight: 600; margin-bottom: 10px;">File an AV Request for This Space</div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        {% for dept in user_can_file_for %}
+          <a class="btn btn-primary"
+             href="{{ url_for('work.av_request_new', event=event.code, dept=dept.code) }}?space_id={{ space.id }}">
+            File AV request for {{ dept.name }} &rarr;
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  {% else %}
+    <div class="card" style="margin-bottom: 20px;">
+      <p class="muted" style="margin: 0;">Your department isn&rsquo;t assigned to this space.</p>
+    </div>
+  {% endif %}
+
+  {# ── Two-column layout ───────────────────────────────────────── #}
+  <div style="display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
+
+    {# ── Main content ─────────────────────────────────────────── #}
+    <div style="flex: 1 1 580px; min-width: 0;">
+
+      {# ── Canonical AV Scope (Phase 6 placeholder) ───────────── #}
+      <section class="card" style="margin-bottom: 16px;">
+        <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">
+          Canonical AV Scope
+        </div>
+        {% if latest_scope %}
+          {# Phase 6 will populate this when scope authoring lands #}
+          {# TODO Phase 6: render scope state, text, and ack controls #}
+          <p class="muted">Scope data available (Phase 6 display not yet implemented).</p>
+        {% else %}
+          <p class="muted" style="margin: 0;">
+            AV team has not authored a canonical scope for this space yet.
+            Once published, the scope will appear here for review and acknowledgment.
+          </p>
+        {% endif %}
+      </section>
+
+      {# ── Contributing Requests ──────────────────────────────── #}
+      <section class="card" style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em;">
+            Contributing Requests
+          </div>
+          <span class="muted small">{{ request_rows|length }} total</span>
+        </div>
+
+        {% if request_rows %}
+          <div style="overflow-x: auto;">
+            <table style="width: 100%;">
+              <thead>
+                <tr>
+                  <th style="width: 130px;">ID</th>
+                  <th style="width: 160px;">Department</th>
+                  <th style="width: 120px;">Priority</th>
+                  <th>Description</th>
+                  <th style="width: 110px;">Status</th>
+                  <th style="width: 80px;">Submitted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in request_rows %}
+                  <tr>
+                    <td>
+                      <a href="{{ url_for('work.av_request_view',
+                                         event=event.code,
+                                         dept=row.wi.portfolio.department.code,
+                                         public_id=row.wi.public_id) }}">
+                        {{ row.wi.public_id }}
+                      </a>
+                    </td>
+                    <td>{{ row.wi.portfolio.department.name }}</td>
+                    <td>
+                      {% if row.wi.av_request_detail.priority == "MUST_HAVE" %}
+                        <span class="pill pill-submitted">Must Have</span>
+                      {% elif row.wi.av_request_detail.priority == "STRONG_PREFERENCE" %}
+                        <span class="pill pill-warning">Strong Pref.</span>
+                      {% elif row.wi.av_request_detail.priority == "NICE_TO_HAVE" %}
+                        <span class="pill pill-draft">Nice to Have</span>
+                      {% else %}
+                        <span class="muted">{{ row.wi.av_request_detail.priority }}</span>
+                      {% endif %}
+                    </td>
+                    <td class="muted small" style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                      {% if row.wi.lines and row.wi.lines[0].av_line_detail %}
+                        {{ row.wi.lines[0].av_line_detail.description | truncate(80) }}
+                      {% else %}
+                        &mdash;
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if row.latest_review_status %}
+                        <span class="muted small">{{ row.latest_review_status }}</span>
+                      {% else %}
+                        <span class="muted small">&mdash;</span>
+                      {% endif %}
+                    </td>
+                    <td class="muted small">
+                      {{ row.wi.created_at.strftime('%b %d') }}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="muted" style="margin: 0;">No requests filed yet for this space.</p>
+        {% endif %}
+      </section>
+
+    </div>{# end main content #}
+
+    {# ── Sidebar ──────────────────────────────────────────────── #}
+    <div style="flex: 0 0 240px; min-width: 200px;">
+
+      {# Assigned Departments #}
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px;">
+          Assigned Departments
+          <span class="muted" style="font-weight: normal;">
+            ({{ filed_dept_ids|length }}&thinsp;/&thinsp;{{ active_assignments|length }} filed)
+          </span>
+        </div>
+        {% if active_assignments %}
+          <ul style="list-style: none; margin: 0; padding: 0; line-height: 1.9;">
+            {% for assignment in active_assignments %}
+              <li>
+                <span>{{ assignment.department.name }}</span>
+                {% if assignment.department_id in filed_dept_ids %}
+                  <span style="color: #059669; font-size: 0.82em; margin-left: 4px;">&#10003; filed</span>
+                {% else %}
+                  <span class="muted small" style="margin-left: 4px;">&mdash; not filed</span>
+                {% endif %}
+                {# Phase 7: ack status will appear here #}
+                <span class="muted small" style="display: block; font-size: 0.78em; margin-left: 4px;">ack: &mdash;</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted small" style="margin: 0;">No departments assigned.</p>
+        {% endif %}
+      </div>
+
+      {# Steward — AV Team #}
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+          Steward
+        </div>
+        <div style="font-weight: 600; margin-bottom: 6px;">AV Team</div>
+        {% if steward_users %}
+          <ul style="list-style: none; margin: 0; padding: 0; font-size: 0.9em; line-height: 1.7;">
+            {% for u in steward_users %}
+              <li>{{ u.display_name or u.email }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted small" style="margin: 0;">No AV team members found.</p>
+        {% endif %}
+      </div>
+
+      {# Lock Readiness — AV admin only, Phase 6 placeholder #}
+      {% if user_is_av_admin %}
+        <div class="card" style="margin-bottom: 16px;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+            Lock Readiness
+          </div>
+          <p class="muted small" style="margin: 0;">
+            No scope authored yet. Lock readiness will appear here once a scope
+            is published and acks are pending.
+          </p>
+        </div>
+      {% endif %}
+
+      {# Activity feed #}
+      <div class="card">
+        <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+          Activity
+        </div>
+        {% if activity %}
+          <ol style="list-style: none; margin: 0; padding: 0; font-size: 0.88em;">
+            {% for evt in activity %}
+              <li style="display: flex; gap: 6px; padding: 4px 0; border-bottom: 1px solid #f3f4f6; line-height: 1.4;">
+                <span class="muted small" style="flex-shrink: 0; white-space: nowrap;">
+                  {{ evt.occurred_at.strftime('%b %d %H:%M') }}
+                </span>
+                <span>{{ evt.event_type }}</span>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <p class="muted small" style="margin: 0;">No activity yet.</p>
+        {% endif %}
+      </div>
+
+    </div>{# end sidebar #}
+
+  </div>{# end two-column layout #}
+
+{% endblock %}

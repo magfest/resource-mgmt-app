@@ -275,6 +275,114 @@ def test_cannot_create_av_request_for_unassigned_dept(dept_member_user_ctx, spac
     assert can_create_av_request_for(dept_member_user_ctx, space, department) is False
 
 
+def test_super_admin_bypasses_can_create(super_admin_user_ctx, space_with_dept, department):
+    """Super admins can create AV requests even without dept membership."""
+    space, _ = space_with_dept
+    assert can_create_av_request_for(super_admin_user_ctx, space, department) is True
+
+
+def test_av_admin_does_NOT_bypass_can_create(av_admin_user_ctx, space_with_dept, department):
+    """AV admins (WORKTYPE_ADMIN(AV)) do NOT bypass create — they manage spaces, not requests."""
+    space, _ = space_with_dept
+    # av_admin_user_ctx has no DepartmentMembership for `department`
+    assert can_create_av_request_for(av_admin_user_ctx, space, department) is False
+
+
+# ---------------------------------------------------------------------------
+# Fixture: av_request_in_assigned_space
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="function")
+def av_request_in_assigned_space(av_perm_seed):
+    """A WorkItem filed for DEPT_A in Room 1, with DEPT_A assigned to that space.
+
+    The request was created by dept_member_user so that super_admin and av_admin
+    have no implicit ownership.  Returns the WorkItem.
+    """
+    from app.models import (
+        WorkPortfolio,
+        WorkItem,
+        WorkLine,
+        REQUEST_KIND_PRIMARY,
+        WORK_ITEM_STATUS_DRAFT,
+        WORK_LINE_STATUS_PENDING,
+    )
+    from app.models.av import AVRequestDetail
+
+    seed = av_perm_seed
+    sp = seed["space"]
+    dept = seed["dept_a"]
+    cycle = seed["cycle"]
+    wt = seed["work_type"]
+    filer = seed["dept_member_user"]
+    admin = seed["super_admin_user"]
+
+    # Assign DEPT_A to the space
+    assignment = SpaceDepartmentAssignment(
+        space_id=sp.id,
+        department_id=dept.id,
+        assigned_by_user_id=admin.id,
+    )
+    db.session.add(assignment)
+    db.session.flush()
+
+    portfolio = WorkPortfolio(
+        work_type_id=wt.id,
+        event_cycle_id=cycle.id,
+        department_id=dept.id,
+        created_by_user_id=filer.id,
+        next_public_id_seq=1,
+    )
+    db.session.add(portfolio)
+    db.session.flush()
+
+    work_item = WorkItem(
+        portfolio_id=portfolio.id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        status=WORK_ITEM_STATUS_DRAFT,
+        public_id="TST2026-DEPT_A-AV-1",
+        created_by_user_id=filer.id,
+    )
+    db.session.add(work_item)
+    db.session.flush()
+
+    av_detail = AVRequestDetail(
+        work_item_id=work_item.id,
+        space_id=sp.id,
+        priority="MUST_HAVE",
+        duration_model="FULL_EVENT",
+        dept_sourced_gear_mode="NONE",
+        primary_contact_name="Dept A Member",
+        primary_contact_email="dept_a@test.local",
+        created_by_user_id=filer.id,
+    )
+    db.session.add(av_detail)
+
+    work_line = WorkLine(
+        work_item_id=work_item.id,
+        line_number=1,
+        status=WORK_LINE_STATUS_PENDING,
+    )
+    db.session.add(work_line)
+    db.session.commit()
+
+    return work_item
+
+
+# ---------------------------------------------------------------------------
+# Tests: can_edit_av_request
+# ---------------------------------------------------------------------------
+
+def test_super_admin_bypasses_can_edit(super_admin_user_ctx, av_request_in_assigned_space):
+    """Super admins can edit AV requests even without dept membership."""
+    assert can_edit_av_request(super_admin_user_ctx, av_request_in_assigned_space) is True
+
+
+def test_av_admin_does_NOT_bypass_can_edit(av_admin_user_ctx, av_request_in_assigned_space):
+    """AV admins do NOT bypass edit — they manage spaces, not requests."""
+    assert can_edit_av_request(av_admin_user_ctx, av_request_in_assigned_space) is False
+
+
 # ---------------------------------------------------------------------------
 # Tests: can_ack_av_scope
 # ---------------------------------------------------------------------------

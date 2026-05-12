@@ -30,6 +30,8 @@ from app.models import (
     BudgetLineDetail,
     ContractLineDetail,
     SupplyOrderLineDetail,
+    AVLineDetail,
+    AVRequestDetail,
     User,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STATUS_PENDING,
@@ -640,6 +642,8 @@ def build_approval_queues(
                 .selectinload(WorkLine.supply_detail),
             contains_eager(WorkLineReview.work_line)
                 .selectinload(WorkLine.techops_detail),
+            contains_eager(WorkLineReview.work_line)
+                .selectinload(WorkLine.av_line_detail),
         )
         .filter(WorkLineReview.stage == REVIEW_STAGE_APPROVAL_GROUP)
         .filter(WorkLineReview.approval_group_id == group_id)
@@ -670,7 +674,7 @@ def build_approval_queues(
         pending_by_item[wi_id].append(review)
 
     # Batch load all work items with their lines and details.
-    # Loading all three detail relationships keeps the queue polymorphic.
+    # Loading all detail relationships keeps the queue polymorphic.
     work_items_map = {}
     if work_item_ids:
         work_items_with_lines = WorkItem.query.filter(
@@ -680,8 +684,10 @@ def build_approval_queues(
             selectinload(WorkItem.lines).joinedload(WorkLine.contract_detail),
             selectinload(WorkItem.lines).joinedload(WorkLine.supply_detail),
             selectinload(WorkItem.lines).joinedload(WorkLine.techops_detail),
+            selectinload(WorkItem.lines).joinedload(WorkLine.av_line_detail),
             joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
             joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+            joinedload(WorkItem.av_request_detail).joinedload(AVRequestDetail.space),
         ).all()
         work_items_map = {wi.id: wi for wi in work_items_with_lines}
 
@@ -758,8 +764,10 @@ def build_approval_queues(
             selectinload(WorkItem.lines).joinedload(WorkLine.contract_detail),
             selectinload(WorkItem.lines).joinedload(WorkLine.supply_detail),
             selectinload(WorkItem.lines).joinedload(WorkLine.techops_detail),
+            selectinload(WorkItem.lines).joinedload(WorkLine.av_line_detail),
             joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
             joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+            joinedload(WorkItem.av_request_detail).joinedload(AVRequestDetail.space),
         ).all()
         for wi in additional_items:
             work_items_map[wi.id] = wi

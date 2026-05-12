@@ -105,6 +105,15 @@ def _is_av_team_member(user_ctx) -> bool:
 # Public helpers
 # ---------------------------------------------------------------------------
 
+def is_av_team_member(user_ctx) -> bool:
+    """True if user is a member of the AV_TEAM ApprovalGroup (plain group membership check).
+
+    Does NOT include AV admins or super-admins — use is_av_admin() for elevated
+    roles, or require_av_team_member() for the combined permission gate.
+    """
+    return _is_av_team_member(user_ctx)
+
+
 def is_av_admin(user_ctx) -> bool:
     """True if user holds WORKTYPE_ADMIN role scoped to the AV work type."""
     if user_ctx.is_super_admin:
@@ -152,7 +161,13 @@ def can_create_av_request_for(user_ctx, space: Space, department: Department) ->
     Requires:
     - dept is currently assigned to the space (active assignment).
     - user has AV edit access for that dept (via dept or div membership).
+
+    SUPER_ADMIN bypasses membership checks entirely (they can act on any dept).
+    Note: WORKTYPE_ADMIN(AV) does NOT bypass — they manage spaces/assignments,
+    not file requests on behalf of departments (spec §6).
     """
+    if user_ctx.is_super_admin:
+        return True
     if not _is_dept_assigned(department, space):
         return False
     user_dept_ids = _user_dept_ids_with_av_access(user_ctx, edit=True)
@@ -164,7 +179,13 @@ def can_edit_av_request(user_ctx, request) -> bool:
 
     `request` must expose `request.portfolio.department` and
     `request.av_request_detail.space`.
+
+    SUPER_ADMIN bypasses membership checks entirely.
+    Note: WORKTYPE_ADMIN(AV) does NOT bypass — they manage spaces/assignments,
+    not edit requests on behalf of departments (spec §6).
     """
+    if user_ctx.is_super_admin:
+        return True
     dept = request.portfolio.department
     space = request.av_request_detail.space
     user_dept_ids = _user_dept_ids_with_av_access(user_ctx, edit=True)
