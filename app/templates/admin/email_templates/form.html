@@ -3,6 +3,7 @@
 {% block title %}Edit Email Template - Admin{% endblock %}
 
 {% block content %}
+{% include "components/_narrow_screen_banner.html" %}
 <div class="muted" style="margin-bottom: 12px;">
   <a href="{{ url_for('admin_config.email_templates.list_email_templates') }}">&larr; Back to Email Templates</a>
 </div>

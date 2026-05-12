@@ -6,7 +6,7 @@
 
 {% if lines %}
   {% set show_approved_column = status == "FINALIZED" or totals.approved > 0 %}
-  <table>
+  <table class="responsive-cards">
     <thead>
       <tr>
         <th style="width: 60px;">#</th>
@@ -29,8 +29,8 @@
         {% set detail = line.budget_detail %}
         {% set line_total = (detail.unit_price_cents * detail.quantity) if detail else 0 %}
         <tr id="line-{{ line.line_number }}">
-          <td>{{ line.line_number }}</td>
-          <td>
+          <td data-label="Line #">{{ line.line_number }}</td>
+          <td data-label="Expense">
             {% if detail and detail.expense_account %}
               <strong>{{ detail.expense_account.name }}</strong>
               {% if detail.spend_type %}
@@ -40,7 +40,7 @@
               <span class="muted">-</span>
             {% endif %}
           </td>
-          <td>
+          <td data-label="Details">
             {% if detail and detail.description %}
               {{ detail.description }}
             {% else %}
@@ -60,11 +60,11 @@
               </div>
             {% endif %}
           </td>
-          <td class="right num">{{ detail.quantity|format_qty if detail else '-' }}</td>
-          <td class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
-          <td class="right num">{{ format_currency(line_total) }}</td>
+          <td data-label="Qty." class="right num">{{ detail.quantity|format_qty if detail else '-' }}</td>
+          <td data-label="Unit cost" class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
+          <td data-label="Total requested" class="right num">{{ format_currency(line_total) }}</td>
           {% if show_approved_column %}
-            <td class="right num">
+            <td data-label="Approved" class="right num">
               {% if line.approved_amount_cents is not none %}
                 {% set diff = line.approved_amount_cents - line_total %}
                 <strong style="{% if diff < 0 %}color: #dc3545;{% elif diff > 0 %}color: #059669;{% else %}color: #059669;{% endif %}">
@@ -82,7 +82,7 @@
               {% endif %}
             </td>
           {% endif %}
-          <td>
+          <td data-label="Status">
             {# Two-stage review labels: terminal decisions (ADMIN_FINAL)
                render via the shared macro for a consistent vivid color
                system; AG-stage recommendations keep their stage-specific

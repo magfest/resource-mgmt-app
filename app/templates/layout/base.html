@@ -648,6 +648,185 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+
+        /* ============================================================
+           Responsive narrow-screen rules
+           Single breakpoint at 767.98px. Read-only views (tables,
+           detail pages, navigation) are first-class on phones and
+           tablet-portrait. Edit pages get a "use a wider screen"
+           banner and column-stacking but aren't otherwise reworked.
+           See docs/superpowers/specs/2026-05-12-responsive-narrow-screens-design.md
+           ============================================================ */
+
+        /* Banner partial visibility — default hidden, shown on narrow */
+        .narrow-only { display: none; }
+
+        @media (max-width: 767.98px) {
+            .narrow-only { display: block; }
+
+            /* Class-based two-column grids collapse to one column */
+            .grid-2, .grid-top-2, .top-grid {
+                grid-template-columns: 1fr;
+            }
+
+            /* Inline two-column / three-column grids also collapse.
+               Many templates use inline style="grid-template-columns: 1fr 1fr"
+               or "repeat(2, 1fr)" / "repeat(3, 1fr)". The !important is needed
+               to override inline styles. */
+            [style*="grid-template-columns: 1fr 1fr"],
+            [style*="grid-template-columns:1fr 1fr"],
+            [style*="grid-template-columns: repeat(2"],
+            [style*="grid-template-columns: repeat(3"] {
+                grid-template-columns: 1fr !important;
+            }
+
+            /* Table → card pattern (opt-in via class="responsive-cards") */
+            table.responsive-cards {
+                table-layout: auto;
+            }
+            table.responsive-cards thead {
+                display: none;
+            }
+            table.responsive-cards tbody,
+            table.responsive-cards tr {
+                display: block;
+            }
+            table.responsive-cards tr {
+                border: 1px solid #e5e5e5;
+                border-radius: 10px;
+                padding: 10px 12px;
+                margin-bottom: 12px;
+                background: #fff;
+            }
+            table.responsive-cards td {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 12px;
+                padding: 6px 0;
+                border-bottom: 1px solid #f0f0f0;
+                overflow-wrap: normal;   /* undo the .anywhere waterfall */
+                text-align: left;        /* neutralize per-cell .right alignment */
+            }
+            table.responsive-cards tr td:last-child {
+                border-bottom: none;
+            }
+            table.responsive-cards td[data-label]::before {
+                content: attr(data-label);
+                font-weight: 600;
+                color: #666;
+                font-size: 13px;
+                flex-shrink: 0;
+            }
+            /* Totals/footer rows in card mode: render as a block with no labels */
+            table.responsive-cards tfoot tr {
+                background: #f6f6f6;
+                border-color: #ddd;
+            }
+            table.responsive-cards tfoot td {
+                display: block;
+                text-align: right;
+                border-bottom: none;
+            }
+            table.responsive-cards tfoot td[colspan] {
+                text-align: right;
+                font-weight: 700;
+            }
+
+            /* Nav hamburger (Task 3 populates the markup; CSS is here so
+               the layout is ready when the button lands) */
+            .top-nav-hamburger {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 10px 14px;
+                color: rgba(255, 255, 255, 0.85);
+                background: none;
+                border: none;
+                cursor: pointer;
+                font-size: 20px;
+                line-height: 1;
+            }
+            .top-nav-hamburger:hover {
+                color: #fff;
+                background: rgba(255, 255, 255, 0.12);
+                border-radius: 6px;
+            }
+            /* By default below 768px, hide the dropdown groups */
+            .top-nav-left > .top-nav-dropdown {
+                display: none;
+            }
+            /* When mobile drawer is open, expand worktype dropdowns vertically.
+               .top-nav-left wraps its own children (hamburger + brand stay inline
+               on the first wrapped row; each dropdown takes a full row below).
+               .top-nav-right stays on the right of the same .top-nav row, with
+               align-items: flex-start keeping the user-menu pinned to the top.
+               This preserves desktop-like positioning for the user-menu's
+               absolute-positioned dropdown (right: 0 still works). */
+            .top-nav.mobile-open {
+                align-items: flex-start;
+                padding-top: 6px;
+                padding-bottom: 6px;
+            }
+            .top-nav.mobile-open .top-nav-left {
+                flex-wrap: wrap;
+                flex-grow: 1;
+                align-items: flex-start;
+                row-gap: 4px;
+            }
+            .top-nav.mobile-open .top-nav-left > .top-nav-dropdown {
+                display: block;
+                width: 100%;
+            }
+            .top-nav.mobile-open .top-nav-left > .top-nav-dropdown > .top-nav-link {
+                width: 100%;
+                text-align: left;
+            }
+            /* Scoped to .top-nav-left so the user-menu dropdown (in .top-nav-right)
+               keeps its normal absolute-positioned popup behavior at narrow widths.
+               No `display: block` here — menus stay hidden by default and the existing
+               `.top-nav-dropdown.open > .top-nav-menu { display: block; }` rule from
+               the desktop CSS handles tap-to-expand. Result: tap a section header
+               (e.g. "Reports") to expand just that section, like the desktop pattern. */
+            .top-nav.mobile-open .top-nav-left .top-nav-menu {
+                position: static;
+                box-shadow: none;
+                border: none;
+                background: rgba(255, 255, 255, 0.06);
+                margin: 4px 0 4px 16px;
+                padding: 4px 0;
+                min-width: 0;
+            }
+            .top-nav.mobile-open .top-nav-left .top-nav-menu a {
+                color: rgba(255, 255, 255, 0.85);
+            }
+            .top-nav.mobile-open .top-nav-left .top-nav-menu a:hover {
+                background: rgba(255, 255, 255, 0.12);
+                color: #fff;
+            }
+            .top-nav.mobile-open .top-nav-left .top-nav-divider {
+                background: rgba(255, 255, 255, 0.1);
+            }
+            .top-nav.mobile-open .top-nav-left .top-nav-menu-label {
+                color: rgba(255, 255, 255, 0.6);
+            }
+        }
+
+        /* Hide hamburger at wide widths even if Task 3 hasn't shipped yet */
+        @media (min-width: 768px) {
+            .top-nav-hamburger { display: none; }
+        }
+
+        /* Shrink user-menu label on very narrow screens so the hamburger
+           doesn't get pushed off the right edge. */
+        @media (max-width: 479.98px) {
+            .top-nav-right .top-nav-toggle {
+                max-width: 100px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+        }
     </style>
 
     {% block head %}{% endblock %}

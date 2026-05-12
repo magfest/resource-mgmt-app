@@ -1,7 +1,8 @@
 {# components/_top_nav.html — Persistent top navigation bar with dropdown menus #}
 {% if active_user %}
 <nav class="top-nav">
-  <div class="top-nav-left">
+  <div class="top-nav-left" id="top-nav-mobile-drawer">
+    <button type="button" class="top-nav-hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="top-nav-mobile-drawer">&#9776;</button>
     <a href="{{ url_for('home.index') }}" class="top-nav-brand">MAGFest Budget</a>
 
     {# Menu order is most-frequently-used first. Approvers and budget
@@ -144,19 +145,43 @@
     });
   });
 
-  // Close on outside click
+  // Toggle the mobile-drawer (hamburger) on the nav itself
+  var hamburger = document.querySelector('.top-nav-hamburger');
+  var nav = document.querySelector('.top-nav');
+  if (hamburger && nav) {
+    hamburger.addEventListener('click', function(e) {
+      e.stopPropagation();
+      // Close any open dropdowns when toggling the drawer
+      document.querySelectorAll('.top-nav-dropdown.open').forEach(function(d) {
+        d.classList.remove('open');
+      });
+      var willOpen = !nav.classList.contains('mobile-open');
+      nav.classList.toggle('mobile-open', willOpen);
+      hamburger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+  }
+
+  // Close dropdowns and mobile drawer on outside click
   document.addEventListener('click', function() {
     document.querySelectorAll('.top-nav-dropdown.open').forEach(function(d) {
       d.classList.remove('open');
     });
+    if (nav && nav.classList.contains('mobile-open')) {
+      nav.classList.remove('mobile-open');
+      if (hamburger) hamburger.setAttribute('aria-expanded', 'false');
+    }
   });
 
-  // Close on Escape
+  // Close dropdowns and mobile drawer on Escape
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       document.querySelectorAll('.top-nav-dropdown.open').forEach(function(d) {
         d.classList.remove('open');
       });
+      if (nav && nav.classList.contains('mobile-open')) {
+        nav.classList.remove('mobile-open');
+        if (hamburger) hamburger.setAttribute('aria-expanded', 'false');
+      }
     }
   });
 

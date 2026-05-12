@@ -1,0 +1,20 @@
+{# templates/components/_narrow_screen_banner.html
+
+Dismissible banner shown only below 768px (via .narrow-only class
+defined in app/templates/layout/base.html). Used to nudge users on
+edit/form pages toward a wider screen without blocking them.
+
+Reuses the existing data-hide / data-hide-self handlers in
+base.html:733-762 — no new JS. Dismissal is not persisted across
+page loads; the banner re-appears each time the user lands on an
+edit page. Add localStorage persistence later if it proves annoying.
+#}
+<div class="narrow-only callout callout-info" id="narrow-screen-banner" role="status">
+  <strong>Narrow screen detected.</strong>
+  This page is designed for wider screens — some controls may be cramped on a phone or tablet.
+  <div style="margin-top: 8px;">
+    <button type="button" class="btn btn-muted" data-hide="narrow-screen-banner" data-hide-self>
+      Got it
+    </button>
+  </div>
+</div>
