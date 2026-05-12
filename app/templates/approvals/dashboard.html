@@ -95,7 +95,7 @@
     </h3>
 
     {% if queues.pending_requests %}
-      <table>
+      <table class="responsive-cards">
         <thead>
           <tr>
             <th style="width: 110px;">Request</th>
@@ -115,18 +115,18 @@
                   {{ wi.public_id }}
                 </a>
               </td>
-              <td>
+              <td data-label="Department">
                 {{ item.department.name }}
                 <div class="muted small">{{ item.event_cycle.name }}</div>
               </td>
-              <td class="right num">
+              <td data-label="Lines" class="right num">
                 <span class="pill pill-submitted">{{ item.pending_line_count }}</span>
                 {% if item.pending_line_count != item.total_line_count %}
                   <span class="muted small">/ {{ item.total_line_count }}</span>
                 {% endif %}
               </td>
-              <td class="right num">{{ format_currency(item.total_requested_cents) }}</td>
-              <td class="muted small">
+              <td data-label="Total" class="right num">{{ format_currency(item.total_requested_cents) }}</td>
+              <td data-label="Submitted" class="muted small">
                 {% if wi.submitted_at %}
                   {{ wi.submitted_at.strftime('%Y-%m-%d %H:%M') }}
                 {% endif %}
@@ -177,7 +177,7 @@
     </h3>
 
     {% if queues.recently_decided_requests %}
-      <table>
+      <table class="responsive-cards">
         <thead>
           <tr>
             <th style="width: 110px;">Request</th>
@@ -196,12 +196,12 @@
                   {{ wi.public_id }}
                 </a>
               </td>
-              <td>
+              <td data-label="Department">
                 {{ item.department.name }}
                 <div class="muted small">{{ item.event_cycle.name }}</div>
               </td>
-              <td class="right num">{{ item.total_line_count }}</td>
-              <td class="right num">{{ format_currency(item.total_requested_cents) }}</td>
+              <td data-label="Lines" class="right num">{{ item.total_line_count }}</td>
+              <td data-label="Total" class="right num">{{ format_currency(item.total_requested_cents) }}</td>
               <td>
                 <a class="btn btn-muted" href="{{ url_for('work.work_item_detail', event=item.event_cycle.code, dept=item.department.code, public_id=wi.public_id, work_type_slug=wi.portfolio.work_type_slug) }}" style="padding: 4px 8px; font-size: 12px;">
                   View

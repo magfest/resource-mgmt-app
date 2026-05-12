@@ -3,6 +3,7 @@
 {% block title %}{% if category %}Edit Supply Category{% else %}New Supply Category{% endif %} - Admin{% endblock %}
 
 {% block content %}
+{% include "components/_narrow_screen_banner.html" %}
 <h1>{% if category %}Edit Supply Category{% else %}New Supply Category{% endif %}</h1>
 <div class="muted" style="margin: 8px 0 16px;">
   {% if category %}

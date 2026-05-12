@@ -15,7 +15,27 @@
   .notes-row + tr td {
     border-top: 1px solid #e0e0e0;
   }
+
+  /* In card mode, attach .notes-row visually to the parent item card so each
+     fixed-cost item is one combined card instead of two disconnected ones.
+     :has() is supported in all modern browsers (Chrome 105+, Safari 15.4+,
+     Firefox 121+); on older browsers the two cards just appear adjacent. */
+  @media (max-width: 767.98px) {
+    table.responsive-cards .notes-row {
+      margin-top: -13px;
+      border-top: none;
+      border-radius: 0 0 10px 10px;
+      background: #fafafa;
+      padding-top: 4px;
+    }
+    table.responsive-cards tr:has(+ .notes-row) {
+      border-radius: 10px 10px 0 0;
+      margin-bottom: 0;
+    }
+  }
 </style>
+
+{% include "components/_narrow_screen_banner.html" %}
 
   {% set status = work_item.status | upper %}
   {% set status_label = friendly_status(status) if friendly_status else status %}
@@ -126,7 +146,7 @@
       {% endif %}
 
       {% if lines %}
-        <table>
+        <table class="responsive-cards">
           <thead>
             <tr>
               <th style="width: 40px;">#</th>
@@ -143,8 +163,8 @@
               {% set detail = line.budget_detail %}
               {% set line_total = (detail.unit_price_cents * detail.quantity) if detail else 0 %}
               <tr>
-                <td>{{ line.line_number }}</td>
-                <td>
+                <td data-label="Line #">{{ line.line_number }}</td>
+                <td data-label="Expense">
                   {% if detail and detail.expense_account %}
                     <strong>{{ detail.expense_account.name }}</strong>
                     {% if detail.spend_type %}
@@ -154,7 +174,7 @@
                     <span class="muted">-</span>
                   {% endif %}
                 </td>
-                <td>
+                <td data-label="Details">
                   {% if detail and detail.description %}
                     {{ detail.description }}
                   {% else %}
@@ -169,9 +189,9 @@
                     </div>
                   {% endif %}
                 </td>
-                <td class="right num">{{ detail.quantity if detail else '-' }}</td>
-                <td class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
-                <td class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
+                <td data-label="Qty" class="right num">{{ detail.quantity if detail else '-' }}</td>
+                <td data-label="Unit" class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
+                <td data-label="Total" class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
                 <td>
                   <div style="display: flex; gap: 4px;">
                     <a class="btn" href="{{ url_for('work.line_edit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="padding: 4px 8px; font-size: 12px;">
@@ -233,7 +253,7 @@
           {% endif %}
         {% endif %}
 
-        <table>
+        <table class="responsive-cards">
           <thead>
             <tr>
               <th>Item</th>
@@ -249,14 +269,14 @@
               {% set existing_qty = item.existing_quantity %}
               {% set existing_notes = item.existing_notes %}
               <tr>
-                <td>
+                <td data-label="Item">
                   <strong>{{ acc.name }}</strong>
                   {% if item.effective_description %}
                     <div class="muted small">{{ item.effective_description|markdown_links|safe }}</div>
                   {% endif %}
                 </td>
-                <td class="right num">{{ format_currency(unit_price) }}</td>
-                <td>
+                <td data-label="Unit price" class="right num">{{ format_currency(unit_price) }}</td>
+                <td data-label="Quantity">
                   <input type="number"
                          name="fixed_qty_{{ acc.id }}"
                          value="{{ existing_qty if existing_qty else '' }}"
@@ -267,7 +287,7 @@
                          data-unit-price="{{ unit_price }}"
                          class="fixed-qty-input">
                 </td>
-                <td class="right num fixed-line-total" data-account-id="{{ acc.id }}">
+                <td data-label="Total" class="right num fixed-line-total" data-account-id="{{ acc.id }}">
                   {% if existing_qty %}
                     {{ format_currency((unit_price * existing_qty) | int) }}
                   {% else %}
@@ -276,7 +296,7 @@
                 </td>
               </tr>
               <tr class="notes-row">
-                <td colspan="4" style="padding-top: 0; border-top: none;">
+                <td data-label="Notes" colspan="4" style="padding-top: 0; border-top: none;">
                   <input type="text"
                          name="fixed_notes_{{ acc.id }}"
                          value="{{ existing_notes }}"
@@ -322,7 +342,7 @@
     {% if hotel_lines %}
     <section class="card" style="margin-bottom: 16px;">
       <h3 style="margin:0 0 12px 0;">Current Hotel Requests</h3>
-      <table>
+      <table class="responsive-cards">
         <thead>
           <tr>
             <th>Room Type</th>
@@ -337,12 +357,12 @@
             {% set detail = line.budget_detail %}
             {% set line_total = (detail.unit_price_cents * detail.quantity) if detail else 0 %}
             <tr>
-              <td>
+              <td data-label="Room type">
                 <strong>{{ detail.expense_account.name if detail and detail.expense_account else '-' }}</strong>
               </td>
-              <td>{{ detail.description if detail else '-' }}</td>
-              <td class="right num">{{ detail.quantity | int if detail else '-' }}</td>
-              <td class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
+              <td data-label="Description">{{ detail.description if detail else '-' }}</td>
+              <td data-label="Nights" class="right num">{{ detail.quantity | int if detail else '-' }}</td>
+              <td data-label="Total" class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
               <td>
                 <form method="post" action="{{ url_for('work.line_delete', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -629,7 +649,7 @@
           {% endif %}
         {% endif %}
 
-        <table>
+        <table class="responsive-cards">
           <thead>
             <tr>
               <th>Badge Type</th>
@@ -643,13 +663,13 @@
               {% set existing_qty = item.existing_quantity %}
               {% set existing_notes = item.existing_notes %}
               <tr>
-                <td>
+                <td data-label="Badge type">
                   <strong>{{ acc.name }}</strong>
                   {% if item.effective_description %}
                     <div class="muted small">{{ item.effective_description|markdown_links|safe }}</div>
                   {% endif %}
                 </td>
-                <td>
+                <td data-label="Quantity">
                   <input type="number"
                          name="badge_qty_{{ acc.id }}"
                          value="{{ existing_qty if existing_qty else '' }}"
@@ -658,7 +678,7 @@
                          placeholder="0"
                          style="width: 80px;">
                 </td>
-                <td>
+                <td data-label="Notes">
                   <input type="text"
                          name="badge_notes_{{ acc.id }}"
                          value="{{ existing_notes }}"

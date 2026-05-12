@@ -16,7 +16,7 @@
 {% set is_budget = work_type_code == "BUDGET" %}
 {% set is_techops = work_type_code == "TECHOPS" %}
 
-<table>
+<table class="responsive-cards">
   <thead>
     <tr>
       <th style="width: 110px;">Request</th>
@@ -62,9 +62,9 @@
           </a>
           <div class="muted small">{{ portfolio.department.name if portfolio else '-' }}</div>
         </td>
-        <td>{{ line.line_number }}</td>
+        <td data-label="Line #">{{ line.line_number }}</td>
         {% if is_budget %}
-          <td>
+          <td data-label="Expense">
             {% if detail and detail.expense_account %}
               <strong>{{ detail.expense_account.name }}</strong>
               {% if detail.spend_type %}
@@ -74,7 +74,7 @@
               <span class="muted">-</span>
             {% endif %}
           </td>
-          <td>
+          <td data-label="Description">
             {% if detail and detail.description %}
               {{ detail.description[:80] }}{% if detail.description|length > 80 %}...{% endif %}
             {% else %}
@@ -83,7 +83,7 @@
           </td>
         {% elif is_techops %}
           {% set st = detail.service_type if detail else None %}
-          <td>
+          <td data-label="Service">
             {% if st %}
               <strong>{{ st.name }}</strong>
               {% if st.code == "PHONE" and detail.config and detail.config.get("external_callable") %}
@@ -93,7 +93,7 @@
               <span class="muted">-</span>
             {% endif %}
           </td>
-          <td>
+          <td data-label="Details">
             {% if detail and st and st.instance_noun %}
               {# Per-instance line: show location + usage with service-
                  appropriate labels (RADIO_CHANNEL repurposes location for
@@ -113,7 +113,7 @@
             {% endif %}
           </td>
         {% else %}
-          <td>
+          <td data-label="Description">
             {% if detail and detail.description %}
               {{ detail.description[:80] }}{% if detail.description|length > 80 %}...{% endif %}
             {% else %}
@@ -122,10 +122,10 @@
           </td>
         {% endif %}
         {% if is_budget %}
-          <td class="right num">{{ format_currency(item.line_total_cents) }}</td>
+          <td data-label="Amount" class="right num">{{ format_currency(item.line_total_cents) }}</td>
         {% endif %}
         {% if show_status %}
-          <td>
+          <td data-label="Status">
             {% set status = review.status | upper %}
             {# This is the reviewer dashboard, so show reviewer prefix for clarity #}
             {% if status == "APPROVED" %}
@@ -141,7 +141,7 @@
           </td>
         {% endif %}
         {% if show_decided_at %}
-          <td class="muted small">
+          <td data-label="Decided" class="muted small">
             {% if review.decided_at %}
               {{ review.decided_at.strftime('%m/%d %H:%M') }}
             {% else %}

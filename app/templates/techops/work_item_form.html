@@ -12,6 +12,7 @@
 {% block title %}{% if is_edit %}Edit {{ work_item.public_id }}{% else %}New TechOps Request{% endif %} - {{ ctx.department.name }}{% endblock %}
 
 {% block content %}
+{% include "components/_narrow_screen_banner.html" %}
 
   {# Breadcrumb #}
   <nav class="muted small" style="margin-bottom: 12px;">

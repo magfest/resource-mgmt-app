@@ -3,6 +3,7 @@
 {% block title %}{% if contract_type %}Edit Contract Type{% else %}New Contract Type{% endif %} - Admin{% endblock %}
 
 {% block content %}
+{% include "components/_narrow_screen_banner.html" %}
 <h1>{% if contract_type %}Edit Contract Type{% else %}New Contract Type{% endif %}</h1>
 <div class="muted" style="margin: 8px 0 16px;">
   {% if contract_type %}

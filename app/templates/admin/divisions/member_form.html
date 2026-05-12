@@ -3,6 +3,7 @@
 {% block title %}{% if membership %}Edit User{% else %}Add User{% endif %} - {{ division.name }} - Admin{% endblock %}
 
 {% block content %}
+{% include "components/_narrow_screen_banner.html" %}
 <h1>{% if membership %}Edit User{% else %}Add User{% endif %}</h1>
 <div class="muted" style="margin: 8px 0 16px;">
   {% if membership %}
