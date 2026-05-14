@@ -834,6 +834,7 @@ def create_app() -> Flask:
     def internal_error(error):
         # Rollback any pending database transaction to avoid connection issues
         db.session.rollback()
+        app.logger.exception("Unhandled 500 error")   
         g._skip_nav_queries = True
         return render_template('errors/500.html', error=error), 500
 
@@ -842,7 +843,7 @@ def create_app() -> Flask:
         # Database connection issues (connection refused, timeout, etc.)
         db.session.rollback()
         g._skip_nav_queries = True
-        app.logger.error(f"Database connection error: {error}")
+        app.logger.error(f"Database connection error: {error}", exc_info=True)   
         return render_template('errors/503.html', error=error if app.debug else None), 503
 
     @app.errorhandler(DatabaseError)
@@ -850,7 +851,7 @@ def create_app() -> Flask:
         # Other database errors
         db.session.rollback()
         g._skip_nav_queries = True
-        app.logger.error(f"Database error: {error}")
+        app.logger.error(f"Database error: {error}", exc_info=True)      
         return render_template('errors/500.html', error=error if app.debug else None), 500
 
     # In production, catch all unhandled exceptions
