@@ -233,7 +233,7 @@ class WorkItem(db.Model):
     __tablename__ = "work_items"
 
     id = db.Column(db.Integer, primary_key=True)
-    public_id = db.Column(db.String(32), unique=True, nullable=True, index=True)
+    public_id = db.Column(db.String(100), unique=True, nullable=True, index=True)
 
     portfolio_id = db.Column(
         db.Integer,
