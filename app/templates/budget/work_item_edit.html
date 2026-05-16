@@ -772,7 +772,7 @@
       <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee;">
         <form method="post" action="{{ url_for('work.work_item_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="return_to" value="{{ request.url }}">
+          <input type="hidden" name="return_to" value="{{ request.path }}">
           <div style="margin-bottom: 8px;">
             <label for="comment" style="font-size: 13px; font-weight: 600;">Add Note:</label>
             <textarea name="comment" id="comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Add context, justification, or notes for reviewers..."></textarea>
