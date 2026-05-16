@@ -17,7 +17,7 @@
   {% if work_item.income_notes %}
     <div>
       <span style="font-weight: 600; font-size: 13px;">Notes:</span>
-      <span style="white-space: pre-wrap;">{{ work_item.income_notes }}</span>
+      <span style="white-space: pre-wrap;">{{ work_item.income_notes|markdown_links|safe }}</span>
     </div>
   {% endif %}
 </div>

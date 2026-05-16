@@ -142,6 +142,7 @@
         <label for="description"><strong>Details</strong></label>
         <textarea name="description" id="description" rows="3" class="mt-4"
                   placeholder="Please provide a detailed explanation what this line item is for...">{{ form_data.description if form_data else '' }}</textarea>
+        {% include "components/_rich_text_hint.html" %}
       </div>
 
       {# Actions #}

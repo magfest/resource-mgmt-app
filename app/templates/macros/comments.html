@@ -22,7 +22,7 @@
           <span class="pill" style="margin-left: 4px;">Admin Only</span>
         {% endif %}
       </div>
-      <div style="margin-top: 4px; white-space: pre-wrap;">{{ comment.body }}</div>
+      <div style="margin-top: 4px; white-space: pre-wrap;">{{ comment.body|markdown_links|safe }}</div>
     </div>
   {% endfor %}
 {% else %}

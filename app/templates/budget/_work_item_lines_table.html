@@ -42,7 +42,7 @@
           </td>
           <td data-label="Details">
             {% if detail and detail.description %}
-              {{ detail.description }}
+              <div style="white-space: pre-wrap;">{{ detail.description|markdown_links|safe }}</div>
             {% else %}
               <span class="muted">-</span>
             {% endif %}

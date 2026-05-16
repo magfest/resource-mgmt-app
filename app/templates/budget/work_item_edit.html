@@ -176,7 +176,7 @@
                 </td>
                 <td data-label="Details">
                   {% if detail and detail.description %}
-                    {{ detail.description }}
+                    <div style="white-space: pre-wrap;">{{ detail.description|markdown_links|safe }}</div>
                   {% else %}
                     <span class="muted">-</span>
                   {% endif %}
@@ -360,7 +360,13 @@
               <td data-label="Room type">
                 <strong>{{ detail.expense_account.name if detail and detail.expense_account else '-' }}</strong>
               </td>
-              <td data-label="Description">{{ detail.description if detail else '-' }}</td>
+              <td data-label="Description">
+                {% if detail and detail.description %}
+                  <div style="white-space: pre-wrap;">{{ detail.description|markdown_links|safe }}</div>
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
               <td data-label="Nights" class="right num">{{ detail.quantity | int if detail else '-' }}</td>
               <td data-label="Total" class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
               <td>
@@ -600,7 +606,8 @@
         {# Step 6: Description #}
         <div style="margin-bottom: 20px;">
           <label for="description" style="display: block; font-weight: 600; margin-bottom: 8px;">Brief description (who is this for?)</label>
-          <input type="text" name="description" id="description" placeholder="e.g. contracted suite for Saturday's headliner Ivan & the Ivans; self-paid rooms for indie devs" style="width: 100%; max-width: 500px;">
+          <textarea name="description" id="description" rows="2" placeholder="e.g. contracted suite for Saturday's headliner Ivan & the Ivans; self-paid rooms for indie devs" style="width: 100%; max-width: 500px;"></textarea>
+          {% include "components/_rich_text_hint.html" %}
         </div>
 
         {# Preview #}
@@ -755,6 +762,7 @@
           <div style="margin-bottom: 10px;">
             <label for="income_notes" style="font-size: 13px; font-weight: 600;">Income Notes:</label>
             <textarea name="income_notes" id="income_notes" rows="2" style="width: 100%; margin-top: 4px;" placeholder="Describe the source of expected income (e.g., merch sales, pilk black market)...">{{ work_item.income_notes or '' }}</textarea>
+            {% include "components/_rich_text_hint.html" %}
           </div>
           <button type="submit" class="btn btn-primary">Save Income Info</button>
         </form>
@@ -768,6 +776,7 @@
           <div style="margin-bottom: 8px;">
             <label for="comment" style="font-size: 13px; font-weight: 600;">Add Note:</label>
             <textarea name="comment" id="comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Add context, justification, or notes for reviewers..."></textarea>
+            {% include "components/_rich_text_hint.html" %}
           </div>
           {% if user_ctx.is_super_admin %}
             <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
@@ -791,7 +800,7 @@
                 <span class="pill" style="margin-left: 4px;">Admin Only</span>
               {% endif %}
             </div>
-            <div style="margin-top: 4px; white-space: pre-wrap;">{{ comment.body }}</div>
+            <div style="margin-top: 4px; white-space: pre-wrap;">{{ comment.body|markdown_links|safe }}</div>
           </div>
         {% endfor %}
       {% else %}
