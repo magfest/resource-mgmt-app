@@ -3,7 +3,7 @@ Work item edit routes - edit form, save, fixed costs, hotel wizard.
 """
 from decimal import Decimal, InvalidOperation
 
-from flask import render_template, redirect, url_for, request, flash
+from flask import render_template, redirect, url_for, request, flash, abort
 
 from app import db
 from app.models import (
@@ -41,6 +41,25 @@ from ..helpers import (
     get_next_line_number,
 )
 from .common import get_work_item_by_public_id, calculate_event_nights
+
+
+# ============================================================
+# Audit helpers
+# ============================================================
+
+def _write_work_item_audit(work_item, event_type, *, old_value=None,
+                           new_value=None, snapshot=None, reason=None,
+                           actor_user_id):
+    """Append a WorkItemAuditEvent row. Caller is responsible for db.session.commit()."""
+    db.session.add(WorkItemAuditEvent(
+        work_item_id=work_item.id,
+        event_type=event_type,
+        old_value=old_value,
+        new_value=new_value,
+        snapshot=snapshot,
+        reason=reason,
+        created_by_user_id=actor_user_id,
+    ))
 
 
 # ============================================================
@@ -286,17 +305,20 @@ def work_item_reason_save(event: str, dept: str, public_id: str, work_type_slug:
 def work_item_income_save(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
     """
     Save income information for a DRAFT work item.
-    Income is informational only — does not affect approval workflow.
+    Writes WorkItemAuditEvent rows for any field whose value actually changed.
     """
+    user_ctx = get_user_ctx()
     work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
-    perms = require_work_item_edit(work_item, ctx)
+    require_work_item_edit(work_item, ctx)
 
-    # Parse dollar amount and convert to cents
+    old_estimate = work_item.income_estimate_cents
+    old_notes = work_item.income_notes
+
     amount_str = (request.form.get("income_estimate") or "").strip()
     if amount_str:
         try:
             dollars = Decimal(amount_str.replace(",", "").replace("$", ""))
-            work_item.income_estimate_cents = int(dollars * 100)
+            new_estimate = int(dollars * 100)
         except Exception:
             flash("Invalid dollar amount.", "error")
             return redirect(url_for(
@@ -304,11 +326,28 @@ def work_item_income_save(event: str, dept: str, public_id: str, work_type_slug:
                 public_id=public_id, tab="notes",
             ))
     else:
-        work_item.income_estimate_cents = None
+        new_estimate = None
 
-    # Save income notes
-    notes = (request.form.get("income_notes") or "").strip()
-    work_item.income_notes = notes if notes else None
+    new_notes_raw = (request.form.get("income_notes") or "").strip()
+    new_notes = new_notes_raw if new_notes_raw else None
+
+    if new_estimate != old_estimate:
+        _write_work_item_audit(
+            work_item, "INCOME_ESTIMATE_CHANGE",
+            old_value=str(old_estimate) if old_estimate is not None else None,
+            new_value=str(new_estimate) if new_estimate is not None else None,
+            actor_user_id=user_ctx.user_id,
+        )
+        work_item.income_estimate_cents = new_estimate
+
+    if new_notes != old_notes:
+        _write_work_item_audit(
+            work_item, "INCOME_NOTES_CHANGE",
+            old_value=old_notes,
+            new_value=new_notes,
+            actor_user_id=user_ctx.user_id,
+        )
+        work_item.income_notes = new_notes
 
     db.session.commit()
 
@@ -895,4 +934,93 @@ def hotel_wizard_add(event: str, dept: str, public_id: str, work_type_slug: str 
         dept=dept,
         public_id=public_id,
         tab="hotel-services"
+    ))
+
+
+# ============================================================
+# Note (Comment) Edit/Delete Routes — DRAFT, author-only
+# ============================================================
+
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/comment/<int:comment_id>/edit")
+@work_bp.post("/<event>/<dept>/budget/item/<public_id>/comment/<int:comment_id>/edit")
+def work_item_comment_edit(event: str, dept: str, public_id: str,
+                           comment_id: int, work_type_slug: str = "budget"):
+    """Edit your own DRAFT note. Author-only. Writes an audit row when the body changes."""
+    from app.models import WorkItemComment
+
+    user_ctx = get_user_ctx()
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
+    require_work_item_edit(work_item, ctx)
+
+    comment = WorkItemComment.query.filter_by(
+        id=comment_id, work_item_id=work_item.id
+    ).first_or_404()
+
+    if comment.created_by_user_id != user_ctx.user_id:
+        abort(403)
+
+    new_body = (request.form.get("comment") or "").strip()
+    if not new_body:
+        flash("Comment text is required.", "error")
+        return redirect(url_for(
+            "work.work_item_edit", event=event, dept=dept,
+            public_id=public_id, tab="notes",
+        ))
+
+    old_body = comment.body
+    if new_body != old_body:
+        _write_work_item_audit(
+            work_item, "COMMENT_EDIT",
+            old_value=old_body, new_value=new_body,
+            snapshot={"comment_id": comment.id,
+                      "comment_created_at": comment.created_at.isoformat()},
+            actor_user_id=user_ctx.user_id,
+        )
+        comment.body = new_body
+        db.session.commit()
+        flash("Note updated.", "success")
+    else:
+        flash("No changes to save.", "info")
+
+    return redirect(url_for(
+        "work.work_item_edit", event=event, dept=dept,
+        public_id=public_id, tab="notes",
+    ))
+
+
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/comment/<int:comment_id>/delete")
+@work_bp.post("/<event>/<dept>/budget/item/<public_id>/comment/<int:comment_id>/delete")
+def work_item_comment_delete(event: str, dept: str, public_id: str,
+                             comment_id: int, work_type_slug: str = "budget"):
+    """Delete your own DRAFT note. Author-only. Hard-delete with full body in audit."""
+    from app.models import WorkItemComment
+
+    user_ctx = get_user_ctx()
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
+    require_work_item_edit(work_item, ctx)
+
+    comment = WorkItemComment.query.filter_by(
+        id=comment_id, work_item_id=work_item.id
+    ).first_or_404()
+
+    if comment.created_by_user_id != user_ctx.user_id:
+        abort(403)
+
+    _write_work_item_audit(
+        work_item, "COMMENT_DELETE",
+        old_value=comment.body, new_value=None,
+        snapshot={
+            "comment_id": comment.id,
+            "comment_created_at": comment.created_at.isoformat(),
+            "comment_author_user_id": comment.created_by_user_id,
+        },
+        actor_user_id=user_ctx.user_id,
+    )
+    db.session.delete(comment)
+    db.session.commit()
+
+    flash("Note deleted.", "success")
+    return redirect(url_for(
+        "work.work_item_edit", event=event, dept=dept,
+        public_id=public_id, tab="notes",
     ))

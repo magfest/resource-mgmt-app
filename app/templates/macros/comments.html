@@ -21,6 +21,9 @@
         {% if comment.visibility == "ADMIN" %}
           <span class="pill" style="margin-left: 4px;">Admin Only</span>
         {% endif %}
+        {% if comment.updated_at and (comment.updated_at - comment.created_at).total_seconds() > 1 %}
+          <span class="muted" style="margin-left: 4px;">(edited {% if comment.updated_at.date() == comment.created_at.date() %}{{ comment.updated_at.strftime('%H:%M') }}{% else %}{{ comment.updated_at.strftime('%Y-%m-%d %H:%M') }}{% endif %})</span>
+        {% endif %}
       </div>
       <div style="margin-top: 4px; white-space: pre-wrap;">{{ comment.body|markdown_links|safe }}</div>
     </div>

@@ -476,6 +476,8 @@ class WorkItemComment(db.Model):
     body = db.Column(db.Text, nullable=False)
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, index=True)
     created_by_user_id = db.Column(db.String(64), nullable=False, index=True)
 
 

@@ -161,6 +161,15 @@ def work_item_comment(event: str, dept: str, public_id: str, work_type_slug: str
         created_by_user_id=user_ctx.user_id,
     )
     db.session.add(comment)
+    db.session.flush()  # populate comment.id for the audit snapshot
+
+    db.session.add(WorkItemAuditEvent(
+        work_item_id=work_item.id,
+        event_type="COMMENT_ADDED",
+        new_value=comment_text,
+        snapshot={"comment_id": comment.id, "visibility": visibility},
+        created_by_user_id=user_ctx.user_id,
+    ))
     db.session.commit()
 
     flash("Comment added.", "success")
