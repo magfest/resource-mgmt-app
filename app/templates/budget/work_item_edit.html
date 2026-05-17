@@ -606,7 +606,7 @@
         {# Step 6: Description #}
         <div style="margin-bottom: 20px;">
           <label for="description" style="display: block; font-weight: 600; margin-bottom: 8px;">Brief description (who is this for?)</label>
-          <textarea name="description" id="description" rows="2" placeholder="e.g. contracted suite for Saturday's headliner Ivan & the Ivans; self-paid rooms for indie devs" style="width: 100%; max-width: 500px;"></textarea>
+          <textarea name="description" id="description" rows="2" maxlength="1000" placeholder="e.g. contracted suite for Saturday's headliner Ivan & the Ivans; self-paid rooms for indie devs" style="width: 100%; max-width: 500px;"></textarea>
           {% include "components/_rich_text_hint.html" %}
         </div>
 
@@ -761,7 +761,7 @@
           </div>
           <div style="margin-bottom: 10px;">
             <label for="income_notes" style="font-size: 13px; font-weight: 600;">Income Notes:</label>
-            <textarea name="income_notes" id="income_notes" rows="2" style="width: 100%; margin-top: 4px;" placeholder="Describe the source of expected income (e.g., merch sales, pilk black market)...">{{ work_item.income_notes or '' }}</textarea>
+            <textarea name="income_notes" id="income_notes" rows="2" maxlength="1000" style="width: 100%; margin-top: 4px;" placeholder="Describe the source of expected income (e.g., merch sales, pilk black market)...">{{ work_item.income_notes or '' }}</textarea>
             {% include "components/_rich_text_hint.html" %}
           </div>
           <button type="submit" class="btn btn-primary">Save Income Info</button>
@@ -775,7 +775,7 @@
           <input type="hidden" name="return_to" value="{{ request.path }}">
           <div style="margin-bottom: 8px;">
             <label for="comment" style="font-size: 13px; font-weight: 600;">Add Note:</label>
-            <textarea name="comment" id="comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Add context, justification, or notes for reviewers..."></textarea>
+            <textarea name="comment" id="comment" rows="3" maxlength="1000" style="width: 100%; margin-top: 4px;" placeholder="Add context, justification, or notes for reviewers..."></textarea>
             {% include "components/_rich_text_hint.html" %}
           </div>
           {% if user_ctx.is_super_admin %}
@@ -834,7 +834,7 @@
                     id="comment-edit-form-{{ comment.id }}"
                     style="display: none; margin-top: 8px;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <textarea name="comment" rows="3" style="width: 100%;">{{ comment.body }}</textarea>
+                <textarea name="comment" rows="3" maxlength="1000" style="width: 100%;">{{ comment.body }}</textarea>
                 {% include "components/_rich_text_hint.html" %}
                 <div style="margin-top: 6px;">
                   <button type="submit" class="btn btn-primary" style="padding: 4px 12px; font-size: 12px;">Save</button>

@@ -364,3 +364,93 @@ def test_new_comment_updated_at_equals_created_at(app, client, seed_draft_work_i
         comment = WorkItemComment.query.filter_by(work_item_id=item.id).first()
         delta_seconds = abs((comment.updated_at - comment.created_at).total_seconds())
         assert delta_seconds < 1, f"New comment should not appear edited, but delta={delta_seconds}s"
+
+
+from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH as MAX_LEN
+TOO_LONG = "x" * (MAX_LEN + 1)
+
+
+def test_add_comment_over_max_length_rejected(app, client, seed_draft_work_item):
+    from app.models import WorkItemComment
+    item = seed_draft_work_item["work_item"]
+    event = seed_draft_work_item["cycle"].code
+    dept = seed_draft_work_item["department"].code
+    edit_path = f"/{event}/{dept}/budget/item/{item.public_id}/edit"
+
+    _login(client, "test:admin")
+    response = client.post(
+        f"/{event}/{dept}/budget/item/{item.public_id}/comment",
+        data={"comment": TOO_LONG, "return_to": edit_path},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302  # flash + redirect, not 500
+    with app.app_context():
+        assert WorkItemComment.query.filter_by(work_item_id=item.id).count() == 0
+
+
+def test_edit_comment_over_max_length_rejected(app, client, seed_draft_work_item):
+    from app.models import WorkItemComment
+    item = seed_draft_work_item["work_item"]
+    event = seed_draft_work_item["cycle"].code
+    dept = seed_draft_work_item["department"].code
+
+    with app.app_context():
+        comment = WorkItemComment(
+            work_item_id=item.id, visibility="PUBLIC",
+            body="Original", created_by_user_id="test:admin",
+        )
+        db.session.add(comment)
+        db.session.commit()
+        cid = comment.id
+
+    _login(client, "test:admin")
+    client.post(
+        f"/{event}/{dept}/budget/item/{item.public_id}/comment/{cid}/edit",
+        data={"comment": TOO_LONG},
+    )
+    with app.app_context():
+        assert WorkItemComment.query.get(cid).body == "Original"
+
+
+def test_income_notes_over_max_length_rejected(app, client, seed_draft_work_item):
+    from app.models import WorkItem
+    item = seed_draft_work_item["work_item"]
+    event = seed_draft_work_item["cycle"].code
+    dept = seed_draft_work_item["department"].code
+
+    _login(client, "test:admin")
+    client.post(
+        f"/{event}/{dept}/budget/item/{item.public_id}/income",
+        data={"income_estimate": "", "income_notes": TOO_LONG},
+    )
+    with app.app_context():
+        assert WorkItem.query.get(item.id).income_notes in (None, "")
+
+
+def test_crlf_normalized_before_length_check(app, client, seed_draft_work_item):
+    """Browsers submit <textarea> with CRLF line endings per HTML spec.
+    Server must normalize CRLF -> LF before measuring length, otherwise
+    paragraphs falsely push a near-limit body over the cap and the user
+    sees 'too long' even though their visible character count is fine."""
+    from app.models import WorkItemComment
+    item = seed_draft_work_item["work_item"]
+    event = seed_draft_work_item["cycle"].code
+    dept = seed_draft_work_item["department"].code
+    edit_path = f"/{event}/{dept}/budget/item/{item.public_id}/edit"
+
+    # (MAX_LEN - 2) chars + 2 paragraph breaks (CRLF) = MAX_LEN + 2 raw, MAX_LEN after normalize
+    body = ("x" * (MAX_LEN - 2)) + "\r\n\r\n"
+    assert len(body) == MAX_LEN + 2
+
+    _login(client, "test:admin")
+    response = client.post(
+        f"/{event}/{dept}/budget/item/{item.public_id}/comment",
+        data={"comment": body, "return_to": edit_path},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    with app.app_context():
+        comments = WorkItemComment.query.filter_by(work_item_id=item.id).all()
+        assert len(comments) == 1, "Body should be accepted after CRLF normalization"
+        # Body stored with LF, not CRLF
+        assert "\r" not in comments[0].body

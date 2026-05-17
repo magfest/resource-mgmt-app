@@ -148,7 +148,15 @@ def work_item_comment(event: str, dept: str, public_id: str, work_type_slug: str
         flash("You do not have permission to comment on this request.", "error")
         return redirect(return_to or default_redirect)
 
-    comment_text = (request.form.get("comment") or "").strip()
+    comment_raw = (request.form.get("comment") or "").replace("\r\n", "\n").replace("\r", "\n")
+    from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH
+    if len(comment_raw) > MAX_FREEFORM_TEXT_LENGTH:
+        flash(f"Note is too long (max {MAX_FREEFORM_TEXT_LENGTH:,} characters).", "error")
+        return redirect(return_to or url_for(
+            "work.work_item_edit", event=event, dept=dept,
+            public_id=public_id, tab="notes",
+        ))
+    comment_text = comment_raw.strip()
     if not comment_text:
         flash("Comment text is required.", "error")
         return redirect(return_to or default_redirect)

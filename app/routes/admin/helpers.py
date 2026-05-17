@@ -12,6 +12,7 @@ from flask import abort, render_template, flash, request
 
 # Maximum length for entity codes (departments, divisions, approval groups, etc.)
 CODE_MAX_LENGTH = 16
+MAX_FREEFORM_TEXT_LENGTH = 1000
 
 from app import db
 from app.models import (

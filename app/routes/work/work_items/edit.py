@@ -328,8 +328,16 @@ def work_item_income_save(event: str, dept: str, public_id: str, work_type_slug:
     else:
         new_estimate = None
 
-    new_notes_raw = (request.form.get("income_notes") or "").strip()
-    new_notes = new_notes_raw if new_notes_raw else None
+    new_notes_raw = (request.form.get("income_notes") or "").replace("\r\n", "\n").replace("\r", "\n")
+    from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH
+    if len(new_notes_raw) > MAX_FREEFORM_TEXT_LENGTH:
+        flash(f"Income notes are too long (max {MAX_FREEFORM_TEXT_LENGTH:,} characters).", "error")
+        return redirect(url_for(
+            "work.work_item_edit", event=event, dept=dept,
+            public_id=public_id, tab="notes",
+        ))
+    new_notes_stripped = new_notes_raw.strip()
+    new_notes = new_notes_stripped if new_notes_stripped else None
 
     if new_estimate != old_estimate:
         _write_work_item_audit(
@@ -789,7 +797,15 @@ def hotel_wizard_add(event: str, dept: str, public_id: str, work_type_slug: str 
     who_pays = request.form.get("who_pays", "magfest")  # magfest, third_party
     room_type = request.form.get("room_type", "standard")  # standard, executive, hospitality
     room_count = safe_int(request.form.get("room_count"), 1)
-    description = (request.form.get("description") or "").strip()
+    description_raw = (request.form.get("description") or "").replace("\r\n", "\n").replace("\r", "\n")
+    from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH
+    if len(description_raw) > MAX_FREEFORM_TEXT_LENGTH:
+        flash(f"Hotel description is too long (max {MAX_FREEFORM_TEXT_LENGTH:,} characters).", "error")
+        return redirect(url_for(
+            "work.work_item_edit", event=event, dept=dept,
+            public_id=public_id, tab="hotel-services",
+        ))
+    description = description_raw.strip()
 
     # Calculate total nights
     event_nights = safe_int(request.form.get("event_nights"), 0)
@@ -959,7 +975,15 @@ def work_item_comment_edit(event: str, dept: str, public_id: str,
     if comment.created_by_user_id != user_ctx.user_id:
         abort(403)
 
-    new_body = (request.form.get("comment") or "").strip()
+    new_body_raw = (request.form.get("comment") or "").replace("\r\n", "\n").replace("\r", "\n")
+    from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH
+    if len(new_body_raw) > MAX_FREEFORM_TEXT_LENGTH:
+        flash(f"Note is too long (max {MAX_FREEFORM_TEXT_LENGTH:,} characters).", "error")
+        return redirect(url_for(
+            "work.work_item_edit", event=event, dept=dept,
+            public_id=public_id, tab="notes",
+        ))
+    new_body = new_body_raw.strip()
     if not new_body:
         flash("Comment text is required.", "error")
         return redirect(url_for(

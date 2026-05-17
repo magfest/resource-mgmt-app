@@ -1,8 +1,13 @@
 {# templates/components/_rich_text_hint.html
    Shared inline hint for freeform textareas in the edit form.
-   Tells users that Enter creates a newline and how to format links.
+   Tells users that Enter creates a newline and how to format links, and
+   shows a live character counter when the adjacent <textarea> has a
+   maxlength attribute. The counter is populated by the site-wide JS in
+   layout/base.html (it walks textarea[maxlength] elements and finds the
+   nearest sibling .char-counter).
    Usage:  {% include "components/_rich_text_hint.html" %}
 #}
-<div class="muted small" style="margin-top: 4px;">
-  Press Enter for a new line. Format a link as <code>[label](https://...)</code>.
+<div class="muted small" style="margin-top: 4px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+  <span>Press Enter for a new line. Format a link as <code>[label](https://...)</code>.</span>
+  <span class="char-counter"></span>
 </div>
