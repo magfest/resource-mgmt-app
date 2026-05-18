@@ -958,6 +958,28 @@
       if (form) form.submit();
     }
   });
+
+  // Live character counter for any textarea[maxlength] that has a
+  // sibling .char-counter span (rendered by components/_rich_text_hint.html).
+  // Shows "N / MAX" while typing; muted gray normally, red when at the cap.
+  function setupCharCounter(ta) {
+    var max = parseInt(ta.getAttribute('maxlength'), 10);
+    if (!max) return;
+    // Find a .char-counter inside the textarea's parent (the partial renders
+    // it as a sibling element of the textarea, within the same wrapper div).
+    var parent = ta.parentElement;
+    var counter = parent ? parent.querySelector('.char-counter') : null;
+    if (!counter) return;
+    function fmt(n) { return n.toLocaleString(); }
+    function update() {
+      var len = ta.value.length;
+      counter.textContent = fmt(len) + ' / ' + fmt(max);
+      counter.style.color = (len >= max) ? '#dc3545' : '';
+    }
+    ta.addEventListener('input', update);
+    update();
+  }
+  document.querySelectorAll('textarea[maxlength]').forEach(setupCharCounter);
 })();
 </script>
 </body>

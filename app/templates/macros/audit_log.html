@@ -98,6 +98,16 @@
               <span class="pill pill-submitted">FIELD CHANGE</span>
             {% elif event.event_type == 'LINE_DELETED' %}
               <span class="pill tag-kicked">LINE DELETED</span>
+            {% elif event.event_type == 'COMMENT_ADDED' %}
+              <span class="pill" style="background: #d1fae5; color: #065f46;">NOTE ADDED</span>
+            {% elif event.event_type == 'COMMENT_EDIT' %}
+              <span class="pill" style="background: #e0e7ff; color: #3730a3;">NOTE EDITED</span>
+            {% elif event.event_type == 'COMMENT_DELETE' %}
+              <span class="pill tag-kicked">NOTE DELETED</span>
+            {% elif event.event_type == 'INCOME_ESTIMATE_CHANGE' %}
+              <span class="pill" style="background: #dbeafe; color: #1e40af;">INCOME ESTIMATE</span>
+            {% elif event.event_type == 'INCOME_NOTES_CHANGE' %}
+              <span class="pill" style="background: #dbeafe; color: #1e40af;">INCOME NOTES</span>
             {% else %}
               <span class="pill">{{ event.event_type }}</span>
             {% endif %}
@@ -131,6 +141,27 @@
               {% else %}
                 {{ event.old_value }}
               {% endif %}
+            {% elif event.event_type == 'COMMENT_ADDED' %}
+              <div class="small" style="white-space: pre-wrap;">{{ event.new_value }}</div>
+              {% if event.snapshot and event.snapshot.visibility == 'ADMIN' %}
+                <div class="muted small" style="margin-top: 2px;">(admin-only)</div>
+              {% endif %}
+            {% elif event.event_type == 'COMMENT_EDIT' %}
+              <div class="small">
+                <div><span class="muted">From:</span> <span style="white-space: pre-wrap;">{{ event.old_value }}</span></div>
+                <div style="margin-top: 4px;"><span class="muted">To:</span> <strong style="white-space: pre-wrap;">{{ event.new_value }}</strong></div>
+              </div>
+            {% elif event.event_type == 'COMMENT_DELETE' %}
+              <div class="small" style="white-space: pre-wrap;">{{ event.old_value }}</div>
+            {% elif event.event_type == 'INCOME_ESTIMATE_CHANGE' %}
+              <span class="muted">{% if event.old_value %}${{ "%.2f"|format((event.old_value|int) / 100) }}{% else %}(none){% endif %}</span>
+              &rarr;
+              <strong>{% if event.new_value %}${{ "%.2f"|format((event.new_value|int) / 100) }}{% else %}(none){% endif %}</strong>
+            {% elif event.event_type == 'INCOME_NOTES_CHANGE' %}
+              <div class="small">
+                <div><span class="muted">From:</span> <span style="white-space: pre-wrap;">{{ event.old_value or '(empty)' }}</span></div>
+                <div style="margin-top: 4px;"><span class="muted">To:</span> <strong style="white-space: pre-wrap;">{{ event.new_value or '(empty)' }}</strong></div>
+              </div>
             {% elif event.snapshot %}
               {% if event.event_type == 'SUBMIT' %}
                 {{ event.snapshot.line_count }} line{% if event.snapshot.line_count != 1 %}s{% endif %}{% if event.snapshot.total_requested_cents is defined %},

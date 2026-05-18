@@ -176,7 +176,7 @@
                 </td>
                 <td data-label="Details">
                   {% if detail and detail.description %}
-                    {{ detail.description }}
+                    <div style="white-space: pre-wrap;">{{ detail.description|markdown_links|safe }}</div>
                   {% else %}
                     <span class="muted">-</span>
                   {% endif %}
@@ -360,7 +360,13 @@
               <td data-label="Room type">
                 <strong>{{ detail.expense_account.name if detail and detail.expense_account else '-' }}</strong>
               </td>
-              <td data-label="Description">{{ detail.description if detail else '-' }}</td>
+              <td data-label="Description">
+                {% if detail and detail.description %}
+                  <div style="white-space: pre-wrap;">{{ detail.description|markdown_links|safe }}</div>
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
               <td data-label="Nights" class="right num">{{ detail.quantity | int if detail else '-' }}</td>
               <td data-label="Total" class="right num"><strong>{{ format_currency(line_total) }}</strong></td>
               <td>
@@ -600,7 +606,8 @@
         {# Step 6: Description #}
         <div style="margin-bottom: 20px;">
           <label for="description" style="display: block; font-weight: 600; margin-bottom: 8px;">Brief description (who is this for?)</label>
-          <input type="text" name="description" id="description" placeholder="e.g. contracted suite for Saturday's headliner Ivan & the Ivans; self-paid rooms for indie devs" style="width: 100%; max-width: 500px;">
+          <textarea name="description" id="description" rows="2" maxlength="1000" placeholder="e.g. contracted suite for Saturday's headliner Ivan & the Ivans; self-paid rooms for indie devs" style="width: 100%; max-width: 500px;"></textarea>
+          {% include "components/_rich_text_hint.html" %}
         </div>
 
         {# Preview #}
@@ -754,7 +761,8 @@
           </div>
           <div style="margin-bottom: 10px;">
             <label for="income_notes" style="font-size: 13px; font-weight: 600;">Income Notes:</label>
-            <textarea name="income_notes" id="income_notes" rows="2" style="width: 100%; margin-top: 4px;" placeholder="Describe the source of expected income (e.g., merch sales, pilk black market)...">{{ work_item.income_notes or '' }}</textarea>
+            <textarea name="income_notes" id="income_notes" rows="2" maxlength="1000" style="width: 100%; margin-top: 4px;" placeholder="Describe the source of expected income (e.g., merch sales, pilk black market)...">{{ work_item.income_notes or '' }}</textarea>
+            {% include "components/_rich_text_hint.html" %}
           </div>
           <button type="submit" class="btn btn-primary">Save Income Info</button>
         </form>
@@ -764,10 +772,11 @@
       <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee;">
         <form method="post" action="{{ url_for('work.work_item_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="return_to" value="{{ request.url }}">
+          <input type="hidden" name="return_to" value="{{ request.path }}">
           <div style="margin-bottom: 8px;">
             <label for="comment" style="font-size: 13px; font-weight: 600;">Add Note:</label>
-            <textarea name="comment" id="comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Add context, justification, or notes for reviewers..."></textarea>
+            <textarea name="comment" id="comment" rows="3" maxlength="1000" style="width: 100%; margin-top: 4px;" placeholder="Add context, justification, or notes for reviewers..."></textarea>
+            {% include "components/_rich_text_hint.html" %}
           </div>
           {% if user_ctx.is_super_admin %}
             <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
@@ -783,15 +792,58 @@
       {% if comments %}
         <h4 style="margin: 0 0 12px 0; font-size: 14px;">Previous Notes</h4>
         {% for comment in comments %}
-          <div class="comment">
+          {% set is_author = (comment.created_by_user_id == user_ctx.user_id) %}
+          {% set can_manage = is_author and work_item.status == 'DRAFT' %}
+          <div class="comment" id="comment-{{ comment.id }}">
             <div class="muted small">
               {{ comment.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
               {{ comment.created_by_user_id|user_display }}
               {% if comment.visibility == "ADMIN" %}
                 <span class="pill" style="margin-left: 4px;">Admin Only</span>
               {% endif %}
+              {% if comment.updated_at and (comment.updated_at - comment.created_at).total_seconds() > 1 %}
+                <span class="muted" style="margin-left: 4px;">(edited {% if comment.updated_at.date() == comment.created_at.date() %}{{ comment.updated_at.strftime('%H:%M') }}{% else %}{{ comment.updated_at.strftime('%Y-%m-%d %H:%M') }}{% endif %})</span>
+              {% endif %}
+              {% if can_manage %}
+                <button type="button" class="btn comment-edit-btn"
+                        data-comment-id="{{ comment.id }}"
+                        style="padding: 1px 6px; font-size: 11px; margin-left: 8px;">Edit</button>
+                <form method="post"
+                      action="{{ url_for('work.work_item_comment_delete',
+                                         event=ctx.event_cycle.code,
+                                         dept=ctx.department.code,
+                                         public_id=work_item.public_id,
+                                         comment_id=comment.id) }}"
+                      style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn"
+                          style="padding: 1px 6px; font-size: 11px; margin-left: 4px; color: #dc3545; border-color: #dc3545;"
+                          data-confirm="Delete this note? This will be recorded in the audit log.">Delete</button>
+                </form>
+              {% endif %}
             </div>
-            <div style="margin-top: 4px; white-space: pre-wrap;">{{ comment.body }}</div>
+            <div class="comment-body" style="margin-top: 4px; white-space: pre-wrap;" id="comment-body-{{ comment.id }}">{{ comment.body|markdown_links|safe }}</div>
+            {% if can_manage %}
+              <form method="post"
+                    action="{{ url_for('work.work_item_comment_edit',
+                                       event=ctx.event_cycle.code,
+                                       dept=ctx.department.code,
+                                       public_id=work_item.public_id,
+                                       comment_id=comment.id) }}"
+                    class="comment-edit-form"
+                    id="comment-edit-form-{{ comment.id }}"
+                    style="display: none; margin-top: 8px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <textarea name="comment" rows="3" maxlength="1000" style="width: 100%;">{{ comment.body }}</textarea>
+                {% include "components/_rich_text_hint.html" %}
+                <div style="margin-top: 6px;">
+                  <button type="submit" class="btn btn-primary" style="padding: 4px 12px; font-size: 12px;">Save</button>
+                  <button type="button" class="btn comment-edit-cancel"
+                          data-comment-id="{{ comment.id }}"
+                          style="padding: 4px 12px; font-size: 12px;">Cancel</button>
+                </div>
+              </form>
+            {% endif %}
           </div>
         {% endfor %}
       {% else %}
@@ -1155,6 +1207,31 @@
       reasonDisplayContainer.style.display = 'block';
     });
   }
+
+  // ========== Note inline edit/cancel ==========
+  document.querySelectorAll('.comment-edit-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = this.dataset.commentId;
+      var form = document.getElementById('comment-edit-form-' + id);
+      var body = document.getElementById('comment-body-' + id);
+      if (form && body) {
+        form.style.display = 'block';
+        body.style.display = 'none';
+      }
+    });
+  });
+
+  document.querySelectorAll('.comment-edit-cancel').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = this.dataset.commentId;
+      var form = document.getElementById('comment-edit-form-' + id);
+      var body = document.getElementById('comment-body-' + id);
+      if (form && body) {
+        form.style.display = 'none';
+        body.style.display = '';
+      }
+    });
+  });
 
   // ========== Unsaved Changes Warning (page navigation) ==========
   window.addEventListener('beforeunload', function(e) {
