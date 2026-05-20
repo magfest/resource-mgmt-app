@@ -1,6 +1,14 @@
 """
 Shared pytest fixtures for the MAGFest Budget application.
 """
+import os
+
+# CRITICAL: must run BEFORE `from app import ...` so the engine binds to
+# the in-memory DB at create_app() time. Setting SQLALCHEMY_DATABASE_URI
+# via app.config.update() AFTER create_app() is a silent no-op for engine
+# binding and causes tests to wipe the local dev DB on teardown.
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 import pytest
 from app import create_app, db
 from app.models import (
