@@ -416,3 +416,33 @@ class EventCycleDepartment(db.Model):
             name="uq_ecd_event_dept",
         ),
     )
+
+
+class EventCycleWorkTypeDeadline(db.Model):
+    """Per-worktype submission deadline overriding EventCycle.submission_deadline."""
+    __tablename__ = "event_cycle_work_type_deadlines"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", ondelete="CASCADE", name="fk_ecwtd_event_cycle_id"),
+        nullable=False, index=True,
+    )
+    work_type_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_types.id", ondelete="CASCADE", name="fk_ecwtd_work_type_id"),
+        nullable=False, index=True,
+    )
+    submission_deadline = db.Column(db.Date, nullable=False)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_user_id = db.Column(db.String(64), nullable=True)
+
+    event_cycle = db.relationship("EventCycle")
+    work_type = db.relationship("WorkType")
+
+    __table_args__ = (
+        db.UniqueConstraint("event_cycle_id", "work_type_id", name="uq_ecwtd_event_worktype"),
+    )
