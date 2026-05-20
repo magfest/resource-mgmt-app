@@ -106,6 +106,18 @@ NOTIF_STATUS_FAILED = "FAILED"
 NOTIF_STATUS_SUPPRESSED = "SUPPRESSED"
 
 # ============================================================
+# Scheduled notification statuses
+# ============================================================
+# Distinct from NOTIF_STATUS_* above: queue lifecycle, not send outcome.
+
+SCHED_NOTIF_STATUS_QUEUED = "QUEUED"
+SCHED_NOTIF_STATUS_SENDING = "SENDING"
+SCHED_NOTIF_STATUS_SENT = "SENT"
+SCHED_NOTIF_STATUS_FAILED = "FAILED"
+SCHED_NOTIF_STATUS_SKIPPED = "SKIPPED"
+SCHED_NOTIF_STATUS_CANCELLED = "CANCELLED"
+
+# ============================================================
 # Config audit actions
 # ============================================================
 

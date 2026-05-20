@@ -7,10 +7,10 @@ and configuration changes.
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import BigInteger
+from sqlalchemy import BigInteger, Integer
 
 from app import db
-from .constants import NOTIF_STATUS_QUEUED
+from .constants import NOTIF_STATUS_QUEUED, SCHED_NOTIF_STATUS_QUEUED
 
 
 class ActivityEvent(db.Model):
@@ -193,6 +193,69 @@ class EmailTemplate(db.Model):
 
     # Track who last modified
     updated_by_user_id = db.Column(db.String(64), nullable=True)
+
+
+class ScheduledNotification(db.Model):
+    """
+    Generic time-triggered email queue.
+
+    Lifecycle: QUEUED -> SENDING -> SENT | FAILED | SKIPPED | CANCELLED.
+    Drained by a periodic job; the reaper resets stale SENDING rows back to QUEUED.
+    """
+    __tablename__ = "scheduled_notifications"
+
+    # SQLite needs literal INTEGER for rowid autoincrement; Postgres gets BIGINT.
+    id = db.Column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        primary_key=True,
+    )
+
+    template_key = db.Column(db.String(64), nullable=False, index=True)
+    recipient_email = db.Column(db.String(256), nullable=False, index=True)
+    recipient_user_id = db.Column(db.String(64), nullable=True, index=True)
+
+    dispatch_at = db.Column(db.DateTime, nullable=False, index=True)
+
+    status = db.Column(
+        db.String(16), nullable=False,
+        default=SCHED_NOTIF_STATUS_QUEUED, index=True,
+    )
+
+    # FKs are SET NULL so target-row cleanups don't block migrations or drains.
+    work_item_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_items.id", ondelete="SET NULL", name="fk_sched_notif_work_item_id"),
+        nullable=True, index=True,
+    )
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", ondelete="SET NULL", name="fk_sched_notif_event_cycle_id"),
+        nullable=True, index=True,
+    )
+    work_type_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_types.id", ondelete="SET NULL", name="fk_sched_notif_work_type_id"),
+        nullable=True, index=True,
+    )
+    metadata_json = db.Column(db.Text, nullable=True)
+
+    # Idempotency: callers declare a logical identity; unique constraint blocks dupes.
+    dedup_key = db.Column(db.String(256), nullable=True, unique=True, index=True)
+
+    claimed_at = db.Column(db.DateTime, nullable=True)
+    claimed_by = db.Column(db.String(64), nullable=True)
+
+    attempt_count = db.Column(db.Integer, nullable=False, default=0)
+    last_error = db.Column(db.Text, nullable=True)
+
+    sent_at = db.Column(db.DateTime, nullable=True)
+    provider_message_id = db.Column(db.String(128), nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index("ix_sched_notif_status_dispatch", "status", "dispatch_at"),
+    )
 
 
 class SiteContent(db.Model):

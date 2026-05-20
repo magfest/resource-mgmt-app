@@ -70,6 +70,13 @@ from .constants import (
     NOTIF_STATUS_SENT,
     NOTIF_STATUS_FAILED,
     NOTIF_STATUS_SUPPRESSED,
+    # Scheduled notification statuses
+    SCHED_NOTIF_STATUS_QUEUED,
+    SCHED_NOTIF_STATUS_SENDING,
+    SCHED_NOTIF_STATUS_SENT,
+    SCHED_NOTIF_STATUS_FAILED,
+    SCHED_NOTIF_STATUS_SKIPPED,
+    SCHED_NOTIF_STATUS_CANCELLED,
     # Config audit actions
     CONFIG_AUDIT_CREATE,
     CONFIG_AUDIT_UPDATE,
@@ -177,6 +184,7 @@ from .telemetry import (
     ActivityEvent,
     NotificationLog,
     ConfigAuditEvent,
+    ScheduledNotification,
     SecurityAuditLog,
     EmailTemplate,
     SiteContent,
@@ -237,6 +245,13 @@ __all__ = [
     "NOTIF_STATUS_SENT",
     "NOTIF_STATUS_FAILED",
     "NOTIF_STATUS_SUPPRESSED",
+    # Constants - Scheduled notification statuses
+    "SCHED_NOTIF_STATUS_QUEUED",
+    "SCHED_NOTIF_STATUS_SENDING",
+    "SCHED_NOTIF_STATUS_SENT",
+    "SCHED_NOTIF_STATUS_FAILED",
+    "SCHED_NOTIF_STATUS_SKIPPED",
+    "SCHED_NOTIF_STATUS_CANCELLED",
     # Constants - Config audit actions
     "CONFIG_AUDIT_CREATE",
     "CONFIG_AUDIT_UPDATE",
@@ -323,6 +338,7 @@ __all__ = [
     "ActivityEvent",
     "NotificationLog",
     "ConfigAuditEvent",
+    "ScheduledNotification",
     "SecurityAuditLog",
     "EmailTemplate",
     "SiteContent",
