@@ -328,7 +328,7 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_work_items_updated_at'), ['updated_at'], unique=False)
 
     op.create_table('notification_logs',
-    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('sent_at', sa.DateTime(), nullable=True),
     sa.Column('channel', sa.String(length=16), nullable=False),
@@ -388,7 +388,7 @@ def upgrade():
         batch_op.create_index(batch_op.f('ix_work_lines_work_item_id'), ['work_item_id'], unique=False)
 
     op.create_table('activity_events',
-    sa.Column('id', sa.BigInteger(), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
     sa.Column('occurred_at', sa.DateTime(), nullable=False),
     sa.Column('actor_user_id', sa.String(length=64), nullable=True),
     sa.Column('work_type_id', sa.Integer(), nullable=True),

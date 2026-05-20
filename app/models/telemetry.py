@@ -17,7 +17,8 @@ class ActivityEvent(db.Model):
     """High-volume access/action telemetry. Option 1 scope: log work item views/exports."""
     __tablename__ = "activity_events"
 
-    id = db.Column(BigInteger, primary_key=True)
+    # SQLite needs literal INTEGER for rowid autoincrement; Postgres gets BIGINT.
+    id = db.Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
 
     occurred_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
 
@@ -71,7 +72,8 @@ class NotificationLog(db.Model):
     """Proof of notifications sent (email now, other channels later)."""
     __tablename__ = "notification_logs"
 
-    id = db.Column(BigInteger, primary_key=True)
+    # SQLite needs literal INTEGER for rowid autoincrement; Postgres gets BIGINT.
+    id = db.Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
     sent_at = db.Column(db.DateTime, nullable=True, index=True)
