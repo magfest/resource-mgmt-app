@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import boto3
 from botocore.exceptions import ClientError
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from flask import current_app
 from typing import Optional, Tuple
@@ -24,11 +25,26 @@ NOTIF_STATUS_DEBOUNCED = "DEBOUNCED"
 NOTIF_STATUS_RATE_LIMITED = "RATE_LIMITED"
 NOTIF_STATUS_CIRCUIT_OPEN = "CIRCUIT_OPEN"
 
-# Default limits (can be overridden via config)
-DEFAULT_HOURLY_LIMIT = 50
-DEFAULT_DAILY_LIMIT = 200
+# Default limits. Raised from previous 50/200 defensive values so batch
+# operations (deadline reminders to a few hundred recipients) don't trip
+# the safety nets in normal operation. Still ~2% of SES's 14/sec capacity,
+# finite enough to catch bug-induced storms.
+DEFAULT_HOURLY_LIMIT = 1000
+DEFAULT_DAILY_LIMIT = 5000
 DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 5  # failures in last 10 minutes triggers circuit breaker
 DEFAULT_CIRCUIT_BREAKER_WINDOW = 10  # minutes
+
+
+@dataclass
+class EmailSendResult:
+    """
+    Structured result from send_email(). The queue drainer dispatches on
+    `status` to decide retry/backoff/skip; simple callers can use `sent`.
+    """
+    sent: bool
+    status: str  # SENT | DEBOUNCED | SUPPRESSED | RATE_LIMITED | CIRCUIT_OPEN | FAILED
+    provider_message_id: str | None = None
+    error: str | None = None
 
 
 def is_email_enabled() -> bool:
@@ -114,26 +130,32 @@ def check_circuit_breaker() -> Tuple[bool, Optional[str]]:
 
 def was_recently_sent(
     template_key: str,
-    work_item_id: int,
+    work_item_id: Optional[int],
     recipient_email: str,
     hours: int = 1,
 ) -> bool:
     """
-    Check if we recently sent this notification (debounce).
+    Check whether this template+recipient combination was sent recently.
+
+    When work_item_id is provided, the key is (template, work_item, recipient).
+    When None (e.g., broadcast emails like deadline reminders), the key
+    falls back to (template, recipient) only - wider but still effective
+    against rare crash-induced double sends.
 
     Returns True if we should SKIP sending.
     """
     cutoff = datetime.utcnow() - timedelta(hours=hours)
 
-    existing = NotificationLog.query.filter(
+    query = NotificationLog.query.filter(
         NotificationLog.template_key == template_key,
-        NotificationLog.work_item_id == work_item_id,
         NotificationLog.recipient_email == recipient_email,
         NotificationLog.status == NOTIF_STATUS_SENT,
         NotificationLog.created_at >= cutoff,
-    ).first()
+    )
+    if work_item_id is not None:
+        query = query.filter(NotificationLog.work_item_id == work_item_id)
 
-    return existing is not None
+    return query.first() is not None
 
 
 def get_rate_limit_status() -> dict:
@@ -189,19 +211,21 @@ def send_email(
     recipient_user_id: Optional[str] = None,
     skip_debounce: bool = False,
     skip_rate_limit: bool = False,
-) -> bool:
+) -> EmailSendResult:
     """
     Send an email via AWS SES.
 
-    Returns True if sent (or skipped due to debounce/limits), False on error.
+    Returns an EmailSendResult with explicit status. Callers that just want
+    a boolean can check `result.sent`. The queue drainer dispatches on
+    `result.status` to decide retry/backoff/skip behavior.
 
     Safety mechanisms:
-    - Debounce: Same template+recipient+work_item within 1 hour = skip
-    - Rate limit: Max 50/hour and 200/day by default
-    - Circuit breaker: Pauses if 5+ failures in 10 minutes
+    - Debounce: Same template+recipient (+work_item if present) within 1 hour = skip
+    - Rate limit: configurable hourly + daily caps
+    - Circuit breaker: pauses if 5+ failures in 10 minutes
     """
     # Check debounce
-    if not skip_debounce and work_item_id:
+    if not skip_debounce:
         if was_recently_sent(template_key, work_item_id, to):
             _log_notification(
                 recipient_email=to,
@@ -211,7 +235,7 @@ def send_email(
                 recipient_user_id=recipient_user_id,
                 subject=subject,
             )
-            return True
+            return EmailSendResult(sent=False, status="DEBOUNCED")
 
     # Check if disabled
     if not is_email_enabled():
@@ -224,7 +248,7 @@ def send_email(
             subject=subject,
             error="Email disabled",
         )
-        return True
+        return EmailSendResult(sent=False, status="SUPPRESSED", error="Email disabled")
 
     # Check rate limits (unless bypassed for test emails)
     if not skip_rate_limit:
@@ -240,7 +264,7 @@ def send_email(
                 error=reason,
             )
             current_app.logger.warning(f"Email rate limited: {reason}")
-            return True  # Return True so callers don't retry immediately
+            return EmailSendResult(sent=False, status="RATE_LIMITED", error=reason)
 
         # Check circuit breaker
         allowed, reason = check_circuit_breaker()
@@ -255,7 +279,7 @@ def send_email(
                 error=reason,
             )
             current_app.logger.warning(f"Email circuit breaker open: {reason}")
-            return True  # Return True so callers don't retry immediately
+            return EmailSendResult(sent=False, status="CIRCUIT_OPEN", error=reason)
 
     try:
         # Get AWS credentials - use environment if keys not provided
@@ -315,6 +339,7 @@ def send_email(
             }
         )
 
+        message_id = response.get('MessageId')
         _log_notification(
             recipient_email=to,
             template_key=template_key,
@@ -322,11 +347,12 @@ def send_email(
             work_item_id=work_item_id,
             recipient_user_id=recipient_user_id,
             subject=subject,
-            provider_message_id=response.get('MessageId'),
+            provider_message_id=message_id,
         )
-        return True
+        return EmailSendResult(sent=True, status="SENT", provider_message_id=message_id)
 
     except ClientError as e:
+        err_msg = str(e)
         _log_notification(
             recipient_email=to,
             template_key=template_key,
@@ -334,10 +360,10 @@ def send_email(
             work_item_id=work_item_id,
             recipient_user_id=recipient_user_id,
             subject=subject,
-            error=str(e),
+            error=err_msg,
         )
         current_app.logger.error(f"SES send failed: {e}")
-        return False
+        return EmailSendResult(sent=False, status="FAILED", error=err_msg)
 
 
 def _log_notification(

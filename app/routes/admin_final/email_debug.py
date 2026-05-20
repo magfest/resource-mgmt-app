@@ -148,7 +148,7 @@ Email enabled: {is_email_enabled()}
 If you received this email, your email configuration is working correctly.
 """
 
-    success = send_email(
+    result = send_email(
         to=recipient,
         subject=subject,
         body_text=body,
@@ -157,13 +157,12 @@ If you received this email, your email configuration is working correctly.
     )
     db.session.commit()
 
-    if success:
-        if is_email_enabled():
-            flash(f"Test email sent to {recipient}", "success")
-        else:
-            flash(f"Test email logged (EMAIL_ENABLED=false). Check log below.", "info")
+    if result.sent:
+        flash(f"Test email sent to {recipient}", "success")
+    elif result.status == "SUPPRESSED":
+        flash(f"Test email logged (EMAIL_ENABLED=false). Check log below.", "info")
     else:
-        flash("Failed to send test email. Check the log for details.", "error")
+        flash(f"Failed to send test email ({result.status}). Check the log for details.", "error")
 
     return redirect(url_for("admin_final.email_debug"))
 

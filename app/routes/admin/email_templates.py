@@ -242,7 +242,7 @@ def test_email_template(template_id: int):
     test_subject = f"[TEST] {rendered_subject}"
 
     # Send test email (skip rate limits for test emails)
-    success = send_email(
+    result = send_email(
         to=user.email,
         subject=test_subject,
         body_text=rendered_body,
@@ -251,7 +251,7 @@ def test_email_template(template_id: int):
     )
     db.session.commit()  # Commit the notification log
 
-    if success:
+    if result.sent:
         flash(f"Test email sent to {user.email}", "success")
     else:
         flash("Failed to send test email. Check server logs for details.", "error")

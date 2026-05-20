@@ -148,7 +148,7 @@ def notify_response_received(work_item: WorkItem, reviewer_user_id: str) -> bool
         logger.error(f"Failed to render 'response_received' template for {work_item.public_id}")
         return False
 
-    success = send_email(
+    result = send_email(
         to=user.email,
         subject=rendered.subject,
         body_text=rendered.body_text,
@@ -157,7 +157,7 @@ def notify_response_received(work_item: WorkItem, reviewer_user_id: str) -> bool
         recipient_user_id=user.id,
     )
 
-    if success:
+    if result.sent:
         logger.info(f"Sent response_received notification to {user.email} for {work_item.public_id}")
 
     # Slack channel notification
@@ -165,7 +165,7 @@ def notify_response_received(work_item: WorkItem, reviewer_user_id: str) -> bool
         text, blocks = format_response_received(work_item)
         send_slack_message(text=text, blocks=blocks, template_key='response_received', work_item_id=work_item.id)
 
-    return success
+    return result.sent
 
 
 def notify_work_item_finalized(work_item: WorkItem) -> int:
@@ -229,7 +229,7 @@ def _send_emails(
             body_text=rendered.body_text,
             template_key=template_key,
             work_item_id=work_item.id,
-        ):
+        ).sent:
             sent_count += 1
 
     logger.info(
