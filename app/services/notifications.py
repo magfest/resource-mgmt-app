@@ -68,6 +68,60 @@ def notify_work_item_submitted(work_item: WorkItem) -> int:
     return sent_count
 
 
+def notify_submission_confirmation(work_item: WorkItem) -> int:
+    """
+    Send the submitting department a confirmation that their BUDGET
+    request was received.
+
+    Audience: same dept-member set used for needs_attention / finalized
+    (direct department memberships + members of the department's
+    division), so dept leadership gets a paper trail even when a
+    deputy clicked Submit.
+
+    BUDGET-only. The 'submitted' template (which targets budget admins
+    so they can dispatch) intentionally does NOT cover this audience.
+    For non-BUDGET worktypes this function is a silent no-op so
+    submit-route callers can stay worktype-neutral.
+
+    The email body shows the requester-set line count and total — the
+    template wording explicitly frames these as "requested" so they
+    cannot be misread as an approval.
+
+    Returns: Number of emails sent.
+    """
+    portfolio = work_item.portfolio
+    work_type = portfolio.work_type if portfolio else None
+    if work_type is None or work_type.code != 'BUDGET':
+        return 0
+
+    line_count = 0
+    total_requested_cents = 0
+    for line in work_item.lines:
+        detail = line.budget_detail
+        if not detail:
+            continue
+        line_count += 1
+        total_requested_cents += int(detail.unit_price_cents * detail.quantity)
+
+    recipients = _get_department_member_emails(
+        department_id=portfolio.department_id,
+        event_cycle_id=portfolio.event_cycle_id,
+    )
+
+    return _send_emails(
+        recipients=recipients,
+        template_key='submission_confirmation',
+        work_item=work_item,
+        empty_recipients_msg=(
+            "No department member recipients found for submission_confirmation"
+        ),
+        extra_context={
+            'line_count': line_count,
+            'total_requested_dollars': total_requested_cents / 100,
+        },
+    )
+
+
 def notify_work_item_dispatched(work_item: WorkItem, approval_group_ids: List[int]) -> int:
     """
     Notify approval group members that a work item is ready for their review.
@@ -200,6 +254,7 @@ def _send_emails(
     template_key: str,
     work_item: WorkItem,
     empty_recipients_msg: str,
+    extra_context: dict | None = None,
 ) -> int:
     """
     Render a DB-backed email template and send to each recipient.
@@ -207,15 +262,23 @@ def _send_emails(
     Returns the number of emails actually sent. Logs warnings for empty
     recipient lists and errors for template-render failures, but does
     not raise — callers depend on this being non-blocking.
+
+    `extra_context` lets a caller pass template variables beyond the
+    default `work_item` / `base_url` (e.g. precomputed line totals).
+    Keys in `extra_context` win on collision.
     """
     if not recipients:
         logger.warning(f"{empty_recipients_msg}: {work_item.public_id}")
         return 0
 
-    rendered = render_email_template(template_key, {
+    context = {
         'work_item': work_item,
         'base_url': get_base_url(),
-    })
+    }
+    if extra_context:
+        context.update(extra_context)
+
+    rendered = render_email_template(template_key, context)
 
     if not rendered:
         logger.error(f"Failed to render {template_key!r} template for {work_item.public_id}")
