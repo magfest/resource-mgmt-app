@@ -151,3 +151,36 @@ class TestSubmissionConfirmation:
         recipients = {c.kwargs["to"] for c in send.call_args_list}
         assert "divhead@test.local" in recipients
         assert sent == len(recipients)
+
+
+class TestSubmissionConfirmationWiring:
+    """Verify the submit route actually invokes the confirmation function."""
+
+    def test_submit_route_calls_notify_submission_confirmation(
+        self, app, client, seed_draft_work_item,
+    ):
+        """
+        POSTing the submit action on a BUDGET work item triggers
+        notify_submission_confirmation alongside the existing admin
+        notification. Patching both notify calls keeps the test focused
+        on the route wiring rather than template rendering or SES.
+        """
+        with client.session_transaction() as sess:
+            sess["active_user_id"] = "test:admin"
+
+        with patch(
+            "app.services.notifications.notify_work_item_submitted",
+            return_value=1,
+        ), patch(
+            "app.services.notifications.notify_submission_confirmation",
+            return_value=2,
+        ) as confirm_mock:
+            response = client.post(
+                "/TST2026/TESTDEPT/budget/item/TST2026-TESTDEPT-BUD-1/submit",
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        confirm_mock.assert_called_once()
+        called_work_item = confirm_mock.call_args.args[0]
+        assert called_work_item.public_id == "TST2026-TESTDEPT-BUD-1"
