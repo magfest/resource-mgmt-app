@@ -106,6 +106,20 @@ def work_item_submit(event: str, dept: str, public_id: str, work_type_slug: str 
             "Failed to send submission notification for %s", work_item.public_id
         )
 
+    # Send the BUDGET-only confirmation back to the submitting department
+    # in a separate non-blocking block so a failure here cannot roll back
+    # the admin-notification log committed above.
+    try:
+        from app.services.notifications import notify_submission_confirmation
+        notify_submission_confirmation(work_item)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to send submission confirmation for %s", work_item.public_id
+        )
+
     flash(
         "Budget request submitted! A budget admin will assign reviewers and "
         "dispatch it for approval. You'll be notified if any changes are needed.",

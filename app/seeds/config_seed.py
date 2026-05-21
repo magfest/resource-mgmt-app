@@ -8,7 +8,7 @@ Composes the two layered seeds:
 Use the CLI for granular control:
     flask seed bootstrap   # only schema-required rows
     flask seed demo        # only [Demo] starter content
-    flask seed all         # both (default)
+    flask # both (default)
 
 This module is also called by the auto-seed hook in app/__init__.py
 (run_seed_once) when an empty DB is detected on first request.

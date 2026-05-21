@@ -31,6 +31,18 @@ EMAIL_TEMPLATE_VARIABLES = {
         'work_item.portfolio.event_cycle.code': 'Event code (e.g., "MAG2027")',
         'base_url': 'Base URL of the application',
     },
+    'submission_confirmation': {
+        'work_item': 'The WorkItem just submitted (BUDGET only)',
+        'work_item.public_id': 'Public ID of the request',
+        'work_item.reason': 'Optional reason text (used by supplementals)',
+        'work_item.portfolio.department.name': 'Department name',
+        'work_item.portfolio.department.code': 'Department code',
+        'work_item.portfolio.event_cycle.name': 'Event name',
+        'work_item.portfolio.event_cycle.code': 'Event code',
+        'line_count': 'Number of budget lines on the submission',
+        'total_requested_dollars': 'Sum of unit_price * quantity across lines, in dollars (float)',
+        'base_url': 'Base URL of the application',
+    },
     'dispatched': {
         'work_item': 'The WorkItem being dispatched',
         'work_item.public_id': 'Public ID of the request',
