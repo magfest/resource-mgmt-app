@@ -113,7 +113,7 @@
                 </td>
                 <td>
                   {% if row.income_notes %}
-                    <span style="white-space: pre-wrap;">{{ row.income_notes }}</span>
+                    <span style="white-space: pre-wrap;">{{ row.income_notes|markdown_links|safe }}</span>
                   {% else %}
                     <span class="muted">-</span>
                   {% endif %}

@@ -171,9 +171,13 @@ def line_create(event: str, dept: str, public_id: str, work_type_slug: str = "bu
     frequency_id_str = request.form.get("frequency_id", "").strip()
     priority_id_str = request.form.get("priority_id", "").strip()
     warehouse_flag = request.form.get("warehouse_flag") == "on"
-    description = request.form.get("description", "").strip()
+    description_raw = (request.form.get("description", "") or "").replace("\r\n", "\n").replace("\r", "\n")
 
+    from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH
     errors = []
+    if len(description_raw) > MAX_FREEFORM_TEXT_LENGTH:
+        errors.append(f"Line description is too long (max {MAX_FREEFORM_TEXT_LENGTH:,} characters).")
+    description = description_raw.strip()
 
     # Validate expense account
     expense_account = None
@@ -488,9 +492,13 @@ def line_update(event: str, dept: str, public_id: str, line_num: int, work_type_
     frequency_id_str = request.form.get("frequency_id", "").strip()
     priority_id_str = request.form.get("priority_id", "").strip()
     warehouse_flag = request.form.get("warehouse_flag") == "on"
-    description = request.form.get("description", "").strip()
+    description_raw = (request.form.get("description", "") or "").replace("\r\n", "\n").replace("\r", "\n")
 
+    from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH
     errors = []
+    if len(description_raw) > MAX_FREEFORM_TEXT_LENGTH:
+        errors.append(f"Line description is too long (max {MAX_FREEFORM_TEXT_LENGTH:,} characters).")
+    description = description_raw.strip()
 
     # Validate expense account
     expense_account = None

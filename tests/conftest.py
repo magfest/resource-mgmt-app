@@ -1,6 +1,19 @@
 """
 Shared pytest fixtures for the MAGFest Budget application.
 """
+import os
+
+# CRITICAL: Force tests to use in-memory SQLite BEFORE importing create_app.
+# create_app() reads DATABASE_URL via get_database_url() and immediately calls
+# db.init_app(app), which binds the SQLAlchemy engine to that URL. A later
+# config.update({"SQLALCHEMY_DATABASE_URI": ...}) inside a fixture is too late
+# — the engine is already bound to whatever URL was in env at create_app time.
+# Without this override, tests would run against the developer's local
+# instance/magfest_budget.sqlite3 and the db.drop_all() at fixture teardown
+# would wipe the dev DB. Set the env var here, before any "from app import ..."
+# fully resolves create_app's database_url lookup.
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 import pytest
 from app import create_app, db
 from app.models import (
@@ -32,14 +45,27 @@ def app():
     """Create a Flask application configured for testing."""
     test_app = create_app()
 
-    # Override configuration for testing
+    # Override configuration for testing.
+    # NOTE: SQLALCHEMY_DATABASE_URI is intentionally NOT here — the engine
+    # is bound at db.init_app() time inside create_app(), so a config.update
+    # here would be a no-op. The DB URL is forced via DATABASE_URL env var
+    # at the top of this file, before create_app() runs.
     test_app.config.update({
         "TESTING": True,
-        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
         "WTF_CSRF_ENABLED": False,
         "DEV_LOGIN_ENABLED": False,  # Disable to avoid demo seeding issues
         "SECRET_KEY": "test-secret-key",
     })
+
+    # Defense-in-depth: never drop tables from a non-memory DB even if the
+    # env-var override above somehow fails (e.g. config gets overwritten by
+    # a future change). A wiped dev DB is a hard-to-diagnose footgun.
+    bound_uri = str(test_app.config.get("SQLALCHEMY_DATABASE_URI", ""))
+    assert ":memory:" in bound_uri, (
+        f"Test fixture refusing to operate on non-memory DB: {bound_uri!r}. "
+        f"Check that DATABASE_URL env var override at top of conftest.py is "
+        f"taking effect before create_app() runs."
+    )
 
     with test_app.app_context():
         db.create_all()
