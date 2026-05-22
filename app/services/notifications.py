@@ -560,3 +560,136 @@ def get_departments_needing_submission_reminder(
     # 4. Sort by department code for deterministic dry-run output.
     targets.sort(key=lambda t: t.department_code)
     return targets
+
+
+# --- Orchestrator ---
+
+
+@dataclass
+class ReminderRunSummary:
+    """Result of a send_submission_reminders run (live or dry)."""
+    event_code: str
+    targets_total: int
+    targets_with_recipients: int
+    targets_without_recipients: list[str]   # dept codes
+    emails_sent: int
+    emails_attempted: int
+    dry_run: bool
+
+
+def send_submission_reminders(
+    event_cycle: 'EventCycle',
+    dry_run: bool,
+) -> 'ReminderRunSummary':
+    """
+    Render the 'submission_reminder' template once per department and send
+    one copy per recipient via the existing send_email().
+
+    Template context per render:
+        department  — the Department being reminded
+        event_cycle — the EventCycle
+        base_url    — from get_base_url()
+
+    When dry_run=True, no send_email() calls are made; the summary still
+    reports targets and counts. The orchestrator does no DB writes of its
+    own; send_email() owns NotificationLog. send_email() exceptions are
+    contained per-recipient so one bad row does not abort the run.
+    """
+    # Function-level import follows existing pattern in this file
+    # (_get_department_member_emails does the same for Department).
+    from app.models import Department
+
+    logger.info(
+        f"Starting submission reminders for {event_cycle.code} "
+        f"(dry_run={dry_run})"
+    )
+
+    targets = get_departments_needing_submission_reminder(event_cycle)
+
+    summary = ReminderRunSummary(
+        event_code=event_cycle.code,
+        targets_total=len(targets),
+        targets_with_recipients=sum(1 for t in targets if t.recipient_emails),
+        targets_without_recipients=[
+            t.department_code for t in targets if not t.recipient_emails
+        ],
+        emails_sent=0,
+        emails_attempted=0,
+        dry_run=dry_run,
+    )
+
+    for code in summary.targets_without_recipients:
+        logger.warning(
+            f"Submission-reminder target {code} has no recipients; skipping send."
+        )
+
+    if dry_run:
+        logger.info(
+            f"Completed (dry-run): would send to "
+            f"{sum(len(t.recipient_emails) for t in targets)} recipients across "
+            f"{summary.targets_with_recipients} departments"
+        )
+        return summary
+
+    base_url = get_base_url()
+
+    # Per-target render failures (`continue`) and per-recipient send failures
+    # (`try/except`) are handled asymmetrically by design: a render failure is
+    # almost always a programming error (missing template, Jinja syntax, gone
+    # department) that affects every recipient of that target the same way,
+    # while a send failure may be a transient per-recipient SES issue.
+    for target in targets:
+        if not target.recipient_emails:
+            continue
+
+        dept = db.session.get(Department, target.department_id)
+        if dept is None:
+            # Department row vanished between the audience query and now (race
+            # with admin delete). Skip rather than letting Jinja AttributeError
+            # propagate past render_email_template's UndefinedError handler.
+            logger.error(
+                f"Department id={target.department_id} disappeared mid-run; "
+                f"skipping {len(target.recipient_emails)} recipients for "
+                f"{target.department_code}."
+            )
+            continue
+
+        # Render once per department (department + event_cycle vary across targets,
+        # but are identical for all recipients within one target).
+        rendered = render_email_template('submission_reminder', {
+            'department': dept,
+            'event_cycle': event_cycle,
+            'base_url': base_url,
+        })
+        if not rendered:
+            logger.error(
+                f"Failed to render submission_reminder template for "
+                f"{target.department_code}; skipping {len(target.recipient_emails)} "
+                f"recipients."
+            )
+            continue
+
+        for email in target.recipient_emails:
+            summary.emails_attempted += 1
+            try:
+                ok = send_email(
+                    to=email,
+                    subject=rendered.subject,
+                    body_text=rendered.body_text,
+                    template_key='submission_reminder',
+                    work_item_id=None,
+                )
+            except Exception:
+                logger.exception(
+                    f"send_email raised for {email} "
+                    f"(dept={target.department_code}); continuing run."
+                )
+                ok = False
+            if ok:
+                summary.emails_sent += 1
+
+    logger.info(
+        f"Completed: {summary.emails_sent}/{summary.emails_attempted} sent across "
+        f"{summary.targets_with_recipients} departments"
+    )
+    return summary
