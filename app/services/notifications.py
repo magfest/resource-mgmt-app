@@ -14,6 +14,7 @@ branches on WorkTypeConfig.uses_dispatch to pick between worktype admins
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from flask import current_app
 from typing import List, Set
 
@@ -431,9 +432,26 @@ def _get_approval_group_emails(group_ids: List[int]) -> List[str]:
     return list(emails)
 
 
-def _get_department_member_emails(department_id: int, event_cycle_id: int) -> List[str]:
+def _get_department_member_emails(
+    department_id: int,
+    event_cycle_id: int,
+    include_division_members: bool = True,
+) -> List[str]:
     """
-    Get emails of department members (direct or via division membership).
+    Get emails of department members for an event.
+
+    By default returns the union of direct department members
+    (DepartmentMembership) and members of the department's parent division
+    (DivisionMembership) — the latter inherit access to every department in
+    their division. Existing notification callers (submitted, needs_attention,
+    finalized, submission_confirmation) want both because divisional heads
+    follow individual requests.
+
+    Set include_division_members=False to skip the division-membership
+    expansion. The submission_reminder flow does this because a division
+    head with 15 departments would otherwise receive 15 copies of an
+    identical reminder; direct dept members are sufficient to drive the
+    submit action.
     """
     from app.models import Department
 
@@ -449,16 +467,17 @@ def _get_department_member_emails(department_id: int, event_cycle_id: int) -> Li
     for m in dept_memberships:
         user_ids.add(m.user_id)
 
-    # Division memberships (for departments within that division)
-    dept = db.session.query(Department).get(department_id)
-    if dept and dept.division_id:
-        div_memberships = db.session.query(DivisionMembership).filter_by(
-            division_id=dept.division_id,
-            event_cycle_id=event_cycle_id,
-        ).all()
+    # Division memberships (for departments within that division) — optional
+    if include_division_members:
+        dept = db.session.query(Department).get(department_id)
+        if dept and dept.division_id:
+            div_memberships = db.session.query(DivisionMembership).filter_by(
+                division_id=dept.division_id,
+                event_cycle_id=event_cycle_id,
+            ).all()
 
-        for m in div_memberships:
-            user_ids.add(m.user_id)
+            for m in div_memberships:
+                user_ids.add(m.user_id)
 
     # Batch load all users in one query
     if user_ids:
@@ -468,3 +487,232 @@ def _get_department_member_emails(department_id: int, event_cycle_id: int) -> Li
                 emails.add(user.email)
 
     return list(emails)
+
+
+# ============================================================
+# Submission-reminder audience query (manual-trigger stopgap)
+# ============================================================
+
+
+@dataclass(frozen=True)
+class ReminderTarget:
+    """One department to be reminded, plus its pre-computed recipient list."""
+    department_id: int
+    department_code: str
+    department_name: str
+    recipient_emails: list[str]
+
+
+def get_departments_needing_submission_reminder(
+    event_cycle: 'EventCycle',
+) -> list['ReminderTarget']:
+    """
+    Find every department participating in `event_cycle` that has NOT yet
+    started a PRIMARY BUDGET submission (no work item out of DRAFT).
+
+    Scoped end-to-end to the single `event_cycle` argument. Work items,
+    memberships, and enablement rows from other events are never consulted.
+
+    Returns a list sorted by department code for deterministic dry-run
+    output. Departments with no human recipients are still returned (with
+    empty recipient_emails) so the caller can warn instead of silently
+    dropping them.
+    """
+    # Function-level imports to avoid module-load-time coupling between
+    # the service layer and route helpers (see feedback_circular_imports).
+    from app.routes.work.helpers.event_enablement import (
+        get_enabled_departments_for_event,
+    )
+    from app.models import (
+        WorkType,
+        WorkPortfolio,
+        WorkItem,
+        REQUEST_KIND_PRIMARY,
+        WORK_ITEM_STATUS_DRAFT,
+    )
+
+    # 1. Get departments enabled for this event (already handles the
+    #    EventCycleDepartment.is_enabled flag AND the division-cascade
+    #    where a disabled division excludes all its departments).
+    enabled_depts = get_enabled_departments_for_event(event_cycle.id)
+    if not enabled_depts:
+        return []
+
+    # 2. Identify departments that ALREADY have a PRIMARY BUDGET work item
+    #    out of DRAFT for this event. NOT EXISTS via a subquery — cleaner
+    #    than LEFT JOIN IS NULL when a dept has multiple work items.
+    budget_wt = db.session.query(WorkType).filter_by(code="BUDGET").first()
+    if budget_wt is None:
+        logger.warning(
+            "BUDGET WorkType not seeded; no departments to remind. "
+            "(Run `flask seed bootstrap` if this is a fresh DB.)"
+        )
+        return []
+
+    submitted_dept_rows = db.session.query(WorkPortfolio.department_id).join(
+        WorkItem, WorkItem.portfolio_id == WorkPortfolio.id,
+    ).filter(
+        WorkPortfolio.event_cycle_id == event_cycle.id,
+        WorkPortfolio.work_type_id == budget_wt.id,
+        WorkItem.request_kind == REQUEST_KIND_PRIMARY,
+        WorkItem.status != WORK_ITEM_STATUS_DRAFT,
+    ).distinct().all()
+    submitted_dept_ids = {row.department_id for row in submitted_dept_rows}
+
+    # 3. Build the target list for departments still needing a reminder.
+    targets: list[ReminderTarget] = []
+    for dept in enabled_depts:
+        if dept.id in submitted_dept_ids:
+            continue
+        # Direct department members only — DivisionMembership members would
+        # otherwise receive one reminder per department in their division
+        # (a div head with 15 depts gets 15 near-identical emails). Per-target
+        # scoping is sufficient to drive the submit action.
+        recipients = _get_department_member_emails(
+            department_id=dept.id,
+            event_cycle_id=event_cycle.id,
+            include_division_members=False,
+        )
+        targets.append(ReminderTarget(
+            department_id=dept.id,
+            department_code=dept.code,
+            department_name=dept.name,
+            recipient_emails=recipients,
+        ))
+
+    # 4. Sort by department code for deterministic dry-run output.
+    targets.sort(key=lambda t: t.department_code)
+    return targets
+
+
+# --- Orchestrator ---
+
+
+@dataclass
+class ReminderRunSummary:
+    """Result of a send_submission_reminders run (live or dry)."""
+    event_code: str
+    targets_total: int
+    targets_with_recipients: int
+    targets_without_recipients: list[str]   # dept codes
+    emails_sent: int
+    emails_attempted: int
+    dry_run: bool
+
+
+def send_submission_reminders(
+    event_cycle: 'EventCycle',
+    dry_run: bool,
+) -> 'ReminderRunSummary':
+    """
+    Render the 'submission_reminder' template once per department and send
+    one copy per recipient via the existing send_email().
+
+    Template context per render:
+        department  — the Department being reminded
+        event_cycle — the EventCycle
+        base_url    — from get_base_url()
+
+    When dry_run=True, no send_email() calls are made; the summary still
+    reports targets and counts. The orchestrator does no DB writes of its
+    own; send_email() owns NotificationLog. send_email() exceptions are
+    contained per-recipient so one bad row does not abort the run.
+    """
+    # Function-level import follows existing pattern in this file
+    # (_get_department_member_emails does the same for Department).
+    from app.models import Department
+
+    logger.info(
+        f"Starting submission reminders for {event_cycle.code} "
+        f"(dry_run={dry_run})"
+    )
+
+    targets = get_departments_needing_submission_reminder(event_cycle)
+
+    summary = ReminderRunSummary(
+        event_code=event_cycle.code,
+        targets_total=len(targets),
+        targets_with_recipients=sum(1 for t in targets if t.recipient_emails),
+        targets_without_recipients=[
+            t.department_code for t in targets if not t.recipient_emails
+        ],
+        emails_sent=0,
+        emails_attempted=0,
+        dry_run=dry_run,
+    )
+
+    for code in summary.targets_without_recipients:
+        logger.warning(
+            f"Submission-reminder target {code} has no recipients; skipping send."
+        )
+
+    if dry_run:
+        logger.info(
+            f"Completed (dry-run): would send to "
+            f"{sum(len(t.recipient_emails) for t in targets)} recipients across "
+            f"{summary.targets_with_recipients} departments"
+        )
+        return summary
+
+    base_url = get_base_url()
+
+    # Per-target render failures (`continue`) and per-recipient send failures
+    # (`try/except`) are handled asymmetrically by design: a render failure is
+    # almost always a programming error (missing template, Jinja syntax, gone
+    # department) that affects every recipient of that target the same way,
+    # while a send failure may be a transient per-recipient SES issue.
+    for target in targets:
+        if not target.recipient_emails:
+            continue
+
+        dept = db.session.get(Department, target.department_id)
+        if dept is None:
+            # Department row vanished between the audience query and now (race
+            # with admin delete). Skip rather than letting Jinja AttributeError
+            # propagate past render_email_template's UndefinedError handler.
+            logger.error(
+                f"Department id={target.department_id} disappeared mid-run; "
+                f"skipping {len(target.recipient_emails)} recipients for "
+                f"{target.department_code}."
+            )
+            continue
+
+        # Render once per department (department + event_cycle vary across targets,
+        # but are identical for all recipients within one target).
+        rendered = render_email_template('submission_reminder', {
+            'department': dept,
+            'event_cycle': event_cycle,
+            'base_url': base_url,
+        })
+        if not rendered:
+            logger.error(
+                f"Failed to render submission_reminder template for "
+                f"{target.department_code}; skipping {len(target.recipient_emails)} "
+                f"recipients."
+            )
+            continue
+
+        for email in target.recipient_emails:
+            summary.emails_attempted += 1
+            try:
+                ok = send_email(
+                    to=email,
+                    subject=rendered.subject,
+                    body_text=rendered.body_text,
+                    template_key='submission_reminder',
+                    work_item_id=None,
+                )
+            except Exception:
+                logger.exception(
+                    f"send_email raised for {email} "
+                    f"(dept={target.department_code}); continuing run."
+                )
+                ok = False
+            if ok:
+                summary.emails_sent += 1
+
+    logger.info(
+        f"Completed: {summary.emails_sent}/{summary.emails_attempted} sent across "
+        f"{summary.targets_with_recipients} departments"
+    )
+    return summary

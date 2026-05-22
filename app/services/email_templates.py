@@ -79,6 +79,15 @@ EMAIL_TEMPLATE_VARIABLES = {
         'work_item.portfolio.event_cycle.code': 'Event code',
         'base_url': 'Base URL of the application',
     },
+    'submission_reminder': {
+        'department': 'The Department being reminded',
+        'department.name': 'Department name (e.g., "Tech Operations")',
+        'department.code': 'Department code (e.g., "TECHOPS")',
+        'event_cycle': 'The EventCycle',
+        'event_cycle.name': 'Event name (e.g., "MAGFest 2027")',
+        'event_cycle.code': 'Event code (e.g., "MAG2027")',
+        'base_url': 'Base URL of the application',
+    },
 }
 
 
@@ -207,6 +216,8 @@ def get_sample_context() -> dict[str, Any]:
 
     return {
         'work_item': MockWorkItem(),
+        'department': MockDepartment(),
+        'event_cycle': MockEventCycle(),
         'base_url': current_app.config.get('BASE_URL', 'https://budget.magfest.org'),
     }
 
