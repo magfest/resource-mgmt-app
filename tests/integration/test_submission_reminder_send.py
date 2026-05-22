@@ -6,6 +6,8 @@ Covers:
 - Live-run calls send_email() once per (dept, recipient) with right args.
 - send_email() exceptions are contained — run completes, exception
   counted as a miss.
+- Live-run commits NotificationLog rows per-recipient (regression: CLI
+  commands don't get the implicit request-end commit HTTP routes do).
 """
 from __future__ import annotations
 
@@ -162,3 +164,33 @@ def test_send_email_exception_is_contained(seeded):
     assert mock_send.call_count == 4
     assert summary.emails_attempted == 4
     assert summary.emails_sent == 3
+
+
+def test_live_run_commits_per_recipient(seeded):
+    """
+    Regression test: the orchestrator must commit per-recipient so the
+    NotificationLog rows that send_email() adds actually persist. CLI
+    commands don't get an implicit commit at request-end like HTTP routes
+    do; without the explicit commit, the rows are discarded on process
+    exit and the audit trail is lost.
+
+    A deeper test that asserts NotificationLog rows are actually written
+    is blocked by a pre-existing schema quirk (NotificationLog.id is a
+    bare BigInteger PK without a SQLite Integer variant per
+    feedback_sqlite_bigint_pk; SQLite won't autoincrement it). Spying on
+    db.session.commit instead is enough to catch "someone removed the
+    commit call" — the regression we're guarding against.
+    """
+    with patch("app.services.notifications.send_email", return_value=True):
+        with patch.object(db.session, "commit") as mock_commit:
+            summary = send_submission_reminders(seeded["cycle"], dry_run=False)
+
+    # 2 departments * 2 recipients each = 4 recipients. The orchestrator
+    # should commit exactly once per recipient (not end-of-run, so a
+    # mid-run crash still leaves a clear audit trail).
+    assert mock_commit.call_count == 4, (
+        f"Expected commit per recipient (4 total). Got {mock_commit.call_count}. "
+        f"If this drops to 0, the orchestrator lost its per-recipient commit — "
+        f"NotificationLog rows would be discarded on CLI exit."
+    )
+    assert summary.emails_sent == 4
