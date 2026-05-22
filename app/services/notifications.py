@@ -14,6 +14,7 @@ branches on WorkTypeConfig.uses_dispatch to pick between worktype admins
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from flask import current_app
 from typing import List, Set
 
@@ -468,3 +469,94 @@ def _get_department_member_emails(department_id: int, event_cycle_id: int) -> Li
                 emails.add(user.email)
 
     return list(emails)
+
+
+# ============================================================
+# Submission-reminder audience query (manual-trigger stopgap)
+# ============================================================
+
+
+@dataclass(frozen=True)
+class ReminderTarget:
+    """One department to be reminded, plus its pre-computed recipient list."""
+    department_id: int
+    department_code: str
+    department_name: str
+    recipient_emails: list[str]
+
+
+def get_departments_needing_submission_reminder(
+    event_cycle: 'EventCycle',
+) -> list['ReminderTarget']:
+    """
+    Find every department participating in `event_cycle` that has NOT yet
+    started a PRIMARY BUDGET submission (no work item out of DRAFT).
+
+    Scoped end-to-end to the single `event_cycle` argument. Work items,
+    memberships, and enablement rows from other events are never consulted.
+
+    Returns a list sorted by department code for deterministic dry-run
+    output. Departments with no human recipients are still returned (with
+    empty recipient_emails) so the caller can warn instead of silently
+    dropping them.
+    """
+    # Function-level imports to avoid module-load-time coupling between
+    # the service layer and route helpers (see feedback_circular_imports).
+    from app.routes.work.helpers.event_enablement import (
+        get_enabled_departments_for_event,
+    )
+    from app.models import (
+        WorkType,
+        WorkPortfolio,
+        WorkItem,
+        REQUEST_KIND_PRIMARY,
+        WORK_ITEM_STATUS_DRAFT,
+    )
+
+    # 1. Get departments enabled for this event (already handles the
+    #    EventCycleDepartment.is_enabled flag AND the division-cascade
+    #    where a disabled division excludes all its departments).
+    enabled_depts = get_enabled_departments_for_event(event_cycle.id)
+    if not enabled_depts:
+        return []
+
+    # 2. Identify departments that ALREADY have a PRIMARY BUDGET work item
+    #    out of DRAFT for this event. NOT EXISTS via a subquery — cleaner
+    #    than LEFT JOIN IS NULL when a dept has multiple work items.
+    budget_wt = db.session.query(WorkType).filter_by(code="BUDGET").first()
+    if budget_wt is None:
+        logger.warning(
+            "BUDGET WorkType not seeded; no departments to remind. "
+            "(Run `flask seed bootstrap` if this is a fresh DB.)"
+        )
+        return []
+
+    submitted_dept_rows = db.session.query(WorkPortfolio.department_id).join(
+        WorkItem, WorkItem.portfolio_id == WorkPortfolio.id,
+    ).filter(
+        WorkPortfolio.event_cycle_id == event_cycle.id,
+        WorkPortfolio.work_type_id == budget_wt.id,
+        WorkItem.request_kind == REQUEST_KIND_PRIMARY,
+        WorkItem.status != WORK_ITEM_STATUS_DRAFT,
+    ).distinct().all()
+    submitted_dept_ids = {row.department_id for row in submitted_dept_rows}
+
+    # 3. Build the target list for departments still needing a reminder.
+    targets: list[ReminderTarget] = []
+    for dept in enabled_depts:
+        if dept.id in submitted_dept_ids:
+            continue
+        recipients = _get_department_member_emails(
+            department_id=dept.id,
+            event_cycle_id=event_cycle.id,
+        )
+        targets.append(ReminderTarget(
+            department_id=dept.id,
+            department_code=dept.code,
+            department_name=dept.name,
+            recipient_emails=recipients,
+        ))
+
+    # 4. Sort by department code for deterministic dry-run output.
+    targets.sort(key=lambda t: t.department_code)
+    return targets
