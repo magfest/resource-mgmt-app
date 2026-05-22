@@ -432,9 +432,26 @@ def _get_approval_group_emails(group_ids: List[int]) -> List[str]:
     return list(emails)
 
 
-def _get_department_member_emails(department_id: int, event_cycle_id: int) -> List[str]:
+def _get_department_member_emails(
+    department_id: int,
+    event_cycle_id: int,
+    include_division_members: bool = True,
+) -> List[str]:
     """
-    Get emails of department members (direct or via division membership).
+    Get emails of department members for an event.
+
+    By default returns the union of direct department members
+    (DepartmentMembership) and members of the department's parent division
+    (DivisionMembership) — the latter inherit access to every department in
+    their division. Existing notification callers (submitted, needs_attention,
+    finalized, submission_confirmation) want both because divisional heads
+    follow individual requests.
+
+    Set include_division_members=False to skip the division-membership
+    expansion. The submission_reminder flow does this because a division
+    head with 15 departments would otherwise receive 15 copies of an
+    identical reminder; direct dept members are sufficient to drive the
+    submit action.
     """
     from app.models import Department
 
@@ -450,16 +467,17 @@ def _get_department_member_emails(department_id: int, event_cycle_id: int) -> Li
     for m in dept_memberships:
         user_ids.add(m.user_id)
 
-    # Division memberships (for departments within that division)
-    dept = db.session.query(Department).get(department_id)
-    if dept and dept.division_id:
-        div_memberships = db.session.query(DivisionMembership).filter_by(
-            division_id=dept.division_id,
-            event_cycle_id=event_cycle_id,
-        ).all()
+    # Division memberships (for departments within that division) — optional
+    if include_division_members:
+        dept = db.session.query(Department).get(department_id)
+        if dept and dept.division_id:
+            div_memberships = db.session.query(DivisionMembership).filter_by(
+                division_id=dept.division_id,
+                event_cycle_id=event_cycle_id,
+            ).all()
 
-        for m in div_memberships:
-            user_ids.add(m.user_id)
+            for m in div_memberships:
+                user_ids.add(m.user_id)
 
     # Batch load all users in one query
     if user_ids:
@@ -546,9 +564,14 @@ def get_departments_needing_submission_reminder(
     for dept in enabled_depts:
         if dept.id in submitted_dept_ids:
             continue
+        # Direct department members only — DivisionMembership members would
+        # otherwise receive one reminder per department in their division
+        # (a div head with 15 depts gets 15 near-identical emails). Per-target
+        # scoping is sufficient to drive the submit action.
         recipients = _get_department_member_emails(
             department_id=dept.id,
             event_cycle_id=event_cycle.id,
+            include_division_members=False,
         )
         targets.append(ReminderTarget(
             department_id=dept.id,

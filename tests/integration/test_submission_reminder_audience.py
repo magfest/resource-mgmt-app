@@ -5,6 +5,8 @@ Covers:
 - The done/not-done discriminator across PRIMARY/SUPPLEMENTARY/no-portfolio cases.
 - The EventCycleDepartment.is_enabled flag (no row = enabled).
 - Departments with no human members surfaced (not silently dropped).
+- DivisionMembership members are NOT pulled into recipients (avoids spam to
+  division heads who'd otherwise see one reminder per dept in their division).
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from app import db
 from app.models import (
     Department,
     Division,
+    DivisionMembership,
     EventCycle,
     EventCycleDepartment,
     WorkType,
@@ -225,4 +228,53 @@ def test_empty_recipient_dept_surfaced_with_empty_list(app, admin):
     )
     assert target_g.recipient_emails == [], (
         f"Expected empty recipient list, got {target_g.recipient_emails!r}"
+    )
+
+
+def test_division_membership_does_not_contribute_recipients(app, admin):
+    """
+    DivisionMembership members must NOT appear in reminder recipients.
+
+    Why: a division head with N departments under them would otherwise
+    receive N near-identical reminder emails. Direct DepartmentMembership
+    members are sufficient to drive the submit action.
+    """
+    cycle = _seed_event_cycle()
+    wt = _seed_budget_worktype()  # noqa: F841
+
+    # Division with one department; one direct dept member and one div-level head.
+    div = Division(code="OPS", name="Operations Division", is_active=True)
+    db.session.add(div)
+    db.session.flush()
+
+    dept_h = _seed_department("HHH", "Dept H (in division)", division=div)
+
+    # Direct dept member — SHOULD appear.
+    _seed_user_and_membership("dept-direct", dept_h, cycle)
+
+    # Division head — should NOT appear.
+    div_head = User(
+        id="test:div-head",
+        email="div-head@test.local",
+        display_name="Division Head",
+        is_active=True,
+    )
+    db.session.add(div_head)
+    db.session.flush()
+    db.session.add(DivisionMembership(
+        user_id=div_head.id,
+        division_id=div.id,
+        event_cycle_id=cycle.id,
+    ))
+    db.session.commit()
+
+    targets = get_departments_needing_submission_reminder(cycle)
+    target_h = next((t for t in targets if t.department_code == "HHH"), None)
+    assert target_h is not None
+    assert "dept-direct@test.local" in target_h.recipient_emails, (
+        "Direct department members must still receive reminders."
+    )
+    assert "div-head@test.local" not in target_h.recipient_emails, (
+        "DivisionMembership members must NOT receive the per-department "
+        "reminder (would cause one-email-per-dept spam to division heads)."
     )
