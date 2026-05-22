@@ -40,7 +40,7 @@ Submission deadline: Sunday, May 24, 2026 at 11:59 PM ET
 The budget request must be submitted before the deadline so it can be reviewed and approved in time for the event.
 
 Open your department's budget portfolio to start or finish your submission:
-{{ base_url }}/work/{{ event_cycle.code }}/{{ department.code }}/budget/
+{{ base_url }}/{{ event_cycle.code }}/{{ department.code }}/budget
 
 If your department's budget has already been submitted and you're still seeing this reminder, please reply so we can investigate.
 '''
