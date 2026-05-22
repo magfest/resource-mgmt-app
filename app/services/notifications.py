@@ -708,6 +708,23 @@ def send_submission_reminders(
                     f"(dept={target.department_code}); continuing run."
                 )
                 ok = False
+
+            # send_email() adds the NotificationLog row but does not commit
+            # (per its docstring contract: "Caller handles commit"). HTTP
+            # routes get an implicit commit at request-end; CLI commands do
+            # not, so without this each NotificationLog row would be discarded
+            # on process exit. Commit per-recipient (not end-of-run) so a
+            # mid-run crash still leaves a clear audit trail of which sends
+            # already went out.
+            try:
+                db.session.commit()
+            except Exception:
+                logger.exception(
+                    f"Failed to commit NotificationLog for {email} "
+                    f"(dept={target.department_code}); rolling back this row."
+                )
+                db.session.rollback()
+
             if ok:
                 summary.emails_sent += 1
 
