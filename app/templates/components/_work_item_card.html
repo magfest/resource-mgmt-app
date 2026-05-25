@@ -33,6 +33,7 @@
           {% endif %}
         </a>
         <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status_label }}</span>
+        {% if extension_badge is defined %}{{ extension_badge(item, users_by_id=users_by_id if users_by_id is defined else None) }}{% endif %}
         {# Show approval stage breakdown if there are approved lines #}
         {% if line_summary and line_summary.approved_count > 0 and status != "FINALIZED" %}
           {% if line_summary.final_approved_count > 0 and line_summary.ag_approved_count == 0 %}
