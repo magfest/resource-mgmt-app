@@ -3,7 +3,7 @@ Work item action routes - submit, checkout, checkin, needs_info.
 """
 from datetime import datetime
 
-from flask import redirect, url_for, request, flash
+from flask import redirect, url_for, request, flash, abort
 
 from app import db
 from app.models import (
@@ -18,6 +18,8 @@ from app.models import (
     AUDIT_EVENT_NEEDS_INFO_RESPONDED,
     AUDIT_EVENT_CHECKOUT,
     AUDIT_EVENT_CHECKIN,
+    AUDIT_EVENT_EXTENSION_GRANTED,
+    AUDIT_EVENT_EXTENSION_REVOKED,
 )
 from app.routes import get_user_ctx
 from .. import work_bp
@@ -27,6 +29,7 @@ from ..helpers import (
     compute_work_item_totals,
     checkout_work_item,
     checkin_work_item,
+    is_budget_admin,
 )
 from ..helpers.lifecycle import recall_to_draft, submit_work_item
 from .common import get_work_item_by_public_id
@@ -410,3 +413,89 @@ def work_item_respond_info(event: str, dept: str, public_id: str, work_type_slug
         public_id=public_id,
         work_type_slug=work_type_slug,
     ))
+
+
+# ============================================================
+# Extension flag routes
+# ============================================================
+
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/extension/grant")
+@work_bp.post("/<event>/<dept>/budget/item/<public_id>/extension/grant")
+def work_item_grant_extension(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
+    """
+    Grant an extension on a work item. Admin-only (BUDGET WORKTYPE_ADMIN or SUPER_ADMIN).
+    Idempotent: granting an already-granted item is a no-op with an info flash.
+    """
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
+    require_work_item_view(work_item, ctx)  # baseline view check; admin gate below
+
+    user_ctx = get_user_ctx()
+    if not is_budget_admin(user_ctx, ctx.work_type.id):
+        abort(403)
+
+    default_redirect = url_for(
+        "work.work_item_detail",
+        event=event,
+        dept=dept,
+        public_id=public_id,
+        work_type_slug=work_type_slug,
+    )
+
+    if work_item.extension_granted:
+        flash("Extension is already granted.", "info")
+        return redirect(default_redirect)
+
+    work_item.extension_granted = True
+    work_item.extension_granted_at = datetime.utcnow()
+    work_item.extension_granted_by_user_id = user_ctx.user_id
+
+    db.session.add(WorkItemAuditEvent(
+        work_item_id=work_item.id,
+        event_type=AUDIT_EVENT_EXTENSION_GRANTED,
+        created_by_user_id=user_ctx.user_id,
+    ))
+    db.session.commit()
+
+    flash("Extension granted.", "success")
+    return redirect(default_redirect)
+
+
+@work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/extension/revoke")
+@work_bp.post("/<event>/<dept>/budget/item/<public_id>/extension/revoke")
+def work_item_revoke_extension(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
+    """
+    Revoke an extension on a work item. Admin-only.
+    Idempotent: revoking a non-granted item is a no-op with an info flash.
+    """
+    work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
+    require_work_item_view(work_item, ctx)  # baseline view check; admin gate below
+
+    user_ctx = get_user_ctx()
+    if not is_budget_admin(user_ctx, ctx.work_type.id):
+        abort(403)
+
+    default_redirect = url_for(
+        "work.work_item_detail",
+        event=event,
+        dept=dept,
+        public_id=public_id,
+        work_type_slug=work_type_slug,
+    )
+
+    if not work_item.extension_granted:
+        flash("No extension to revoke.", "info")
+        return redirect(default_redirect)
+
+    work_item.extension_granted = False
+    work_item.extension_granted_at = None
+    work_item.extension_granted_by_user_id = None
+
+    db.session.add(WorkItemAuditEvent(
+        work_item_id=work_item.id,
+        event_type=AUDIT_EVENT_EXTENSION_REVOKED,
+        created_by_user_id=user_ctx.user_id,
+    ))
+    db.session.commit()
+
+    flash("Extension revoked.", "success")
+    return redirect(default_redirect)

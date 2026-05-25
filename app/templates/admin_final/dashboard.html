@@ -1,5 +1,6 @@
 {# templates/admin_final/dashboard.html #}
 {% extends "layout/base.html" %}
+{% from "macros/extension_badge.html" import extension_badge %}
 
 {% block title %}Admin Final Review{% endblock %}
 
@@ -100,6 +101,7 @@
                 <a href="{{ url_for('work.work_item_detail', event=item.event_cycle.code, dept=item.department.code, public_id=wi.public_id, work_type_slug=wi.portfolio.work_type_slug) }}">
                   {{ wi.public_id }}
                 </a>
+                {{ extension_badge(wi, users_by_id=users_by_id if users_by_id is defined else None) }}
               </td>
               <td>
                 {{ item.department.name }}
@@ -182,6 +184,7 @@
                 <a href="{{ url_for('work.work_item_detail', event=event_code, dept=dept_code, public_id=wi.public_id, work_type_slug=work_type_slug) }}">
                   {{ wi.public_id }}
                 </a>
+                {{ extension_badge(wi, users_by_id=users_by_id if users_by_id is defined else None) }}
                 <div class="muted small">{{ portfolio.department.name if portfolio else '-' }}</div>
               </td>
               <td>{{ line.line_number }}</td>
@@ -248,6 +251,7 @@
                 <a href="{{ url_for('work.work_item_detail', event=event_code, dept=dept_code, public_id=wi.public_id, work_type_slug=work_type_slug) }}">
                   {{ wi.public_id }}
                 </a>
+                {{ extension_badge(wi, users_by_id=users_by_id if users_by_id is defined else None) }}
               </td>
               <td>{{ portfolio.department.name if portfolio else '-' }}</td>
               <td class="right num">{{ format_currency(summary.total_approved_cents) }}</td>

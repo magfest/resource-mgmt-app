@@ -1,5 +1,6 @@
 {# templates/admin_final/all_requests.html #}
 {% extends "layout/base.html" %}
+{% from "macros/extension_badge.html" import extension_badge %}
 
 {% block title %}All Budget Requests{% endblock %}
 
@@ -118,6 +119,7 @@
                 {% else %}
                   <span class="pill">{{ status }}</span>
                 {% endif %}
+                {{ extension_badge(wi, users_by_id=users_by_id if users_by_id is defined else None, compact=True) }}
               </td>
               <td data-label="Lines" class="right num">{{ item.line_count }}</td>
               <td data-label="Total" class="right num">{{ format_currency(item.total_cents) }}</td>

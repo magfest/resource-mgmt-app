@@ -3,6 +3,7 @@
 {% from "macros/status_pill.html" import render_status_pill %}
 {% from "macros/checkout_banner.html" import render_checkout_banner %}
 {% from "macros/audit_log.html" import render_audit_log with context %}
+{% from "macros/extension_badge.html" import extension_badge %}
 
 {% block title %}{{ work_item.public_id }} - Budget Request{% endblock %}
 
@@ -18,6 +19,7 @@
       <h1 style="margin:0;">
         {{ work_item.public_id }}
         {{ render_status_pill(status, label=friendly_status(status) if friendly_status else status, extra_style="margin-left: 8px; font-weight: normal;") }}
+        {{ extension_badge(work_item, users_by_id=users_by_id if users_by_id is defined else None) }}
       </h1>
       <div class="muted" style="margin-top:4px; line-height:1.5;">
         <strong>{{ work_item.request_kind }}</strong> &middot;
@@ -132,6 +134,26 @@
         Admin Final Queue
       </a>
     {% endif %}
+
+    {# Extension Grant/Revoke button (admin only) #}
+    {% if perms.is_worktype_admin %}
+      {% if work_item.extension_granted %}
+        <form method="post"
+              action="{{ url_for('work.work_item_revoke_extension', event=ctx.event_cycle.code, dept=ctx.department.code, work_type_slug=ctx.work_type.config.url_slug, public_id=work_item.public_id) }}"
+              style="display: inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn">Revoke Extension</button>
+        </form>
+      {% else %}
+        <form method="post"
+              action="{{ url_for('work.work_item_grant_extension', event=ctx.event_cycle.code, dept=ctx.department.code, work_type_slug=ctx.work_type.config.url_slug, public_id=work_item.public_id) }}"
+              style="display: inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn">Grant Extension</button>
+        </form>
+      {% endif %}
+    {% endif %}
+
     <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
     <a class="btn" href="{{ url_for('work.portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
       Dept. Budget Homepage

@@ -1,5 +1,6 @@
 {# templates/budget/work_item_edit.html #}
 {% extends "layout/base.html" %}
+{% from "macros/extension_badge.html" import extension_badge %}
 
 {% block title %}Edit {{ work_item.public_id }}{% endblock %}
 
@@ -47,6 +48,7 @@
       <h1 style="margin:0;">
         Edit {{ work_item.public_id }}
         <span class="pill pill-draft" style="margin-left: 8px; font-weight: normal;">{{ status_label }}</span>
+        {{ extension_badge(work_item, users_by_id=users_by_id if users_by_id is defined else None) }}
       </h1>
       <div class="muted" style="margin-top:4px; line-height:1.5;">
         <strong>{{ work_item.request_kind }}</strong> &middot;

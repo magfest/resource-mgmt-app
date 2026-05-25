@@ -1,5 +1,6 @@
 {# templates/budget/portfolio_landing.html #}
 {% extends "layout/base.html" %}
+{% from "macros/extension_badge.html" import extension_badge %}
 
 {% block title %}{{ ctx.department.name }} Budget - {{ ctx.event_cycle.code }}{% endblock %}
 

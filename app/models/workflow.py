@@ -287,6 +287,11 @@ class WorkItem(db.Model):
     # Email batching flag
     pending_notification = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Extension approval (per-request flag; granted by budget admin)
+    extension_granted = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    extension_granted_at = db.Column(db.DateTime, nullable=True, index=True)
+    extension_granted_by_user_id = db.Column(db.String(64), nullable=True, index=True)
+
     # Soft archive (rare; normally archive portfolios instead)
     is_archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
     archived_at = db.Column(db.DateTime, nullable=True, index=True)
