@@ -1,0 +1,14 @@
+{# Renders an "Extension Approved" badge when the work item has the flag set.
+   Tooltip shows granter display name + grant date when users_by_id lookup
+   is provided; falls back to "unknown" if not. #}
+{% macro extension_badge(work_item, users_by_id=None) %}
+  {% if work_item.extension_granted %}
+    {% set granter = (users_by_id or {}).get(work_item.extension_granted_by_user_id) %}
+    {% set granter_name = granter.display_name if granter else 'unknown' %}
+    {% set granted_date = work_item.extension_granted_at.strftime('%b %d, %Y') if work_item.extension_granted_at else 'unknown date' %}
+    <span class="pill pill-warning"
+          title="Granted by {{ granter_name }} on {{ granted_date }}">
+      Extension Approved
+    </span>
+  {% endif %}
+{% endmacro %}
