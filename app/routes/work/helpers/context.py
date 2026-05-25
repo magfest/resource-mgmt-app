@@ -202,6 +202,13 @@ def get_portfolio_context(
     ).first()
 
     if not portfolio:
+        # Lazy auto-create requires an authenticated actor for
+        # WorkPortfolio.created_by_user_id (NOT NULL). Anonymous visitors —
+        # e.g. recipients clicking a submission-reminder email link without
+        # an active session — must be bounced to login before the insert,
+        # otherwise the flush raises an IntegrityError -> 500.
+        if not user_ctx.user_id:
+            abort(401)
         portfolio = WorkPortfolio(
             work_type_id=work_type.id,
             event_cycle_id=event_cycle.id,
