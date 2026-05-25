@@ -1,13 +1,14 @@
 """
 Integration tests for the budget request extension flag.
 
-Tests cover the grant route for marking a WorkItem as having an approved extension.
+Tests cover the grant and revoke routes for marking a WorkItem as having an approved extension.
 """
 from app import db
 from app.models import (
     WorkItem,
     WorkItemAuditEvent,
     AUDIT_EVENT_EXTENSION_GRANTED,
+    AUDIT_EVENT_EXTENSION_REVOKED,
 )
 
 
@@ -126,5 +127,63 @@ class TestGrantExtension:
             audit = WorkItemAuditEvent.query.filter_by(
                 work_item_id=wi.id,
                 event_type=AUDIT_EVENT_EXTENSION_GRANTED,
+            ).count()
+            assert audit == 0
+
+
+# ============================================================
+# Revoke route tests
+# ============================================================
+
+class TestRevokeExtension:
+
+    def test_admin_can_revoke_extension(self, app, client, seed_draft_work_item):
+        """Revoking a granted extension clears the flag + stamps and writes an audit event."""
+        data = seed_draft_work_item
+        work_item = data["work_item"]
+        public_id = work_item.public_id
+
+        _login(client, "test:admin")
+
+        # First grant, then revoke
+        client.post(f"/tst2026/testdept/budget/item/{public_id}/extension/grant")
+        response = client.post(
+            f"/tst2026/testdept/budget/item/{public_id}/extension/revoke",
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+        with app.app_context():
+            wi = WorkItem.query.filter_by(public_id=public_id).one()
+            assert wi.extension_granted is False
+            assert wi.extension_granted_at is None
+            assert wi.extension_granted_by_user_id is None
+
+            audit = WorkItemAuditEvent.query.filter_by(
+                work_item_id=wi.id,
+                event_type=AUDIT_EVENT_EXTENSION_REVOKED,
+            ).all()
+            assert len(audit) == 1
+
+    def test_revoke_is_idempotent(self, app, client, seed_draft_work_item):
+        """Revoking a non-granted extension is a no-op."""
+        data = seed_draft_work_item
+        work_item = data["work_item"]
+        public_id = work_item.public_id
+
+        _login(client, "test:admin")
+
+        response = client.post(
+            f"/tst2026/testdept/budget/item/{public_id}/extension/revoke",
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+        with app.app_context():
+            wi = WorkItem.query.filter_by(public_id=public_id).one()
+            assert wi.extension_granted is False
+            audit = WorkItemAuditEvent.query.filter_by(
+                work_item_id=wi.id,
+                event_type=AUDIT_EVENT_EXTENSION_REVOKED,
             ).count()
             assert audit == 0
