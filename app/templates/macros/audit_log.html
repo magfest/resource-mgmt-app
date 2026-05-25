@@ -65,6 +65,10 @@
               <span class="pill pill-submitted">SUBMITTED</span>
             {% elif event.event_type == 'DISPATCH' %}
               <span class="pill" style="background: #dbeafe; color: #1e40af;">DISPATCHED</span>
+            {% elif event.event_type == 'EXTENSION_GRANTED' %}
+              <span class="pill pill-warning">Extension Granted</span>
+            {% elif event.event_type == 'EXTENSION_REVOKED' %}
+              <span class="pill pill-needs">Extension Revoked</span>
             {% elif event.event_type == 'NEEDS_INFO_REQUESTED' %}
               <span class="pill pill-needs">INFO REQUESTED</span>
             {% elif event.event_type == 'NEEDS_INFO_RESPONDED' %}
