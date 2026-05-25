@@ -508,7 +508,8 @@ def get_departments_needing_submission_reminder(
 ) -> list['ReminderTarget']:
     """
     Find every department participating in `event_cycle` that has NOT yet
-    started a PRIMARY BUDGET submission (no work item out of DRAFT).
+    started a PRIMARY BUDGET submission (no work item out of DRAFT) AND has
+    NOT been granted an extension on any PRIMARY BUDGET work item.
 
     Scoped end-to-end to the single `event_cycle` argument. Work items,
     memberships, and enablement rows from other events are never consulted.
@@ -559,10 +560,26 @@ def get_departments_needing_submission_reminder(
     ).distinct().all()
     submitted_dept_ids = {row.department_id for row in submitted_dept_rows}
 
+    # 2b. Identify departments that have any PRIMARY BUDGET work item with
+    #     extension_granted=True for this event. An approved extension
+    #     means the budget team has agreed the department can submit late,
+    #     so the automated reminder should not nag them.
+    extended_dept_rows = db.session.query(WorkPortfolio.department_id).join(
+        WorkItem, WorkItem.portfolio_id == WorkPortfolio.id,
+    ).filter(
+        WorkPortfolio.event_cycle_id == event_cycle.id,
+        WorkPortfolio.work_type_id == budget_wt.id,
+        WorkItem.request_kind == REQUEST_KIND_PRIMARY,
+        WorkItem.extension_granted.is_(True),
+    ).distinct().all()
+    extended_dept_ids = {row.department_id for row in extended_dept_rows}
+
     # 3. Build the target list for departments still needing a reminder.
     targets: list[ReminderTarget] = []
     for dept in enabled_depts:
         if dept.id in submitted_dept_ids:
+            continue
+        if dept.id in extended_dept_ids:
             continue
         # Direct department members only — DivisionMembership members would
         # otherwise receive one reminder per department in their division

@@ -231,6 +231,46 @@ def test_empty_recipient_dept_surfaced_with_empty_list(app, admin):
     )
 
 
+def test_excludes_dept_with_extension_granted_on_draft_primary(app, admin):
+    """
+    A department whose only PRIMARY BUDGET is still in DRAFT but has been
+    granted an extension must NOT receive the reminder. The extension is
+    the budget team's signal that this department is permitted to submit
+    late; the automated reminder should not contradict it.
+
+    Dept I: PRIMARY in DRAFT, extension_granted=True   -> EXCLUDED
+    Dept J: PRIMARY in DRAFT, extension_granted=False  -> RETURNED (control)
+    """
+    cycle = _seed_event_cycle()
+    wt = _seed_budget_worktype()
+
+    dept_i = _seed_department("III", "Dept I (extension granted)")
+    dept_j = _seed_department("JJJ", "Dept J (no extension)")
+
+    _seed_user_and_membership("user-i", dept_i, cycle)
+    _seed_user_and_membership("user-j", dept_j, cycle)
+
+    _, wi_i = _seed_portfolio_with_work_item(
+        dept_i, cycle, wt, REQUEST_KIND_PRIMARY, WORK_ITEM_STATUS_DRAFT, admin,
+    )
+    wi_i.extension_granted = True
+    _seed_portfolio_with_work_item(
+        dept_j, cycle, wt, REQUEST_KIND_PRIMARY, WORK_ITEM_STATUS_DRAFT, admin,
+    )
+    db.session.commit()
+
+    targets = get_departments_needing_submission_reminder(cycle)
+    codes = [t.department_code for t in targets]
+
+    assert "III" not in codes, (
+        "Dept with extension_granted=True on draft primary must be excluded "
+        "from reminders."
+    )
+    assert "JJJ" in codes, (
+        "Control dept without extension must still be included."
+    )
+
+
 def test_division_membership_does_not_contribute_recipients(app, admin):
     """
     DivisionMembership members must NOT appear in reminder recipients.
