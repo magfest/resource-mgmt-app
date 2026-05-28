@@ -201,11 +201,13 @@ class TestCheckoutLocking:
         admin_ctx = UserContext(
             user_id="test:admin", user=None,
             roles=("SUPER_ADMIN",), is_super_admin=True,
+            is_staff_ops=True,
             approval_group_ids=set(),
         )
         reviewer_ctx = UserContext(
             user_id="test:reviewer", user=None,
             roles=(), is_super_admin=False,
+            is_staff_ops=False,
             approval_group_ids={1},
         )
 
@@ -229,6 +231,7 @@ class TestCheckoutLocking:
         admin_ctx = UserContext(
             user_id="test:admin", user=None,
             roles=("SUPER_ADMIN",), is_super_admin=True,
+            is_staff_ops=True,
             approval_group_ids=set(),
         )
 
@@ -288,6 +291,7 @@ class TestFinalizationLocking:
         admin_ctx = UserContext(
             user_id="test:admin", user=None,
             roles=("SUPER_ADMIN",), is_super_admin=True,
+            is_staff_ops=True,
             approval_group_ids=set(),
         )
 
@@ -348,11 +352,13 @@ class TestFinalizationLocking:
         reviewer_ctx = UserContext(
             user_id="test:reviewer", user=None,
             roles=(), is_super_admin=False,
+            is_staff_ops=False,
             approval_group_ids={ag.id},
         )
         admin_ctx = UserContext(
             user_id="test:admin", user=None,
             roles=("SUPER_ADMIN",), is_super_admin=True,
+            is_staff_ops=True,
             approval_group_ids=set(),
         )
 
@@ -420,11 +426,13 @@ class TestFinalizationLocking:
         reviewer_ctx = UserContext(
             user_id="test:reviewer", user=None,
             roles=(), is_super_admin=False,
+            is_staff_ops=False,
             approval_group_ids={ag.id},
         )
         admin_ctx = UserContext(
             user_id="test:admin", user=None,
             roles=("SUPER_ADMIN",), is_super_admin=True,
+            is_staff_ops=True,
             approval_group_ids=set(),
         )
 

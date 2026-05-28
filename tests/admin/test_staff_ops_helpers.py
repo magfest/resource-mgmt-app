@@ -15,11 +15,14 @@ def _make_ctx(user_id="test:helper", *role_codes):
     per app/routes/__init__.py:67. `is_super_admin` is precomputed at
     construction time per app/routes/__init__.py:68.
     """
+    is_super_admin = constants.ROLE_SUPER_ADMIN in role_codes
+    is_staff_ops = is_super_admin or constants.ROLE_STAFF_OPS in role_codes
     return UserContext(
         user_id=user_id,
         user=None,
         roles=tuple(role_codes),
-        is_super_admin=(constants.ROLE_SUPER_ADMIN in role_codes),
+        is_super_admin=is_super_admin,
+        is_staff_ops=is_staff_ops,
         approval_group_ids=set(),
     )
 
@@ -93,3 +96,20 @@ def test_can_manage_membership_false_for_unprivileged():
     """A user with no relevant roles cannot manage membership at all."""
     ctx = _make_ctx("u1", constants.ROLE_APPROVER)
     assert admin_helpers.can_manage_membership(ctx, "other") is False
+
+
+def test_user_context_has_is_staff_ops_attribute():
+    """UserContext exposes is_staff_ops as a boolean field (parallel to is_super_admin)."""
+    ctx = _make_ctx("u1", constants.ROLE_STAFF_OPS)
+    assert ctx.is_staff_ops is True
+
+
+def test_user_context_is_staff_ops_false_for_no_role():
+    ctx = _make_ctx("u1")
+    assert ctx.is_staff_ops is False
+
+
+def test_user_context_is_staff_ops_true_for_super_admin_cascade():
+    """Cascade: a Super Admin always satisfies is_staff_ops as a field too."""
+    ctx = _make_ctx("u1", constants.ROLE_SUPER_ADMIN)
+    assert ctx.is_staff_ops is True

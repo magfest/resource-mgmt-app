@@ -92,6 +92,7 @@ def perms_fixture(app):
         user=user,
         roles=(),
         is_super_admin=False,
+        is_staff_ops=False,
         approval_group_ids=set(),
     )
 

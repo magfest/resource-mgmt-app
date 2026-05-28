@@ -60,12 +60,14 @@ class UserContext:
         user: The User database object (or None if not found)
         roles: Tuple of role codes the user has
         is_super_admin: True if user has SUPER_ADMIN role (respects beta overrides)
+        is_staff_ops: True if user has STAFF_OPS role OR is a Super Admin (cascade)
         approval_group_ids: Set of approval group IDs the user can review
     """
     user_id: str
     user: object | None
     roles: tuple[str, ...]
     is_super_admin: bool
+    is_staff_ops: bool
     approval_group_ids: Set[int]
 
 
@@ -75,15 +77,20 @@ def _require_helpers():
 
 
 def get_user_ctx() -> UserContext:
+    from app.models import constants
+
     _require_helpers()
     uid = h.get_active_user_id()
     u = h.get_active_user()
     roles = tuple(h.active_user_roles() or [])
+    is_super_admin = h.is_super_admin()
+    is_staff_ops = is_super_admin or constants.ROLE_STAFF_OPS in roles
     return UserContext(
         user_id=uid,
         user=u,
         roles=roles,
-        is_super_admin=h.is_super_admin(),
+        is_super_admin=is_super_admin,
+        is_staff_ops=is_staff_ops,
         approval_group_ids=set(h.active_user_approval_group_ids() or []),
     )
 
