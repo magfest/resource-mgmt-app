@@ -22,13 +22,17 @@ from app.models import (
     CONFIG_AUDIT_ARCHIVE,
     CONFIG_AUDIT_RESTORE,
 )
-from app.routes import h
+from app.routes import h, get_user_ctx
 from .helpers import (
     require_super_admin,
+    require_user_admin,
     render_admin_config_page,
+    render_admin_page,
     log_config_change,
     track_changes,
     sort_with_override,
+    can_edit_user_identity,
+    can_assign_roles,
 )
 
 users_bp = Blueprint('users', __name__, url_prefix='/users')
@@ -77,7 +81,7 @@ def _get_role_context():
 
 
 @users_bp.get("/")
-@require_super_admin
+@require_user_admin
 def list_users():
     """List all users."""
     q = (request.args.get("q") or "").strip()
@@ -136,7 +140,10 @@ def list_users():
 
     users = query.all()
 
-    return render_admin_config_page(
+    # Use render_admin_page (no extra permission check) since the route
+    # decorator @require_user_admin already enforces access. The default
+    # render_admin_config_page would re-check super_admin and 403 Staff Ops.
+    return render_admin_page(
         "admin/users/list.html",
         users=users,
         q=q,
@@ -149,10 +156,10 @@ def list_users():
 
 
 @users_bp.get("/new")
-@require_super_admin
+@require_user_admin
 def new_user():
     """Show new user form."""
-    return render_admin_config_page(
+    return render_admin_page(
         "admin/users/form.html",
         user=None,
         **_get_role_context(),
@@ -160,7 +167,7 @@ def new_user():
 
 
 @users_bp.post("/")
-@require_super_admin
+@require_user_admin
 def create_user():
     """Create a new user."""
     email = (request.form.get("email") or "").strip().lower()
@@ -190,8 +197,10 @@ def create_user():
     db.session.add(user)
     db.session.flush()
 
-    # Handle role assignments
-    _update_user_roles(user, request.form)
+    # Handle role assignments — only Super Admin can grant roles
+    user_ctx = get_user_ctx()
+    if can_assign_roles(user_ctx):
+        _update_user_roles(user, request.form)
 
     log_config_change("user", user.id, CONFIG_AUDIT_CREATE)
 
@@ -201,7 +210,7 @@ def create_user():
 
 
 @users_bp.get("/<user_id>")
-@require_super_admin
+@require_user_admin
 def edit_user(user_id: str):
     """Show edit form for user."""
     user = _get_user_or_404(user_id)
@@ -218,7 +227,7 @@ def edit_user(user_id: str):
         .count()
     )
 
-    return render_admin_config_page(
+    return render_admin_page(
         "admin/users/form.html",
         user=user,
         dept_membership_count=dept_membership_count,
@@ -228,10 +237,12 @@ def edit_user(user_id: str):
 
 
 @users_bp.post("/<user_id>")
-@require_super_admin
+@require_user_admin
 def update_user(user_id: str):
     """Update a user."""
     user = _get_user_or_404(user_id)
+    user_ctx = get_user_ctx()
+    can_change_email = can_edit_user_identity(user_ctx, user.id)
 
     old_values = _user_to_dict(user)
 
@@ -242,7 +253,13 @@ def update_user(user_id: str):
         flash("Email and display name are required", "error")
         return redirect(url_for(".edit_user", user_id=user_id))
 
-    # Check for duplicate email
+    # If caller can't change email, ignore submitted value — use existing.
+    # This applies regardless of what the form actually posted (defense in depth
+    # even though the template renders email read-only for non-Super-Admin).
+    if not can_change_email:
+        email = user.email
+
+    # Check for duplicate email (against the effective email — own email is excluded by id filter)
     existing = db.session.query(User).filter(
         User.email == email,
         User.id != user_id
@@ -255,8 +272,9 @@ def update_user(user_id: str):
     user.display_name = display_name
     user.is_active = request.form.get("is_active") == "1"
 
-    # Handle role assignments
-    _update_user_roles(user, request.form)
+    # Handle role assignments — only Super Admin can grant roles
+    if can_assign_roles(user_ctx):
+        _update_user_roles(user, request.form)
 
     new_values = _user_to_dict(user)
     changes = track_changes(old_values, new_values)
@@ -269,7 +287,7 @@ def update_user(user_id: str):
 
 
 @users_bp.post("/<user_id>/archive")
-@require_super_admin
+@require_user_admin
 def archive_user(user_id: str):
     """Archive (deactivate) a user."""
     user = _get_user_or_404(user_id)
@@ -288,7 +306,7 @@ def archive_user(user_id: str):
 
 
 @users_bp.post("/<user_id>/restore")
-@require_super_admin
+@require_user_admin
 def restore_user(user_id: str):
     """Restore (reactivate) a user."""
     user = _get_user_or_404(user_id)
