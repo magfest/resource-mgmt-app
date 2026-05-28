@@ -58,6 +58,7 @@ REVIEW_STATUS_REJECTED = "REJECTED"
 ROLE_SUPER_ADMIN = "SUPER_ADMIN"        # global admin
 ROLE_WORKTYPE_ADMIN = "WORKTYPE_ADMIN"  # admin for a work type (e.g., BUDGET)
 ROLE_APPROVER = "APPROVER"              # approver (typically scoped to approval group)
+ROLE_STAFF_OPS = "STAFF_OPS"   # cross-org user & membership manager
 
 # ============================================================
 # Spend type selection modes for expense accounts
@@ -113,6 +114,7 @@ CONFIG_AUDIT_CREATE = "CREATE"
 CONFIG_AUDIT_UPDATE = "UPDATE"
 CONFIG_AUDIT_ARCHIVE = "ARCHIVE"
 CONFIG_AUDIT_RESTORE = "RESTORE"
+CONFIG_AUDIT_DELETE = "DELETE"
 
 # ============================================================
 # Line audit event types
