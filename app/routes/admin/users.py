@@ -22,6 +22,8 @@ from app.models import (
     CONFIG_AUDIT_ARCHIVE,
     CONFIG_AUDIT_RESTORE,
 )
+from app.models.constants import ROLE_STAFF_OPS
+from app.security_audit import log_security_event, EVENT_USER_VIEW, CATEGORY_ADMIN
 from app.routes import h, get_user_ctx
 from .helpers import (
     require_super_admin,
@@ -75,6 +77,7 @@ def _get_role_context():
         "approval_groups": approval_groups,
         "role_codes": [
             (ROLE_SUPER_ADMIN, "Super Admin", "Full system access"),
+            (ROLE_STAFF_OPS, "Staff Ops", "Manage users and department/division membership (no role assignment)"),
             (ROLE_WORKTYPE_ADMIN, "Work Type Admin", "Admin for specific work type (e.g., Budget)"),
             (ROLE_APPROVER, "Approver", "Can review/approve lines in assigned approval groups"),
         ],
@@ -85,6 +88,8 @@ def _get_role_context():
 @require_user_admin
 def list_users():
     """List all users."""
+    log_security_event(EVENT_USER_VIEW, CATEGORY_ADMIN)
+    db.session.commit()
     q = (request.args.get("q") or "").strip()
     show_inactive = request.args.get("show_inactive") == "1"
     sort_by = request.args.get("sort_by", "display_name")
@@ -214,6 +219,8 @@ def create_user():
 @require_user_admin
 def edit_user(user_id: str):
     """Show edit form for user."""
+    log_security_event(EVENT_USER_VIEW, CATEGORY_ADMIN, details={"target_user_id": user_id})
+    db.session.commit()
     user = _get_user_or_404(user_id)
 
     # Get membership counts

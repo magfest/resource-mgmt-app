@@ -13,7 +13,7 @@ Form fields use `"1"` for booleans, not `"on"` — see users.py:186 and :323.
 import pytest
 
 from app import db
-from app.models import User, UserRole, constants
+from app.models import User, UserRole, constants, SecurityAuditLog
 
 
 def _seed_staff_ops(client, db_session):
@@ -416,3 +416,76 @@ def test_super_admin_can_modify_super_admin(client, db_session):
     assert resp.status_code in (200, 302)
     db.session.refresh(target)
     assert target.is_active is True
+
+
+# ============================================================
+# Task 5: Page-access auditing
+#
+# - GET /admin/config/users/         -> SecurityAuditLog row (USER_VIEW, ADMIN)
+# - GET /admin/config/users/<id>     -> SecurityAuditLog row with target_user_id
+#
+# Note: rendered-HTML test for the STAFF_OPS role checkbox is deferred to
+# Task 6 (form template work). _get_role_context() includes the entry, but
+# the current form.html hard-codes checkboxes and does not iterate
+# role_codes — adding the checkbox here would create a dead UI until the
+# Task 6 wiring lands.
+# ============================================================
+
+
+def test_staff_ops_user_list_writes_audit_row(client, db_session):
+    """GET /admin/config/users/ as Staff Ops writes a USER_VIEW audit row."""
+    staff = _seed_staff_ops(client, db_session)
+
+    resp = client.get("/admin/config/users/")
+    assert resp.status_code == 200
+
+    rows = (
+        db.session.query(SecurityAuditLog)
+        .filter(
+            SecurityAuditLog.event_type == "USER_VIEW",
+            SecurityAuditLog.event_category == "ADMIN",
+            SecurityAuditLog.user_id == staff.id,
+        )
+        .all()
+    )
+    assert len(rows) >= 1, (
+        f"Expected at least one USER_VIEW audit row for actor {staff.id}, "
+        f"got {[(r.event_type, r.user_id) for r in rows]}"
+    )
+
+
+def test_staff_ops_user_edit_get_writes_audit_row(client, db_session):
+    """GET /admin/config/users/<id> as Staff Ops writes a USER_VIEW row with target_user_id."""
+    import json
+
+    staff = _seed_staff_ops(client, db_session)
+    victim = User(
+        id="victim:audit", email="audit@x.com",
+        display_name="Audit Victim", is_active=True,
+    )
+    db.session.add(victim)
+    db.session.commit()
+
+    resp = client.get(f"/admin/config/users/{victim.id}")
+    assert resp.status_code == 200
+
+    rows = (
+        db.session.query(SecurityAuditLog)
+        .filter(
+            SecurityAuditLog.event_type == "USER_VIEW",
+            SecurityAuditLog.event_category == "ADMIN",
+            SecurityAuditLog.user_id == staff.id,
+        )
+        .all()
+    )
+    # Find the row whose details JSON references our victim
+    matching = [
+        r for r in rows
+        if r.details and json.loads(r.details).get("target_user_id") == victim.id
+    ]
+    assert len(matching) >= 1, (
+        f"Expected at least one USER_VIEW audit row with target_user_id={victim.id}; "
+        f"got details={[r.details for r in rows]}"
+    )
+
+
