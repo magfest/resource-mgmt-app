@@ -79,6 +79,34 @@ def can_edit_user_identity(user_ctx, target_user_id: str) -> bool:
     return bool(user_ctx and user_ctx.is_super_admin)
 
 
+def can_modify_user(user_ctx, target_user) -> bool:
+    """True if user can mutate the target user's record (update fields,
+    archive, restore).
+
+    Rules:
+      - Super Admin: yes, including self (lockout escape hatch).
+      - Staff Ops:   yes, EXCEPT target is self OR target holds SUPER_ADMIN
+                     (prevents privilege escalation / org lockout).
+      - Anyone else: no.
+    """
+    from app.models import constants
+
+    if user_ctx is None or user_ctx.user_id is None or target_user is None:
+        return False
+    if user_ctx.is_super_admin:
+        return True
+    if not is_staff_ops(user_ctx):
+        return False
+    if target_user.id == user_ctx.user_id:
+        return False
+    # Block mutation of any Super Admin target — mirrors the role lookup
+    # at app/routes/admin/users.py:109 (User.roles.any(UserRole.role_code == ...)).
+    for role in target_user.roles:
+        if role.role_code == constants.ROLE_SUPER_ADMIN:
+            return False
+    return True
+
+
 def can_manage_membership(user_ctx, target_user_id: str) -> bool:
     """True if user can add/remove the target from a dept or div, or
     promote/demote them as DH/DivH.

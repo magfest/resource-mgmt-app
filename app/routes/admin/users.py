@@ -33,6 +33,7 @@ from .helpers import (
     sort_with_override,
     can_edit_user_identity,
     can_assign_roles,
+    can_modify_user,
 )
 
 users_bp = Blueprint('users', __name__, url_prefix='/users')
@@ -242,6 +243,8 @@ def update_user(user_id: str):
     """Update a user."""
     user = _get_user_or_404(user_id)
     user_ctx = get_user_ctx()
+    if not can_modify_user(user_ctx, user):
+        abort(403, "Cannot modify this user")
     can_change_email = can_edit_user_identity(user_ctx, user.id)
 
     old_values = _user_to_dict(user)
@@ -291,6 +294,9 @@ def update_user(user_id: str):
 def archive_user(user_id: str):
     """Archive (deactivate) a user."""
     user = _get_user_or_404(user_id)
+    user_ctx = get_user_ctx()
+    if not can_modify_user(user_ctx, user):
+        abort(403, "Cannot modify this user")
 
     if not user.is_active:
         flash("User is already inactive", "warning")
@@ -310,6 +316,9 @@ def archive_user(user_id: str):
 def restore_user(user_id: str):
     """Restore (reactivate) a user."""
     user = _get_user_or_404(user_id)
+    user_ctx = get_user_ctx()
+    if not can_modify_user(user_ctx, user):
+        abort(403, "Cannot modify this user")
 
     if user.is_active:
         flash("User is already active", "warning")

@@ -211,3 +211,208 @@ def test_super_admin_can_still_grant_roles(client, db_session):
         db.session.query(UserRole).filter_by(user_id=victim.id).all()
     ]
     assert "SUPER_ADMIN" in role_codes
+
+
+# ============================================================
+# Task 4b: can_modify_user guard tests
+#
+# Closes security gap from Task 4: Staff Ops could mutate Super Admin
+# records (display_name, is_active, archive, restore). Only email and role
+# grants were previously gated. Concrete attack: Staff Ops archives the
+# sole Super Admin -> org locked out of role assignment.
+#
+# Guard rules (app/routes/admin/helpers.py:can_modify_user):
+#   - Super Admin: yes, including self.
+#   - Staff Ops:   yes, EXCEPT self OR target holds SUPER_ADMIN.
+#   - Anyone else: no.
+# ============================================================
+
+
+def _seed_super_admin_target(email="target_sa@x.com", user_id="target:sa"):
+    """Create an unauthenticated Super Admin user as a mutation target."""
+    target = User(
+        id=user_id, email=email,
+        display_name="Target SuperAdmin", is_active=True,
+    )
+    db.session.add(target)
+    db.session.add(UserRole(user_id=target.id, role_code=constants.ROLE_SUPER_ADMIN))
+    db.session.commit()
+    return target
+
+
+def test_staff_ops_cannot_update_super_admin(client, db_session):
+    """Staff Ops POSTing /update against a Super Admin target -> 403, row unchanged."""
+    _seed_staff_ops(client, db_session)
+    target = _seed_super_admin_target()
+
+    resp = client.post(
+        f"/admin/config/users/{target.id}",
+        data={
+            "email": "target_sa@x.com",
+            "display_name": "Hacked Name",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+
+    db.session.refresh(target)
+    assert target.display_name == "Target SuperAdmin"
+    assert target.is_active is True
+
+
+def test_staff_ops_cannot_archive_super_admin(client, db_session):
+    """Staff Ops POSTing /archive against a Super Admin target -> 403, is_active unchanged."""
+    _seed_staff_ops(client, db_session)
+    target = _seed_super_admin_target(email="archtgt@x.com", user_id="target:arch_sa")
+    assert target.is_active is True
+
+    resp = client.post(
+        f"/admin/config/users/{target.id}/archive",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+
+    db.session.refresh(target)
+    assert target.is_active is True
+
+
+def test_staff_ops_cannot_restore_super_admin(client, db_session):
+    """Staff Ops POSTing /restore against an archived Super Admin -> 403, is_active unchanged."""
+    _seed_staff_ops(client, db_session)
+    target = User(
+        id="target:rest_sa", email="resttgt@x.com",
+        display_name="Archived SA", is_active=False,
+    )
+    db.session.add(target)
+    db.session.add(UserRole(user_id=target.id, role_code=constants.ROLE_SUPER_ADMIN))
+    db.session.commit()
+
+    resp = client.post(
+        f"/admin/config/users/{target.id}/restore",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+
+    db.session.refresh(target)
+    assert target.is_active is False
+
+
+def test_staff_ops_cannot_modify_self(client, db_session):
+    """Staff Ops cannot update, archive, or restore their own user record."""
+    staff = _seed_staff_ops(client, db_session)
+
+    # update
+    resp = client.post(
+        f"/admin/config/users/{staff.id}",
+        data={
+            "email": staff.email,
+            "display_name": "Self Rename",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+
+    # archive
+    resp = client.post(
+        f"/admin/config/users/{staff.id}/archive",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+
+    # Now flip to inactive via direct DB so restore is meaningful.
+    staff.is_active = False
+    db.session.commit()
+
+    # restore
+    resp = client.post(
+        f"/admin/config/users/{staff.id}/restore",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+
+    db.session.refresh(staff)
+    assert staff.display_name == "Staff Ops Tester"
+    assert staff.is_active is False  # archive call was blocked, then we set it False manually
+
+
+def test_staff_ops_can_modify_regular_user(client, db_session):
+    """Staff Ops can update, archive, and restore a target with no SUPER_ADMIN role."""
+    _seed_staff_ops(client, db_session)
+    target = User(
+        id="target:regular", email="reg@x.com",
+        display_name="Regular Target", is_active=True,
+    )
+    db.session.add(target)
+    db.session.commit()
+
+    # update display_name
+    resp = client.post(
+        f"/admin/config/users/{target.id}",
+        data={
+            "email": "reg@x.com",
+            "display_name": "Renamed Regular",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code in (200, 302)
+    db.session.refresh(target)
+    assert target.display_name == "Renamed Regular"
+
+    # archive
+    resp = client.post(
+        f"/admin/config/users/{target.id}/archive",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (200, 302)
+    db.session.refresh(target)
+    assert target.is_active is False
+
+    # restore
+    resp = client.post(
+        f"/admin/config/users/{target.id}/restore",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (200, 302)
+    db.session.refresh(target)
+    assert target.is_active is True
+
+
+def test_super_admin_can_modify_super_admin(client, db_session):
+    """Escape-hatch: Super Admin can update, archive, and restore another Super Admin."""
+    _seed_super_admin(client, db_session)  # actor is "test:admin", a SUPER_ADMIN
+    target = _seed_super_admin_target(email="peer_sa@x.com", user_id="target:peer_sa")
+
+    # update display_name
+    resp = client.post(
+        f"/admin/config/users/{target.id}",
+        data={
+            "email": "peer_sa@x.com",
+            "display_name": "Peer Renamed",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code in (200, 302)
+    db.session.refresh(target)
+    assert target.display_name == "Peer Renamed"
+
+    # archive
+    resp = client.post(
+        f"/admin/config/users/{target.id}/archive",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (200, 302)
+    db.session.refresh(target)
+    assert target.is_active is False
+
+    # restore
+    resp = client.post(
+        f"/admin/config/users/{target.id}/restore",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (200, 302)
+    db.session.refresh(target)
+    assert target.is_active is True
