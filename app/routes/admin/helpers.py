@@ -45,6 +45,80 @@ def require_super_admin(f):
     return decorated_function
 
 
+def is_staff_ops(user_ctx) -> bool:
+    """True if the user holds STAFF_OPS or SUPER_ADMIN (cascade).
+
+    Super Admin always satisfies a Staff Ops check — mirrors the cascade
+    pattern used by has_role / _has_super_admin_role in app/__init__.py.
+    """
+    from app.models import constants
+
+    if user_ctx is None or user_ctx.user_id is None:
+        return False
+    if user_ctx.is_super_admin:
+        return True
+    return constants.ROLE_STAFF_OPS in (user_ctx.roles or ())
+
+
+def can_manage_users(user_ctx) -> bool:
+    """True if user can list/create/edit/archive other users (excluding role assignment)."""
+    return is_staff_ops(user_ctx)
+
+
+def can_assign_roles(user_ctx) -> bool:
+    """True if user can grant/revoke roles on others. Super Admin only."""
+    return bool(user_ctx and user_ctx.is_super_admin)
+
+
+def can_edit_user_identity(user_ctx, target_user_id: str) -> bool:
+    """True if user can edit identity fields (email) on the target user.
+
+    target_user_id accepted for symmetry with can_manage_membership and to
+    leave room for future per-target rules; current rule ignores it.
+    """
+    return bool(user_ctx and user_ctx.is_super_admin)
+
+
+def can_manage_membership(user_ctx, target_user_id: str) -> bool:
+    """True if user can add/remove the target from a dept or div, or
+    promote/demote them as DH/DivH.
+
+    Self-modification is BLOCKED for Staff Ops (separation of duties).
+    Super Admin retains self-mod as a lockout escape hatch.
+    """
+    if user_ctx is None or user_ctx.user_id is None:
+        return False
+    if user_ctx.is_super_admin:
+        return True
+    if not is_staff_ops(user_ctx):
+        return False
+    return target_user_id != user_ctx.user_id
+
+
+def require_user_admin(f):
+    """Decorator to require user-admin access (SUPER_ADMIN or STAFF_OPS).
+
+    Mirrors require_super_admin at app/routes/admin/helpers.py:28 — same
+    auth gate, broader role check. Use on routes that Staff Ops should be
+    able to reach (e.g., user list / edit, dept/div edit metadata).
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        from flask import redirect, url_for, session, current_app
+
+        if not session.get('active_user_id') and not current_app.config.get('DEV_LOGIN_ENABLED'):
+            return redirect(url_for('auth.login_page'))
+
+        user_ctx = get_user_ctx()
+        if user_ctx.user_id is None:
+            return redirect(url_for('auth.login_page'))
+
+        if not is_staff_ops(user_ctx):
+            abort(403, "User admin access required")
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def require_budget_admin(f):
     """Decorator to require budget admin access (SUPER_ADMIN or WORKTYPE_ADMIN for budget)."""
     @wraps(f)
