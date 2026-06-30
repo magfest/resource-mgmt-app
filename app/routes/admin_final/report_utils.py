@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Tuple, List, Any
 
 from flask import request
@@ -157,6 +158,21 @@ def get_line_amount_expr():
     return BudgetLineDetail.unit_price_cents * func.cast(
         BudgetLineDetail.quantity, db.Integer
     )
+
+
+def compute_line_amount_cents(unit_price_cents, quantity) -> int:
+    """
+    Python-side line amount (unit_price_cents * quantity), rounded half-up to
+    the nearest cent. Mirrors the SQL expression in get_line_amount_expr() but
+    for per-row computation in list-style reports.
+
+    Tolerates None/0 inputs (returns 0) so draft lines with missing data don't
+    raise.
+    """
+    if not unit_price_cents or quantity is None:
+        return 0
+    amount = Decimal(unit_price_cents) * Decimal(quantity)
+    return int(amount.to_integral_value(rounding=ROUND_HALF_UP))
 
 
 def get_pipeline_case_expressions():

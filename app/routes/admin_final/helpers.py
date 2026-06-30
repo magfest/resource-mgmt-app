@@ -22,6 +22,8 @@ from app.models import (
     BudgetLineDetail,
     EventCycle,
     Department,
+    ExpenseAccount,
+    ApprovalGroup,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING,
@@ -887,3 +889,27 @@ def get_active_departments(event_cycle_id: Optional[int] = None) -> List[Departm
         Department.sort_order.asc(),
         Department.name.asc()
     ).all()
+
+
+def get_active_expense_accounts() -> List[ExpenseAccount]:
+    """Get active expense accounts for a report filter dropdown, ordered by code."""
+    return ExpenseAccount.query.filter_by(is_active=True).order_by(
+        ExpenseAccount.code.asc()
+    ).all()
+
+
+def get_budget_approval_groups() -> List[ApprovalGroup]:
+    """
+    Get active approval (reviewer) groups for the BUDGET work type, ordered for
+    display. Used by the reviewer-group health-check report's group selector.
+    """
+    from app.models import WorkType
+
+    budget_wt = WorkType.query.filter_by(code="BUDGET").first()
+    if budget_wt is None:
+        return []
+    return (
+        ApprovalGroup.query.filter_by(work_type_id=budget_wt.id, is_active=True)
+        .order_by(ApprovalGroup.sort_order.asc(), ApprovalGroup.code.asc())
+        .all()
+    )
