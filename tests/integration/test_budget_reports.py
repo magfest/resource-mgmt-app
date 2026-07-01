@@ -76,3 +76,73 @@ def test_expense_account_report_unresolved_event_shows_no_event_state(
     assert resp.status_code == 200
     assert b"Select an Event Cycle" in resp.data
     assert b"No Data Found" not in resp.data
+
+
+def test_reviewer_group_overview_counts_dispatched_line(
+    app, client, seed_draft_work_item
+):
+    # seed_draft_work_item's line has routed_approval_group_id = TECH group,
+    # so it is "dispatched" and counts under the TECH group.
+    data = seed_draft_work_item
+    event = data["cycle"].code
+    _login(client, "test:admin")
+
+    resp = client.get(f"/admin/budget/reviewer-group/?event={event}")
+    assert resp.status_code == 200
+    assert b"Tech Team" in resp.data  # group name shown in overview
+
+
+def test_reviewer_group_overview_uses_suggested_group_when_not_dispatched(
+    app, client, seed_workflow_data
+):
+    # A line with NO routed group but whose expense account has a suggested
+    # group must appear under that suggested group as "awaiting dispatch".
+    data = seed_workflow_data
+    ag = data["approval_group"]            # TECH
+    ea = data["expense_account"]           # TEST_ACC
+    ea.approval_group_id = ag.id           # give the account a suggested group
+    db.session.add(ea)
+
+    item = WorkItem(
+        portfolio_id=data["portfolio"].id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        status=WORK_ITEM_STATUS_DRAFT,
+        public_id="TST2026-TESTDEPT-BUD-9",
+        created_by_user_id=data["admin"].id,
+    )
+    db.session.add(item)
+    db.session.flush()
+    line = WorkLine(
+        work_item_id=item.id, line_number=1,
+        status=WORK_LINE_STATUS_PENDING,
+        current_review_stage=REVIEW_STAGE_APPROVAL_GROUP,
+    )
+    db.session.add(line)
+    db.session.flush()
+    db.session.add(BudgetLineDetail(
+        work_line_id=line.id,
+        expense_account_id=ea.id,
+        spend_type_id=data["spend_type"].id,
+        quantity=2, unit_price_cents=2500,
+        routed_approval_group_id=None,      # NOT dispatched
+    ))
+    db.session.commit()
+
+    event = data["cycle"].code
+    _login(client, "test:admin")
+    resp = client.get(f"/admin/budget/reviewer-group/?event={event}")
+    assert resp.status_code == 200
+    assert b"Tech Team" in resp.data
+    # Drill-down into the group shows the line.
+    resp2 = client.get(f"/admin/budget/reviewer-group/?event={event}&group={ag.code}")
+    assert resp2.status_code == 200
+    assert item.public_id.encode() in resp2.data
+    assert b"Suggested" in resp2.data  # routing-state badge
+
+
+def test_reviewer_group_export_returns_csv(app, client, seed_draft_work_item):
+    event = seed_draft_work_item["cycle"].code
+    _login(client, "test:admin")
+    resp = client.get(f"/admin/budget/reviewer-group/export?event={event}")
+    assert resp.status_code == 200
+    assert "text/csv" in resp.content_type
