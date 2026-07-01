@@ -1,0 +1,137 @@
+{# templates/admin_final/hotel_rooms_report.html #}
+{% extends "layout/base.html" %}
+{% from "admin_final/report_macros.html" import
+    report_header, report_filters, report_context,
+    empty_state_no_event, empty_state_no_data
+%}
+
+{% block title %}Hotel Rooms{% endblock %}
+
+{% block content %}
+
+  {{ report_header(
+      "Hotel Rooms",
+      "All requested hotel room lines, grouped by who pays"
+  ) }}
+
+  {{ report_filters(
+      url_for('admin_final.hotel_rooms_report'),
+      event_cycles, departments, selected_event, selected_dept,
+      event_required=True
+  ) }}
+
+  {% if not selected_event_cycle %}
+    {{ empty_state_no_event() }}
+
+  {% elif groups %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      {{ report_context(selected_event_cycle, selected_department) }}
+      <a class="btn" href="{{ url_for('admin_final.hotel_rooms_report_export') }}?event={{ selected_event }}{% if selected_dept %}&dept={{ selected_dept }}{% endif %}" style="display: inline-flex; align-items: center; gap: 6px;">
+        <span style="font-size: 14px;">&#x2B73;</span> Download CSV
+      </a>
+    </div>
+
+    {# Summary cross-tab: room counts by room type x pay type, plus $ per pay type. #}
+    <section class="card" style="margin-bottom: 24px;">
+      <h3 style="margin:0 0 12px 0;">Summary</h3>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Room Type</th>
+              {% for label in summary.pay_labels %}
+                <th class="right">{{ label }}</th>
+              {% endfor %}
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for mr in summary.matrix_rows %}
+              <tr>
+                <td>{{ mr.room_type }}</td>
+                {% for c in mr.cells %}
+                  <td class="right num">{{ c }}</td>
+                {% endfor %}
+                <td class="right num"><strong>{{ mr.total }}</strong></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot style="background: #f8f9fa; font-weight: 600;">
+            <tr>
+              <td><strong>Rooms</strong></td>
+              {% for c in summary.col_rooms %}
+                <td class="right num">{{ c }}</td>
+              {% endfor %}
+              <td class="right num">{{ summary.grand_rooms }}</td>
+            </tr>
+            <tr>
+              <td><strong>Amount</strong></td>
+              {% for c in summary.col_cents %}
+                <td class="right num">{{ format_currency(c) }}</td>
+              {% endfor %}
+              <td class="right num">{{ format_currency(summary.grand_cents) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+    {% for group in groups %}
+      <section class="card" style="margin-bottom: 24px;">
+        <h3 style="margin:0 0 12px 0;">
+          {{ group.pay_type }}
+          <span class="pill">{{ group.room_subtotal }} rooms</span>
+        </h3>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Department</th>
+                <th>Request</th>
+                <th>Room Type</th>
+                <th class="right">Rooms</th>
+                <th class="right">Nights</th>
+                <th class="right">Unit Price</th>
+                <th class="right">Total</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in group.rows %}
+                <tr>
+                  <td>{{ r.department_name }}</td>
+                  <td><strong>{{ r.work_item_public_id }}</strong></td>
+                  <td>{{ r.room_type }}</td>
+                  <td class="right num">{{ r.rooms }}</td>
+                  <td class="right num">{{ r.nights }}</td>
+                  <td class="right num">{{ format_currency(r.unit_price_cents) }}</td>
+                  <td class="right num">{{ format_currency(r.total_cents) }}</td>
+                  <td>{{ r.line_status }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot style="background: #f8f9fa; font-weight: 600;">
+              <tr>
+                <td colspan="3"><strong>{{ group.pay_type }} subtotal</strong></td>
+                <td class="right num">{{ group.room_subtotal }}</td>
+                <td class="right num muted">{{ group.room_nights_subtotal }} rm-nts</td>
+                <td></td>
+                <td class="right num">{{ format_currency(group.cents_subtotal) }}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+    {% endfor %}
+
+  {% else %}
+    {{ empty_state_no_data(
+        selected_event_cycle.name,
+        selected_department.name if selected_department else None,
+        icon="🏨",
+        message_prefix="No hotel room lines found for"
+    ) }}
+  {% endif %}
+
+{% endblock %}

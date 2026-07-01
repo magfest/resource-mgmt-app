@@ -17,3 +17,4 @@ from . import missing_budgets_report
 from . import income_report
 from . import expense_account_report
 from . import reviewer_group_report
+from . import hotel_rooms_report
