@@ -18,3 +18,4 @@ from . import income_report
 from . import expense_account_report
 from . import reviewer_group_report
 from . import hotel_rooms_report
+from . import warehouse_report

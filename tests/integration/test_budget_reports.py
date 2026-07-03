@@ -11,6 +11,70 @@ def _login(client, user_id):
     with client.session_transaction() as sess:
         sess["active_user_id"] = user_id
 
+def test_warehouse_report_lists_flagged_lines(
+    app, client, seed_draft_work_item
+):
+    data = seed_draft_work_item
+    detail = data["detail"]
+    event = data["cycle"].code
+    account_code = data["expense_account"].code  # "TEST_ACC"
+    item = data["work_item"]
+
+    detail.warehouse_flag = True
+    db.session.commit()
+
+    _login(client, "test:admin")
+
+    resp = client.get(
+        f"/admin/budget/warehouse/?event={event}"
+    )
+    assert resp.status_code == 200
+    # The seeded line's request public_id and department appear in the table.
+    assert item.public_id.encode() in resp.data
+    assert account_code.encode() in resp.data
+    assert b"Test Department" in resp.data
+
+
+def test_warehouse_report_excludes_unflagged_lines(
+    app, client, seed_draft_work_item
+):
+    data = seed_draft_work_item
+    detail = data["detail"]
+    event = data["cycle"].code
+    account_code = data["expense_account"].code  # "TEST_ACC"
+    item = data["work_item"]
+
+    _login(client, "test:admin")
+
+    resp = client.get(
+        f"/admin/budget/warehouse/?event={event}"
+    )
+    assert resp.status_code == 200
+    assert item.public_id.encode() not in resp.data
+    assert account_code.encode() not in resp.data
+    assert b"Warehouse Lines" in resp.data
+
+def test_warehouse_report_export_returns_csv(
+            app, client, seed_draft_work_item
+    ):
+        data = seed_draft_work_item
+        detail = data["detail"]
+        event = data["cycle"].code
+        account_code = data["expense_account"].code  # "TEST_ACC"
+        item = data["work_item"]
+
+        detail.warehouse_flag = True
+        db.session.commit()
+
+        _login(client, "test:admin")
+
+        resp = client.get(
+            f"/admin/budget/warehouse/export?event={event}"
+        )
+        assert resp.status_code == 200
+        assert "text/csv" in resp.content_type
+        assert b"Account Code" in resp.data  # header row present
+
 
 def test_expense_account_report_lists_lines_for_account(
     app, client, seed_draft_work_item
