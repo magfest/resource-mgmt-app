@@ -53,6 +53,7 @@
       {% if lines_filtered %}
         <div class="muted small" style="margin-top: 4px; color: #0a66c2;">
           Showing {{ lines|length }} line{% if lines|length != 1 %}s{% endif %} for your reviewer group
+          {%- if visible_requested_cents %} &middot; your total {{ format_currency(visible_requested_cents) }}{% endif %}
         </div>
       {% endif %}
       {% if totals.approved > 0 %}

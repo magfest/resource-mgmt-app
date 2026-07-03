@@ -117,8 +117,42 @@
       {% endfor %}
     </tbody>
     <tfoot>
+      {% if show_group_breakdown %}
+        {% for g in group_subtotals %}
+          <tr class="muted">
+            <td colspan="5" class="right">{{ g.group_name }} ({{ g.line_count }} line{% if g.line_count != 1 %}s{% endif %}):</td>
+            <td class="right num">{{ format_currency(g.requested_cents) }}</td>
+            {% if show_approved_column %}
+              <td class="right num">{{ format_currency(g.approved_cents) }}</td>
+            {% endif %}
+            <td></td>
+            {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}
+              <td></td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        {% if lines_filtered %}
+          <tr style="font-weight: 700;">
+            <td colspan="5" class="right">Your total ({{ lines|length }} line{% if lines|length != 1 %}s{% endif %}):</td>
+            <td class="right num">{{ format_currency(visible_requested_cents) }}</td>
+            {% if show_approved_column %}
+              <td class="right num" style="color: #059669;">{{ format_currency(visible_approved_cents) }}</td>
+            {% endif %}
+            <td></td>
+            {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}
+              <td></td>
+            {% endif %}
+          </tr>
+        {% endif %}
+      {% endif %}
       <tr style="font-weight: 700;">
-        <td colspan="5" class="right">Grand Total Requested:</td>
+        <td colspan="5" class="right">
+          {% if lines_filtered %}
+            Full request total: <span class="muted small" style="font-weight: 400;">(incl. lines for other groups)</span>
+          {% else %}
+            Grand Total Requested:
+          {% endif %}
+        </td>
         <td class="right num">{{ format_currency(totals.requested) }}</td>
         {% if show_approved_column %}
           <td class="right num" style="color: #059669;">{{ format_currency(totals.approved) }}</td>
