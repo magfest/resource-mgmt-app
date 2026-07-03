@@ -2,11 +2,13 @@
 Unit tests for app/routes/admin_final/report_utils.py
 """
 from datetime import datetime, timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
 from app.routes.admin_final.report_utils import (
     PipelineTotals,
     calculate_days_waiting,
+    compute_line_amount_cents,
     compute_pipeline_summary,
 )
 
@@ -112,3 +114,21 @@ class TestComputePipelineSummary:
         assert result.final_approved_cents == 4400
         assert result.rejected_cents == 550
         assert result.total_cents == 11000
+
+
+def test_compute_line_amount_cents_basic():
+    # 3 units @ $50.00 = $150.00
+    assert compute_line_amount_cents(5000, Decimal("3")) == 15000
+
+
+def test_compute_line_amount_cents_fractional_quantity_rounds_half_up():
+    # 1.5 units @ $1.00 = $1.50 -> 150 cents
+    assert compute_line_amount_cents(100, Decimal("1.5")) == 150
+    # 1 unit @ 1 cent, qty 0.5 -> 0.5 cent rounds half-up to 1
+    assert compute_line_amount_cents(1, Decimal("0.5")) == 1
+
+
+def test_compute_line_amount_cents_handles_none_and_zero():
+    assert compute_line_amount_cents(None, Decimal("3")) == 0
+    assert compute_line_amount_cents(5000, None) == 0
+    assert compute_line_amount_cents(0, Decimal("3")) == 0

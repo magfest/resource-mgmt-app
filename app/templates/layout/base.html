@@ -644,10 +644,17 @@
         .top-nav-menu-label {
             padding: 6px 16px 2px;
             font-size: 11px;
-            font-weight: 600;
-            color: #888;
+            font-weight: 700;
+            color: #4a5568;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+        }
+
+        /* Section rule above each group label except the first. */
+        .top-nav-menu-label:not(:first-child) {
+            margin-top: 4px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
         }
 
         /* ============================================================
@@ -810,6 +817,9 @@
             }
             .top-nav.mobile-open .top-nav-left .top-nav-menu-label {
                 color: rgba(255, 255, 255, 0.6);
+            }
+            .top-nav.mobile-open .top-nav-left .top-nav-menu-label:not(:first-child) {
+                border-top-color: rgba(255, 255, 255, 0.1);
             }
         }
 

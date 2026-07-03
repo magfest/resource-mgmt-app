@@ -1,0 +1,148 @@
+{# templates/admin_final/reviewer_group_report.html #}
+{% extends "layout/base.html" %}
+{% from "admin_final/report_macros.html" import
+    report_header, report_filters, report_context, stat_card,
+    empty_state_no_event, empty_state_no_data
+%}
+
+{% block title %}Reviewer Group Health Check{% endblock %}
+
+{% block content %}
+
+  {{ report_header(
+      "Reviewer Group Health Check",
+      "Budget lines per reviewer group (matched by routed group, or the expense account's suggested group if not yet dispatched)"
+  ) }}
+
+  {% set group_filter %}
+    <div>
+      <label for="group" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Reviewer Group</label>
+      <select name="group" id="group" style="min-width: 180px;">
+        <option value="">All Groups (overview)</option>
+        {% for g in approval_groups %}
+          <option value="{{ g.code }}" {% if selected_group == g.code %}selected{% endif %}>{{ g.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  {% endset %}
+
+  {{ report_filters(
+      url_for('admin_final.reviewer_group_report'),
+      event_cycles, [], selected_event, "",
+      event_required=True, show_department=False, extra_filters=group_filter
+  ) }}
+
+  {% if not selected_event_cycle %}
+    {{ empty_state_no_event() }}
+
+  {% elif overview %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      {{ report_context(selected_event_cycle) }}
+      <a class="btn" href="{{ url_for('admin_final.reviewer_group_report_export') }}?event={{ selected_event }}" style="display: inline-flex; align-items: center; gap: 6px;">
+        <span style="font-size: 14px;">&#x2B73;</span> Download CSV
+      </a>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
+      {{ stat_card(grand.line_count, "Total Lines") }}
+      {{ stat_card(grand.awaiting_dispatch_count, "Awaiting Dispatch", color="#d97706") }}
+      {{ stat_card(grand.dispatched_count, "Dispatched", color="#059669") }}
+      {{ stat_card(format_currency(grand.requested_cents), "Total Requested", color="#0a66c2") }}
+    </div>
+
+    {# Overview: one row per reviewer group #}
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">Groups <span class="pill">{{ overview | length }}</span></h3>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Reviewer Group</th>
+              <th class="right">Lines</th>
+              <th class="right">Depts</th>
+              <th class="right">Requested</th>
+              <th class="right">Awaiting</th>
+              <th class="right">Dispatched</th>
+              <th class="right">Pending</th>
+              <th class="right">Needs Info</th>
+              <th class="right">Approved</th>
+              <th class="right">Rejected</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for o in overview %}
+              <tr>
+                <td><strong>{{ o.group_name }}</strong></td>
+                <td class="right num">{{ o.line_count }}</td>
+                <td class="right num">{{ o.department_count }}</td>
+                <td class="right num">{{ format_currency(o.requested_cents) }}</td>
+                <td class="right num" {% if o.awaiting_dispatch_count %}style="color:#d97706; font-weight:600;"{% endif %}>{{ o.awaiting_dispatch_count }}</td>
+                <td class="right num">{{ o.dispatched_count }}</td>
+                <td class="right num">{{ o.pending_count }}</td>
+                <td class="right num">{{ o.needs_info_count }}</td>
+                <td class="right num">{{ o.approved_count }}</td>
+                <td class="right num" {% if o.rejected_count %}style="color:#dc2626;"{% endif %}>{{ o.rejected_count }}</td>
+                <td>{% if o.group_id %}<a href="{{ url_for('admin_final.reviewer_group_report') }}?event={{ selected_event }}&group={{ o.group_code }}">View lines</a>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    {# Drill-down: line detail for the selected group #}
+    {% if selected_group_obj %}
+      <section class="card" style="margin-top: 24px;">
+        <h3 style="margin:0 0 12px 0;">
+          {{ selected_group_obj.name }} — Lines
+          <span class="pill">{{ drill_lines | length }}</span>
+        </h3>
+        {% if drill_lines %}
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Department</th>
+                <th>Request</th>
+                <th>Expense Account</th>
+                <th>Description</th>
+                <th class="right">Qty</th>
+                <th class="right">Requested</th>
+                <th>Routing</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for ln in drill_lines %}
+                <tr>
+                  <td>{{ ln.department_name }}</td>
+                  <td><strong>{{ ln.work_item_public_id }}</strong></td>
+                  <td>{{ ln.expense_account_code }}</td>
+                  <td>{{ ln.description|strip_links if ln.description else "" }}</td>
+                  <td class="right num">{{ ln.quantity|format_qty }}</td>
+                  <td class="right num">{{ format_currency(ln.requested_cents) }}</td>
+                  <td>
+                    {% if ln.is_dispatched %}
+                      <span class="pill" style="background:#d1fae5; color:#065f46;">Dispatched</span>
+                    {% else %}
+                      <span class="pill" style="background:#fef3c7; color:#92400e;">Suggested</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ ln.line_status }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+          <p class="muted" style="margin:0;">No lines currently route to this group.</p>
+        {% endif %}
+      </section>
+    {% endif %}
+
+  {% else %}
+    {{ empty_state_no_data(selected_event_cycle.name, message_prefix="No budget lines found for") }}
+  {% endif %}
+
+{% endblock %}

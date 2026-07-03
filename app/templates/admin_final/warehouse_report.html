@@ -1,0 +1,100 @@
+{# templates/admin_final/warehouse_report.html #}
+{% extends "layout/base.html" %}
+{% from "admin_final/report_macros.html" import
+    report_header, report_filters, report_context, stat_card,
+    empty_state_no_event, empty_state_no_data
+%}
+
+{% block title %}Warehouse Lines{% endblock %}
+
+{% block content %}
+
+  {{ report_header(
+      "Warehouse Lines",
+      "Every budget line flagged to be stored in the warehous"
+  ) }}
+
+  {{ report_filters(
+      url_for('admin_final.warehouse_report'),
+      event_cycles,
+      departments,
+      selected_event,
+      selected_dept
+  ) }}
+
+  {% if not selected_event_cycle %}
+    {{ empty_state_no_event() }}
+
+  {% elif rows %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      {{ report_context(selected_event_cycle, selected_department) }}
+      <a class="btn" href="{{ url_for('admin_final.warehouse_report_export') }}?event={{ selected_event }}{% if selected_dept %}&dept={{ selected_dept }}{% endif %}" style="display: inline-flex; align-items: center; gap: 6px;">
+        <span style="font-size: 14px;">&#x2B73;</span> Download CSV
+      </a>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
+      {{ stat_card(summary.line_count, "Lines") }}
+      {{ stat_card(summary.request_count, "Requests", color="#7c3aed") }}
+      {{ stat_card(summary.department_count, "Departments", color="#0a66c2") }}
+      {{ stat_card(format_currency(summary.requested_cents), "Total Requested", color="#059669") }}
+    </div>
+
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">
+          Warehouse Lines
+        <span class="pill">{{ rows | length }} lines</span>
+      </h3>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Account Code</th>
+              <th>Account Name</th>
+              <th>Department</th>
+              <th>Request</th>
+              <th>Description</th>
+              <th class="right">Qty</th>
+              <th class="right">Unit Price</th>
+              <th class="right">Requested</th>
+              <th class="right">Approved</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>{{ row.expense_account_code }}</td>
+                <td>{{ row.expense_account_name }}</td>
+                <td>{{ row.department_name }}</td>
+                <td><strong>{{ row.work_item_public_id }}</strong></td>
+                <td>{{ row.description|strip_links if row.description else "" }}</td>
+                <td class="right num">{{ row.quantity|format_qty }}</td>
+                <td class="right num">{{ format_currency(row.unit_price_cents) }}</td>
+                <td class="right num">{{ format_currency(row.requested_cents) }}</td>
+                <td class="right num">{% if row.approved_amount_cents is not none %}{{ format_currency(row.approved_amount_cents) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>{{ row.line_status }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot style="background: #f8f9fa; font-weight: 600;">
+            <tr>
+              <td colspan="7"><strong>TOTALS</strong></td>
+              <td class="right num">{{ format_currency(summary.requested_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.approved_cents) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+  {% else %}
+    {{ empty_state_no_data(
+        selected_event_cycle.name,
+        selected_department.name if selected_department else None,
+        message_prefix="No lines found found with warehouse flag"
+    ) }}
+  {% endif %}
+
+{% endblock %}
