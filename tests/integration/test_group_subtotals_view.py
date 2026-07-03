@@ -3,7 +3,8 @@ from app import db
 from app.models import (
     WorkItem, WorkLine, BudgetLineDetail, ApprovalGroup, UserRole,
     REQUEST_KIND_PRIMARY, WORK_ITEM_STATUS_SUBMITTED,
-    WORK_LINE_STATUS_PENDING, REVIEW_STAGE_APPROVAL_GROUP, ROLE_APPROVER,
+    WORK_LINE_STATUS_PENDING, WORK_LINE_STATUS_APPROVED,
+    REVIEW_STAGE_APPROVAL_GROUP, ROLE_APPROVER,
 )
 
 
@@ -141,3 +142,78 @@ def test_predispatch_unrouted_lines_have_no_breakdown(app, client, seed_workflow
 
     assert "Unassigned (" not in html
     assert "Grand Total Requested:" in html
+
+
+def test_multi_group_reviewer_sees_each_group_and_combined_total(app, client, seed_workflow_data):
+    data = seed_workflow_data
+    tech = data["approval_group"]           # "Tech Team"
+    hotel = _second_group(data)
+    # Third, hidden group the reviewer does NOT belong to.
+    av = ApprovalGroup(
+        work_type_id=data["work_type"].id,
+        code="AV", name="AV Team", is_active=True,
+    )
+    db.session.add(av)
+    db.session.commit()
+
+    _make_multi_group_item(data, [
+        (tech.id, 200_00, 2),    # 400.00 - visible (reviewer's group)
+        (hotel.id, 100_00, 3),   # 300.00 - visible (reviewer's group)
+        (av.id, 50_00, 1),       # 50.00  - hidden
+    ])
+    # Reviewer is an APPROVER for BOTH tech and hotel.
+    db.session.add(UserRole(
+        user_id=data["reviewer"].id, role_code=ROLE_APPROVER,
+        approval_group_id=tech.id,
+    ))
+    db.session.add(UserRole(
+        user_id=data["reviewer"].id, role_code=ROLE_APPROVER,
+        approval_group_id=hotel.id,
+    ))
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["active_user_id"] = "test:reviewer"
+
+    resp = client.get("/TST2026/TESTDEPT/budget/item/TST2026-TESTDEPT-BUD-1")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert "Tech Team (" in html
+    assert "Hotel Team (" in html
+    assert "AV Team (" not in html               # hidden group not in breakdown
+    assert "Your total (2 lines):" in html
+    assert "$700.00" in html                     # combined visible total (400 + 300)
+    assert "$400.00" in html                     # tech-only subtotal, differs from combined
+    assert "$300.00" in html                     # hotel-only subtotal, differs from combined
+    assert "Full request total:" in html         # relabeled for filtered view
+    assert "Grand Total Requested:" not in html
+    assert "$750.00" in html                      # full request total (400 + 300 + 50)
+
+
+def test_approved_subtotals_render_when_approved_column_shown(app, client, seed_workflow_data):
+    data = seed_workflow_data
+    tech = data["approval_group"]
+    hotel = _second_group(data)
+    work_item = _make_multi_group_item(data, [
+        (tech.id, 200_00, 2),   # 400.00
+        (hotel.id, 100_00, 3),  # 300.00
+    ])
+
+    tech_line = WorkLine.query.filter_by(
+        work_item_id=work_item.id, line_number=1,
+    ).first()
+    tech_line.status = WORK_LINE_STATUS_APPROVED
+    tech_line.approved_amount_cents = 350_00
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["active_user_id"] = "test:admin"   # SUPER_ADMIN
+
+    resp = client.get("/TST2026/TESTDEPT/budget/item/TST2026-TESTDEPT-BUD-1")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert "Tech Team (" in html
+    assert "Hotel Team (" in html
+    assert "$350.00" in html                     # approved subtotal for the TECH group
