@@ -73,6 +73,11 @@ def parse_room_count(description) -> int:
         return n if n > 0 else 1
     return 1
 
+def _to_int(quantity) -> int:
+    try:
+        return int(quantity or 0)
+    except (TypeError, ValueError):
+        return 0
 
 def derive_rooms_and_nights(quantity, description):
     """
@@ -166,11 +171,7 @@ def get_hotel_rooms_data(
     return rows
 
 
-def _to_int(quantity) -> int:
-    try:
-        return int(quantity or 0)
-    except (TypeError, ValueError):
-        return 0
+
 
 
 def group_hotel_rows(rows: List[HotelRoomLineRow]) -> List[dict]:
