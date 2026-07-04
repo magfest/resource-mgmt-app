@@ -6,6 +6,7 @@ Functions for computing portfolio/work item totals and line status summaries.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from app.models import (
     WorkPortfolio,
@@ -92,6 +93,60 @@ def compute_work_item_totals(item: WorkItem) -> dict:
         "approved": approved,
         "line_count": line_count,
     }
+
+
+@dataclass
+class GroupSubtotal:
+    """Per-approval-group subtotal over a set of visible lines."""
+    group_id: Optional[int]
+    group_name: str
+    line_count: int
+    requested_cents: int
+    approved_cents: int
+
+
+def compute_group_subtotals(visible_lines, group_names: dict) -> list["GroupSubtotal"]:
+    """
+    Bucket already-filtered lines by routed approval group and subtotal them.
+
+    Args:
+        visible_lines: WorkLine objects already scoped to the viewer by
+            filter_lines_for_user.
+        group_names: {approval_group_id: name} for the routed groups present.
+
+    Requested uses get_line_amount_cents (worktype-neutral). Approved sums
+    approved_amount_cents only for APPROVED lines (mirrors
+    compute_work_item_totals). Lines with a null routed group fall into a
+    single "Unassigned" bucket so subtotals reconcile to the visible total.
+
+    Returns a list ordered by group_name (case-insensitive) with the
+    Unassigned bucket last.
+    """
+    buckets: dict = {}
+    for line in visible_lines:
+        detail = line.budget_detail
+        group_id = detail.routed_approval_group_id if detail else None
+        b = buckets.setdefault(
+            group_id, {"line_count": 0, "requested": 0, "approved": 0}
+        )
+        b["line_count"] += 1
+        b["requested"] += get_line_amount_cents(line)
+        if line.status == WORK_LINE_STATUS_APPROVED:
+            b["approved"] += line.approved_amount_cents or 0
+
+    result = []
+    for group_id, b in buckets.items():
+        name = group_names.get(group_id) if group_id is not None else "Unassigned"
+        result.append(GroupSubtotal(
+            group_id=group_id,
+            group_name=name or f"Group {group_id}",
+            line_count=b["line_count"],
+            requested_cents=b["requested"],
+            approved_cents=b["approved"],
+        ))
+
+    result.sort(key=lambda g: (g.group_id is None, g.group_name.lower()))
+    return result
 
 
 # ============================================================

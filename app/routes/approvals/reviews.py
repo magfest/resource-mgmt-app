@@ -394,6 +394,12 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
             work_type_slug=work_type_slug,
         ))
 
+    # Capture the reviewer who asked for info BEFORE applying the response.
+    # apply_review_decision overwrites review.decided_by_user_id with the
+    # acting user (the responder), so reading it afterward would target the
+    # requester instead of the reviewer we mean to notify.
+    reviewer_user_id = review.decided_by_user_id
+
     # Apply the response
     success, error = apply_review_decision(
         review=review,
@@ -409,9 +415,6 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
     if not success:
         flash(error, "error")
     else:
-        # Capture reviewer before committing (may be cleared by apply_review_decision)
-        reviewer_user_id = review.decided_by_user_id
-
         flash("Response submitted. The line is back in review.", "success")
 
         # Add comment with the response
@@ -618,6 +621,12 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
         audit_changes.append(("description", old_description, new_description))
         detail.description = new_description or None
 
+    # Capture the reviewer who requested the adjustment BEFORE applying the
+    # response. apply_review_decision overwrites review.decided_by_user_id
+    # with the acting user (the responder), so reading it afterward would
+    # target the requester instead of the reviewer we mean to notify.
+    reviewer_user_id = review.decided_by_user_id
+
     # Apply the status transition (back to PENDING)
     success, error = apply_review_decision(
         review=review,
@@ -633,9 +642,6 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
     if not success:
         flash(error, "error")
     else:
-        # Capture reviewer before committing (may be cleared by apply_review_decision)
-        reviewer_user_id = review.decided_by_user_id
-
         # Create structured audit events for field changes
         if audit_changes:
             audit_line_field_changes(line, audit_changes, user_ctx)

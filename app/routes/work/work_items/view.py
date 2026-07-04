@@ -82,6 +82,28 @@ def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str 
     )
     total_lines_count = len(all_lines)
 
+    # Per-group subtotal breakdown over the (already filtered) visible lines.
+    from app.routes.work.helpers.computations import compute_group_subtotals
+    from app.models import ApprovalGroup
+
+    routed_ids = {
+        line.budget_detail.routed_approval_group_id
+        for line in lines
+        if line.budget_detail and line.budget_detail.routed_approval_group_id
+    }
+    group_names = {}
+    if routed_ids:
+        for ag in ApprovalGroup.query.filter(ApprovalGroup.id.in_(routed_ids)).all():
+            group_names[ag.id] = ag.name
+
+    group_subtotals = compute_group_subtotals(lines, group_names)
+    distinct_group_count = sum(1 for g in group_subtotals if g.group_id is not None)
+    show_group_breakdown = distinct_group_count > 0 and (
+        lines_filtered or distinct_group_count >= 2
+    )
+    visible_requested_cents = sum(g.requested_cents for g in group_subtotals)
+    visible_approved_cents = sum(g.approved_cents for g in group_subtotals)
+
     # Get kicked-back lines (NEEDS_INFO or NEEDS_ADJUSTMENT) with their review notes
     kicked_back_lines = get_kicked_back_lines_summary(lines)
 
@@ -114,6 +136,10 @@ def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str 
         totals=totals,
         total_lines_count=total_lines_count,
         lines_filtered=lines_filtered,
+        group_subtotals=group_subtotals,
+        show_group_breakdown=show_group_breakdown,
+        visible_requested_cents=visible_requested_cents,
+        visible_approved_cents=visible_approved_cents,
         format_currency=format_currency,
         friendly_status=friendly_status,
         kicked_back_lines=kicked_back_lines,
