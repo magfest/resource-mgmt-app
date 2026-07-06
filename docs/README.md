@@ -2,7 +2,7 @@
 
 ## Overview
 
-This application manages budget requests for MAGFest events. It uses a **generic work type architecture** designed to eventually support multiple request types (contracts, supply orders) through the same workflow engine. Currently, only **Budget Requests** are live — contracts and supply orders are planned for future releases.
+This application manages work requests for MAGFest events through a shared workflow engine with per-work-type modules. **Budget Requests and TechOps Requests are live**; Supply Orders and AV Requests are in development, Contracts planned.
 
 ## Documentation Index
 
@@ -11,6 +11,7 @@ This application manages budget requests for MAGFest events. It uses a **generic
 | [Architecture Overview](./architecture.md) | High-level system design and key concepts |
 | [Directory Structure](./directory-structure.md) | Where files live and why |
 | [Work Types](./work-types.md) | How the multi-work-type system works |
+| [Adding a Work Type](./adding-a-work-type.md) | The 10-step recipe (TECHOPS is the reference) |
 | [Permissions](./permissions.md) | RBAC, memberships, and access control |
 | [Workflow](./workflow.md) | Request lifecycle: draft → submit → review → finalize |
 | [Security](./security.md) | CSP, inline scripts, audit logging |
@@ -33,7 +34,7 @@ This application manages budget requests for MAGFest events. It uses a **generic
 - **Database**: SQLite (dev), PostgreSQL (prod)
 - **Templates**: Jinja2
 - **Auth**: Keycloak SSO or Google OAuth (prod), Dev login (local)
-- **Deployment**: Docker (GHCR), Gunicorn
+- **Deployment**: Heroku (`Procfile`, `app.json`), Gunicorn; Heroku Scheduler for periodic CLI jobs
 
 ## Getting Started
 
@@ -48,8 +49,8 @@ cp .env.example .env
 flask db upgrade
 flask run
 
-# Run seeds (creates demo data, optional)
-python -c "from app import create_app; from app.seeds.config_seed import run_all_seeds; app = create_app(); app.app_context().push(); run_all_seeds()"
+# Run seeds (bootstrap + demo data; also auto-runs on first request of an empty DB)
+flask seed all
 ```
 
 Dev login is enabled by default — no OAuth setup needed for local development.
