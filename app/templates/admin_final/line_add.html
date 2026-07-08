@@ -20,6 +20,7 @@
     </div>
 
     <form method="post" action="{{ url_for('admin_final.line_add_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       <div class="mb-16">
         <label for="expense_account_id"><strong>Expense Account</strong> <span style="color: red;">*</span></label>

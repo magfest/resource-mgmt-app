@@ -353,3 +353,34 @@ class TestAdminAddLineRoutes:
 
         resp = client.post(_url(app, "admin_final.line_add_submit", data), data={})
         assert resp.status_code == 403
+
+
+class TestEntryPoints:
+    def test_admin_line_review_shows_edit_link(self, app, client, seed_draft_work_item):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _login(client, "test:admin")
+
+        resp = client.get(_url(app, "admin_final.line_review", data, line_num=1))
+        assert resp.status_code == 200
+        assert b"change-account" in resp.data
+
+    def test_edit_link_hidden_when_finalized(self, app, client, seed_draft_work_item):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        data["work_item"].status = WORK_ITEM_STATUS_FINALIZED
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(app, "admin_final.line_review", data, line_num=1))
+        assert resp.status_code == 200
+        assert b"change-account" not in resp.data
+
+    def test_detail_page_shows_add_line_for_admin(self, app, client, seed_draft_work_item):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _login(client, "test:admin")
+
+        resp = client.get(_url(app, "work.work_item_detail", data))
+        assert resp.status_code == 200
+        assert b"add-line" in resp.data
