@@ -25,8 +25,10 @@ from app.models import (
     EventCycle,
     User,
     UserRole,
+    WorkType,
     ROLE_APPROVER,
     ROLE_SUPER_ADMIN,
+    ROLE_WORKTYPE_ADMIN,
 )
 from app.seeds.config_seed import run_all_seeds
 from app.seeds.demo_data import (
@@ -63,6 +65,11 @@ def ensure_demo_users() -> None:
     tech_group_id = tech.id
     hotel_group_id = hotel.id
 
+    supply_gen = groups_by_code.get("SUPPLY_GEN")
+    supply_wt = db.session.query(WorkType).filter_by(code="SUPPLY").one_or_none()
+    if not supply_gen or not supply_wt:
+        raise RuntimeError("Demo SUPPLY rows missing: expected SUPPLY_GEN group and SUPPLY work type to exist.")
+
     # role format: (role_code, work_type_id, approval_group_id)
     demo_users = [
         # Plain users (no special role)
@@ -85,6 +92,12 @@ def ensure_demo_users() -> None:
          [(ROLE_APPROVER, None, tech_group_id)]),
         ("dev:hotel_approver", "hotel.approver@dev.local", "dev:hotel_approver", "Hotel Approver (Demo)", True,
          [(ROLE_APPROVER, None, hotel_group_id)]),
+        ("dev:supply_approver", "supply.approver@dev.local", "dev:supply_approver", "Supply Approver (Demo)", True,
+         [(ROLE_APPROVER, None, supply_gen.id)]),
+
+        # Worktype admins
+        ("dev:supply_admin", "supply.admin@dev.local", "dev:supply_admin", "Supply Admin (Demo)", True,
+         [(ROLE_WORKTYPE_ADMIN, supply_wt.id, None)]),
 
         # Elevated
         ("dev:admin", "admin@dev.local", "dev:admin", "Admin (Demo)", True, [(ROLE_SUPER_ADMIN, None, None)]),

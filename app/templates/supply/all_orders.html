@@ -1,0 +1,188 @@
+{# templates/supply/all_orders.html #}
+{# Cross-department admin view of every SUPPLY order. Mirrors the shape of
+   techops/all_requests.html but without the monetary "Total" column —
+   instead surfaces line count + item-mix summary + needed-by date so
+   FestOps admins can scan "what does this department actually need, and
+   by when?" at a glance. #}
+{% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
+
+{% block title %}All Supply Orders{% endblock %}
+
+{% block content %}
+
+  {# Header #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">All Supply Orders</h1>
+      <div class="muted" style="margin-top:4px;">
+        {{ pagination.total }} total order{{ '' if pagination.total == 1 else 's' }}
+      </div>
+    </div>
+  </div>
+
+  {# Search and Filters #}
+  <div class="card" style="margin-bottom: 16px; background: #f8f9fa;">
+    <form method="get" action="{{ url_for('work.supply_all_orders') }}" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+      <div style="flex: 1; min-width: 200px;">
+        <label for="q" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Search</label>
+        <input type="text" name="q" id="q" value="{{ search_query }}" placeholder="Order ID or department..." style="width: 100%;">
+      </div>
+
+      <div>
+        <label for="event" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Event</label>
+        <select name="event" id="event" style="min-width: 150px;">
+          <option value="">All Events</option>
+          {% for ec in event_cycles %}
+            <option value="{{ ec.code }}" {% if selected_event == ec.code %}selected{% endif %}>
+              {{ ec.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="dept" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Department</label>
+        <select name="dept" id="dept" style="min-width: 150px;">
+          <option value="">All Departments</option>
+          {% for d in departments %}
+            <option value="{{ d.code }}" {% if selected_dept == d.code %}selected{% endif %}>
+              {{ d.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="status" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Status</label>
+        <select name="status" id="status" style="min-width: 150px;">
+          <option value="">All Statuses</option>
+          {% for code, label in statuses %}
+            <option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>
+              {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary">Search</button>
+      </div>
+      {% if search_query or selected_event or selected_dept or selected_status %}
+        <div>
+          <a class="btn btn-muted" href="{{ url_for('work.supply_all_orders') }}">
+            Clear
+          </a>
+        </div>
+      {% endif %}
+    </form>
+  </div>
+
+  {# Results Table #}
+  <section class="card">
+    {% if orders_data %}
+      <table class="responsive-cards">
+        <thead>
+          <tr>
+            <th style="width: 160px;">Order</th>
+            <th>Department</th>
+            <th style="width: 110px;">Status</th>
+            <th style="width: 70px;" class="right">Lines</th>
+            <th>Item mix</th>
+            <th style="width: 110px;">Needed by</th>
+            <th style="width: 140px;">Updated</th>
+            <th style="width: 80px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in orders_data %}
+            {% set wi = row.work_item %}
+            <tr>
+              <td>
+                <a href="{{ url_for('work.supply_order_detail', event=row.event_cycle.code, dept=row.department.code, public_id=wi.public_id) }}">
+                  {{ wi.public_id }}
+                </a>
+                {% if wi.request_kind and wi.request_kind != 'PRIMARY' %}
+                  <div class="muted small">{{ wi.request_kind }}</div>
+                {% endif %}
+              </td>
+              <td data-label="Department">
+                {{ row.department.name }}
+                <div class="muted small">{{ row.event_cycle.name }}</div>
+              </td>
+              <td data-label="Status">
+                {{ render_status_pill(wi.status, label=friendly_status(wi.status) if friendly_status else wi.status) }}
+              </td>
+              <td data-label="Lines" class="right num">{{ row.line_count }}</td>
+              <td data-label="Item mix">
+                {# Item-mix summary: comma-separated "Item×N" so an admin
+                   can scan the table and see "3 Sharpies + 1 tape roll"
+                   without opening each order. #}
+                {% if row.item_mix %}
+                  <span style="font-size: 13px;">
+                    {%- for name, count in row.item_mix -%}
+                      {%- if not loop.first %}, {% endif -%}
+                      {{ name }}{% if count > 1 %}×{{ count }}{% endif %}
+                    {%- endfor -%}
+                  </span>
+                {% else %}
+                  <span class="muted small">-</span>
+                {% endif %}
+              </td>
+              <td data-label="Needed by" class="muted small">
+                {% if row.needed_by %}
+                  {{ row.needed_by.strftime('%Y-%m-%d') }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td data-label="Updated" class="muted small">
+                {% if wi.updated_at %}
+                  {{ wi.updated_at.strftime('%Y-%m-%d %H:%M') }}
+                {% elif wi.created_at %}
+                  {{ wi.created_at.strftime('%Y-%m-%d %H:%M') }}
+                {% endif %}
+              </td>
+              <td>
+                <a class="btn btn-muted" href="{{ url_for('work.supply_order_detail', event=row.event_cycle.code, dept=row.department.code, public_id=wi.public_id) }}" style="padding: 4px 8px; font-size: 12px;">
+                  View
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {# Pagination #}
+      {% if pagination.pages > 1 %}
+        <div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+          {% if pagination.has_prev %}
+            <a class="btn btn-muted" href="{{ url_for('work.supply_all_orders', page=pagination.prev_num, q=search_query, event=selected_event, dept=selected_dept, status=selected_status) }}" style="padding: 4px 12px;">
+              Previous
+            </a>
+          {% endif %}
+
+          <span class="muted" style="padding: 4px 12px;">
+            Page {{ pagination.page }} of {{ pagination.pages }}
+          </span>
+
+          {% if pagination.has_next %}
+            <a class="btn btn-muted" href="{{ url_for('work.supply_all_orders', page=pagination.next_num, q=search_query, event=selected_event, dept=selected_dept, status=selected_status) }}" style="padding: 4px 12px;">
+              Next
+            </a>
+          {% endif %}
+        </div>
+      {% endif %}
+
+    {% else %}
+      <div class="muted" style="text-align: center; padding: 48px;">
+        {% if search_query or selected_event or selected_dept or selected_status %}
+          No supply orders found matching your criteria.
+        {% else %}
+          No supply orders yet.
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+{% endblock %}

@@ -19,6 +19,7 @@
   <table>
     <thead>
       <tr>
+        <th style="width: 48px;">Photo</th>
         <th>Item Name</th>
         <th style="width: 80px;">Unit</th>
         <th style="width: 100px;">Cost</th>
@@ -31,6 +32,11 @@
     <tbody>
       {% for item in cat_items %}
         <tr>
+          <td>
+            {% if item.image_url %}
+              <img src="{{ item.image_url }}" alt="" style="max-height: 40px; max-width: 40px;">
+            {% endif %}
+          </td>
           <td>
             {{ item.item_name }}
             {% if item.is_popular %}<span class="pill" style="background: #fef3c7; color: #92400e; font-size: 0.7rem;">Popular</span>{% endif %}

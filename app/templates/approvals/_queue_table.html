@@ -11,10 +11,13 @@
    - BUDGET shows Expense Account + Description + Amount.
    - TECHOPS shows Service + Details (location/usage or description); no
      Amount column because TechOps lines have no monetary cost.
-   - Other worktypes (CONTRACT, SUPPLY) fall through to a generic shape. #}
+   - SUPPLY shows Item + qty (requester notes as secondary text); no Amount
+     column (SupplyOrderLineDetail has no per-line price the requester sees).
+   - Other worktypes (CONTRACT) fall through to a generic shape. #}
 {% set work_type_code = items[0].work_item.portfolio.work_type.code if items else "BUDGET" %}
 {% set is_budget = work_type_code == "BUDGET" %}
 {% set is_techops = work_type_code == "TECHOPS" %}
+{% set is_supply = work_type_code == "SUPPLY" %}
 
 <table class="responsive-cards">
   <thead>
@@ -27,6 +30,8 @@
       {% elif is_techops %}
         <th style="width: 180px;">Service</th>
         <th>Details</th>
+      {% elif is_supply %}
+        <th>Item</th>
       {% else %}
         <th>Description</th>
       {% endif %}
@@ -108,6 +113,17 @@
               {% endif %}
             {% elif detail and detail.description %}
               {{ detail.description[:80] }}{% if detail.description|length > 80 %}...{% endif %}
+            {% else %}
+              <span class="muted">-</span>
+            {% endif %}
+          </td>
+        {% elif is_supply %}
+          <td data-label="Item">
+            {% if detail and detail.item %}
+              <strong>{{ detail.item.item_name }}</strong> &times;{{ detail.quantity_requested }}
+              {% if detail.requester_notes %}
+                <div class="muted small">{{ detail.requester_notes[:80] }}{% if detail.requester_notes|length > 80 %}...{% endif %}</div>
+              {% endif %}
             {% else %}
               <span class="muted">-</span>
             {% endif %}

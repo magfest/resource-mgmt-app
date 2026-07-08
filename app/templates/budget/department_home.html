@@ -133,7 +133,9 @@
         {% elif url_slug == 'contracts' %}
           {% set card_url = url_for('work.contracts_placeholder', event=event_cycle.code, dept=department.code) %}
         {% elif url_slug == 'supply' %}
-          {% set card_url = url_for('work.supply_placeholder', event=event_cycle.code, dept=department.code) %}
+          {# Supply mirrors TechOps: the portfolio landing handles both
+             create and list, so cards point at the supply cab's route. #}
+          {% set card_url = url_for('work.supply_portfolio_landing', event=event_cycle.code, dept=department.code) %}
         {% endif %}
 
         {% if card_url %}

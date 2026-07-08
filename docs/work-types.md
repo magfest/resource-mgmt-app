@@ -7,8 +7,10 @@ The system supports multiple **work types** - different categories of requests t
 | Code | Name | URL Slug | Status | Contact |
 |------|------|----------|--------|---------|
 | BUDGET | Budget Requests | `/budget/` | **Live** | biz@magfest.org |
-| CONTRACT | Contracts | `/contracts/` | Future release (data model exists, no UI yet) | biz@magfest.org |
-| SUPPLY | Supply Orders | `/supply/` | Future release (data model exists, no UI yet) | festops@magfest.org |
+| TECHOPS | TechOps Requests | `/techops/` | **Live** | techops@magfest.org |
+| SUPPLY | Supply Orders | `/supply/` | In development (models + admin pages exist; requester UI next) | festops@magfest.org |
+| AV | AV Requests | `/av/` | In development (on `feature/AV-Request` branch) | av@magfest.org |
+| CONTRACT | Contracts | `/contracts/` | Future (data model exists, no UI) | biz@magfest.org |
 
 ## How It Works
 
@@ -37,12 +39,18 @@ WorkTypeConfig(
     line_detail_type="budget",            # Which detail model to use
     routing_strategy="expense_account",   # How to route to approvers
     supports_supplementary=True,          # Allow supplementary requests?
+    uses_dispatch=True,                   # Lifecycle: admin dispatch stage? (BUDGET yes, TECHOPS no)
+    has_admin_final=True,                 # Lifecycle: admin final review stage?
     item_singular="Budget",               # Display labels
     item_plural="Budgets",
     line_singular="Line",
     line_plural="Lines",
 )
 ```
+
+The lifecycle flags default to `False` — new work types opt into stages explicitly.
+A work type with both flags off (like TECHOPS) skips dispatch and auto-finalizes
+when the last line is decided (`app/routes/work/helpers/lifecycle.py`).
 
 ## Line Detail Models
 
@@ -71,7 +79,20 @@ terms_summary           # Key terms
 routed_approval_group_id  # Computed from contract_type
 ```
 
-### SupplyOrderLineDetail (Future Release)
+### TechOpsLineDetail (Live)
+
+```python
+service_type_id         # TechOps service type (ethernet, phone, radio, ...)
+location / usage        # Per-instance fields (one WorkLine per instance)
+description             # Single-line services (wifi, other)
+config                  # Service-specific extras (JSON)
+routed_approval_group_id  # Snapshot from the service type's routing
+```
+
+(See `app/models/techops.py` — also has `TechOpsServiceType` catalog and
+`TechOpsRequestDetail` for request-level fields.)
+
+### SupplyOrderLineDetail (In Development)
 
 ```python
 item_id                 # Warehouse item from catalog
@@ -104,64 +125,25 @@ Contract Line
     → Approvers in that group review
 ```
 
-### category (Supply Orders)
+### category (TechOps — live; Supply Orders will use it too)
 
 ```
-Supply Line
-    → SupplyOrderLineDetail.item
-    → SupplyItem.category
-    → SupplyCategory.approval_group
-    → Approvers in that group review
+TechOps Line                          Supply Line
+    → TechOpsLineDetail.service_type      → SupplyOrderLineDetail.item
+    → service type's approval group       → SupplyItem.category
+    → Approvers review                    → SupplyCategory.approval_group
 ```
+
+Implemented per-type in `app/routing/category.py`.
 
 ## Adding a New Work Type
 
-To add a new work type (e.g., "Travel Requests"):
-
-### 1. Create the Line Detail Model
-
-In `app/models.py`:
-
-```python
-class TravelLineDetail(db.Model):
-    __tablename__ = "travel_line_details"
-
-    work_line_id = db.Column(db.Integer, db.ForeignKey("work_lines.id"), primary_key=True)
-    destination = db.Column(db.String(256), nullable=False)
-    travel_date = db.Column(db.Date, nullable=False)
-    estimated_cost_cents = db.Column(db.Integer, nullable=False)
-    # ... other fields
-
-    work_line = db.relationship("WorkLine", backref=db.backref("travel_detail", uselist=False))
-```
-
-### 2. Create a Routing Strategy (if needed)
-
-In `app/routing/travel.py`:
-
-```python
-class TravelRoutingStrategy(RoutingStrategy):
-    def get_approval_group(self, line):
-        # Route all travel to a single approval group
-        return ApprovalGroup.query.filter_by(code="TRAVEL").first()
-```
-
-### 3. Register in the Seed
-
-In `app/seeds/config_seed.py`:
-
-```python
-WorkType(code="TRAVEL", name="Travel Requests", ...)
-WorkTypeConfig(url_slug="travel", routing_strategy="travel", ...)
-```
-
-### 4. Create the Route Handler
-
-Either add to existing `budget/portfolio.py` or create a new file.
-
-### 5. Create Templates
-
-Create form templates with the appropriate fields.
+See **[`docs/adding-a-work-type.md`](adding-a-work-type.md)** — the full 10-step
+recipe distilled from how TECHOPS shipped. Short version: detail model → migrations →
+seeds (`app/seeds/bootstrap.py`) → routing → line-detail dispatch → **own route
+package** `app/routes/work/<type>/` → **own template tree** `app/templates/<type>/` →
+activation. Do NOT extend the budget routes; TECHOPS (`app/routes/work/techops/`)
+is the reference implementation.
 
 ## Work Type Access Control
 

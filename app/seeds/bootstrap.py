@@ -31,6 +31,7 @@ from app.models import (
     PriorityLevel,
     SpendType,
     SupplyCategory,
+    SupplyItem,
     TechOpsServiceType,
     WorkType,
     WorkTypeConfig,
@@ -64,7 +65,7 @@ def seed_work_types() -> dict[str, WorkType]:
     work_types_data = [
         ("BUDGET", "Budget Requests", 10, True),
         ("CONTRACT", "Contracts", 20, False),
-        ("SUPPLY", "Supply Orders", 30, False),
+        ("SUPPLY", "Supply Orders", 30, True),
         ("TECHOPS", "TechOps Services", 40, False),
         ("AV", "AV Requests", 50, False),
     ]
@@ -114,6 +115,11 @@ def seed_approval_groups(work_types: dict[str, WorkType]) -> dict[str, ApprovalG
         "TECHOPS": [
             ("TECHOPS_NET", "TechOps Networking", "Reviews network and phone services (WiFi, ethernet, bandwidth, phone lines)", 10),
             ("TECHOPS_GEN", "TechOps Generic", "Reviews dedicated radio channels, consultations, and any other TechOps requests", 20),
+        ],
+        "SUPPLY": [
+            ("SUPPLY_GEN", "Supply — General", "Reviews office, event, and signage supply orders", 10),
+            ("SUPPLY_TECH", "Supply — Tech", "Reviews technical equipment supply orders", 20),
+            ("SUPPLY_LOG", "Supply — Logistics/Safety", "Reviews safety and medical supply orders", 30),
         ],
     }
 
@@ -208,7 +214,7 @@ def seed_work_type_configs(work_types: dict[str, WorkType]) -> None:
             routing_strategy=ROUTING_STRATEGY_CATEGORY,
             supports_supplementary=False,
             supports_fixed_costs=False,
-            uses_dispatch=True,
+            uses_dispatch=False,
             has_admin_final=True,
             item_singular="Supply Order",
             item_plural="Supply Orders",
@@ -304,11 +310,11 @@ def seed_supply_categories(approval_groups: dict[str, ApprovalGroup]) -> dict[st
     print("Seeding supply categories...")
 
     categories_data = [
-        ("OFFICE", "Office Supplies", "General office supplies", "GEN", 10),
-        ("TECH", "Tech Equipment", "Technical equipment and supplies", "TECH", 20),
-        ("EVENT", "Event Supplies", "Event-specific supplies", "GEN", 30),
-        ("SAFETY", "Safety/Medical", "Safety and medical supplies", "LOGISTICS", 40),
-        ("SIGNAGE", "Signage/Printing", "Signs, banners, and printed materials", "GEN", 50),
+        ("OFFICE", "Office Supplies", "General office supplies", "SUPPLY_GEN", 10),
+        ("TECH", "Tech Equipment", "Technical equipment and supplies", "SUPPLY_TECH", 20),
+        ("EVENT", "Event Supplies", "Event-specific supplies", "SUPPLY_GEN", 30),
+        ("SAFETY", "Safety/Medical", "Safety and medical supplies", "SUPPLY_LOG", 40),
+        ("SIGNAGE", "Signage/Printing", "Signs, banners, and printed materials", "SUPPLY_GEN", 50),
     ]
 
     categories = {}
@@ -332,6 +338,54 @@ def seed_supply_categories(approval_groups: dict[str, ApprovalGroup]) -> dict[st
     db.session.flush()
     print(f"  {len(categories)} supply categories present")
     return categories
+
+
+def seed_supply_items(categories: dict[str, SupplyCategory]) -> None:
+    """Seed a small dev/test item catalog. Insert-only per the module
+    idempotency contract; prod catalogs load via the admin bulk import."""
+    print("Seeding supply items...")
+    # (category_code, item_name, unit, notes, unit_cost_cents, is_popular,
+    #  is_limited, notes_required, qty_on_hand, is_expendable,
+    #  order_guidance)
+    # order_guidance is populated on a handful of items with realistic,
+    # non-anchoring guidance text; most items leave it None.
+    items_data = [
+        ("OFFICE", "Ballpoint pens (box of 12)", "box", "Blue ink", 350, True, False, False, 200, True, None),
+        ("OFFICE", "Gaffer tape (roll)", "each", "2-inch black", 1200, True, False, False, 150, True, "1 roll covers roughly one booth setup"),
+        ("OFFICE", "Sharpies (box of 12)", "box", None, 900, False, False, False, 80, True, None),
+        ("EVENT", "Zip ties (bag of 100)", "bag", "8-inch", 700, True, False, False, 300, True, None),
+        ("EVENT", "Table covers", "each", "Black, fits 6ft table", 1500, False, False, False, 60, True, None),
+        ("TECH", "HDMI cable 25ft", "each", None, 2500, False, True, True, 12, True, None),
+        ("SAFETY", "First aid kit (small)", "each", None, 3000, False, True, False, 10, True, None),
+        ("SIGNAGE", "Foam board 24x36", "each", "White", 800, False, False, True, 40, True, None),
+        ("OFFICE", "Clipboards", "each", "Letter size", 400, False, False, False, 75, True, None),
+        ("OFFICE", "Painter's tape (roll)", "each", "1-inch blue, safe for hotel walls", 600, True, False, False, 120, True, None),
+        ("EVENT", "Extension cord 25ft", "each", "12-gauge, grounded", 2200, True, False, False, 45, True, None),
+        ("EVENT", "Trash bags (box of 50)", "box", "55-gallon contractor", 1800, False, False, False, 90, True, "1 box per trash station per day"),
+        ("EVENT", "AA batteries (pack of 24)", "pack", None, 1400, True, False, False, 100, True, "1 pack covers a weekend of wireless mics"),
+        ("TECH", "Power strip (6-outlet)", "each", "Surge protected", 1600, False, False, False, 30, True, None),
+        ("SAFETY", "Nitrile gloves (box of 100)", "box", "Size L", 1100, False, False, False, 40, True, None),
+        ("SIGNAGE", "Easel stand", "each", "Folding tripod", 2000, False, True, True, 15, False, "Most booths need just one"),
+    ]
+    items_created = 0
+    for cat_code, name, unit, notes, cost, popular, limited, notes_req, on_hand, expendable, guidance in items_data:
+        cat = categories.get(cat_code)
+        if cat is None:
+            continue
+        existing = db.session.query(SupplyItem).filter_by(
+            category_id=cat.id, item_name=name).first()
+        if existing:
+            continue
+        db.session.add(SupplyItem(
+            category_id=cat.id, item_name=name, unit=unit, notes=notes,
+            unit_cost_cents=cost, is_popular=popular, is_limited=limited,
+            notes_required=notes_req, qty_on_hand=on_hand,
+            is_active=True, is_expendable=expendable,
+            order_guidance=guidance,
+        ))
+        items_created += 1
+    db.session.flush()
+    print(f"  Created {items_created} supply items")
 
 
 def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dict[str, TechOpsServiceType]:
@@ -701,7 +755,8 @@ def run_bootstrap() -> None:
     approval_groups = seed_approval_groups(work_types)
     seed_work_type_configs(work_types)
     seed_contract_types(approval_groups)
-    seed_supply_categories(approval_groups)
+    supply_categories = seed_supply_categories(approval_groups)
+    seed_supply_items(supply_categories)
     seed_techops_service_types(approval_groups)
     spend_types = seed_spend_types()
     seed_reference_data()

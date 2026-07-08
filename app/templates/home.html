@@ -151,7 +151,7 @@
             {% elif url_slug == 'contracts' %}
               {% set wt_url = url_for('work.contracts_placeholder', event=default_cycle.code, dept=dept.code) %}
             {% elif url_slug == 'supply' %}
-              {% set wt_url = url_for('work.supply_placeholder', event=default_cycle.code, dept=dept.code) %}
+              {% set wt_url = url_for('work.supply_portfolio_landing', event=default_cycle.code, dept=dept.code) %}
             {% else %}
               {% set wt_url = url_for('work.department_home', event=default_cycle.code, dept=dept.code) %}
             {% endif %}

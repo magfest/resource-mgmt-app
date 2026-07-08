@@ -156,6 +156,12 @@ def create_app() -> Flask:
     app.config["SLACK_BOT_TOKEN"] = os.environ.get("SLACK_BOT_TOKEN")
     app.config["SLACK_CHANNEL_ID"] = os.environ.get("SLACK_CHANNEL_ID")
 
+    # --- Supply catalog item images (S3) ---
+    app.config["SUPPLY_IMAGE_BUCKET"] = os.environ.get("SUPPLY_IMAGE_BUCKET")
+    app.config["SUPPLY_IMAGE_ACCESS_KEY"] = os.environ.get("SUPPLY_IMAGE_ACCESS_KEY")
+    app.config["SUPPLY_IMAGE_SECRET_KEY"] = os.environ.get("SUPPLY_IMAGE_SECRET_KEY")
+    app.config["SUPPLY_IMAGE_REGION"] = os.environ.get("SUPPLY_IMAGE_REGION", "us-east-1")
+
     # --- Proxy Fix for reverse proxies (Heroku, AWS, etc.) ---
     if os.environ.get("BEHIND_PROXY", "false").lower() == "true":
         from werkzeug.middleware.proxy_fix import ProxyFix
@@ -268,11 +274,18 @@ def create_app() -> Flask:
             # If it does, fail loudly rather than silently disabling CSP protection.
             app.logger.error("CSP nonce missing! generate_csp_nonce() may have failed.")
             nonce = "MISSING-NONCE-CHECK-LOGS"  # Will break scripts, making issue obvious
+        # Catalog item photos are served from the app's S3 bucket — the one
+        # non-'self' resource origin. Scoped to the exact bucket host (never
+        # *.s3.amazonaws.com) so only our own bucket is embeddable.
+        img_src = "img-src 'self' data:"
+        supply_bucket = app.config.get("SUPPLY_IMAGE_BUCKET")
+        if supply_bucket:
+            img_src += f" https://{supply_bucket}.s3.amazonaws.com"
         csp_directives = [
             "default-src 'self'",
             f"script-src 'self' 'nonce-{nonce}'",  # Nonce required for inline scripts
             "style-src 'self' 'unsafe-inline'",    # Inline styles allowed (low risk)
-            "img-src 'self' data:",
+            img_src,
             "font-src 'self'",
             "form-action 'self'",
             "frame-ancestors 'none'",

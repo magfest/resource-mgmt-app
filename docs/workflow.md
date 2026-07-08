@@ -4,62 +4,39 @@ This document explains the lifecycle of a request from creation to finalization.
 
 ## Lifecycle Overview
 
+Stages are per-work-type: `WorkTypeConfig.uses_dispatch` and `has_admin_final`
+control which phases exist. BUDGET uses all of them; TECHOPS skips dispatch and
+admin-final (it auto-finalizes when the last line is decided).
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           REQUESTER PHASE                                │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   ┌─────────┐                                                           │
-│   │  DRAFT  │  Requester adds/edits lines                               │
-│   └────┬────┘                                                           │
-│        │                                                                │
-│        ▼ [Submit]                                                       │
-│   ┌───────────┐                                                         │
-│   │ SUBMITTED │  Request sent for review                                │
-│   └───────────┘                                                         │
-│                                                                         │
+│ REQUESTER PHASE                                                          │
+│                                                                          │
+│   DRAFT ──[Submit]──▶ AWAITING_DISPATCH   (work types with dispatch)     │
+│   DRAFT ──[Submit]──▶ SUBMITTED           (work types without dispatch;  │
+│                                            reviews created at submit)    │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
-                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           APPROVER PHASE                                 │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   ┌──────────────┐                                                      │
-│   │ UNDER_REVIEW │  Lines routed to approval groups                     │
-│   └──────┬───────┘                                                      │
-│          │                                                              │
-│          ├──────────────┬──────────────┬──────────────┐                │
-│          ▼              ▼              ▼              ▼                │
-│   ┌──────────┐   ┌────────────┐  ┌────────────────┐  ┌──────────┐     │
-│   │ APPROVED │   │ NEEDS_INFO │  │NEEDS_ADJUSTMENT│  │ REJECTED │     │
-│   └──────────┘   └─────┬──────┘  └───────┬────────┘  └──────────┘     │
-│                        │                 │                             │
-│                        └────────┬────────┘                             │
-│                                 │                                      │
-│                                 ▼                                      │
-│                        [Requester responds]                            │
-│                                 │                                      │
-│                                 ▼                                      │
-│                        Back to UNDER_REVIEW                            │
-│                                                                         │
+│ DISPATCH PHASE (uses_dispatch only — BUDGET)                             │
+│                                                                          │
+│   Admin assigns approval groups per line ──▶ item becomes SUBMITTED      │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
-                                    ▼ [All lines approved]
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           ADMIN PHASE                                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   ┌─────────────────┐                                                   │
-│   │ ADMIN_FINAL     │  Admin reviews all approved lines                 │
-│   │ REVIEW          │                                                   │
-│   └────────┬────────┘                                                   │
-│            │                                                            │
-│            ▼ [Finalize]                                                 │
-│   ┌───────────┐                                                         │
-│   │ FINALIZED │  Budget locked, amounts confirmed                       │
-│   └───────────┘                                                         │
-│                                                                         │
+│ APPROVER PHASE (item stays SUBMITTED; statuses below are LINE-level)     │
+│                                                                          │
+│   PENDING ──▶ APPROVED | REJECTED | NEEDS_INFO | NEEDS_ADJUSTMENT        │
+│                              kickbacks ──▶ requester responds ──▶ back   │
+│                              to PENDING for re-review                    │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+┌─────────────────────────────────────────────────────────────────────────┐
+│ FINALIZATION                                                             │
+│                                                                          │
+│   has_admin_final (BUDGET): admin sets authoritative amounts, then       │
+│     [Finalize] ──▶ FINALIZED (remaining PENDING lines auto-approved)     │
+│   otherwise (TECHOPS): auto-finalize when the last line is decided       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -70,10 +47,14 @@ This document explains the lifecycle of a request from creation to finalization.
 | Status | Description | Who Can Edit? |
 |--------|-------------|---------------|
 | DRAFT | Requester is building the request | Requester |
-| SUBMITTED | Submitted for review | No one |
-| UNDER_REVIEW | Approvers reviewing lines | Approvers |
-| NEEDS_INFO | Waiting for requester response | Requester (respond only) |
+| AWAITING_DISPATCH | Submitted; waiting for approval group assignment (dispatch work types only) | No one |
+| SUBMITTED | Lines under review | Reviewers (via checkout); requester responds to kickbacks |
 | FINALIZED | Locked and complete | No one (admin can unfinalize) |
+| PAUSED | Supplementary blocked by pending PRIMARY | No one |
+| UNAPPROVED | Reopened after finalize | Per admin action |
+
+(`NEEDS_INFO`/`NEEDS_ADJUSTMENT` are line-level, not item-level; a line kickback
+sets `needs_requester_action` on the line and flags the item.)
 
 ### Work Line Statuses
 
@@ -93,8 +74,9 @@ Lines go through two review stages:
 
 Lines are routed to approval groups based on the work type's routing strategy:
 - **Budget** (live): Routed via expense account
+- **TechOps** (live): Routed via service type (category strategy)
+- **Supply Orders** (in development): Will route via item category
 - **Contracts** (future): Will route via contract type
-- **Supply Orders** (future): Will route via item category
 
 Approvers in that group can:
 - Approve the line
@@ -128,8 +110,9 @@ Admins can force-release checkouts if needed.
    - Saves progress
 
 2. **Requester submits**
-   - Lines routed to approval groups
-   - Status: SUBMITTED → UNDER_REVIEW
+   - Status: DRAFT → AWAITING_DISPATCH; budget admins notified
+   - Admin dispatches: assigns approval groups per line, creates review records
+   - Status: AWAITING_DISPATCH → SUBMITTED
 
 3. **Approvers review**
    - Each approval group sees their lines

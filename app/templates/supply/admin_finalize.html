@@ -1,0 +1,167 @@
+{# templates/supply/admin_finalize.html #}
+{# FestOps finalize screen for one supply order. Per line: item, requested
+   qty, the APPROVAL_GROUP review outcome, and an editable approved qty
+   (defaulted) + override-note field. Admins see costs. Overriding the review
+   group's decision (zeroing an approved line / approving a rejected one)
+   requires a note — enforced server-side in supply_admin_finalize, echoed in
+   the confirm copy here. CSP-compliant: no inline handlers. #}
+{% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
+
+{% block title %}Finalize {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+
+  {% set order_detail = order_detail %}
+
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">Finalize {{ work_item.public_id }}</h1>
+      <div class="muted" style="margin-top:4px;">
+        {{ department.name }} &middot; {{ event_cycle.name }}
+        {% if order_detail and order_detail.needed_by_date %}
+          &middot; needed by {{ order_detail.needed_by_date.strftime('%Y-%m-%d') }}
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <a class="btn btn-muted" href="{{ url_for('work.supply_admin_queue') }}">Back to Queue</a>
+    </div>
+  </div>
+
+  {# Order delivery context #}
+  <section class="card">
+    <div class="meta"><strong>Delivery location:</strong>
+      {{ order_detail.delivery_location if order_detail and order_detail.delivery_location else '-' }}
+    </div>
+    {% if order_detail and order_detail.additional_notes %}
+      <div class="meta" style="margin-top: 8px;">
+        <div><strong>Order notes:</strong></div>
+        <div style="white-space: pre-wrap;">{{ order_detail.additional_notes }}</div>
+      </div>
+    {% endif %}
+  </section>
+
+  {% if is_finalized %}
+    <div class="callout callout-success mb-16">
+      <strong>This order is finalized.</strong>
+      <div class="muted" style="margin-top:4px;">
+        Approved quantities below are locked.
+      </div>
+    </div>
+  {% elif has_kickbacks %}
+    <div class="callout callout-action mb-16">
+      <strong>Cannot finalize yet</strong>
+      <div class="muted" style="margin-top:4px;">
+        One or more lines are awaiting a requester response to a kickback.
+        Finalization is blocked until the requester resolves them.
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('work.supply_admin_finalize', public_id=work_item.public_id) }}" id="finalize-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <section class="card">
+      <table class="responsive-cards">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th style="width: 90px;" class="right">Requested</th>
+            <th>Review group</th>
+            <th style="width: 110px;" class="right">Unit cost</th>
+            <th style="width: 120px;">Approved qty</th>
+            <th style="width: 240px;">Override note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in line_rows %}
+            {% set line = row.line %}
+            <tr>
+              <td data-label="Item">
+                <div style="font-weight: 600;">{{ row.item.item_name if row.item else '-' }}</div>
+                {% if row.category %}
+                  <div class="muted small">{{ row.category.name }}</div>
+                {% endif %}
+              </td>
+              <td data-label="Requested" class="right num">{{ row.requested }}</td>
+              <td data-label="Review group">
+                {% if row.ag_review %}
+                  {{ render_status_pill(row.ag_review.status, label=friendly_status(row.ag_review.status) if friendly_status else row.ag_review.status) }}
+                  {% if row.decided_by %}
+                    <div class="muted small">{{ row.decided_by|user_display }}</div>
+                  {% endif %}
+                  {% if row.ag_review.note %}
+                    <div class="muted small" style="margin-top: 4px; white-space: pre-wrap;">{{ row.ag_review.note }}</div>
+                  {% endif %}
+                {% else %}
+                  <span class="pill">PENDING</span>
+                  <div class="muted small">no review-group decision</div>
+                {% endif %}
+                {% if row.kicked_back and not is_finalized %}
+                  <div class="small" style="margin-top: 4px; color: #b45309; font-weight: 600;">
+                    Awaiting requester response — blocks finalization
+                  </div>
+                {% endif %}
+              </td>
+              <td data-label="Unit cost" class="right num">
+                {{ format_currency(row.unit_cost_cents) if row.unit_cost_cents is not none else 'n/a' }}
+              </td>
+              <td data-label="Approved qty">
+                <input type="number" name="approved_qty_{{ line.line_number }}" min="0"
+                       value="{{ row.default_qty }}" style="width: 90px;"
+                       {% if is_finalized %}disabled{% endif %}>
+              </td>
+              <td data-label="Override note">
+                <input type="text" name="note_{{ line.line_number }}"
+                       placeholder="Required to override review group"
+                       style="width: 100%;"
+                       {% if is_finalized %}disabled{% endif %}>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    {% if not is_finalized %}
+      <div class="callout mb-16" style="background: #f8f9fa;">
+        <div class="muted small">
+          Finalizing locks this order. Lines still awaiting a review-group
+          decision are approved at their requested quantity. Changing an
+          approved line to 0, or approving a rejected line, requires an
+          override note on that line.
+        </div>
+      </div>
+
+      <div class="btn-row">
+        {# Disabled styling is a courtesy — the POST handler's kickback
+           guard is the authority. #}
+        <button type="submit" class="btn btn-primary" id="finalize-submit"
+                {% if has_kickbacks %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
+          Finalize Order
+        </button>
+        {% if has_kickbacks %}
+          <span class="muted small" style="align-self: center;">
+            Blocked: lines awaiting requester response.
+          </span>
+        {% endif %}
+      </div>
+    {% endif %}
+  </form>
+
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function() {
+  var form = document.getElementById('finalize-form');
+  if (!form) return;
+  form.addEventListener('submit', function(e) {
+    if (!confirm('Finalize this supply order? This locks the approved quantities.')) {
+      e.preventDefault();
+    }
+  });
+})();
+</script>
+{% endblock %}

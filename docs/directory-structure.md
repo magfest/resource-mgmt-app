@@ -8,14 +8,18 @@ This document explains where files live and the reasoning behind the organizatio
 magfest-budget/
 ├── app/                    # Main application code
 │   ├── models/             # Database models (package)
-│   ├── services/           # Business logic services (email, notifications)
+│   ├── services/           # Business logic services (email, notifications, slack)
+│   ├── cli.py              # Flask CLI commands (seed, send-submission-reminders)
 │   ├── line_details.py     # Generic line detail helpers (see note below)
+│   ├── secrets.py          # Env-var + optional AWS Secrets Manager loading
 │   ├── routing/            # Approval routing strategies
 │   ├── routes/             # Flask blueprints and route handlers
 │   ├── seeds/              # Database seeding scripts
 │   └── templates/          # Jinja2 HTML templates
 ├── docs/                   # Documentation (you are here)
 ├── migrations/             # Alembic database migrations
+├── tests/                  # pytest suite (unit/ + integration/)
+├── Procfile                # Heroku process definition (web only)
 ├── requirements.txt        # Python dependencies
 └── run.py                  # Flask app entry point
 ```
@@ -35,6 +39,7 @@ models/
 ├── budget.py        # SpendType, ExpenseAccount, BudgetLineDetail
 ├── contract.py      # ContractType, ContractLineDetail
 ├── supply.py        # SupplyCategory, SupplyItem, SupplyOrderLineDetail
+├── techops.py       # TechOpsServiceType, TechOpsLineDetail, TechOpsRequestDetail
 └── telemetry.py     # ActivityEvent, NotificationLog, SecurityAuditLog
 ```
 
@@ -59,8 +64,8 @@ routing/
 ├── __init__.py          # Base RoutingStrategy interface
 ├── budget.py            # Routes via ExpenseAccount
 ├── contracts.py         # Routes via ContractType
-├── supply_orders.py     # Routes via SupplyCategory
-└── registry.py          # Strategy lookup
+├── category.py          # Category routing (TECHOPS service types; SUPPLY categories)
+└── registry.py          # Strategy lookup + cross-work-type guard
 ```
 
 Each work type can route to approval groups differently. Budget routes based on expense account, contracts route based on contract type, etc.
@@ -75,35 +80,34 @@ routes/
 ├── home.py              # Main dashboard
 ├── auth.py              # Login/logout
 ├── dev.py               # Dev-only routes (impersonation, etc.)
-├── admin/               # Admin config pages (departments, users, etc.)
-├── admin_final/         # Admin final review workflow
-├── approvals/           # Approver workflow
-└── work/                # Requester workflow (all work types)
-    ├── __init__.py      # Blueprint setup
+├── admin/               # Admin config pages (departments, users, supply catalog, etc.)
+├── admin_final/         # Admin final review workflow + reports (BUDGET)
+├── approvals/           # Approver workflow (shared across work types)
+├── dispatch/            # Dispatch queue (BUDGET)
+└── work/                # Requester workflow
+    ├── __init__.py      # Blueprint setup (registers per-work-type packages)
     ├── department.py    # Department landing page
     ├── division.py      # Division landing page (all departments in a division)
-    ├── portfolio.py     # Portfolio landing, placeholder routes
-    ├── lines.py         # Line item CRUD
+    ├── portfolio.py     # Portfolio landing (BUDGET) + coming-soon fallback for unbuilt slugs
+    ├── lines.py         # Line item CRUD (BUDGET)
     ├── helpers/         # Helper functions (package)
     │   ├── __init__.py  # Re-exports everything
     │   ├── context.py   # PortfolioContext, PortfolioPerms, WorkItemPerms
     │   ├── checkout.py  # Checkout/checkin functionality
+    │   ├── lifecycle.py # Status transitions, auto-finalize
     │   ├── expense_accounts.py  # Expense account queries
     │   ├── computations.py      # Totals, line status summaries
-    │   └── formatting.py        # Status labels, currency, utilities
-    └── work_items/      # Work item routes (package)
-        ├── __init__.py  # Registers all routes
-        ├── common.py    # Shared helpers
-        ├── create.py    # PRIMARY/SUPPLEMENTARY creation
-        ├── view.py      # Detail view, comments, quick review
-        ├── edit.py      # Edit form, fixed costs, hotel wizard
-        └── actions.py   # Submit, checkout, checkin, needs_info
+    │   └── formatting.py        # Status labels, currency, public IDs
+    ├── techops/         # TECHOPS work type (own package — the reference pattern)
+    │   └── __init__, portfolio, create, edit, submit, view, admin, form_utils
+    └── work_items/      # Work item routes (BUDGET: create, view, edit, actions)
 ```
 
-The `work/` folder handles ALL work types via the generic system. The URL structure is:
-- `/<event>/<dept>/budget/` → Budget requests
-- `/<event>/<dept>/contracts/` → Contract requests (future release)
-- `/<event>/<dept>/supply/` → Supply requests (future release)
+**Work-type pattern**: each work type has its own package under `work/` with literal
+URL segments (`/techops/`), which Flask prefers over the generic `<work_type_slug>`
+fallback in `portfolio.py` (that fallback renders a coming-soon page for unbuilt
+types). The older top-level modules (`portfolio.py`, `lines.py`, `work_items/`) are
+BUDGET's implementation. See `docs/adding-a-work-type.md`.
 
 The blueprint is registered as `work` so URL generation uses `url_for('work.<route_name>')`.
 
@@ -115,19 +119,26 @@ Jinja2 templates mirroring the route structure:
 templates/
 ├── layout/
 │   └── base.html        # Base template with CSS, nav, flash messages
-├── components/          # Reusable partials
+├── components/          # Reusable partials (_top_nav.html, cards, banners)
+├── macros/              # Shared Jinja macros (status_pill, comments, audit_log,
+│                        #   checkout_banner) — import `with context`
 ├── home.html            # Main dashboard
 ├── auth/                # Login pages
 ├── admin/               # Admin config pages
-├── admin_final/         # Admin review pages
-├── budget/              # Requester workflow pages
+├── admin_final/         # Admin review pages + reports
+├── dispatch/            # Dispatch queue pages
+├── budget/              # BUDGET work type pages
 │   ├── coming_soon.html # Placeholder for unbuilt work types
 │   ├── department_home.html
 │   ├── portfolio_landing.html
 │   ├── work_item_detail.html
 │   └── ...
+├── techops/             # TECHOPS work type pages (own tree — the pattern)
 └── errors/              # Error pages
 ```
+
+Each work type gets its own template tree; shared pieces live in `macros/` and
+`components/`.
 
 ### `app/seeds/`
 
@@ -135,13 +146,19 @@ Database seeding for development and initial setup:
 
 ```
 seeds/
-└── config_seed.py       # Creates work types, expense accounts, demo users, etc.
+├── bootstrap.py         # Canonical seed: work types, approval groups, configs, catalogs
+├── config_seed.py       # Backwards-compatible wrapper around bootstrap.py
+├── demo_data.py         # Operator-replaceable [Demo] org content
+└── demo_users.py        # Demo user accounts
 ```
 
 Run with:
 ```bash
-python -c "from app import create_app; from app.seeds.config_seed import run_all_seeds; app = create_app(); app.app_context().push(); run_all_seeds()"
+flask seed all           # see app/cli.py for targets
 ```
+
+(An empty DB is also auto-migrated and seeded on first request — see
+`run_seed_once()` in `app/__init__.py`.)
 
 ---
 

@@ -39,9 +39,19 @@ from .helpers import (
 
 
 def _require_has_admin_final(work_item: WorkItem) -> None:
-    """Abort 404 if the work item belongs to a worktype without admin_final."""
-    config = work_item.portfolio.work_type.config
-    if config is None or not config.has_admin_final:
+    """Abort 404 unless the work item is BUDGET's admin_final flow.
+
+    admin_final is BUDGET-scoped in practice (per CLAUDE.md): SUPPLY also
+    has WorkTypeConfig.has_admin_final=True, but it finalizes through its
+    own admin surface (app/routes/work/supply/admin.py's
+    supply_admin_finalize), which writes quantity_approved on
+    SupplyOrderLineDetail -- a field this BUDGET-only flow never touches.
+    Without the BUDGET check, a SUBMITTED supply order reaching this route
+    would flip to FINALIZED with quantity_approved left unset.
+    """
+    work_type = work_item.portfolio.work_type
+    config = work_type.config
+    if config is None or not config.has_admin_final or work_type.code != "BUDGET":
         abort(404)
 
 

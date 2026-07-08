@@ -1,0 +1,81 @@
+{# templates/supply/admin_queue.html #}
+{# FestOps finalize queue: SUBMITTED supply orders sorted soonest-needed
+   first, with per-order APPROVAL_GROUP review progress and a ready-to-
+   finalize badge when every line has a terminal decision. Literal-URL
+   admin route (app/routes/work/supply/admin.py) — no event/dept in path. #}
+{% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
+
+{% block title %}Supply Finalize Queue{% endblock %}
+
+{% block content %}
+
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">Supply Finalize Queue</h1>
+      <div class="muted" style="margin-top:4px;">
+        {{ rows|length }} submitted order{{ '' if rows|length == 1 else 's' }} awaiting finalization
+      </div>
+    </div>
+  </div>
+
+  <section class="card">
+    {% if rows %}
+      <table class="responsive-cards">
+        <thead>
+          <tr>
+            <th style="width: 180px;">Order</th>
+            <th>Department</th>
+            <th style="width: 130px;">Needed by</th>
+            <th style="width: 110px;" class="right">Progress</th>
+            <th style="width: 150px;">Status</th>
+            <th style="width: 100px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            {% set wi = row.work_item %}
+            <tr>
+              <td>
+                <a href="{{ url_for('work.supply_admin_finalize_view', public_id=wi.public_id) }}">
+                  {{ wi.public_id }}
+                </a>
+              </td>
+              <td data-label="Department">
+                {{ row.department.name }}
+                <div class="muted small">{{ row.event_cycle.name }}</div>
+              </td>
+              <td data-label="Needed by">
+                {% if row.needed_by %}
+                  {{ row.needed_by.strftime('%Y-%m-%d') }}
+                {% else %}
+                  <span class="muted small">-</span>
+                {% endif %}
+              </td>
+              <td data-label="Progress" class="right num">
+                {{ row.decided }}/{{ row.total }}
+              </td>
+              <td data-label="Status">
+                {% if row.ready %}
+                  <span class="pill pill-approved">Ready to finalize</span>
+                {% else %}
+                  {{ render_status_pill(wi.status, label=friendly_status(wi.status) if friendly_status else wi.status) }}
+                {% endif %}
+              </td>
+              <td>
+                <a class="btn btn-primary" href="{{ url_for('work.supply_admin_finalize_view', public_id=wi.public_id) }}" style="padding: 4px 8px; font-size: 12px;">
+                  Finalize
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="muted" style="text-align: center; padding: 48px;">
+        No supply orders are awaiting finalization.
+      </div>
+    {% endif %}
+  </section>
+
+{% endblock %}

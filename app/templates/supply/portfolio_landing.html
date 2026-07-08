@@ -1,0 +1,131 @@
+{# templates/supply/portfolio_landing.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}{{ ctx.department.name }} Supply Orders - {{ ctx.event_cycle.code }}{% endblock %}
+
+{% block content %}
+
+  {# Breadcrumb #}
+  <nav class="muted small" style="margin-bottom: 12px;">
+    <a href="{{ url_for('home.index') }}">Home</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">{{ ctx.department.name }}</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <span>Supply Orders</span>
+  </nav>
+
+  {# Header #}
+  <section class="card">
+    <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap;">
+      <div>
+        <h1 style="margin:0;">
+          {{ ctx.department.name }} — Supply Orders
+        </h1>
+        <div class="muted" style="margin-top:4px; line-height:1.5;">
+          <strong>Event:</strong> {{ ctx.event_cycle.name }} ({{ ctx.event_cycle.code }})
+        </div>
+        <div class="muted small" style="margin-top:8px;">
+          Order warehouse and office supplies for your department.
+        </div>
+      </div>
+
+      <div style="text-align:right;">
+        <div class="summary-row" style="padding: 0; border: 0;">
+          <div class="muted">Orders placed</div>
+          <div class="summary-amount" style="font-weight:700;">{{ work_items | length }}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# Action buttons. "Start new order" is gated on can_edit (not
+     can_create_primary): supply allows unlimited independent orders, so
+     the engine's single-PRIMARY gate doesn't apply. "Browse the catalog"
+     is visible to any viewer who can reach this page at all (can_view is
+     already required to land here), so once-a-year volunteers with
+     view-only access can still learn the catalog before requesting
+     access to order. #}
+  <div class="btn-row" style="margin: 16px 0;">
+    {% if perms.can_edit %}
+      <form method="post" action="{{ url_for('work.supply_order_new', event=ctx.event_cycle.code, dept=ctx.department.code) }}" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-primary">
+          Start new order
+        </button>
+      </form>
+    {% endif %}
+    <a class="btn" href="{{ url_for('work.supply_catalog_browse', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+      Browse the catalog
+    </a>
+  </div>
+
+  {# Orders list #}
+  <section style="margin-top: 16px;">
+    <h2>Your Orders</h2>
+
+    {% if work_items %}
+      {% for item in work_items %}
+        {% set line_summary = item_line_summaries.get(item.id) %}
+        {% set line_count = item_line_counts.get(item.id, 0) %}
+        {% set status = line_summary.effective_status | upper if line_summary else item.status | upper %}
+        {% set status_label = friendly_status(status) if friendly_status else status %}
+        {% set needed_by = item.supply_order_detail.needed_by_date if item.supply_order_detail else none %}
+
+        <div class="card" style="margin-bottom: 12px;">
+          <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+            <div>
+              <h3 style="margin:0;">
+                <a href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=item.public_id) }}"
+                   style="text-decoration: none; color: inherit;">
+                  {{ item.public_id }}
+                </a>
+                <span class="pill" style="margin-left: 8px; font-weight: normal;">{{ status_label }}</span>
+              </h3>
+
+              <div class="muted" style="margin-top:4px;">
+                {% if item.submitted_at %}
+                  Submitted {{ item.submitted_at.strftime('%b %d, %Y') }}
+                {% else %}
+                  Created {{ item.created_at.strftime('%b %d, %Y') }}
+                {% endif %}
+                {% if needed_by %}
+                  &middot; Needed by {{ needed_by.strftime('%b %d, %Y') }}
+                {% endif %}
+              </div>
+            </div>
+
+            <div style="text-align:right;">
+              <div class="muted small">{{ line_count }} item{% if line_count != 1 %}s{% endif %}</div>
+            </div>
+          </div>
+
+          <div class="btn-row" style="margin-top: 10px;">
+            <a class="btn" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=item.public_id) }}">
+              View
+            </a>
+          </div>
+        </div>
+      {% endfor %}
+
+    {% elif perms.can_edit %}
+      <div class="card">
+        <div class="muted">
+          No supply orders yet for {{ ctx.department.name }} this event.
+        </div>
+      </div>
+
+    {% else %}
+      <div class="card">
+        <div class="muted">
+          No supply orders. You do not have permission to create one for this department.
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  {# Footer navigation #}
+  <div class="btn-row" style="margin-top: 24px;">
+    <a class="btn" href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">&larr; Back to {{ ctx.department.name }}</a>
+  </div>
+
+{% endblock %}

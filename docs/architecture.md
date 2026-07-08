@@ -2,15 +2,22 @@
 
 ## The Big Picture
 
-This system manages **work requests** for MAGFest events. A work request is something a department needs: budget items, vendor contracts, or warehouse supplies.
+This system manages **work requests** for MAGFest events. A work request is something a department needs: budget items, tech services, warehouse supplies, AV equipment.
 
-All request types share the same workflow:
+All request types share the same workflow engine:
 
 ```
-DRAFT → SUBMITTED → UNDER REVIEW → APPROVED/REJECTED → FINALIZED
+DRAFT → [AWAITING_DISPATCH →] SUBMITTED (lines under review) → FINALIZED
 ```
 
-Instead of building separate systems for budgets, contracts, and supply orders, we built a **generic work type system** that handles all of them with the same code.
+(The dispatch stage is per-work-type: BUDGET uses it, TECHOPS doesn't — controlled
+by `WorkTypeConfig.uses_dispatch`.)
+
+The architecture is **shared chassis, per-type cabs**: the workflow engine (models,
+lifecycle, routing, checkout, audit) is shared, and each work type has its own route
+package (`app/routes/work/<type>/`) and template tree (`app/templates/<type>/`).
+The original budget routes are BUDGET's cab; TECHOPS is the reference pattern for
+new work types. See `docs/adding-a-work-type.md`.
 
 ---
 
@@ -29,8 +36,10 @@ Current work types:
 | Code | Name | Status |
 |------|------|--------|
 | BUDGET | Budget Requests | **Live** |
-| CONTRACT | Contracts | Future release (data model exists, no UI yet) |
-| SUPPLY | Supply Orders | Future release (data model exists, no UI yet) |
+| TECHOPS | TechOps Requests | **Live** |
+| SUPPLY | Supply Orders | In development (models + admin pages in master) |
+| AV | AV Requests | In development (feature branch) |
+| CONTRACT | Contracts | Future (data model exists, no UI) |
 
 ### Portfolio
 
@@ -160,28 +169,31 @@ DepartmentMembership
 
 ## Request Lifecycle
 
+Work item statuses (actual constants in `app/models/constants.py`):
+
 ```
-┌─────────┐     ┌───────────┐     ┌──────────────┐     ┌───────────┐
-│  DRAFT  │────▶│ SUBMITTED │────▶│ UNDER_REVIEW │────▶│ FINALIZED │
-└─────────┘     └───────────┘     └──────────────┘     └───────────┘
-     │                                   │
-     │                                   ▼
-     │                          ┌──────────────┐
-     │                          │  NEEDS_INFO  │──────┐
-     │                          └──────────────┘      │
-     │                                   │            │
-     │                                   ▼            │
-     │                          ┌──────────────────┐  │
-     └──────────────────────────│ NEEDS_ADJUSTMENT │◀─┘
-                                └──────────────────┘
+           [submit]              [dispatch]                [finalize]
+┌─────────┐      ┌──────────────────┐      ┌───────────┐      ┌───────────┐
+│  DRAFT  │─────▶│ AWAITING_DISPATCH│─────▶│ SUBMITTED │─────▶│ FINALIZED │
+└─────────┘      └──────────────────┘      └───────────┘      └───────────┘
+                  (only if the work         (lines under
+                   type uses_dispatch;       approval group /
+                   otherwise submit          admin final review)
+                   goes straight to
+                   SUBMITTED)
 ```
 
-1. **DRAFT**: Requester is building the request
-2. **SUBMITTED**: Requester submitted for review
-3. **UNDER_REVIEW**: Approvers are reviewing lines
-4. **NEEDS_INFO**: Approver asked a question, waiting for requester
-5. **NEEDS_ADJUSTMENT**: Approver requested changes
-6. **FINALIZED**: Admin locked the request
+- **DRAFT**: Requester is building the request
+- **AWAITING_DISPATCH**: Submitted; admin assigns approval groups (BUDGET only)
+- **SUBMITTED**: Lines under review by approval groups (and admin final, if the
+  work type has that stage)
+- **FINALIZED**: Locked; amounts confirmed. Work types without an admin-final
+  stage auto-finalize when the last line is decided.
+- **PAUSED**: Supplementary blocked by a pending PRIMARY
+- **UNAPPROVED**: Reopened after finalize
+
+`NEEDS_INFO` / `NEEDS_ADJUSTMENT` are **line-level** statuses (kickbacks to the
+requester), not work-item statuses — see `docs/workflow.md`.
 
 ---
 
@@ -192,16 +204,18 @@ DepartmentMembership
 /<event>/<dept>/                     # Department landing (all work types)
 /<event>/<dept>/budget/              # Budget portfolio
 /<event>/<dept>/budget/item/<id>     # Budget work item detail
-/<event>/<dept>/contracts/           # Contracts (future release)
-/<event>/<dept>/supply/              # Supply orders (future release)
+/<event>/<dept>/techops/             # TechOps portfolio (live)
+/<event>/<dept>/supply/              # Supply orders (coming-soon page)
+/<event>/<dept>/contracts/           # Contracts (coming-soon page)
 
 /approvals/                          # Approver dashboard
 /approvals/<group>/                  # Approval group queue
 
+/admin/dispatch/                     # Dispatch queue (BUDGET)
 /admin/                              # Admin dashboard
 /admin/config/departments/           # Department management
 /admin/config/expense-accounts/      # Expense account management
-/admin/final/                        # Final review dashboard
+/admin/final/                        # Final review dashboard + reports
 ```
 
 ---
@@ -216,5 +230,7 @@ DepartmentMembership
 | `app/routing/registry.py` | Approval routing lookup |
 | `app/routes/work/helpers/` | Context builders, permission checks, computations |
 | `app/routes/work/work_items/` | Work item routes (create, view, edit, actions) |
+| `app/routes/work/techops/` | TECHOPS work type (reference pattern for new types) |
 | `app/routes/home.py` | Main dashboard |
-| `app/seeds/config_seed.py` | Database seeding |
+| `app/seeds/bootstrap.py` | Database seeding (`config_seed.py` is a wrapper) |
+| `app/cli.py` | Flask CLI commands (`flask seed`, `flask send-submission-reminders`) |

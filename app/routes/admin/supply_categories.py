@@ -9,13 +9,14 @@ from app import db
 from app.models import (
     SupplyCategory,
     ApprovalGroup,
+    WorkType,
     CONFIG_AUDIT_CREATE,
     CONFIG_AUDIT_UPDATE,
 )
 from app.routes import h
 from .helpers import (
-    require_super_admin,
-    render_admin_config_page,
+    require_supply_admin,
+    render_supply_admin_page,
     log_config_change,
     track_changes,
     validate_code_length,
@@ -38,8 +39,12 @@ def _get_category_or_404(cat_id: int) -> SupplyCategory:
 
 def _get_form_context():
     """Get common form context data."""
+    # SUPPLY-scoped groups only: category routing raises on a cross-work-type
+    # approval group, so the form must not offer BUDGET/TECHOPS groups.
     approval_groups = (
         db.session.query(ApprovalGroup)
+        .join(WorkType, ApprovalGroup.work_type_id == WorkType.id)
+        .filter(WorkType.code == "SUPPLY")
         .filter(ApprovalGroup.is_active == True)
         .order_by(*sort_with_override(ApprovalGroup))
         .all()
@@ -62,7 +67,7 @@ def _cat_to_dict(cat: SupplyCategory) -> dict:
 
 
 @supply_categories_bp.get("/")
-@require_super_admin
+@require_supply_admin
 def list_supply_categories():
     """List all supply categories."""
     categories = (
@@ -70,17 +75,17 @@ def list_supply_categories():
         .order_by(*sort_with_override(SupplyCategory))
         .all()
     )
-    return render_admin_config_page(
+    return render_supply_admin_page(
         "admin/supply_categories/list.html",
         categories=categories,
     )
 
 
 @supply_categories_bp.get("/new")
-@require_super_admin
+@require_supply_admin
 def new_supply_category():
     """Show form to create a new supply category."""
-    return render_admin_config_page(
+    return render_supply_admin_page(
         "admin/supply_categories/form.html",
         category=None,
         **_get_form_context(),
@@ -88,7 +93,7 @@ def new_supply_category():
 
 
 @supply_categories_bp.post("/new")
-@require_super_admin
+@require_supply_admin
 def create_supply_category():
     """Create a new supply category."""
     code = request.form.get("code", "").strip().upper()
@@ -120,7 +125,7 @@ def create_supply_category():
     db.session.add(cat)
     db.session.flush()
 
-    log_config_change("supply_category", cat.id, CONFIG_AUDIT_CREATE, {}, _cat_to_dict(cat))
+    log_config_change("supply_category", cat.id, CONFIG_AUDIT_CREATE, _cat_to_dict(cat))
     db.session.commit()
 
     flash(f"Supply category '{name}' created.", "success")
@@ -128,11 +133,11 @@ def create_supply_category():
 
 
 @supply_categories_bp.get("/<int:cat_id>")
-@require_super_admin
+@require_supply_admin
 def edit_supply_category(cat_id: int):
     """Show form to edit a supply category."""
     cat = _get_category_or_404(cat_id)
-    return render_admin_config_page(
+    return render_supply_admin_page(
         "admin/supply_categories/form.html",
         category=cat,
         **_get_form_context(),
@@ -140,7 +145,7 @@ def edit_supply_category(cat_id: int):
 
 
 @supply_categories_bp.post("/<int:cat_id>")
-@require_super_admin
+@require_supply_admin
 def update_supply_category(cat_id: int):
     """Update a supply category."""
     cat = _get_category_or_404(cat_id)
@@ -177,7 +182,7 @@ def update_supply_category(cat_id: int):
     new_state = _cat_to_dict(cat)
     changes = track_changes(old_state, new_state)
     if changes:
-        log_config_change("supply_category", cat.id, CONFIG_AUDIT_UPDATE, old_state, new_state)
+        log_config_change("supply_category", cat.id, CONFIG_AUDIT_UPDATE, changes)
 
     db.session.commit()
 
