@@ -13,8 +13,6 @@ Harness mirrors tests/integration/test_supply_routes.py's _seed_supply
 helper, extended with SUPPLY-scoped approval groups and a category mapped
 to one of them (the routing dependency submit needs).
 """
-from datetime import date
-
 from app import db
 from app.models import (
     ApprovalGroup,
@@ -35,6 +33,7 @@ from app.models import (
     WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_SUBMITTED,
 )
+from app.routes.work.supply.form_utils import PICKUP_TIME_OPTIONS, PICKUP_TIME_OTHER
 
 
 def _login(client, user_id):
@@ -149,10 +148,10 @@ def _add_line(work_item, item, quantity=1, notes=None, line_number=None):
     return line
 
 
-def _set_delivery_details(work_item, needed_by=date(2027, 1, 10), location="Warehouse dock B"):
+def _set_pickup_details(work_item, pickup_time=PICKUP_TIME_OPTIONS[0], notes=None):
     detail = work_item.supply_order_detail
-    detail.needed_by_date = needed_by
-    detail.delivery_location = location
+    detail.pickup_time = pickup_time
+    detail.additional_notes = notes
     db.session.commit()
 
 
@@ -170,7 +169,7 @@ class TestSupplySubmitAutoRoutes:
 
         work_item = _make_draft_order(wt, cycle, dept)
         line = _add_line(work_item, item, quantity=2, notes="for tech booth")
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         response = client.post(
@@ -208,7 +207,7 @@ class TestSupplySubmitValidationBlocks:
         cycle = seed_workflow_data["cycle"]
         dept = seed_workflow_data["department"]
         work_item = _make_draft_order(wt, cycle, dept)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         response = self._submit(client, cycle, dept, work_item)
@@ -217,7 +216,7 @@ class TestSupplySubmitValidationBlocks:
         db.session.refresh(work_item)
         assert work_item.status == WORK_ITEM_STATUS_DRAFT
 
-    def test_missing_needed_by_date_blocks_submit(self, app, client, seed_workflow_data):
+    def test_missing_pickup_time_blocks_submit(self, app, client, seed_workflow_data):
         wt = _seed_supply(seed_workflow_data)
         cycle = seed_workflow_data["cycle"]
         dept = seed_workflow_data["department"]
@@ -226,7 +225,7 @@ class TestSupplySubmitValidationBlocks:
         item = _seed_item(category)
         work_item = _make_draft_order(wt, cycle, dept)
         _add_line(work_item, item)
-        # No delivery details set — needed_by_date is None.
+        # No pickup details set — pickup_time is None.
 
         _login(client, "test:admin")
         response = self._submit(client, cycle, dept, work_item)
@@ -244,7 +243,7 @@ class TestSupplySubmitValidationBlocks:
         item = _seed_item(category, name="Special Order Widget", notes_required=True)
         work_item = _make_draft_order(wt, cycle, dept)
         _add_line(work_item, item, notes=None)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         response = self._submit(client, cycle, dept, work_item)
@@ -263,7 +262,7 @@ class TestSupplySubmitValidationBlocks:
         item = _seed_item(category)
         work_item = _make_draft_order(wt, cycle, dept)
         _add_line(work_item, item)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         response = self._submit(client, cycle, dept, work_item)
@@ -273,6 +272,46 @@ class TestSupplySubmitValidationBlocks:
         assert work_item.status == WORK_ITEM_STATUS_DRAFT
         # No review rows should have been created for the unroutable line.
         assert WorkLineReview.query.count() == 0
+
+    def test_other_pickup_without_notes_blocks_submit(self, app, client, seed_workflow_data):
+        """'Other' pickup requires the preferred date/time in notes."""
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category)
+        work_item = _make_draft_order(wt, cycle, dept)
+        _add_line(work_item, item)
+        _set_pickup_details(work_item, pickup_time=PICKUP_TIME_OTHER, notes=None)
+
+        _login(client, "test:admin")
+        response = self._submit(client, cycle, dept, work_item)
+
+        assert response.status_code == 302
+        db.session.refresh(work_item)
+        assert work_item.status == WORK_ITEM_STATUS_DRAFT
+
+    def test_other_pickup_with_notes_submits(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category)
+        work_item = _make_draft_order(wt, cycle, dept)
+        _add_line(work_item, item, notes="for tech booth")
+        _set_pickup_details(
+            work_item, pickup_time=PICKUP_TIME_OTHER,
+            notes="Friday 10 AM if possible",
+        )
+
+        _login(client, "test:admin")
+        response = self._submit(client, cycle, dept, work_item)
+
+        assert response.status_code == 302
+        db.session.refresh(work_item)
+        assert work_item.status == WORK_ITEM_STATUS_SUBMITTED
 
 
 class TestSupplySubmitDeactivatedItem:
@@ -285,7 +324,7 @@ class TestSupplySubmitDeactivatedItem:
         item = _seed_item(category, name="Discontinued Gizmo")
         work_item = _make_draft_order(wt, cycle, dept)
         _add_line(work_item, item)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         item.is_active = False
         db.session.commit()

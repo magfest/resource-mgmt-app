@@ -31,7 +31,7 @@ from ..helpers import (
     get_unified_audit_events,
     require_work_item_view,
 )
-from .form_utils import validate_order_for_submit
+from .form_utils import PICKUP_TIME_OPTIONS, validate_order_for_submit
 from .order import is_line_kickback_editable
 
 
@@ -142,6 +142,7 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         perms=perms,
         work_item=work_item,
         order_detail=work_item.supply_order_detail,
+        pickup_time_options=PICKUP_TIME_OPTIONS,
         lines=lines,
         can_edit=can_edit,
         kickback_editable_line_numbers=kickback_editable_line_numbers,

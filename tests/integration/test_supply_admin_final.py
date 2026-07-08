@@ -15,8 +15,6 @@ The three tests pin:
   3. a line still PENDING at APPROVAL_GROUP auto-approves at its requested
      quantity when finalized (BUDGET auto-approve semantics = the qty default).
 """
-from datetime import date
-
 from app import db
 from app.models import (
     ApprovalGroup,
@@ -42,6 +40,7 @@ from app.models import (
     WORK_LINE_STATUS_APPROVED,
     WORK_LINE_STATUS_REJECTED,
 )
+from app.routes.work.supply.form_utils import PICKUP_TIME_OPTIONS
 
 
 def _login(client, user_id):
@@ -152,10 +151,10 @@ def _add_line(work_item, item, quantity=1, notes=None, line_number=None):
     return line
 
 
-def _set_delivery_details(work_item, needed_by=date(2027, 1, 10), location="Warehouse dock B"):
+def _set_pickup_details(work_item, pickup_time=PICKUP_TIME_OPTIONS[0], notes=None):
     detail = work_item.supply_order_detail
-    detail.needed_by_date = needed_by
-    detail.delivery_location = location
+    detail.pickup_time = pickup_time
+    detail.additional_notes = notes
     db.session.commit()
 
 
@@ -194,7 +193,7 @@ class TestSupplyFinalizeWritesQuantities:
         work_item = _make_draft_order(wt, cycle, dept)
         line1 = _add_line(work_item, item, quantity=5, notes="keep", line_number=1)
         line2 = _add_line(work_item, item, quantity=5, notes="drop", line_number=2)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         _submit(client, cycle, dept, work_item)
@@ -259,7 +258,7 @@ class TestSupplyFinalizeOverrideNeedsNote:
 
         work_item = _make_draft_order(wt, cycle, dept)
         line1 = _add_line(work_item, item, quantity=4, line_number=1)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         _submit(client, cycle, dept, work_item)
@@ -297,7 +296,7 @@ class TestSupplyFinalizeAutoApprovesPending:
 
         work_item = _make_draft_order(wt, cycle, dept)
         line1 = _add_line(work_item, item, quantity=7, line_number=1)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         _submit(client, cycle, dept, work_item)
@@ -341,7 +340,7 @@ class TestSupplyFinalizeBlocksOnKickback:
         work_item = _make_draft_order(wt, cycle, dept)
         line1 = _add_line(work_item, item, quantity=5, line_number=1)
         line2 = _add_line(work_item, item, quantity=3, line_number=2)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         _submit(client, cycle, dept, work_item)
@@ -392,7 +391,7 @@ class TestSupplyAllOrdersAdminView:
 
         work_item = _make_draft_order(wt, cycle, dept)
         _add_line(work_item, item, quantity=3, line_number=1)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         _submit(client, cycle, dept, work_item)
@@ -431,7 +430,7 @@ class TestBuildAdminQueuesIsBudgetScoped:
 
         work_item = _make_draft_order(wt, cycle, dept)
         line1 = _add_line(work_item, item, quantity=3, line_number=1)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         _submit(client, cycle, dept, work_item)
@@ -453,7 +452,7 @@ class TestBuildAdminQueuesIsBudgetScoped:
 
         work_item = _make_draft_order(wt, cycle, dept)
         _add_line(work_item, item, quantity=3, line_number=1)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         _submit(client, cycle, dept, work_item)
@@ -480,7 +479,7 @@ class TestBuildAdminQueuesIsBudgetScoped:
 
         work_item = _make_draft_order(wt, cycle, dept)
         line1 = _add_line(work_item, item, quantity=3, line_number=1)
-        _set_delivery_details(work_item)
+        _set_pickup_details(work_item)
 
         _login(client, "test:admin")
         _submit(client, cycle, dept, work_item)

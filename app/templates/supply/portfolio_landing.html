@@ -69,7 +69,7 @@
         {% set line_count = item_line_counts.get(item.id, 0) %}
         {% set status = line_summary.effective_status | upper if line_summary else item.status | upper %}
         {% set status_label = friendly_status(status) if friendly_status else status %}
-        {% set needed_by = item.supply_order_detail.needed_by_date if item.supply_order_detail else none %}
+        {% set pickup_time = item.supply_order_detail.pickup_time if item.supply_order_detail else none %}
 
         <div class="card" style="margin-bottom: 12px;">
           <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
@@ -88,8 +88,8 @@
                 {% else %}
                   Created {{ item.created_at.strftime('%b %d, %Y') }}
                 {% endif %}
-                {% if needed_by %}
-                  &middot; Needed by {{ needed_by.strftime('%b %d, %Y') }}
+                {% if pickup_time %}
+                  &middot; Pickup: {{ pickup_time }}
                 {% endif %}
               </div>
             </div>

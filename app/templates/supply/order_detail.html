@@ -172,42 +172,44 @@
     {% endif %}
   </section>
 
-  {# Delivery details #}
+  {# Pickup details #}
   <section class="card" style="margin-bottom: 16px;">
     <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
-      Delivery Details
+      Pickup Details
     </div>
     {% if can_edit %}
       <form method="post"
             action="{{ url_for('work.supply_order_details_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label class="form-label small">Needed by
-          <input type="date" name="needed_by_date"
-                 value="{{ order_detail.needed_by_date.strftime('%Y-%m-%d') if order_detail and order_detail.needed_by_date else '' }}">
+        <label class="form-label small">Pickup time
+          <select name="pickup_time">
+            <option value="">(Select Pickup Time)</option>
+            {% for option in pickup_time_options %}
+              <option value="{{ option }}"
+                      {% if order_detail and order_detail.pickup_time == option %}selected{% endif %}>
+                {{ option }}
+              </option>
+            {% endfor %}
+          </select>
         </label>
-        <label class="form-label small">Delivery location
-          <input type="text" name="delivery_location"
-                 value="{{ order_detail.delivery_location if order_detail and order_detail.delivery_location else '' }}"
-                 placeholder="e.g. Warehouse dock B">
-        </label>
+        <div class="muted small" style="margin-bottom: 8px;">
+          Pickup location will be communicated before the event.
+        </div>
         <label class="form-label small">Additional notes
           <textarea name="additional_notes" rows="3" style="width:100%;">{{ order_detail.additional_notes if order_detail and order_detail.additional_notes else '' }}</textarea>
         </label>
-        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">Save delivery details</button>
+        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">Save pickup details</button>
       </form>
     {% elif order_detail %}
       <div style="margin-bottom: 4px;">
-        <strong>Needed by:</strong>
-        {% if order_detail.needed_by_date %}
-          {{ order_detail.needed_by_date.strftime('%Y-%m-%d') }}
+        <strong>Pickup time:</strong>
+        {% if order_detail.pickup_time %}
+          {{ order_detail.pickup_time }}
         {% else %}
           <span class="muted">Not set</span>
         {% endif %}
       </div>
-      <div style="margin-bottom: 4px;">
-        <strong>Delivery location:</strong>
-        {{ order_detail.delivery_location or '-' }}
-      </div>
+      <div class="muted small">Pickup location will be communicated before the event.</div>
       {% if order_detail.additional_notes %}
         <div style="margin-top: 8px;">
           <strong>Additional notes:</strong>
@@ -215,7 +217,7 @@
         </div>
       {% endif %}
     {% else %}
-      <div class="muted">No delivery details set yet.</div>
+      <div class="muted">No pickup details set yet.</div>
     {% endif %}
   </section>
 

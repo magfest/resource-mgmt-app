@@ -96,12 +96,9 @@
         <h3 style="margin:0 0 12px 0;">Order Details</h3>
 
         <div class="meta">
-          <div><strong>Needed by:</strong>
-            {{ order_detail.needed_by_date.strftime('%Y-%m-%d') if order_detail and order_detail.needed_by_date else '-' }}
+          <div><strong>Pickup time:</strong>
+            {{ order_detail.pickup_time if order_detail and order_detail.pickup_time else '-' }}
           </div>
-        </div>
-        <div class="meta" style="margin-top: 8px;">
-          <div><strong>Delivery location:</strong> {{ order_detail.delivery_location if order_detail and order_detail.delivery_location else '-' }}</div>
         </div>
         {% if order_detail and order_detail.additional_notes %}
           <div class="meta" style="margin-top: 8px;">

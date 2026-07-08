@@ -104,12 +104,10 @@ def supply_seed(app):
 
 def test_supply_order_detail_round_trip_and_cascade(supply_seed):
     """SupplyOrderDetail attaches to WorkItem and cascades on delete."""
-    from datetime import date
-
     detail = SupplyOrderDetail(
         work_item_id=supply_seed["work_item"].id,
-        needed_by_date=date(2027, 1, 10),
-        delivery_location="Warehouse dock B",
+        pickup_time="Tuesday Evening (after 6 PM)",
+        additional_notes=None,
         created_by_user_id="test:supply_user",
     )
     db.session.add(detail)
@@ -117,7 +115,7 @@ def test_supply_order_detail_round_trip_and_cascade(supply_seed):
 
     item = db.session.query(WorkItem).filter_by(id=supply_seed["work_item"].id).one()
     assert item.supply_order_detail is not None
-    assert item.supply_order_detail.delivery_location == "Warehouse dock B"
+    assert item.supply_order_detail.pickup_time == "Tuesday Evening (after 6 PM)"
 
     db.session.delete(item)
     db.session.commit()
@@ -125,8 +123,8 @@ def test_supply_order_detail_round_trip_and_cascade(supply_seed):
     assert db.session.query(SupplyOrderDetail).count() == 0
 
 
-def test_line_detail_has_no_delivery_columns():
-    """SupplyOrderLineDetail does not have needed_by_date or delivery_location columns."""
+def test_line_detail_has_no_order_level_columns():
+    """Order-level pickup fields live on SupplyOrderDetail, not per line."""
     from app.models import SupplyOrderLineDetail
-    assert not hasattr(SupplyOrderLineDetail, "needed_by_date")
-    assert not hasattr(SupplyOrderLineDetail, "delivery_location")
+    assert not hasattr(SupplyOrderLineDetail, "pickup_time")
+    assert not hasattr(SupplyOrderLineDetail, "additional_notes")

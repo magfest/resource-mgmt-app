@@ -16,7 +16,7 @@ worktype admins (or super-admins) by _require_supply_admin.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date, datetime
+from datetime import datetime
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from sqlalchemy.orm import joinedload, selectinload
@@ -106,8 +106,8 @@ def supply_all_orders():
 
     Mirrors techops_all_requests's shape (app/routes/work/techops/admin.py)
     but SUPPLY-shaped: no monetary column, an item-mix summary (top item
-    names by line count) instead of a service-mix summary, and a needed-by
-    column since delivery timing matters more for warehouse orders than it
+    names by line count) instead of a service-mix summary, and a pickup-time
+    column since pickup timing matters more for warehouse orders than it
     does for TechOps requests.
     """
     user_ctx = get_user_ctx()
@@ -181,7 +181,7 @@ def supply_all_orders():
             "department": portfolio.department,
             "line_count": len(wi.lines),
             "item_mix": item_mix,
-            "needed_by": order_detail.needed_by_date if order_detail else None,
+            "pickup_time": order_detail.pickup_time if order_detail else None,
         })
 
     event_cycles = get_active_event_cycles()
@@ -249,7 +249,7 @@ def _ag_reviews_by_line(line_ids: list[int]) -> dict[int, WorkLineReview]:
 
 @work_bp.get("/admin/supply/queue/")
 def supply_admin_queue():
-    """FestOps finalize queue: SUBMITTED supply orders, soonest-needed first.
+    """FestOps finalize queue: SUBMITTED supply orders, oldest-submitted first.
 
     Per order, surfaces decided/total APPROVAL_GROUP review progress and a
     ready-to-finalize badge when every line has a terminal review decision.
@@ -291,19 +291,22 @@ def supply_admin_queue():
             if review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
                 decided += 1
         order_detail = order.supply_order_detail
-        needed_by = order_detail.needed_by_date if order_detail else None
         rows.append({
             "work_item": order,
             "department": order.portfolio.department,
             "event_cycle": order.portfolio.event_cycle,
-            "needed_by": needed_by,
+            "pickup_time": order_detail.pickup_time if order_detail else None,
             "decided": decided,
             "total": total,
             "ready": total > 0 and decided == total,
         })
 
-    # Soonest-needed first; orders with no date sort to the bottom.
-    rows.sort(key=lambda r: (r["needed_by"] is None, r["needed_by"] or date.max))
+    # Oldest-submitted first. No pickup-slot urgency sorting — warehouse
+    # staging tools are Phase 2 (spec: 2026-07-08 pickup-time design).
+    rows.sort(key=lambda r: (
+        r["work_item"].submitted_at is None,
+        r["work_item"].submitted_at or r["work_item"].created_at,
+    ))
 
     return render_template(
         "supply/admin_queue.html",

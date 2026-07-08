@@ -122,8 +122,8 @@ class SupplyOrderLineDetail(db.Model):
 class SupplyOrderDetail(db.Model):
     """Order-level details: one row per supply-order WorkItem.
 
-    Delivery details live here (not per line) — requesters needing
-    different dates/locations place separate orders.
+    Pickup details live here (not per line) — requesters needing
+    different pickup times place separate orders.
     """
     __tablename__ = "supply_order_details"
 
@@ -133,10 +133,12 @@ class SupplyOrderDetail(db.Model):
         primary_key=True,
     )
 
-    # Nullable in the DB (drafts may not have them yet); required at submit
+    # Nullable in the DB (drafts may not have it yet); required at submit
     # by the cab's validation.
-    needed_by_date = db.Column(db.Date, nullable=True)
-    delivery_location = db.Column(db.String(256), nullable=True)
+    # Stores the display string from form_utils.PICKUP_TIME_OPTIONS as a
+    # snapshot — wording changes to the hardcoded list can't corrupt what
+    # old orders show.
+    pickup_time = db.Column(db.String(120), nullable=True)
     additional_notes = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
