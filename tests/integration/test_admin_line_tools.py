@@ -4,6 +4,8 @@ expense account correction + admin add-line on in-review requests.
 """
 from datetime import datetime, timedelta
 
+from flask import url_for
+
 from app import db
 from app.models import (
     ApprovalGroup,
@@ -224,3 +226,71 @@ class TestAdminAddLine:
         )
         assert line is None
         assert "under review" in err
+
+
+def _url(app, endpoint, data, **kwargs):
+    with app.test_request_context():
+        return url_for(
+            endpoint,
+            event=data["cycle"].code, dept=data["department"].code,
+            public_id=data["work_item"].public_id, **kwargs,
+        )
+
+
+class TestChangeAccountRoutes:
+    def test_get_form_renders_for_admin(self, app, client, seed_draft_work_item):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _make_target_account(data)
+        _login(client, "test:admin")
+
+        resp = client.get(_url(app, "admin_final.line_change_account", data, line_num=1))
+        assert resp.status_code == 200
+        assert b"Change Expense Account" in resp.data
+        assert b"Correct Account" in resp.data
+
+    def test_post_changes_account_and_notifies(self, app, client, seed_draft_work_item, monkeypatch):
+        data = seed_draft_work_item
+        _make_submitted(data, decided=True)
+        acct2, group2 = _make_target_account(data)
+        _login(client, "test:admin")
+
+        notified = {}
+        monkeypatch.setattr(
+            "app.services.notifications.notify_work_item_dispatched",
+            lambda work_item, group_ids: notified.update(groups=group_ids) or 0,
+        )
+
+        resp = client.post(
+            _url(app, "admin_final.line_change_account_submit", data, line_num=1),
+            data={
+                "expense_account_id": str(acct2.id),
+                "approval_group_id": str(group2.id),
+                "note": "Wrong account selected at submission",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        # Route handled the commit in its own session — refresh before asserting
+        # (house pattern, see tests/integration/test_supply_review.py:200)
+        db.session.refresh(data["detail"])
+        db.session.refresh(data["line"])
+        assert data["detail"].expense_account_id == acct2.id
+        assert data["line"].status == WORK_LINE_STATUS_PENDING
+        assert notified["groups"] == [group2.id]
+
+    def test_post_rejected_for_non_admin(self, app, client, seed_draft_work_item):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        _login(client, "test:reviewer")
+
+        resp = client.post(
+            _url(app, "admin_final.line_change_account_submit", data, line_num=1),
+            data={
+                "expense_account_id": str(acct2.id),
+                "approval_group_id": str(group2.id),
+                "note": "x",
+            },
+        )
+        assert resp.status_code == 403
