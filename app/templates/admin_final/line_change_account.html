@@ -1,0 +1,129 @@
+{# templates/admin_final/line_change_account.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Change Expense Account - Line {{ line.line_number }} - {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+  <h1 style="margin:0;">Change Expense Account &mdash; Line {{ line.line_number }}</h1>
+  <div class="muted" style="margin-top:4px;">
+    <a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">
+      {{ work_item.public_id }}
+    </a>
+    &middot; {{ ctx.department.name }} &middot; {{ ctx.event_cycle.name }}
+  </div>
+
+  <section class="card" style="max-width: 720px; margin-top: 16px;">
+    <div class="meta">
+      <div><strong>Current Expense Account:</strong> {{ detail.expense_account.name if detail.expense_account else '-' }}</div>
+      <div><strong>Current Spend Type:</strong> {{ detail.spend_type.name if detail.spend_type else '-' }}</div>
+      <div><strong>Currently Routed To:</strong> {{ detail.routed_approval_group.name if detail.routed_approval_group else 'Unassigned' }}</div>
+      <div><strong>Description:</strong> {{ detail.description or '-' }}</div>
+    </div>
+
+    <div style="background:#fef3c7; border:1px solid #f59e0b; border-radius:6px; padding:12px; margin:16px 0;">
+      <strong>Heads up:</strong> changing the expense account will <strong>reset this line to PENDING</strong>
+      and send it back to the review group selected below. Comments, notes, and audit history are kept
+      &mdash; nothing is deleted &mdash; but any prior approval decision on this line is cleared.
+    </div>
+
+    <form method="post" action="{{ url_for('admin_final.line_change_account_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="mb-16">
+        <label for="expense_account_id"><strong>New Expense Account</strong> <span style="color: red;">*</span></label>
+        <select name="expense_account_id" id="expense_account_id" required class="mt-4">
+          <option value="">(Select expense account)</option>
+          {% for acc in expense_accounts %}
+            <option value="{{ acc.id }}"
+                    data-approval-group-id="{{ acc.approval_group_id or '' }}"
+                    {% if acc.id == detail.expense_account_id %}selected{% endif %}>
+              {{ acc.name }}
+            </option>
+          {% endfor %}
+        </select>
+        <div class="muted small mt-4">All active accounts are listed (admin view — department visibility does not apply).</div>
+      </div>
+
+      <div class="mb-16" id="spend_type_container">
+        <label for="spend_type_id"><strong>Spend Type</strong> <span style="color: red;">*</span></label>
+        <select name="spend_type_id" id="spend_type_id" class="mt-4">
+          <option value="">(Select spend type)</option>
+        </select>
+        <div class="muted small mt-4" id="spend_type_hint"></div>
+      </div>
+
+      <div class="mb-16">
+        <label for="approval_group_id"><strong>Send Back To Review Group</strong> <span style="color: red;">*</span></label>
+        <select name="approval_group_id" id="approval_group_id" required class="mt-4">
+          <option value="">(Select review group)</option>
+          {% for group in approval_groups %}
+            <option value="{{ group.id }}">{{ group.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="muted small mt-4">Defaults to the new account's usual group when one is configured &mdash; confirm or override.</div>
+      </div>
+
+      <div class="mb-16">
+        <label for="note"><strong>Note</strong> <span style="color: red;">*</span></label>
+        <textarea name="note" id="note" rows="3" required class="mt-4"
+                  placeholder="Why is the account being changed? Visible to the requester and reviewers."></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">Change Account &amp; Send For Re-Review</button>
+        <a class="btn" href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">Cancel</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const spendTypesByAccount = {{ spend_types_by_account | tojson | safe }};
+  const currentSpendTypeId = '{{ detail.spend_type_id or "" }}';
+
+  const accountSelect = document.getElementById('expense_account_id');
+  const spendTypeSelect = document.getElementById('spend_type_id');
+  const spendTypeContainer = document.getElementById('spend_type_container');
+  const spendTypeHint = document.getElementById('spend_type_hint');
+  const groupSelect = document.getElementById('approval_group_id');
+
+  function refreshSpendTypes(preselectId) {
+    const info = spendTypesByAccount[accountSelect.value];
+    spendTypeSelect.innerHTML = '<option value="">(Select spend type)</option>';
+    if (!info) {
+      spendTypeContainer.style.display = '';
+      spendTypeHint.textContent = '';
+      return;
+    }
+    if (info.mode === 'SINGLE_LOCKED') {
+      spendTypeContainer.style.display = 'none';
+      spendTypeSelect.removeAttribute('required');
+      spendTypeHint.textContent = 'Spend type is locked by this account.';
+      return;
+    }
+    spendTypeContainer.style.display = '';
+    spendTypeSelect.setAttribute('required', 'required');
+    for (const t of info.types) {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      if (String(t.id) === String(preselectId)) opt.selected = true;
+      spendTypeSelect.appendChild(opt);
+    }
+  }
+
+  function defaultGroupFromAccount() {
+    const opt = accountSelect.options[accountSelect.selectedIndex];
+    const gid = opt ? opt.getAttribute('data-approval-group-id') : '';
+    if (gid) groupSelect.value = gid;
+  }
+
+  accountSelect.addEventListener('change', function () {
+    refreshSpendTypes('');
+    defaultGroupFromAccount();
+  });
+
+  refreshSpendTypes(currentSpendTypeId);
+</script>
+{% endblock %}

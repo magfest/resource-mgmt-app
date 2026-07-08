@@ -2,7 +2,12 @@
 {# Partial: Budget lines table for work_item_detail.html #}
 {% from "macros/status_pill.html" import render_status_pill %}
 
-<h3 style="margin:0 0 12px 0;">Budget Lines</h3>
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
+  <h3 style="margin:0;">Budget Lines</h3>
+  {% if perms.is_worktype_admin and status in ("SUBMITTED", "NEEDS_INFO") %}
+    <a class="btn" href="{{ url_for('admin_final.line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">+ Add Line (Admin)</a>
+  {% endif %}
+</div>
 
 {% if lines %}
   {% set show_approved_column = status == "FINALIZED" or totals.approved > 0 %}
