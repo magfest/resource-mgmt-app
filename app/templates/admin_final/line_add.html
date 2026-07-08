@@ -19,6 +19,12 @@
       The requester can see the note you enter.
     </div>
 
+    <div style="background:#fee2e2; border:1px solid #dc2626; border-radius:6px; padding:12px; margin-bottom:16px;">
+      <strong>Lines cannot be easily deleted</strong> once a request is under review.
+      Only add this line if you are sure it belongs on this request &mdash; if in doubt,
+      use a comment or kickback to ask the requester first.
+    </div>
+
     <form method="post" action="{{ url_for('admin_final.line_add_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 

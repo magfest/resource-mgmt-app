@@ -6,7 +6,7 @@
 {% block content %}
   <h1 style="margin:0;">Change Expense Account &mdash; Line {{ line.line_number }}</h1>
   <div class="muted" style="margin-top:4px;">
-    <a href="{{ url_for('admin_final.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">
+    <a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">
       {{ work_item.public_id }}
     </a>
     &middot; {{ ctx.department.name }} &middot; {{ ctx.event_cycle.name }}
@@ -71,7 +71,7 @@
 
       <div class="btn-row">
         <button type="submit" class="btn btn-primary">Change Account &amp; Send For Re-Review</button>
-        <a class="btn" href="{{ url_for('admin_final.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">Cancel</a>
+        <a class="btn" href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">Cancel</a>
       </div>
     </form>
   </section>

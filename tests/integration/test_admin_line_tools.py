@@ -79,10 +79,10 @@ def _make_target_account(data):
     return acct2, group2
 
 
-def _checkout(data):
-    """Simulate an active reviewer checkout."""
+def _checkout(data, user_id="test:reviewer"):
+    """Simulate an active checkout (by another reviewer, unless overridden)."""
     item = data["work_item"]
-    item.checked_out_by_user_id = "test:reviewer"
+    item.checked_out_by_user_id = user_id
     item.checked_out_at = datetime.utcnow()
     item.checked_out_expires_at = datetime.utcnow() + timedelta(hours=1)
     db.session.commit()
@@ -143,6 +143,25 @@ class TestChangeLineExpenseAccount:
         )
         assert not ok
         assert "checked out" in err
+
+    def test_allows_own_checkout(self, app, client, seed_draft_work_item):
+        # The guard protects OTHER reviewers; the admin's own checkout
+        # (Start Reviewing -> spot wrong account -> fix) must not block.
+        from app.routes.admin_final.helpers import change_line_expense_account
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        _checkout(data, user_id="test:admin")
+
+        ok, err = change_line_expense_account(
+            line=data["line"], work_item=data["work_item"],
+            new_account=acct2, new_spend_type=data["spend_type"],
+            new_group=group2, note="Fixing during my own review",
+            user_ctx=_admin_ctx(),
+        )
+        db.session.commit()
+        assert ok, err
+        assert data["detail"].expense_account_id == acct2.id
 
     def test_blocked_when_not_under_review(self, app, client, seed_draft_work_item):
         from app.routes.admin_final.helpers import change_line_expense_account
@@ -208,6 +227,25 @@ class TestAdminAddLine:
         )
         assert line is None
         assert "checked out" in err
+
+    def test_allows_own_checkout(self, app, client, seed_draft_work_item):
+        from app.routes.admin_final.helpers import admin_add_line
+        data = seed_draft_work_item
+        _make_submitted(data)
+        cl, fq, pr = _make_line_refs()
+        _checkout(data, user_id="test:admin")
+
+        line, err = admin_add_line(
+            work_item=data["work_item"], user_ctx=_admin_ctx(),
+            expense_account=data["expense_account"], spend_type=data["spend_type"],
+            approval_group=data["approval_group"],
+            quantity=1, unit_price_cents=100,
+            confidence_level=cl, frequency=fq, priority=pr,
+            warehouse_flag=False, description="", note="Adding during my own review",
+        )
+        db.session.commit()
+        assert err is None
+        assert line.line_number == 2
 
     def test_blocked_when_not_under_review(self, app, client, seed_draft_work_item):
         from app.routes.admin_final.helpers import admin_add_line
@@ -384,3 +422,14 @@ class TestEntryPoints:
         resp = client.get(_url(app, "work.work_item_detail", data))
         assert resp.status_code == 200
         assert b"add-line" in resp.data
+
+    def test_approvals_line_review_shows_edit_link_for_admin(self, app, client, seed_draft_work_item):
+        # Admins do their reviewing from the approvals-side line page
+        # (budget/line_review.html), so the edit link must appear there too.
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _login(client, "test:admin")
+
+        resp = client.get(_url(app, "approvals.line_review", data, line_num=1))
+        assert resp.status_code == 200
+        assert b"change-account" in resp.data

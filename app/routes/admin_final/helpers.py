@@ -732,9 +732,11 @@ def change_line_expense_account(
     if work_item.status not in (WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_NEEDS_INFO):
         return False, "Expense account can only be changed while the request is under review."
 
-    if is_checked_out(work_item):
+    # An admin's own checkout doesn't block — the guard protects a
+    # *different* reviewer from the line changing under them mid-review.
+    if is_checked_out(work_item) and work_item.checked_out_by_user_id != user_ctx.user_id:
         return False, (
-            "Cannot change expense account: a reviewer has this request "
+            "Cannot change expense account: another reviewer has this request "
             "checked out. Release the checkout first."
         )
 
@@ -822,9 +824,10 @@ def admin_add_line(
     if work_item.status not in (WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_NEEDS_INFO):
         return None, "Lines can only be added while the request is under review."
 
-    if is_checked_out(work_item):
+    # An admin's own checkout doesn't block — see change_line_expense_account.
+    if is_checked_out(work_item) and work_item.checked_out_by_user_id != user_ctx.user_id:
         return None, (
-            "Cannot add a line: a reviewer has this request checked out. "
+            "Cannot add a line: another reviewer has this request checked out. "
             "Release the checkout first."
         )
 
