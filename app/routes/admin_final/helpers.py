@@ -16,6 +16,7 @@ from app.models import (
     WorkItem,
     WorkLine,
     WorkLineReview,
+    WorkLineComment,
     WorkItemAuditEvent,
     WorkLineAuditEvent,
     WorkPortfolio,
@@ -23,6 +24,7 @@ from app.models import (
     EventCycle,
     Department,
     ExpenseAccount,
+    SpendType,
     ApprovalGroup,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STAGE_ADMIN_FINAL,
@@ -35,6 +37,7 @@ from app.models import (
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_PAUSED,
+    WORK_ITEM_STATUS_NEEDS_INFO,
     WORK_LINE_STATUS_PENDING,
     WORK_LINE_STATUS_NEEDS_INFO,
     WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
@@ -50,6 +53,7 @@ from app.models import (
     REVIEW_ACTION_RESET,
     REQUEST_KIND_PRIMARY,
     REQUEST_KIND_SUPPLEMENTARY,
+    COMMENT_VISIBILITY_PUBLIC,
 )
 from app.routes import UserContext
 from app.routes.work.helpers.checkout import is_checked_out
@@ -698,6 +702,95 @@ def reset_line_for_rereview(
         "Reset for re-review",
         user_ctx,
     )
+
+    return True, None
+
+
+# ============================================================
+# Admin Line Tools (account correction / add line)
+# ============================================================
+
+def change_line_expense_account(
+    line: WorkLine,
+    work_item: WorkItem,
+    new_account: "ExpenseAccount",
+    new_spend_type: "SpendType",
+    new_group: "ApprovalGroup",
+    note: str,
+    user_ctx: UserContext,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Admin-only correction: move a line to a different expense account and
+    kick it back to an explicitly chosen approval group for re-review.
+
+    Resets the line + both review stages to PENDING (nothing is deleted:
+    comments and audit history survive; the reset itself is audited).
+    Does not commit — caller commits.
+    """
+    require_budget_admin(user_ctx)
+
+    if work_item.status not in (WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_NEEDS_INFO):
+        return False, "Expense account can only be changed while the request is under review."
+
+    if is_checked_out(work_item):
+        return False, (
+            "Cannot change expense account: a reviewer has this request "
+            "checked out. Release the checkout first."
+        )
+
+    detail = line.budget_detail
+    if not detail:
+        return False, "This line has no budget details."
+
+    if not (note or "").strip():
+        return False, "A note explaining this change is required."
+
+    old_account_name = detail.expense_account.name if detail.expense_account else str(detail.expense_account_id)
+    old_spend_type_name = detail.spend_type.name if detail.spend_type else str(detail.spend_type_id)
+    old_group_name = detail.routed_approval_group.name if detail.routed_approval_group else "Unassigned"
+
+    detail.expense_account_id = new_account.id
+    detail.spend_type_id = new_spend_type.id
+    detail.routed_approval_group_id = new_group.id
+
+    ag_review = get_approval_group_review(line)
+    if ag_review:
+        ag_review.status = REVIEW_STATUS_PENDING
+        ag_review.approval_group_id = new_group.id
+        ag_review.approved_amount_cents = None
+        ag_review.decided_at = None
+        ag_review.decided_by_user_id = None
+        ag_review.note = None
+    else:
+        # Defensive: SUBMITTED items get AG reviews at dispatch, but never
+        # let a line exist in review without one (finalize would auto-approve it).
+        ag_review = WorkLineReview(
+            work_line_id=line.id,
+            stage=REVIEW_STAGE_APPROVAL_GROUP,
+            approval_group_id=new_group.id,
+            status=REVIEW_STATUS_PENDING,
+            created_by_user_id=user_ctx.user_id,
+        )
+        db.session.add(ag_review)
+
+    # Resets line status/approved amount + ADMIN_FINAL review, writes reset audit
+    reset_line_for_rereview(line, user_ctx)
+    line.current_review_stage = REVIEW_STAGE_APPROVAL_GROUP
+
+    from app.routes.approvals.helpers import audit_line_field_changes
+    changes = [("expense_account", old_account_name, new_account.name)]
+    if old_spend_type_name != new_spend_type.name:
+        changes.append(("spend_type", old_spend_type_name, new_spend_type.name))
+    if old_group_name != new_group.name:
+        changes.append(("review_group", old_group_name, new_group.name))
+    audit_line_field_changes(line, changes, user_ctx)
+
+    db.session.add(WorkLineComment(
+        work_line_id=line.id,
+        visibility=COMMENT_VISIBILITY_PUBLIC,
+        body=f"[ADMIN ACCOUNT CHANGE] {note.strip()}",
+        created_by_user_id=user_ctx.user_id,
+    ))
 
     return True, None
 
