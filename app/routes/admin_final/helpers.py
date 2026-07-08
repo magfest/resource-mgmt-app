@@ -718,11 +718,23 @@ def build_admin_queues(
     - kicked_back: Lines with ADMIN_FINAL NEEDS_INFO (line-level)
     - pending_finalization: Work items ready to finalize
     - recently_finalized: Work items finalized in last 7 days
+
+    admin_final is BUDGET-scoped in practice (per CLAUDE.md): SUPPLY and
+    TECHOPS run their own admin surfaces (app/routes/work/supply/admin.py,
+    app/routes/work/techops/admin.py), so every query here is joined to
+    WorkPortfolio and filtered to the BUDGET work type to keep their
+    SUBMITTED/FINALIZED items out of this dashboard and its finalize action.
     """
+    from app.routes.work.helpers import get_budget_work_type
+    budget_wt = get_budget_work_type()
+
     # Base query for submitted work items with eager loading
-    base_item_query = WorkItem.query.filter(
+    base_item_query = WorkItem.query.join(
+        WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
+    ).filter(
         WorkItem.status.in_([WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_FINALIZED]),
         WorkItem.is_archived == False,
+        WorkPortfolio.work_type_id == budget_wt.id,
     ).options(
         # Eager load portfolio and its relations
         joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
@@ -731,14 +743,10 @@ def build_admin_queues(
         selectinload(WorkItem.lines).joinedload(WorkLine.budget_detail),
     )
 
-    if event_cycle_id or department_id:
-        base_item_query = base_item_query.join(
-            WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
-        )
-        if event_cycle_id:
-            base_item_query = base_item_query.filter(WorkPortfolio.event_cycle_id == event_cycle_id)
-        if department_id:
-            base_item_query = base_item_query.filter(WorkPortfolio.department_id == department_id)
+    if event_cycle_id:
+        base_item_query = base_item_query.filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+    if department_id:
+        base_item_query = base_item_query.filter(WorkPortfolio.department_id == department_id)
 
     # Get all submitted work items for processing
     submitted_items = base_item_query.filter(
@@ -838,23 +846,22 @@ def build_admin_queues(
 
     # Recently finalized (last 7 days) - add eager loading
     cutoff = datetime.utcnow() - timedelta(days=7)
-    recently_finalized_query = WorkItem.query.filter(
+    recently_finalized_query = WorkItem.query.join(
+        WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
+    ).filter(
         WorkItem.status == WORK_ITEM_STATUS_FINALIZED,
         WorkItem.finalized_at >= cutoff,
         WorkItem.is_archived == False,
+        WorkPortfolio.work_type_id == budget_wt.id,
     ).options(
         joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
         joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
     ).order_by(WorkItem.finalized_at.desc())
 
-    if event_cycle_id or department_id:
-        recently_finalized_query = recently_finalized_query.join(
-            WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id
-        )
-        if event_cycle_id:
-            recently_finalized_query = recently_finalized_query.filter(WorkPortfolio.event_cycle_id == event_cycle_id)
-        if department_id:
-            recently_finalized_query = recently_finalized_query.filter(WorkPortfolio.department_id == department_id)
+    if event_cycle_id:
+        recently_finalized_query = recently_finalized_query.filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+    if department_id:
+        recently_finalized_query = recently_finalized_query.filter(WorkPortfolio.department_id == department_id)
 
     recently_finalized = recently_finalized_query.all()
 

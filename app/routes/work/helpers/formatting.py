@@ -183,12 +183,17 @@ def filter_lines_for_user(
     if is_worktype_admin or has_edit_access:
         return all_lines, False
 
-    # Non-admin approval group users see only their routed lines
+    # Non-admin approval group users see only their routed lines. Uses the
+    # polymorphic routing accessor (not line.budget_detail directly) so
+    # TechOps/SUPPLY/etc. lines aren't silently hidden from their own
+    # approvers — a BUDGET-only line.budget_detail check here previously
+    # made quick_review show zero rows for any non-BUDGET approver.
     if user_ctx.approval_group_ids:
+        from app.line_details import get_line_routing_approval_group
+
         visible = [
             line for line in all_lines
-            if line.budget_detail and
-               line.budget_detail.routed_approval_group_id in user_ctx.approval_group_ids
+            if (g := get_line_routing_approval_group(line)) and g.id in user_ctx.approval_group_ids
         ]
         return visible, len(visible) != len(all_lines)
 

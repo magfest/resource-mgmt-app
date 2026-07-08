@@ -14,7 +14,7 @@
 </div>
 
 <div class="card" style="max-width: 800px;">
-  <form method="post"
+  <form method="post" enctype="multipart/form-data"
     action="{% if item %}{{ url_for('admin_config.supply_items.update_supply_item', item_id=item.id) }}{% else %}{{ url_for('admin_config.supply_items.create_supply_item') }}{% endif %}"
   >
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -65,6 +65,14 @@
         <label for="notes" class="form-label">Notes</label>
         <textarea id="notes" name="notes" rows="2"
                   placeholder="Optional notes about the item...">{{ item.notes if item else '' }}</textarea>
+      </div>
+
+      <div style="grid-column: 1 / -1;">
+        <label for="order_guidance" class="form-label">Order Guidance</label>
+        <input id="order_guidance" name="order_guidance" type="text" maxlength="160"
+               value="{{ item.order_guidance if item else '' }}"
+               placeholder="e.g. 1 roll covers roughly one booth setup" />
+        <div class="muted small mt-4">Shown to requesters next to the quantity field at decision time, to help once-a-year volunteers avoid over/under-ordering. Optional.</div>
       </div>
     </div>
 
@@ -130,11 +138,16 @@
                placeholder="e.g. consumable, equipment" />
       </div>
 
-      <div>
-        <label for="image_url" class="form-label">Image URL</label>
-        <input id="image_url" name="image_url" type="url" maxlength="512"
-               value="{{ item.image_url if item else '' }}"
-               placeholder="https://..." />
+      <div style="grid-column: 1 / -1;">
+        <label for="image_file" class="form-label">Item photo</label>
+        {% if item and item.image_url %}
+          <img src="{{ item.image_url }}" alt="" style="max-width: 120px; display: block; margin-bottom: 0.5rem;">
+          <label style="display: flex; gap: 8px; align-items: center;">
+            <input type="checkbox" name="remove_image" value="1"> Remove current photo
+          </label>
+        {% endif %}
+        <input id="image_file" name="image_file" type="file" accept="image/jpeg,image/png,image/webp">
+        <div class="muted small mt-4">JPEG/PNG/WebP, max 5 MB. Uploading replaces the current photo.</div>
       </div>
     </div>
 

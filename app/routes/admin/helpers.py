@@ -66,6 +66,32 @@ def require_budget_admin(f):
     return decorated_function
 
 
+def require_supply_admin(f):
+    """Decorator to require supply admin access (SUPER_ADMIN or WORKTYPE_ADMIN for supply).
+
+    Mirrors require_budget_admin: super admins pass automatically because
+    is_worktype_admin() short-circuits on user_ctx.is_super_admin.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        from flask import redirect, url_for, session, current_app
+        from app.routes.work.helpers import get_work_type_by_code, is_worktype_admin
+
+        # Check if user is authenticated
+        if not session.get('active_user_id') and not current_app.config.get('DEV_LOGIN_ENABLED'):
+            return redirect(url_for('auth.login_page'))
+
+        user_ctx = get_user_ctx()
+        if user_ctx.user_id is None:
+            return redirect(url_for('auth.login_page'))
+
+        supply_wt = get_work_type_by_code("SUPPLY")  # 404s if not configured
+        if not is_worktype_admin(user_ctx, supply_wt.id):
+            abort(403, "Supply admin access required")
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def require_any_worktype_admin(f):
     """Decorator to require admin access for any work type (SUPER_ADMIN or any WORKTYPE_ADMIN).
 
@@ -107,6 +133,17 @@ def render_budget_admin_page(template: str, **ctx):
     user_ctx = get_user_ctx()
     if not is_budget_admin(user_ctx):
         abort(403, "Budget admin access required")
+    return render_template(template, user_ctx=user_ctx, **ctx)
+
+
+def render_supply_admin_page(template: str, **ctx):
+    """Render a supply admin page with user context. Requires supply admin access."""
+    from app.routes.work.helpers import get_work_type_by_code, is_worktype_admin
+
+    user_ctx = get_user_ctx()
+    supply_wt = get_work_type_by_code("SUPPLY")  # 404s if not configured
+    if not is_worktype_admin(user_ctx, supply_wt.id):
+        abort(403, "Supply admin access required")
     return render_template(template, user_ctx=user_ctx, **ctx)
 
 

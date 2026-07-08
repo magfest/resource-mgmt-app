@@ -1,0 +1,85 @@
+{# templates/supply/item_detail.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}{{ item.item_name }} - Supply Catalog{% endblock %}
+
+{% block content %}
+
+  {# Breadcrumb #}
+  <nav class="muted small" style="margin-bottom: 12px;">
+    <a href="{{ url_for('home.index') }}">Home</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">{{ ctx.department.name }}</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.supply_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">Supply Orders</a>
+    {% if work_item %}
+      <span style="margin: 0 6px;">&rsaquo;</span>
+      <a href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">{{ work_item.public_id }}</a>
+    {% endif %}
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <span>{{ item.item_name }}</span>
+  </nav>
+
+  <div class="card" style="display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;">
+    {% if item.image_url %}
+      <img src="{{ item.image_url }}" alt="" style="max-width:320px; max-height:320px; object-fit:contain; flex-shrink:0;">
+    {% else %}
+      <div style="width:320px; max-width:100%; height:220px; background:#f6f6f6; border-radius:8px; flex-shrink:0;"></div>
+    {% endif %}
+
+    <div style="flex: 1 1 280px; min-width: 240px;">
+      <h1 style="margin: 0 0 4px;">{{ item.item_name }}</h1>
+      <p class="muted" style="margin: 0 0 12px;">{{ item.category.name }}</p>
+
+      {% if item.category.description %}
+        <p class="muted small" style="margin: 0 0 12px;">{{ item.category.description }}</p>
+      {% endif %}
+
+      {% if item.notes %}
+        <div style="margin-bottom: 12px;">{{ item.notes|markdown_links|safe }}</div>
+      {% endif %}
+
+      <p style="margin: 0 0 6px;"><strong>Unit:</strong> {{ item.unit }}</p>
+
+      <p style="margin: 0 0 6px;">
+        {% if item.is_limited %}
+          <strong>Limited availability</strong>{% if item.qty_on_hand is not none %} &mdash; {{ item.qty_on_hand }} on hand{% endif %}
+        {% else %}
+          <span class="muted">Regularly stocked.</span>
+        {% endif %}
+      </p>
+
+      <p style="margin: 0 0 6px;">
+        {% if item.is_expendable %}
+          Return any unused items after the event.
+        {% else %}
+          This item must be returned after the event.
+        {% endif %}
+      </p>
+
+      {% if item.order_guidance %}
+        <p class="muted small" style="margin: 0 0 12px;">{{ item.order_guidance }}</p>
+      {% endif %}
+
+      {% if can_add and work_item %}
+        <form method="post" action="{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="margin-top: 16px; max-width: 320px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="item_id" value="{{ item.id }}">
+          <label class="form-label small">Qty
+            <input type="number" name="quantity" value="1" min="1" required>
+          </label>
+          <label class="form-label small" style="margin-top: 8px;">Notes{% if item.notes_required %} (required){% endif %}
+            <input type="text" name="notes" {% if item.notes_required %}required{% endif %}
+                   placeholder="e.g. for Tech booth">
+          </label>
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Add to order</button>
+        </form>
+      {% endif %}
+
+      <div class="btn-row" style="margin-top: 20px;">
+        <a class="btn" href="{{ back_url }}">&larr; Back to catalog</a>
+      </div>
+    </div>
+  </div>
+
+{% endblock %}

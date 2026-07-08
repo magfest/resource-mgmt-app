@@ -45,11 +45,6 @@ _COMING_SOON_DETAILS = {
         "contact_team": "the Business Team",
         "contact_email": "biz@magfest.org",
     },
-    "SUPPLY": {
-        "description": "Warehouse inventory and supply requests",
-        "contact_team": "FestOps",
-        "contact_email": "festops@magfest.org",
-    },
     "AV": {
         "description": "Audio/visual equipment and AV staffing requests",
         "contact_team": "the AV Team",
@@ -170,6 +165,13 @@ def portfolio_landing(event: str, dept: str, work_type_slug: str = "budget"):
 # variables, so /<event>/<dept>/contracts hits these (with their specific
 # copy) rather than the generic <work_type_slug> rule. They will be
 # removed in PR 4 (cleanup).
+#
+# NOTE: there is no supply_placeholder here — the supply cab (app/routes/
+# work/supply/) now registers the literal /<event>/<dept>/supply route
+# with a real handler. Two rules for the same literal path would leave
+# one permanently unreachable, so the old placeholder was deleted rather
+# than left to rot alongside it (this mirrors how techops never had one
+# to begin with once its cab shipped).
 
 @work_bp.get("/<event>/<dept>/contracts")
 def contracts_placeholder(event: str, dept: str):
@@ -195,31 +197,4 @@ def contracts_placeholder(event: str, dept: str):
         work_type_description="Contract management and vendor agreements",
         contact_team="the Business Team",
         contact_email="biz@magfest.org",
-    )
-
-
-@work_bp.get("/<event>/<dept>/supply")
-def supply_placeholder(event: str, dept: str):
-    """
-    Placeholder for Supply Orders work type - coming soon.
-    """
-    user_ctx = get_user_ctx()
-
-    # Look up event cycle and department for context
-    event_cycle = EventCycle.query.filter_by(code=event.upper()).first()
-    if not event_cycle:
-        abort(404, f"Event cycle not found: {event}")
-
-    department = Department.query.filter_by(code=dept.upper()).first()
-    if not department:
-        abort(404, f"Department not found: {dept}")
-
-    return render_page(
-        "budget/coming_soon.html",
-        event_cycle=event_cycle,
-        department=department,
-        work_type_name="Supply Orders",
-        work_type_description="Warehouse inventory and supply requests",
-        contact_team="FestOps",
-        contact_email="festops@magfest.org",
     )

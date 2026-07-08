@@ -1,0 +1,385 @@
+{# templates/supply/quick_review.html #}
+{# Inline reviewer page: lists every line with Approve / Reject / Need
+   Info buttons that fire AJAX requests against the existing per-line
+   endpoints. Adapted from templates/techops/quick_review.html.
+
+   Differences from TechOps's quick_review:
+   - Adds a Cost column (item unit cost * qty requested), guarded for
+     items with no unit_cost_cents on file — reviewers see cost, unlike
+     the requester-facing order detail page.
+   - Item/Notes columns mirror the line_review detail page.
+   - No "Need Adjustment" quick action — that kickback needs a note and
+     benefits from the fuller context on the per-line review page,
+     same reasoning TechOps used for omitting it here (see T5 design
+     notes referenced in the TechOps template). #}
+{% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
+
+{% block title %}Quick Review - {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+<style>
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .quick-action:disabled {
+    cursor: not-allowed;
+  }
+</style>
+
+  {# Header #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">
+        Quick Review
+        <span class="muted" style="font-weight: normal; font-size: 18px;">{{ work_item.public_id }}</span>
+      </h1>
+      <div class="muted" style="margin-top:4px;">
+        {{ ctx.department.name }} &middot; {{ ctx.event_cycle.name }}
+        {% if lines_filtered %}
+          &middot; Showing {{ lines | length }} of {{ total_lines_count }} lines
+        {% else %}
+          &middot; {{ lines | length }} lines
+        {% endif %}
+      </div>
+    </div>
+    <div class="btn-row">
+      <a class="btn" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        Back to Request
+      </a>
+    </div>
+  </div>
+
+  {# Checkout Status #}
+  {% if is_checked_out %}
+    {% if has_checkout %}
+      <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+          <div>
+            <strong>You have this item checked out</strong>
+            <span class="muted">- You can make review decisions.</span>
+          </div>
+          <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='supply') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {# Use request.full_path (relative) — safe_redirect_url
+               rejects absolute URLs like request.url. #}
+            <input type="hidden" name="return_to" value="{{ request.full_path }}">
+            <button type="submit" class="btn">Finish Reviewing</button>
+          </form>
+        </div>
+      </div>
+    {% else %}
+      <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
+        <strong>Under Active Review</strong> - Checked out by another reviewer.
+      </div>
+    {% endif %}
+  {% elif can_checkout %}
+    <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+        <div>
+          <strong>Review Session Required</strong>
+          <span class="muted">- Start a review session to make decisions.</span>
+        </div>
+        <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='supply') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="return_to" value="{{ request.full_path }}">
+          <button type="submit" class="btn btn-primary">Start Reviewing</button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+  {# Lines Table #}
+  <section class="card">
+    <table style="table-layout: auto;">
+      <thead>
+        <tr>
+          <th style="width: 50px;">#</th>
+          <th style="width: 200px;">Item</th>
+          <th>Notes</th>
+          <th style="width: 90px;">Qty</th>
+          <th style="width: 110px;">Cost</th>
+          <th style="width: 100px;">Status</th>
+          <th style="width: 380px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in lines %}
+          {% set line = row.line %}
+          {% set detail = row.detail %}
+          {% set review = row.review %}
+          {% set item = detail.item if detail else None %}
+          {% set unit_cost_cents = item.unit_cost_cents if item else None %}
+          {% set line_cost_cents = (unit_cost_cents * detail.quantity_requested) if (unit_cost_cents is not none and detail) else None %}
+          {% set status = line.status | upper %}
+          <tr id="line-{{ line.line_number }}" data-line-num="{{ line.line_number }}" data-status="{{ status }}">
+            <td>
+              <a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}">
+                {{ line.line_number }}
+              </a>
+            </td>
+            <td>
+              {% if item %}
+                <strong style="font-size: 13px;">{{ item.item_name }}</strong>
+                {% if item.category %}
+                  <div class="muted small">{{ item.category.name }}</div>
+                {% endif %}
+              {% else %}
+                <span class="muted">-</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if detail and detail.requester_notes %}
+                <div style="font-size: 13px; max-width: 320px;">{{ detail.requester_notes[:120] }}{% if detail.requester_notes|length > 120 %}...{% endif %}</div>
+              {% else %}
+                <span class="muted">-</span>
+              {% endif %}
+            </td>
+            <td>
+              {{ detail.quantity_requested if detail else '-' }}
+              {% if item %}<div class="muted small">{{ item.unit }}</div>{% endif %}
+            </td>
+            <td class="num">
+              {% if line_cost_cents is not none %}
+                {{ format_currency(line_cost_cents) }}
+              {% else %}
+                <span class="muted small">cost not on file</span>
+              {% endif %}
+            </td>
+            <td>
+              {# Render via the macro so the status → pill-class mapping
+                 stays in one place. The extra_class adds line-status-pill
+                 so the AJAX post-action JS can locate this exact pill
+                 element to update its className + textContent. #}
+              {% set status_label = friendly_status(status) if friendly_status else status %}
+              {{ render_status_pill(status, label=status_label, extra_class="line-status-pill", extra_style="font-size: 11px;") }}
+            </td>
+            <td class="line-actions">
+              {# Note input + action buttons are gated on has_checkout
+                 only — typing without a checkout meant the user lost
+                 their note when the checkout POST replaced the page.
+                 See user feedback: prefer to prevent work over trying
+                 to preserve client state across redirects. #}
+              {% if status == 'PENDING' and has_checkout %}
+                <div class="quick-action-row" style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
+                  <input type="text" class="line-note" placeholder="Note (required for reject/info)"
+                         style="flex: 1; min-width: 120px; padding: 4px 8px; font-size: 12px;">
+                  <div class="ag-actions" style="display: flex; gap: 4px;">
+                    <button type="button" class="btn quick-action" data-action="approve"
+                            style="padding: 4px 8px; font-size: 12px; background: #059669; color: #fff; border-color: #059669;">
+                      Approve
+                    </button>
+                    <button type="button" class="btn quick-action" data-action="reject"
+                            style="padding: 4px 8px; font-size: 12px; background: #dc3545; color: #fff; border-color: #dc3545;">
+                      Reject
+                    </button>
+                    <button type="button" class="btn quick-action" data-action="needs-info"
+                            style="padding: 4px 8px; font-size: 12px;">
+                      Info
+                    </button>
+                  </div>
+                </div>
+              {% elif status == 'PENDING' %}
+                <span class="muted small">Start a review session above to act on this line.</span>
+              {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}
+                <span class="muted small">Awaiting requester response</span>
+              {% elif status == 'APPROVED' %}
+                <span class="muted small">Approved</span>
+              {% elif status == 'REJECTED' %}
+                <span class="muted small">Rejected</span>
+              {% else %}
+                <span class="muted small">-</span>
+              {% endif %}
+
+              {# Inline feedback message with loading spinner #}
+              <div class="action-feedback" style="display: none; margin-top: 4px; font-size: 12px;">
+                <span class="feedback-spinner" style="display: none;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 4px; animation: spin 1s linear infinite;">
+                    <circle cx="12" cy="12" r="10" stroke="#666" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                <span class="feedback-text"></span>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {# Summary #}
+  <div style="margin-top: 16px; display: flex; gap: 16px; flex-wrap: wrap;">
+    <div class="card" style="flex: 1; min-width: 150px; text-align: center;">
+      <div style="font-size: 24px; font-weight: 700;" id="pending-count">{{ summary.pending }}</div>
+      <div class="muted small">Pending</div>
+    </div>
+    <div class="card" style="flex: 1; min-width: 150px; text-align: center;">
+      <div style="font-size: 24px; font-weight: 700; color: #059669;" id="approved-count">{{ summary.approved }}</div>
+      <div class="muted small">Approved</div>
+    </div>
+    <div class="card" style="flex: 1; min-width: 150px; text-align: center;">
+      <div style="font-size: 24px; font-weight: 700; color: #d97706;" id="kicked-count">{{ summary.kicked_back }}</div>
+      <div class="muted small">Kicked Back</div>
+    </div>
+    <div class="card" style="flex: 1; min-width: 150px; text-align: center;">
+      <div style="font-size: 24px; font-weight: 700; color: #dc3545;" id="rejected-count">{{ summary.rejected }}</div>
+      <div class="muted small">Rejected</div>
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function() {
+  var csrfToken = '{{ csrf_token() }}';
+  var eventCode = '{{ ctx.event_cycle.code }}';
+  var deptCode = '{{ ctx.department.code }}';
+  var publicId = '{{ work_item.public_id }}';
+
+  // Action URL templates. {line} substitutes the line number per row.
+  // Supply URLs use the /supply/ literal segment so the polymorphic
+  // line_review handler picks up work_type_slug=supply.
+  var actionUrls = {
+    'approve':    '/' + eventCode + '/' + deptCode + '/supply/item/' + publicId + '/line/{line}/approve',
+    'reject':     '/' + eventCode + '/' + deptCode + '/supply/item/' + publicId + '/line/{line}/reject',
+    'needs-info': '/' + eventCode + '/' + deptCode + '/supply/item/' + publicId + '/line/{line}/needs-info'
+  };
+
+  var statusMap = {
+    'approve': 'APPROVED',
+    'reject': 'REJECTED',
+    'needs-info': 'NEEDS_INFO'
+  };
+
+  var friendlyStatusLabels = {
+    'PENDING': 'Pending',
+    'APPROVED': 'Approved',
+    'REJECTED': 'Rejected',
+    'NEEDS_INFO': 'Info Requested'
+  };
+
+  var requiresNote = ['reject', 'needs-info'];
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.quick-action');
+    if (!btn) return;
+
+    var action = btn.getAttribute('data-action');
+    var row = btn.closest('tr');
+    var lineNum = row.getAttribute('data-line-num');
+    var noteInput = row.querySelector('.line-note');
+    var note = noteInput ? noteInput.value.trim() : '';
+    var feedback = row.querySelector('.action-feedback');
+    var feedbackSpinner = feedback.querySelector('.feedback-spinner');
+    var feedbackText = feedback.querySelector('.feedback-text');
+
+    if (requiresNote.indexOf(action) !== -1 && !note) {
+      feedbackText.textContent = 'Note required for this action';
+      feedbackSpinner.style.display = 'none';
+      feedback.style.display = 'block';
+      feedback.style.color = '#dc3545';
+      noteInput.focus();
+      return;
+    }
+
+    var buttons = row.querySelectorAll('.quick-action');
+    buttons.forEach(function(b) {
+      b.disabled = true;
+      b.style.opacity = '0.6';
+    });
+    feedbackSpinner.style.display = 'inline';
+    feedbackText.textContent = 'Processing...';
+    feedback.style.display = 'block';
+    feedback.style.color = '#666';
+
+    var url = actionUrls[action].replace('{line}', lineNum);
+
+    var formData = new FormData();
+    formData.append('csrf_token', csrfToken);
+    if (note) {
+      formData.append('note', note);
+    }
+    formData.append('ajax', '1');
+
+    fetch(url, {
+      method: 'POST',
+      body: formData,
+      headers: { 'Accept': 'application/json' }
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var newStatus = statusMap[action];
+        row.setAttribute('data-status', newStatus);
+
+        var pill = row.querySelector('.line-status-pill');
+        pill.textContent = friendlyStatusLabels[newStatus] || newStatus;
+        // Match the Jinja pill-class mapping above (high-contrast classes).
+        pill.className = 'pill line-status-pill';
+        if (newStatus === 'APPROVED') {
+          pill.classList.add('pill-success');
+        } else if (newStatus === 'REJECTED') {
+          pill.classList.add('pill-rejected');
+        } else if (newStatus === 'NEEDS_INFO') {
+          pill.classList.add('pill-warning');
+        } else {
+          pill.classList.add('pill-draft');
+        }
+
+        var actionsCell = row.querySelector('.line-actions');
+        if (newStatus === 'APPROVED') {
+          actionsCell.innerHTML = '<span class="muted small">Approved</span>';
+        } else if (newStatus === 'REJECTED') {
+          actionsCell.innerHTML = '<span class="muted small">Rejected</span>';
+        } else if (newStatus === 'NEEDS_INFO') {
+          actionsCell.innerHTML = '<span class="muted small">Awaiting requester response</span>';
+        }
+
+        updateSummaryCounts();
+
+        feedbackSpinner.style.display = 'none';
+        feedbackText.textContent = 'Done!';
+        feedback.style.color = '#059669';
+      } else {
+        feedbackSpinner.style.display = 'none';
+        feedbackText.textContent = data.error || 'Error occurred';
+        feedback.style.color = '#dc3545';
+        buttons.forEach(function(b) {
+          b.disabled = false;
+          b.style.opacity = '1';
+        });
+      }
+    })
+    .catch(function(err) {
+      feedbackSpinner.style.display = 'none';
+      feedbackText.textContent = 'Network error';
+      feedback.style.color = '#dc3545';
+      buttons.forEach(function(b) {
+        b.disabled = false;
+        b.style.opacity = '1';
+      });
+    });
+  });
+
+  function updateSummaryCounts() {
+    var rows = document.querySelectorAll('tr[data-status]');
+    var counts = { pending: 0, approved: 0, kicked: 0, rejected: 0 };
+
+    rows.forEach(function(row) {
+      var status = row.getAttribute('data-status');
+      if (status === 'PENDING') counts.pending++;
+      else if (status === 'APPROVED') counts.approved++;
+      else if (status === 'NEEDS_INFO' || status === 'NEEDS_ADJUSTMENT') counts.kicked++;
+      else if (status === 'REJECTED') counts.rejected++;
+    });
+
+    document.getElementById('pending-count').textContent = counts.pending;
+    document.getElementById('approved-count').textContent = counts.approved;
+    document.getElementById('kicked-count').textContent = counts.kicked;
+    document.getElementById('rejected-count').textContent = counts.rejected;
+  }
+})();
+</script>
+{% endblock %}

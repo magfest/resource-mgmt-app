@@ -1,0 +1,119 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Import Preview - Admin{% endblock %}
+
+{% block content %}
+<h1>Import Preview</h1>
+<div class="muted mb-16">
+  Review the changes below, then confirm to apply them. Nothing has been
+  saved yet.
+</div>
+
+<section style="margin-bottom: 24px;">
+  <h3 style="margin-bottom: 8px;">Creates ({{ creates|length }})</h3>
+  {% if creates %}
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Item Name</th>
+          <th>Unit</th>
+          <th>Cost</th>
+          <th>On Hand</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in creates %}
+          <tr>
+            <td class="muted">{{ categories_by_id[record.category_id].name if record.category_id in categories_by_id else record.category_id }}</td>
+            <td>{{ record.item_name }}</td>
+            <td class="muted">{{ record.unit }}</td>
+            <td class="num">{% if record.unit_cost_cents %}${{ '{:.2f}'.format(record.unit_cost_cents / 100) }}{% else %}&mdash;{% endif %}</td>
+            <td class="num">{{ record.qty_on_hand if record.qty_on_hand is not none else '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="card muted">No new items to create.</div>
+  {% endif %}
+</section>
+
+<section style="margin-bottom: 24px;">
+  <h3 style="margin-bottom: 8px;">Updates ({{ updates|length }})</h3>
+  {% if updates %}
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Item Name</th>
+          <th>Unit</th>
+          <th>Cost</th>
+          <th>On Hand</th>
+          <th>Changes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in updates %}
+          <tr>
+            <td class="muted">{{ categories_by_id[record.category_id].name if record.category_id in categories_by_id else record.category_id }}</td>
+            <td>{{ record.item_name }} <span class="muted small">(matches existing item #{{ record.existing_id }})</span></td>
+            <td class="muted">{{ record.unit }}</td>
+            <td class="num">{% if record.unit_cost_cents %}${{ '{:.2f}'.format(record.unit_cost_cents / 100) }}{% else %}&mdash;{% endif %}</td>
+            <td class="num">{{ record.qty_on_hand if record.qty_on_hand is not none else '—' }}</td>
+            <td class="muted small">
+              {% if record.changed_fields %}
+                {{ record.changed_fields|join(', ') }}
+              {% else %}
+                no changes
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="card muted">No existing items match rows in this file.</div>
+  {% endif %}
+</section>
+
+<section style="margin-bottom: 24px;">
+  <h3 style="margin-bottom: 8px;">Errors ({{ errors|length }})</h3>
+  {% if errors %}
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 100px;">Row</th>
+          <th>Problems</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for error in errors %}
+          <tr>
+            <td class="num">{{ error.row_number }}</td>
+            <td style="color: #b91c1c;">
+              {% for problem in error.problems %}
+                <div>{{ problem }}</div>
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="card muted">No errors.</div>
+  {% endif %}
+</section>
+
+<form method="post" action="{{ url_for('admin_config.supply_items.import_confirm') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="payload" value="{{ payload_json }}">
+
+  <div class="btn-row" style="margin-top: 20px;">
+    <button class="btn btn-primary" type="submit" {% if not creates and not updates %}disabled{% endif %}>
+      Confirm Import ({{ creates|length + updates|length }} row(s))
+    </button>
+    <a class="btn" href="{{ url_for('admin_config.supply_items.import_form') }}">Start Over</a>
+  </div>
+</form>
+{% endblock %}

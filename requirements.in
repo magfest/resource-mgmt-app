@@ -11,3 +11,4 @@ Authlib
 requests
 boto3
 gunicorn
+pillow

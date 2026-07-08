@@ -1,0 +1,84 @@
+{# templates/supply/admin_home.html #}
+{# Supply admin landing page — mirrors admin_final/budget_home.html's shape
+   (stat tiles + quick-link cards) but scoped down to what SUPPLY actually
+   has: no dispatch stage, no per-event department-progress grid (that's
+   BUDGET-specific machinery this work type doesn't use). #}
+{% extends "layout/base.html" %}
+
+{% block title %}Supply Administration{% endblock %}
+
+{% block content %}
+
+  {# Header #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 24px;">
+    <div>
+      <h1 style="margin:0;">Supply Administration</h1>
+      <div class="muted" style="margin-top:4px;">
+        Supply ordering workflow tools and catalog configuration
+      </div>
+    </div>
+  </div>
+
+  {# Stats Overview #}
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+    <div class="card" style="text-align: center;">
+      <div style="font-size: 32px; font-weight: 700; color: #0a66c2;">{{ submitted_count }}</div>
+      <div class="muted">Submitted Orders Awaiting Finalization</div>
+      <a href="{{ url_for('work.supply_admin_queue') }}" class="small">View Supply Queue</a>
+    </div>
+  </div>
+
+  {# Quick Links #}
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+
+    <section class="card">
+      <h3 style="margin:0 0 8px 0;">Supply Queue</h3>
+      <p class="muted small" style="margin: 0 0 12px 0;">
+        SUBMITTED orders awaiting FestOps finalization, soonest-needed first.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('work.supply_admin_queue') }}">Open Supply Queue</a>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 8px 0;">All Supply Orders</h3>
+      <p class="muted small" style="margin: 0 0 12px 0;">
+        Cross-department view of every supply order, filterable by event, department, and status.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('work.supply_all_orders') }}">View All Orders</a>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 8px 0;">Reviewer Groups</h3>
+      <p class="muted small" style="margin: 0 0 12px 0;">
+        Approval group dashboards for lines routed to SUPPLY reviewers.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('approvals.dashboard_home') }}">View Reviewer Groups</a>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 8px 0;">Supply Categories</h3>
+      <p class="muted small" style="margin: 0 0 12px 0;">
+        Configure catalog categories and their reviewer group routing.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('admin_config.supply_categories.list_supply_categories') }}">Manage Categories</a>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 8px 0;">Supply Items</h3>
+      <p class="muted small" style="margin: 0 0 12px 0;">
+        Manage the warehouse/supply item catalog available for ordering.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('admin_config.supply_items.list_supply_items') }}">Manage Items</a>
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 8px 0;">Catalog Import</h3>
+      <p class="muted small" style="margin: 0 0 12px 0;">
+        Bulk create or update supply catalog items from a spreadsheet.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('admin_config.supply_items.import_form') }}">Import Catalog</a>
+    </section>
+
+  </div>
+
+{% endblock %}

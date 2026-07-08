@@ -67,22 +67,24 @@ class TestPortfolioContextSlug:
 
 
 class TestSeedConfigWorkTypeActivation:
-    """Only BUDGET ships seeded-active. CONTRACT and SUPPLY have no requester
-    UI yet and stay inactive to keep them out of pickers; TECHOPS ships
-    inactive because it is still in beta and is enabled per-environment via
-    the admin Work Types page (staging flips it on, production leaves it
-    off). All five worktypes still get their config rows created so URL
-    routing resolves cleanly even when the worktype is inactive."""
+    """Only shipped worktypes (BUDGET, SUPPLY) ship seeded-active. CONTRACT
+    has no requester UI yet and stays inactive to keep it out of pickers;
+    TECHOPS ships inactive because it is still in beta and is enabled
+    per-environment via the admin Work Types page (staging flips it on,
+    production leaves it off); AV is still under construction. All five
+    worktypes still get their config rows created so URL routing resolves
+    cleanly even when the worktype is inactive."""
 
-    def test_only_budget_seeded_active(self, app):
+    def test_only_shipped_worktypes_seeded_active(self, app):
         work_types = seed_work_types()
         seed_work_type_configs(work_types)
         db.session.commit()
 
-        budget = WorkType.query.filter_by(code="BUDGET").one()
-        assert budget.is_active is True
+        for code in ("BUDGET", "SUPPLY"):
+            wt = WorkType.query.filter_by(code=code).one()
+            assert wt.is_active is True, f"{code} should ship seeded-active"
 
-        for code in ("CONTRACT", "SUPPLY", "TECHOPS", "AV"):
+        for code in ("CONTRACT", "TECHOPS", "AV"):
             wt = WorkType.query.filter_by(code=code).one()
             assert wt.is_active is False, f"{code} should ship seeded-inactive"
 

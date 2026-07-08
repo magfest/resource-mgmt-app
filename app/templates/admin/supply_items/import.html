@@ -1,0 +1,52 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Import Supply Catalog - Admin{% endblock %}
+
+{% block content %}
+<h1>Import Supply Catalog</h1>
+<div class="muted mb-16">
+  <a href="{{ url_for('admin_config.data_upload.index') }}">&larr; Back to Data Upload</a>
+</div>
+<div class="muted mb-16">
+  Bulk create or update supply items from a CSV or Excel spreadsheet.
+</div>
+
+<div class="card" style="max-width: 700px;">
+  <h4 style="margin-top: 0;">Instructions</h4>
+  <p>
+    Required columns: <code>category_code</code>, <code>item_name</code>, <code>unit</code>.
+  </p>
+  <p>
+    Optional columns: <code>notes</code>, <code>unit_cost</code>, <code>qty_on_hand</code>,
+    <code>location_zone</code>, <code>bin_location</code>, <code>is_limited</code>,
+    <code>is_popular</code>, <code>is_expendable</code>, <code>notes_required</code>,
+    <code>is_active</code>.
+  </p>
+  <p class="muted small">
+    Re-importing updates matched items &mdash; matched by category code + item name
+    (case-insensitive). Rows that don't match any existing item are created as new
+    items. <code>image_url</code> is never set from an import; photos are managed
+    per-item in the admin form.
+  </p>
+
+  <div class="btn-row" style="margin: 16px 0;">
+    <a class="btn" href="{{ url_for('admin_config.supply_items.download_import_template') }}">
+      Download template (.xlsx)
+    </a>
+  </div>
+
+  <form method="post"
+        action="{{ url_for('admin_config.supply_items.import_upload') }}"
+        enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label for="file" class="form-label">Catalog file (CSV or Excel)</label>
+    <input id="file" name="file" type="file" accept=".csv,.xlsx,.xls" required>
+
+    <div class="btn-row" style="margin-top: 20px;">
+      <button class="btn btn-primary" type="submit">Preview Import</button>
+      <a class="btn" href="{{ url_for('admin_config.supply_items.list_supply_items') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

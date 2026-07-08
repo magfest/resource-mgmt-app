@@ -56,6 +56,15 @@
   </div>
 </div>
 
+<h2 style="margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 8px;">Supply Catalog</h2>
+<div style="display: grid; gap: 16px; max-width: 600px;">
+  <div style="border: 1px solid #ddd; padding: 16px; background: #fafafa;">
+    <h3 style="margin-top: 0;">Supply Catalog Items</h3>
+    <p class="muted small">Upload or update warehouse/supply catalog items. A downloadable template is available on the import page.</p>
+    <a class="btn btn-primary" href="{{ url_for('admin_config.supply_items.import_form') }}">Upload Supply Catalog Items</a>
+  </div>
+</div>
+
 <div class="muted small" style="margin-top: 24px;">
   <strong>File formats:</strong> CSV (.csv) or Excel (.xlsx, .xls)<br>
   <strong>Behavior:</strong> Existing records (matched by code or email) will be updated. New records will be created.

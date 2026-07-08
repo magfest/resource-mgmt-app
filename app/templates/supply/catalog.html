@@ -1,0 +1,199 @@
+{# templates/supply/catalog.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}{% if work_item %}{{ work_item.public_id }} - Supply Catalog{% else %}Supply Catalog - {{ ctx.department.name }}{% endif %}{% endblock %}
+
+{% block content %}
+
+  {# Breadcrumb #}
+  <nav class="muted small" style="margin-bottom: 12px;">
+    <a href="{{ url_for('home.index') }}">Home</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">{{ ctx.department.name }}</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.supply_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">Supply Orders</a>
+    {% if work_item %}
+      <span style="margin: 0 6px;">&rsaquo;</span>
+      <a href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">{{ work_item.public_id }}</a>
+    {% endif %}
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <span>Catalog</span>
+  </nav>
+
+  {% if work_item %}
+    {# Sticky cart strip #}
+    <div class="card" style="position: sticky; top: 0; z-index: 10; margin-bottom: 16px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap: wrap;">
+      <div>
+        <strong>{{ work_item.public_id }}</strong>
+        <span class="muted"> &middot; {{ cart_count }} item{% if cart_count != 1 %}s{% endif %} in this order</span>
+      </div>
+      <a class="btn btn-primary" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        Review order &rarr;
+      </a>
+    </div>
+
+    {% if not can_add %}
+      <div class="callout callout-warning">
+        This order can no longer be edited from the catalog.
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="card" style="margin-bottom: 16px;">
+      <strong>Catalog browse</strong>
+      <span class="muted"> &middot; view-only &mdash; no order attached. Start an order from Supply Orders to add items.</span>
+    </div>
+  {% endif %}
+
+  {# Search #}
+  <form method="get" class="inline-form" style="margin-bottom: 16px;">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search items&hellip;" style="max-width: 320px;">
+    <button type="submit" class="btn">Search</button>
+    {% if q %}
+      <a class="btn btn-muted" href="{{ catalog_url() }}">
+        Clear search
+      </a>
+    {% endif %}
+  </form>
+
+  {# Category jump-nav #}
+  {% if categories %}
+    <nav class="muted small" style="margin-bottom: 16px;">
+      {% for category in categories %}
+        {% if items_by_category.get(category.id) %}
+          <a href="#cat-{{ category.code }}" style="margin-right: 12px;">{{ category.name }}</a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  {# Popular strip — skipped while searching. Kept as cards (unchanged
+     layout) per the design brief; category sections below are the ones
+     converted to dense rows. #}
+  {% if popular_items %}
+    <section style="margin-bottom: 24px;">
+      <h2>Popular</h2>
+      <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); margin-top: 8px;">
+        {% for item in popular_items %}
+          <div class="supply-item-card card" id="item-popular-{{ item.id }}">
+            {% if item.image_url %}
+              <img src="{{ item.image_url }}" alt="" class="supply-item-thumb" style="max-width:100%; max-height:100px; object-fit: contain;">
+            {% else %}
+              <div class="supply-item-thumb supply-item-thumb--placeholder" style="height:60px; background:#f6f6f6; border-radius:6px;"></div>
+            {% endif %}
+            <h4 style="margin: 8px 0 2px;"><a href="{{ item_detail_url(item.id) }}">{{ item.item_name }}</a></h4>
+            <p class="supply-item-unit muted small" style="margin: 0 0 6px;">per {{ item.unit }}</p>
+            {% if item.notes %}<p class="small" style="margin: 0 0 6px;">{{ item.notes }}</p>{% endif %}
+            <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom: 6px;">
+              {% if item.is_limited %}
+                <span class="pill pill-warning">Limited{% if item.qty_on_hand is not none %} &mdash; {{ item.qty_on_hand }} on hand{% endif %}</span>
+              {% endif %}
+              {% if not item.is_expendable %}
+                <span class="pill pill-info">Must be returned</span>
+              {% endif %}
+            </div>
+            {% if can_add %}
+              <form method="post" action="{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="margin-top: 8px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="item_id" value="{{ item.id }}">
+                <label class="form-label small">Qty
+                  <input type="number" name="quantity" value="1" min="1" required>
+                </label>
+                {% if item.order_guidance %}
+                  <div class="muted small" style="margin-top: 2px;">{{ item.order_guidance }}</div>
+                {% endif %}
+                <label class="form-label small">Notes{% if item.notes_required %} (required){% endif %}
+                  <input type="text" name="notes" {% if item.notes_required %}required{% endif %}
+                         placeholder="e.g. for Tech booth">
+                </label>
+                <button type="submit" class="btn btn-primary" style="margin-top: 6px; width: 100%;">Add to order</button>
+              </form>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {# Per-category sections — dense rows. #}
+  {% for category in categories %}
+    {% set category_items = items_by_category.get(category.id) %}
+    {% if category_items %}
+      <section id="cat-{{ category.code }}" style="margin-bottom: 24px;">
+        <h2>{{ category.name }}</h2>
+        {% if category.description %}
+          <p class="muted small" style="margin-top: -6px;">{{ category.description }}</p>
+        {% endif %}
+        <div style="margin-top: 8px;">
+          {% for item in category_items %}
+            <div class="card" id="item-{{ item.id }}" style="display:flex; align-items:flex-start; gap:12px; padding:10px 14px; margin-top:8px;">
+              {% if item.image_url %}
+                <img src="{{ item.image_url }}" alt="" style="width:40px; height:40px; object-fit: contain; border-radius:4px; flex-shrink:0;">
+              {% else %}
+                <div style="width:40px; height:40px; background:#f6f6f6; border-radius:4px; flex-shrink:0;"></div>
+              {% endif %}
+
+              <div style="flex: 1 1 220px; min-width: 200px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <strong><a href="{{ item_detail_url(item.id) }}">{{ item.item_name }}</a></strong>
+                  <span class="muted small">per {{ item.unit }}</span>
+                  {% if item.is_limited %}
+                    <span class="pill pill-warning">Limited{% if item.qty_on_hand is not none %} &mdash; {{ item.qty_on_hand }} on hand{% endif %}</span>
+                  {% endif %}
+                  {% if not item.is_expendable %}
+                    <span class="pill pill-info">Must be returned</span>
+                  {% endif %}
+                </div>
+                {% if item.notes %}
+                  <div class="small muted" style="margin-top: 2px;">{{ item.notes }}</div>
+                {% endif %}
+              </div>
+
+              {% if can_add %}
+                <form method="post" action="{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}"
+                      style="display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="item_id" value="{{ item.id }}">
+                  <div>
+                    <input type="number" name="quantity" value="1" min="1" required style="width: 64px;">
+                    {% if item.order_guidance %}
+                      <div class="muted small" style="max-width: 150px; margin-top: 2px;">{{ item.order_guidance }}</div>
+                    {% endif %}
+                  </div>
+                  <input type="text" name="notes" {% if item.notes_required %}required{% endif %}
+                         placeholder="Notes{% if item.notes_required %} (required){% endif %}" style="width: 160px;">
+                  <button type="submit" class="btn btn-primary small">Add</button>
+                </form>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+  {% endfor %}
+
+  {% if not items_by_category %}
+    <div class="card">
+      <div class="muted">
+        {% if q %}
+          No items match &ldquo;{{ q }}&rdquo;.
+        {% else %}
+          No catalog items available yet.
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# Footer navigation #}
+  <div class="btn-row" style="margin-top: 24px;">
+    {% if work_item %}
+      <a class="btn" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        &larr; Back to order
+      </a>
+    {% else %}
+      <a class="btn" href="{{ url_for('work.supply_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+        &larr; Back to Supply Orders
+      </a>
+    {% endif %}
+  </div>
+
+{% endblock %}

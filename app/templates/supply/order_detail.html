@@ -1,0 +1,259 @@
+{# templates/supply/order_detail.html #}
+{% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
+{% from "macros/checkout_banner.html" import render_checkout_banner %}
+{% from "macros/comments.html" import render_comments %}
+{% from "macros/audit_log.html" import render_audit_log with context %}
+
+{% block title %}{{ work_item.public_id }} - Supply Order{% endblock %}
+
+{% block content %}
+
+  {% set status = work_item.status | upper %}
+
+  {# Breadcrumb #}
+  <nav class="muted small" style="margin-bottom: 12px;">
+    <a href="{{ url_for('home.index') }}">Home</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">{{ ctx.department.name }}</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <a href="{{ url_for('work.supply_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">Supply Orders</a>
+    <span style="margin: 0 6px;">&rsaquo;</span>
+    <span>{{ work_item.public_id }}</span>
+  </nav>
+
+  {# Header #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">
+        {{ work_item.public_id }}
+        {{ render_status_pill(status, label=friendly_status(status) if friendly_status else status, extra_style="margin-left: 8px; font-weight: normal;") }}
+      </h1>
+      <div class="muted" style="margin-top:4px; line-height:1.5;">
+        Supply Order &middot;
+        {{ ctx.department.name }} &middot;
+        {{ ctx.event_cycle.name }}
+      </div>
+      <div class="muted" style="margin-top:4px;">
+        Created {{ work_item.created_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if work_item.created_by_user_id %}
+          by {{ work_item.created_by_user_id|user_display }}
+        {% endif %}
+        {% if work_item.submitted_at %}
+          &middot; Submitted {{ work_item.submitted_at.strftime('%Y-%m-%d %H:%M') }}
+          {% if work_item.submitted_by_user_id %}
+            by {{ work_item.submitted_by_user_id|user_display }}
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="text-align:right;">
+      <div class="muted small">Items</div>
+      <div style="font-size: 24px; font-weight:700;">{{ lines|length }}</div>
+    </div>
+  </div>
+
+  {{ render_checkout_banner(work_item, perms) }}
+
+  {# Navigation back to the portfolio. #}
+  <div class="btn-row mb-16">
+    <a class="btn" href="{{ url_for('work.supply_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+      &larr; Back to Supply Orders
+    </a>
+    {% if can_edit %}
+      <a class="btn btn-primary" href="{{ url_for('work.supply_catalog', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        Add more items
+      </a>
+    {% endif %}
+  </div>
+
+  {# Cart table — items in this order #}
+  <section class="card" style="margin-bottom: 16px;">
+    <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">
+      Items
+    </div>
+
+    {% if lines %}
+      {% set show_actions_column = can_edit or kickback_editable_line_numbers %}
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 50px;">#</th>
+            <th style="width: 48px;"></th>
+            <th>Item</th>
+            <th style="width: 90px;">Qty</th>
+            <th>Notes</th>
+            {% if show_actions_column %}
+              <th style="width: 90px;"></th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+            {% set detail = line.supply_detail %}
+            {% set item = detail.item if detail else None %}
+            {% set is_kickback = line.line_number in kickback_editable_line_numbers %}
+            {# Kicked-back lines re-open their edit widgets even when the
+               order itself is no longer editable (matches the
+               is_line_kickback_editable gate on work.supply_line_update). #}
+            {% set row_editable = can_edit or is_kickback %}
+            <tr id="line-{{ line.line_number }}">
+              <td>{{ line.line_number }}</td>
+              <td>
+                {% if item and item.image_url %}
+                  <img src="{{ item.image_url }}" alt="" style="max-height: 40px; max-width: 40px;">
+                {% endif %}
+              </td>
+              <td>
+                {% if item %}
+                  <strong>{{ item.item_name }}</strong>
+                  <span class="muted small">({{ item.unit }})</span>
+                  {% if not item.is_expendable %}
+                    <span class="pill pill-info pill-sm">Must be returned</span>
+                  {% endif %}
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+                {% if is_kickback %}
+                  <div style="margin-top: 4px;">
+                    <span class="pill pill-warning">Needs adjustment &mdash; update and respond</span>
+                  </div>
+                {% endif %}
+              </td>
+
+              {% if row_editable %}
+                <td colspan="2">
+                  <form method="post"
+                        action="{{ url_for('work.supply_line_update', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_number=line.line_number) }}"
+                        style="display:flex; gap:8px; align-items:flex-start; flex-wrap: wrap;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="number" name="quantity" value="{{ detail.quantity_requested if detail else 1 }}"
+                           min="1" required style="width: 70px;">
+                    <input type="text" name="notes" value="{{ detail.requester_notes if detail and detail.requester_notes else '' }}"
+                           placeholder="Notes{% if item and item.notes_required %} (required){% endif %}"
+                           {% if item and item.notes_required %}required{% endif %}
+                           style="flex: 1; min-width: 140px;">
+                    <button type="submit" class="btn small">Save</button>
+                  </form>
+                </td>
+                <td>
+                  {# Remove stays DRAFT-only — a kicked-back line gets fixed
+                     via update, not deleted (matches supply_line_delete). #}
+                  {% if can_edit %}
+                    <form method="post"
+                          action="{{ url_for('work.supply_line_delete', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_number=line.line_number) }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-danger small">Remove</button>
+                    </form>
+                  {% endif %}
+                </td>
+              {% else %}
+                <td>{{ detail.quantity_requested if detail else '-' }}</td>
+                <td>
+                  {% if detail and detail.requester_notes %}
+                    {{ detail.requester_notes }}
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+                {% if show_actions_column %}
+                  <td></td>
+                {% endif %}
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="muted" style="text-align: center; padding: 16px;">
+        No items yet &mdash; browse the catalog to add supplies.
+      </div>
+    {% endif %}
+  </section>
+
+  {# Delivery details #}
+  <section class="card" style="margin-bottom: 16px;">
+    <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+      Delivery Details
+    </div>
+    {% if can_edit %}
+      <form method="post"
+            action="{{ url_for('work.supply_order_details_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label small">Needed by
+          <input type="date" name="needed_by_date"
+                 value="{{ order_detail.needed_by_date.strftime('%Y-%m-%d') if order_detail and order_detail.needed_by_date else '' }}">
+        </label>
+        <label class="form-label small">Delivery location
+          <input type="text" name="delivery_location"
+                 value="{{ order_detail.delivery_location if order_detail and order_detail.delivery_location else '' }}"
+                 placeholder="e.g. Warehouse dock B">
+        </label>
+        <label class="form-label small">Additional notes
+          <textarea name="additional_notes" rows="3" style="width:100%;">{{ order_detail.additional_notes if order_detail and order_detail.additional_notes else '' }}</textarea>
+        </label>
+        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">Save delivery details</button>
+      </form>
+    {% elif order_detail %}
+      <div style="margin-bottom: 4px;">
+        <strong>Needed by:</strong>
+        {% if order_detail.needed_by_date %}
+          {{ order_detail.needed_by_date.strftime('%Y-%m-%d') }}
+        {% else %}
+          <span class="muted">Not set</span>
+        {% endif %}
+      </div>
+      <div style="margin-bottom: 4px;">
+        <strong>Delivery location:</strong>
+        {{ order_detail.delivery_location or '-' }}
+      </div>
+      {% if order_detail.additional_notes %}
+        <div style="margin-top: 8px;">
+          <strong>Additional notes:</strong>
+          <div style="white-space: pre-wrap; margin-top: 4px;">{{ order_detail.additional_notes }}</div>
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="muted">No delivery details set yet.</div>
+    {% endif %}
+  </section>
+
+  {# Submit #}
+  {% if can_edit %}
+    <section class="card" style="margin-bottom: 16px;">
+      <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+        Submit
+      </div>
+      {% if submit_errors %}
+        <div class="muted small" style="margin-bottom: 8px;">Before you can submit:</div>
+        <ul style="margin: 0 0 12px 0; padding-left: 20px; color: var(--color-error, #b00020);">
+          {% for error in submit_errors %}
+            <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <form method="post"
+            action="{{ url_for('work.supply_order_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-primary"
+                {% if submit_errors %}disabled aria-disabled="true" title="Resolve the items above before submitting"{% endif %}>
+          Submit order
+        </button>
+      </form>
+    </section>
+  {% endif %}
+
+  {# Comments #}
+  <section class="card" style="margin-bottom: 16px;">
+    {{ render_comments(filtered_comments, work_item, ctx, perms, can_add_comment) }}
+  </section>
+
+  {# Audit log (admins only) #}
+  {% if can_view_audit %}
+    <section class="card" style="margin-bottom: 16px;">
+      {{ render_audit_log(audit_events, csp_nonce) }}
+    </section>
+  {% endif %}
+
+{% endblock %}

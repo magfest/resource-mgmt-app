@@ -1,0 +1,449 @@
+{# templates/supply/line_review.html #}
+{# Adapted from templates/techops/line_review.html — action forms, checkout
+   banner, and button wiring are kept IDENTICAL (shared POST endpoints under
+   approvals_bp). Only the line-detail presentation block is supply-shaped:
+   item/category/qty/notes plus reviewer-only cost (requesters never see
+   cost — see app/routes/work/supply/view.py's module docstring).
+
+   Unlike TechOps, NEEDS_ADJUSTMENT is kept: quantity disagreements go
+   through kickback (requester edits qty via work.supply_line_update, then
+   responds through the same line_respond flow NEEDS_INFO uses — see
+   app/routes/approvals/reviews.py:471's comment for why TechOps hides this
+   button; that reasoning doesn't apply here since supply has no
+   budget_detail-shaped line_adjust dependency). #}
+{% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
+
+{% block title %}Line {{ line.line_number }} Review - {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+
+  {% set status = line.status | upper %}
+  {% set order_detail = work_item.supply_order_detail %}
+  {% set item = detail.item if detail else None %}
+  {% set category = item.category if item else None %}
+  {% set unit_cost_cents = item.unit_cost_cents if item else None %}
+  {% set line_total_cents = (unit_cost_cents * detail.quantity_requested) if (unit_cost_cents is not none and detail) else None %}
+
+  {# Header — item name + line number + status pill. #}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">
+        Line {{ line.line_number }}
+        {{ render_status_pill(status, label=friendly_status(status) if friendly_status else status, extra_style="margin-left: 8px; font-weight: normal;") }}
+      </h1>
+      <div class="muted" style="margin-top:4px; line-height:1.5;">
+        <a href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+          {{ work_item.public_id }}
+        </a>
+        &middot;
+        {{ ctx.department.name }} &middot;
+        {{ ctx.event_cycle.name }}
+      </div>
+    </div>
+
+    <div style="text-align:right;">
+      <div class="muted small">Item</div>
+      <div style="font-size: 18px; font-weight:700;">
+        {{ item.item_name if item else 'Unknown' }}
+      </div>
+      {% if category %}
+        <div class="muted small">{{ category.name }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Checkout Status Banner #}
+  {% if is_checked_out %}
+    {% if has_checkout %}
+      <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+          <div>
+            <strong>You have this item checked out</strong>
+            <div class="muted" style="margin-top:4px;">
+              You can make review decisions on this line.
+            </div>
+          </div>
+          <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='supply') }}" style="flex-shrink: 0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_to" value="{{ request.full_path }}">
+            <button type="submit" class="btn">Finish Reviewing</button>
+          </form>
+        </div>
+      </div>
+    {% else %}
+      <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
+        <strong>Under Active Review</strong>
+        <div class="muted" style="margin-top:4px;">
+          This item is checked out by another reviewer.
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {# Navigation #}
+  <div class="btn-row mb-16">
+    <a class="btn" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+      Back to Request
+    </a>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+
+    {# Left Column: Order Context + Line Details #}
+    <div>
+      <section class="card">
+        <h3 style="margin:0 0 12px 0;">Order Details</h3>
+
+        <div class="meta">
+          <div><strong>Needed by:</strong>
+            {{ order_detail.needed_by_date.strftime('%Y-%m-%d') if order_detail and order_detail.needed_by_date else '-' }}
+          </div>
+        </div>
+        <div class="meta" style="margin-top: 8px;">
+          <div><strong>Delivery location:</strong> {{ order_detail.delivery_location if order_detail and order_detail.delivery_location else '-' }}</div>
+        </div>
+        {% if order_detail and order_detail.additional_notes %}
+          <div class="meta" style="margin-top: 8px;">
+            <div><strong>Order notes:</strong></div>
+            <div style="white-space: pre-wrap;">{{ order_detail.additional_notes }}</div>
+          </div>
+        {% endif %}
+      </section>
+
+      <section class="card">
+        <h3 style="margin:0 0 12px 0;">Line Details</h3>
+
+        <div style="display:flex; gap: 12px; align-items:flex-start;">
+          {% if item and item.image_url %}
+            <img src="{{ item.image_url }}" alt="" style="max-width: 80px; max-height: 80px; border-radius: 6px;">
+          {% endif %}
+          <div>
+            <div style="font-size: 16px; font-weight: 700;">{{ item.item_name if item else '-' }}</div>
+            {% if category %}
+              <div class="muted small">{{ category.name }}</div>
+            {% endif %}
+            <div style="margin-top: 6px;">
+              <strong>Qty requested:</strong>
+              {{ detail.quantity_requested if detail else '-' }}
+              {% if item %}(per {{ item.unit }}){% endif %}
+            </div>
+          </div>
+        </div>
+
+        {# Requester notes — prominent, since they often carry the
+           justification/use-case a reviewer needs to make a decision. #}
+        <div class="callout" style="margin-top: 12px; background: #f8f9fa;">
+          <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em;">Requester Notes</div>
+          <div style="margin-top: 4px; white-space: pre-wrap;">
+            {{ detail.requester_notes if detail and detail.requester_notes else 'No notes provided.' }}
+          </div>
+        </div>
+
+        {# Cost — reviewers see this; the requester-facing order detail
+           page never renders it (see app/routes/work/supply/view.py). #}
+        <table style="margin-top: 12px;">
+          <tr>
+            <th>Unit Cost</th>
+            <td class="right num">
+              {{ format_currency(unit_cost_cents) if unit_cost_cents is not none else 'cost not on file' }}
+            </td>
+          </tr>
+          <tr>
+            <th>Line Total</th>
+            <td class="right num">
+              <strong>
+                {{ format_currency(line_total_cents) if line_total_cents is not none else 'cost not on file' }}
+              </strong>
+            </td>
+          </tr>
+        </table>
+
+        {% if detail and detail.routed_approval_group %}
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #eee;">
+            <div class="muted small">
+              Routed to: <strong>{{ detail.routed_approval_group.name }}</strong> (reviewer group)
+            </div>
+          </div>
+        {% endif %}
+      </section>
+
+      {# Line History — create + review activity #}
+      {% if audit_events %}
+        <section class="card">
+          <h3 style="margin:0 0 12px 0;">Line History</h3>
+          {% for event in audit_events %}
+            <div class="comment" style="font-size: 13px;">
+              <div class="muted small">
+                {{ event.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
+                {{ event.created_by_user_id|user_display }}
+              </div>
+              <div style="margin-top: 4px;">
+                {% if event.event_type == 'LINE_CREATED' %}
+                  <span class="pill pill-approved">LINE ADDED</span>
+                  <span style="margin-left: 6px;">{{ event.new_value }}</span>
+                {% elif event.event_type == 'REVIEW_DECISION' %}
+                  {% if event.new_value == 'APPROVED' %}
+                    <span class="pill pill-approved">APPROVED</span>
+                  {% elif event.new_value == 'REJECTED' %}
+                    <span class="pill tag-kicked">REJECTED</span>
+                  {% elif event.new_value == 'NEEDS_INFO' %}
+                    <span class="pill pill-needs">NEEDS INFO</span>
+                  {% elif event.new_value == 'NEEDS_ADJUSTMENT' %}
+                    <span class="pill pill-needs">NEEDS ADJUSTMENT</span>
+                  {% elif event.new_value == 'PENDING' %}
+                    <span class="pill">RESET TO PENDING</span>
+                  {% else %}
+                    <span class="pill">REVIEW: {{ event.new_value }}</span>
+                  {% endif %}
+                {% elif event.event_type == 'REQUESTER_RESPONSE' %}
+                  <span class="pill" style="background: #d1fae5; color: #065f46;">RESPONDED</span>
+                {% else %}
+                  <strong>{{ event.event_type }}</strong>
+                  {% if event.new_value %}
+                    <span class="muted">{{ event.new_value }}</span>
+                  {% endif %}
+                {% endif %}
+              </div>
+              {% if event.note %}
+                <div class="muted mt-4">{{ event.note }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    </div>
+
+    {# Right Column: Review Actions + Comments #}
+    <div>
+
+      {# Status-specific notices #}
+      {% if status == "NEEDS_INFO" %}
+        <div class="callout callout-action mb-16">
+          <strong>Awaiting Requester Response</strong>
+          <div class="muted" style="margin-top:4px;">
+            This line is waiting for the requester to provide additional information.
+          </div>
+          {% if review and review.note %}
+            <div style="margin-top: 8px; padding: 8px; background: #fff; border-radius: 6px;">
+              <div class="muted small">Reviewer's question:</div>
+              {{ review.note }}
+            </div>
+          {% endif %}
+
+          {% if can_respond %}
+            <form method="post" action="{{ url_for('approvals.line_respond', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="margin-top: 12px;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div style="margin-bottom: 8px;">
+                <label for="response"><strong>Your Response:</strong></label>
+                <textarea name="response" id="response" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Provide the requested information..." required></textarea>
+              </div>
+              <button type="submit" class="btn btn-primary">Submit Response</button>
+            </form>
+          {% endif %}
+        </div>
+      {% elif status == "NEEDS_ADJUSTMENT" %}
+        <div class="callout callout-action mb-16">
+          <strong>Awaiting Requester Adjustment</strong>
+          <div class="muted" style="margin-top:4px;">
+            The reviewer has asked for a change to this line before it can be approved.
+          </div>
+          {% if review and review.note %}
+            <div style="margin-top: 8px; padding: 8px; background: #fff; border-radius: 6px;">
+              <div class="muted small">Reviewer's request:</div>
+              {{ review.note }}
+            </div>
+          {% endif %}
+
+          {% if can_respond %}
+            <div class="muted small" style="margin-top: 12px;">
+              Update the quantity or notes on the
+              <a href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">order page</a>,
+              then confirm the change below.
+            </div>
+            <form method="post" action="{{ url_for('approvals.line_respond', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="margin-top: 12px;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div style="margin-bottom: 8px;">
+                <label for="response"><strong>What changed:</strong></label>
+                <textarea name="response" id="response" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Describe the change you made..." required></textarea>
+              </div>
+              <button type="submit" class="btn btn-primary">Submit Response</button>
+            </form>
+          {% endif %}
+        </div>
+      {% elif status == "APPROVED" %}
+        <div class="callout callout-success mb-16">
+          <strong>Approved</strong>
+          {% if review and review.decided_at %}
+            <div class="muted" style="margin-top:4px;">
+              Decided {{ review.decided_at.strftime('%Y-%m-%d %H:%M') }}
+            </div>
+          {% endif %}
+          {% if review and review.note %}
+            <div style="margin-top: 8px;">{{ review.note }}</div>
+          {% endif %}
+        </div>
+      {% elif status == "REJECTED" %}
+        <div class="callout callout-danger mb-16">
+          <strong>Rejected</strong>
+          {% if review and review.decided_at %}
+            <div class="muted" style="margin-top:4px;">
+              Decided {{ review.decided_at.strftime('%Y-%m-%d %H:%M') }}
+            </div>
+          {% endif %}
+          {% if review and review.note %}
+            <div style="margin-top: 8px;">{{ review.note }}</div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {# Reviewer Decision Form — unlike TechOps, NEEDS_ADJUSTMENT stays
+         available: quantity disagreements are common enough on supply
+         orders that reviewers need a dedicated kickback path (rather than
+         the free-text-only NEEDS_INFO), and line_respond handles the
+         status transition generically regardless of which kickback
+         action triggered it. #}
+      {% if can_decide %}
+        <section class="card" style="margin-bottom: 16px; background: #f8f9fa;">
+          <h3 style="margin:0 0 12px 0;">Make Decision</h3>
+
+          <div style="margin-bottom: 12px;">
+            <label for="review_note" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
+              Note (required for reject, info, or adjustment requests)
+            </label>
+            <textarea name="note" id="review_note" rows="3" style="width: 100%;" placeholder="Enter your review notes..."></textarea>
+          </div>
+
+          <div class="btn-row">
+            <form method="post" action="{{ url_for('approvals.line_approve', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="note" class="note-field" />
+              <button type="submit" class="btn btn-primary" data-supply-action="Approve this line?">
+                Approve
+              </button>
+            </form>
+
+            <form method="post" action="{{ url_for('approvals.line_reject', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="note" class="note-field" />
+              <button type="submit" class="btn" style="border-color: #dc3545; color: #dc3545;" data-supply-action="Reject this line?" data-require-note>
+                Reject
+              </button>
+            </form>
+
+            <form method="post" action="{{ url_for('approvals.line_needs_info', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="note" class="note-field" />
+              <button type="submit" class="btn" data-supply-action="Request more info?" data-require-note>
+                Need Info
+              </button>
+            </form>
+
+            <form method="post" action="{{ url_for('approvals.line_needs_adjustment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="note" class="note-field" />
+              <button type="submit" class="btn" data-supply-action="Request an adjustment to this line?" data-require-note>
+                Need Adjustment
+              </button>
+            </form>
+          </div>
+        </section>
+      {% elif can_review and not has_checkout and status == "PENDING" %}
+        <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
+          <strong>Checkout Required</strong>
+          <div class="muted" style="margin-top:4px;">
+            You must start a review session to make decisions on this request.
+          </div>
+          <div style="margin-top: 12px;">
+            <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='supply') }}" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="return_to" value="{{ request.full_path }}">
+              <button type="submit" class="btn btn-primary">Start Reviewing</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+
+      {# Comments #}
+      <section class="card">
+        <h3 style="margin:0 0 12px 0;">Comments</h3>
+
+        {% if comments %}
+          {% for comment in comments %}
+            <div class="comment">
+              <div class="muted small">
+                {{ comment.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
+                {{ comment.created_by_user_id|user_display }}
+                {% if comment.visibility == "ADMIN" %}
+                  <span class="pill" style="margin-left: 4px;">Admin Only</span>
+                {% endif %}
+              </div>
+              <div style="margin-top: 4px; white-space: pre-wrap;">{{ comment.body }}</div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="muted" style="text-align: center; padding: 16px;">
+            No comments yet.
+          </div>
+        {% endif %}
+
+        {% if can_review %}
+          <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;">
+            <form method="post" action="{{ url_for('approvals.line_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div style="margin-bottom: 8px;">
+                <label for="standalone_comment" style="font-size: 13px; font-weight: 600;">Add Comment:</label>
+                <textarea name="comment" id="standalone_comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Enter your comment..."></textarea>
+              </div>
+              {% if user_ctx.is_super_admin %}
+                <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
+                  <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
+                  Admin-only (not visible to requesters)
+                </label>
+              {% endif %}
+              <button type="submit" class="btn">Add Comment</button>
+            </form>
+          </div>
+        {% endif %}
+      </section>
+
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function() {
+  // Action confirmation + note copy. Same shape as the TechOps/BUDGET
+  // review templates' handlers but supply-scoped (adds the Needs
+  // Adjustment action alongside Approve/Reject/Need Info).
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-supply-action]');
+    if (!btn) return;
+
+    var message = btn.getAttribute('data-supply-action');
+    var requireNote = btn.hasAttribute('data-require-note');
+
+    var noteField = document.getElementById('review_note');
+    var note = noteField ? noteField.value.trim() : '';
+
+    if (requireNote && !note) {
+      alert('A note is required for this action.');
+      e.preventDefault();
+      return;
+    }
+
+    if (!confirm(message)) {
+      e.preventDefault();
+      return;
+    }
+
+    // Copy the note value into the form's hidden field.
+    var form = btn.closest('form');
+    var noteHidden = form.querySelector('.note-field');
+    if (noteHidden) noteHidden.value = note;
+  });
+})();
+</script>
+{% endblock %}

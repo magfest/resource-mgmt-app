@@ -78,6 +78,27 @@
     </div>
     {% endif %}
 
+    {# Supply Admin menu (SUPPLY worktype admins + super admins).
+       SUPPLY skips dispatch (uses_dispatch=False) like TechOps, but does
+       have an admin-final stage, so the finalize queue stands in for
+       Final Review. Mirrors Budget Admin's shape: workflow links, then
+       a divider, then catalog config, then a divider, then admin home. #}
+    {% if "SUPPLY" in nav_admin_work_types %}
+    <div class="top-nav-dropdown">
+      <button type="button" class="top-nav-link top-nav-toggle">Supply Admin <span class="top-nav-caret">&#9662;</span></button>
+      <div class="top-nav-menu">
+        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
+        <a href="{{ url_for('work.supply_admin_queue') }}">Supply Queue</a>
+        <a href="{{ url_for('work.supply_all_orders') }}">All Supply Orders</a>
+        <div class="top-nav-divider"></div>
+        <a href="{{ url_for('admin_config.supply_categories.list_supply_categories') }}">Supply Categories</a>
+        <a href="{{ url_for('admin_config.supply_items.list_supply_items') }}">Supply Items</a>
+        <div class="top-nav-divider"></div>
+        <a href="{{ url_for('work.supply_admin_home') }}">Supply Admin Home</a>
+      </div>
+    </div>
+    {% endif %}
+
     {# Admin menu (super admins only) #}
     {% if is_super_admin %}
     <div class="top-nav-dropdown">

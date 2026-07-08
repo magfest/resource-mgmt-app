@@ -45,11 +45,11 @@ def submit_work_item(work_item: "WorkItem", user_ctx: "UserContext") -> str:
     Caller is responsible for committing the session.
 
     Branches:
-    - uses_dispatch=True (BUDGET, SUPPLY, CONTRACT): status → AWAITING_DISPATCH;
+    - uses_dispatch=True (BUDGET, CONTRACT): status → AWAITING_DISPATCH;
       dispatch is a separate later step that creates the WorkLineReview rows.
-    - uses_dispatch=False (TECHOPS, AV): routes each line via the worktype's
-      strategy, snapshots the routed approval group onto each line's detail
-      row, creates WorkLineReview rows inline, status → SUBMITTED.
+    - uses_dispatch=False (SUPPLY, TECHOPS, AV): routes each line via the
+      worktype's strategy, snapshots the routed approval group onto each
+      line's detail row, creates WorkLineReview rows inline, status → SUBMITTED.
 
     Lines with no resolvable routing are left without reviews; the caller's
     validation is expected to have caught that case before this helper runs.
