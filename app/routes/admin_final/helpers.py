@@ -795,6 +795,90 @@ def change_line_expense_account(
     return True, None
 
 
+def admin_add_line(
+    work_item: WorkItem,
+    user_ctx: UserContext,
+    *,
+    expense_account: "ExpenseAccount",
+    spend_type: "SpendType",
+    approval_group: "ApprovalGroup",
+    quantity,
+    unit_price_cents: int,
+    confidence_level,
+    frequency,
+    priority,
+    warehouse_flag: bool,
+    description: str,
+    note: str,
+) -> Tuple[Optional[WorkLine], Optional[str]]:
+    """
+    Admin-only: add a new line to an in-review work item, fully routed
+    (snapshot + PENDING approval-group review) so finalize can never
+    auto-approve it without a reviewer having had the chance to see it.
+    Does not commit — caller commits.
+    """
+    require_budget_admin(user_ctx)
+
+    if work_item.status not in (WORK_ITEM_STATUS_SUBMITTED, WORK_ITEM_STATUS_NEEDS_INFO):
+        return None, "Lines can only be added while the request is under review."
+
+    if is_checked_out(work_item):
+        return None, (
+            "Cannot add a line: a reviewer has this request checked out. "
+            "Release the checkout first."
+        )
+
+    if not (note or "").strip():
+        return None, "A note explaining this addition is required."
+
+    from app.routes.work.helpers.formatting import get_next_line_number
+    line = WorkLine(
+        work_item_id=work_item.id,
+        line_number=get_next_line_number(work_item),
+        status=WORK_LINE_STATUS_PENDING,
+        current_review_stage=REVIEW_STAGE_APPROVAL_GROUP,
+        updated_by_user_id=user_ctx.user_id,
+    )
+    db.session.add(line)
+    db.session.flush()
+
+    detail = BudgetLineDetail(
+        work_line_id=line.id,
+        expense_account_id=expense_account.id,
+        spend_type_id=spend_type.id,
+        unit_price_cents=unit_price_cents,
+        quantity=quantity,
+        confidence_level_id=confidence_level.id,
+        frequency_id=frequency.id,
+        priority_id=priority.id,
+        warehouse_flag=warehouse_flag,
+        description=description,
+        routed_approval_group_id=approval_group.id,
+    )
+    db.session.add(detail)
+    db.session.flush()
+
+    db.session.add(WorkLineReview(
+        work_line_id=line.id,
+        stage=REVIEW_STAGE_APPROVAL_GROUP,
+        approval_group_id=approval_group.id,
+        status=REVIEW_STATUS_PENDING,
+        created_by_user_id=user_ctx.user_id,
+    ))
+
+    from app.routes.approvals.helpers import audit_line_created
+    audit_line_created(line, detail, user_ctx)
+
+    db.session.add(WorkLineComment(
+        work_line_id=line.id,
+        visibility=COMMENT_VISIBILITY_PUBLIC,
+        body=f"[ADMIN LINE ADDED] {note.strip()}",
+        created_by_user_id=user_ctx.user_id,
+    ))
+
+    return line, None
+
+
 # ============================================================
 # Dashboard Queues
 # ============================================================

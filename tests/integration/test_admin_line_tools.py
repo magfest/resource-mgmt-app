@@ -86,6 +86,17 @@ def _checkout(data):
     db.session.commit()
 
 
+def _make_line_refs():
+    """Reference rows required by BudgetLineDetail (conftest's create_all
+    skips Alembic data migrations, so tests seed these themselves)."""
+    cl = ConfidenceLevel(code="HIGH", name="High", is_active=True)
+    fq = FrequencyOption(code="ONE_TIME", name="One Time", is_active=True)
+    pr = PriorityLevel(code="MUST", name="Must Have", is_active=True)
+    db.session.add_all([cl, fq, pr])
+    db.session.commit()
+    return cl, fq, pr
+
+
 class TestChangeLineExpenseAccount:
     def test_change_resets_line_and_reroutes(self, app, client, seed_draft_work_item):
         from app.routes.admin_final.helpers import change_line_expense_account
@@ -144,4 +155,72 @@ class TestChangeLineExpenseAccount:
             new_group=group2, note="x", user_ctx=_admin_ctx(),
         )
         assert not ok
+        assert "under review" in err
+
+
+class TestAdminAddLine:
+    def test_adds_routed_reviewable_line(self, app, client, seed_draft_work_item):
+        from app.routes.admin_final.helpers import admin_add_line
+        data = seed_draft_work_item
+        _make_submitted(data)
+        cl, fq, pr = _make_line_refs()
+
+        line, err = admin_add_line(
+            work_item=data["work_item"], user_ctx=_admin_ctx(),
+            expense_account=data["expense_account"], spend_type=data["spend_type"],
+            approval_group=data["approval_group"],
+            quantity=2, unit_price_cents=12500,
+            confidence_level=cl, frequency=fq, priority=pr,
+            warehouse_flag=False, description="Forgotten major item",
+            note="Missed during original submission",
+        )
+        db.session.commit()
+
+        assert err is None
+        assert line.line_number == 2
+        assert line.status == WORK_LINE_STATUS_PENDING
+        assert line.current_review_stage == REVIEW_STAGE_APPROVAL_GROUP
+        assert line.budget_detail.routed_approval_group_id == data["approval_group"].id
+        review = WorkLineReview.query.filter_by(
+            work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP,
+        ).one()
+        assert review.status == REVIEW_STATUS_PENDING
+        assert review.approval_group_id == data["approval_group"].id
+        comment = WorkLineComment.query.filter_by(work_line_id=line.id).one()
+        assert "[ADMIN LINE ADDED]" in comment.body
+
+    def test_blocked_while_checked_out(self, app, client, seed_draft_work_item):
+        from app.routes.admin_final.helpers import admin_add_line
+        data = seed_draft_work_item
+        _make_submitted(data)
+        cl, fq, pr = _make_line_refs()
+        _checkout(data)
+
+        line, err = admin_add_line(
+            work_item=data["work_item"], user_ctx=_admin_ctx(),
+            expense_account=data["expense_account"], spend_type=data["spend_type"],
+            approval_group=data["approval_group"],
+            quantity=1, unit_price_cents=100,
+            confidence_level=cl, frequency=fq, priority=pr,
+            warehouse_flag=False, description="", note="x",
+        )
+        assert line is None
+        assert "checked out" in err
+
+    def test_blocked_when_not_under_review(self, app, client, seed_draft_work_item):
+        from app.routes.admin_final.helpers import admin_add_line
+        data = seed_draft_work_item
+        data["work_item"].status = WORK_ITEM_STATUS_FINALIZED
+        db.session.commit()
+        cl, fq, pr = _make_line_refs()
+
+        line, err = admin_add_line(
+            work_item=data["work_item"], user_ctx=_admin_ctx(),
+            expense_account=data["expense_account"], spend_type=data["spend_type"],
+            approval_group=data["approval_group"],
+            quantity=1, unit_price_cents=100,
+            confidence_level=cl, frequency=fq, priority=pr,
+            warehouse_flag=False, description="", note="x",
+        )
+        assert line is None
         assert "under review" in err
