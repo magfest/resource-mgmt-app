@@ -294,3 +294,62 @@ class TestChangeAccountRoutes:
             },
         )
         assert resp.status_code == 403
+
+
+class TestAdminAddLineRoutes:
+    def test_get_form_renders_for_admin(self, app, client, seed_draft_work_item):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _make_line_refs()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(app, "admin_final.line_add", data))
+        assert resp.status_code == 200
+        assert b"Add Line (Admin)" in resp.data
+
+    def test_post_creates_routed_line(self, app, client, seed_draft_work_item, monkeypatch):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        cl, fq, pr = _make_line_refs()
+        _login(client, "test:admin")
+        monkeypatch.setattr(
+            "app.services.notifications.notify_work_item_dispatched",
+            lambda work_item, group_ids: 0,
+        )
+
+        resp = client.post(
+            _url(app, "admin_final.line_add_submit", data),
+            data={
+                "expense_account_id": str(acct2.id),
+                "approval_group_id": str(group2.id),
+                "quantity": "3",
+                "unit_price": "45.50",
+                "confidence_level_id": str(cl.id),
+                "frequency_id": str(fq.id),
+                "priority_id": str(pr.id),
+                "description": "Forgotten major item",
+                "note": "Missed during original submission",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        db.session.refresh(data["work_item"])
+        lines = sorted(data["work_item"].lines, key=lambda l: l.line_number)
+        assert len(lines) == 2
+        new_line = lines[-1]
+        assert new_line.budget_detail.unit_price_cents == 4550
+        assert new_line.budget_detail.routed_approval_group_id == group2.id
+        review = WorkLineReview.query.filter_by(
+            work_line_id=new_line.id, stage=REVIEW_STAGE_APPROVAL_GROUP,
+        ).one()
+        assert review.status == REVIEW_STATUS_PENDING
+
+    def test_post_rejected_for_non_admin(self, app, client, seed_draft_work_item):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _make_line_refs()
+        _login(client, "test:reviewer")
+
+        resp = client.post(_url(app, "admin_final.line_add_submit", data), data={})
+        assert resp.status_code == 403

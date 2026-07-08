@@ -204,3 +204,154 @@ def line_change_account_submit(event: str, dept: str, public_id: str, line_num: 
         "admin_final.line_review",
         event=event, dept=dept, public_id=public_id, line_num=line_num,
     ))
+
+
+# ============================================================
+# Admin Add Line
+# ============================================================
+
+def _parse_line_numbers(form):
+    """
+    Validate quantity / unit_price / confidence / frequency / priority /
+    warehouse / description. Mirrors app/routes/work/lines.py:237-294.
+    Returns (values_dict, errors).
+    """
+    errors = []
+    values = {}
+
+    quantity = Decimal("1")
+    quantity_str = (form.get("quantity") or "1").strip()
+    if quantity_str:
+        try:
+            quantity = Decimal(quantity_str)
+            if quantity <= 0:
+                errors.append("Quantity must be greater than 0.")
+        except InvalidOperation:
+            errors.append("Invalid quantity value.")
+    values["quantity"] = quantity
+
+    unit_price_cents = 0
+    unit_price_str = (form.get("unit_price") or "0").strip()
+    if unit_price_str:
+        try:
+            unit_price_dollars = Decimal(unit_price_str)
+            if unit_price_dollars < 0:
+                errors.append("Unit price cannot be negative.")
+            else:
+                unit_price_cents = int(unit_price_dollars * 100)
+        except InvalidOperation:
+            errors.append("Invalid unit price value.")
+    values["unit_price_cents"] = unit_price_cents
+
+    for field, model, label in (
+        ("confidence_level_id", ConfidenceLevel, "Confidence level"),
+        ("frequency_id", FrequencyOption, "Frequency"),
+        ("priority_id", PriorityLevel, "Priority"),
+    ):
+        obj = None
+        id_str = (form.get(field) or "").strip()
+        if not id_str:
+            errors.append(f"{label} is required.")
+        else:
+            try:
+                obj = model.query.get(int(id_str))
+            except ValueError:
+                obj = None
+            if not obj or not obj.is_active:
+                errors.append(f"Invalid {label.lower()}.")
+                obj = None
+        values[field.replace("_id", "")] = obj
+
+    values["warehouse_flag"] = form.get("warehouse_flag") == "on"
+
+    from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH
+    description_raw = (form.get("description") or "").replace("\r\n", "\n").replace("\r", "\n")
+    if len(description_raw) > MAX_FREEFORM_TEXT_LENGTH:
+        errors.append(f"Line description is too long (max {MAX_FREEFORM_TEXT_LENGTH:,} characters).")
+    values["description"] = description_raw.strip()
+
+    return values, errors
+
+
+def _get_work_item_for_add(event, dept, public_id, work_type_slug):
+    from app.routes.work.helpers import get_portfolio_context, require_budget_work_type
+    from app.models import WorkItem
+    ctx = get_portfolio_context(event, dept, work_type_slug)
+    require_budget_work_type(ctx)
+    work_item = WorkItem.query.filter_by(
+        public_id=public_id, portfolio_id=ctx.portfolio.id, is_archived=False,
+    ).first()
+    if not work_item:
+        abort(404, f"Work item not found: {public_id}")
+    return work_item, ctx
+
+
+@admin_final_bp.get("/<event>/<dept>/<work_type_slug>/item/<public_id>/add-line")
+@admin_final_bp.get("/<event>/<dept>/budget/item/<public_id>/add-line")
+def line_add(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
+    """Form: admin adds a new line to an in-review request."""
+    user_ctx = get_user_ctx()
+    require_budget_admin(user_ctx)
+    work_item, ctx = _get_work_item_for_add(event, dept, public_id, work_type_slug)
+
+    expense_accounts = _get_admin_expense_accounts(ctx.event_cycle.id)
+    from app.routes.work.lines import build_spend_types_by_account
+    return render_template(
+        "admin_final/line_add.html",
+        ctx=ctx,
+        work_item=work_item,
+        expense_accounts=expense_accounts,
+        spend_types_by_account=build_spend_types_by_account(expense_accounts),
+        approval_groups=_get_budget_approval_groups(ctx.work_type.id),
+        confidence_levels=get_confidence_levels(),
+        frequency_options=get_frequency_options(),
+        priority_levels=get_priority_levels(),
+    )
+
+
+@admin_final_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/add-line")
+@admin_final_bp.post("/<event>/<dept>/budget/item/<public_id>/add-line")
+def line_add_submit(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
+    user_ctx = get_user_ctx()
+    require_budget_admin(user_ctx)
+    work_item, ctx = _get_work_item_for_add(event, dept, public_id, work_type_slug)
+
+    account, spend_type, group, errors = _validate_account_selection(ctx, request.form)
+    values, value_errors = _parse_line_numbers(request.form)
+    note, note_errors = _parse_note(request.form)
+    errors.extend(value_errors)
+    errors.extend(note_errors)
+
+    line = None
+    if not errors:
+        line, error = admin_add_line(
+            work_item=work_item, user_ctx=user_ctx,
+            expense_account=account, spend_type=spend_type, approval_group=group,
+            quantity=values["quantity"], unit_price_cents=values["unit_price_cents"],
+            confidence_level=values["confidence_level"], frequency=values["frequency"],
+            priority=values["priority"], warehouse_flag=values["warehouse_flag"],
+            description=values["description"], note=note,
+        )
+        if not line:
+            errors.append(error)
+
+    if errors:
+        db.session.rollback()
+        for e in errors:
+            flash(e, "error")
+        return redirect(url_for(
+            "admin_final.line_add",
+            event=event, dept=dept, public_id=public_id,
+        ))
+
+    db.session.commit()
+    _notify_group_nonblocking(work_item, group.id)
+
+    flash(
+        f"Line {line.line_number} added and routed to {group.name} for review.",
+        "success",
+    )
+    return redirect(url_for(
+        "work.work_item_detail",
+        event=event, dept=dept, public_id=public_id,
+    ))

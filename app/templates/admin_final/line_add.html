@@ -1,0 +1,169 @@
+{# templates/admin_final/line_add.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Add Line (Admin) - {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+  <h1 style="margin:0;">Add Line (Admin)</h1>
+  <div class="muted" style="margin-top:4px;">
+    <a href="{{ url_for('work.work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+      {{ work_item.public_id }}
+    </a>
+    &middot; {{ ctx.department.name }} &middot; {{ ctx.event_cycle.name }}
+  </div>
+
+  <section class="card" style="max-width: 720px; margin-top: 16px;">
+    <div style="background:#fef3c7; border:1px solid #f59e0b; border-radius:6px; padding:12px; margin-bottom:16px;">
+      <strong>Heads up:</strong> this adds a new line to a request that is already under review.
+      The line starts as PENDING and is routed to the review group selected below.
+      The requester can see the note you enter.
+    </div>
+
+    <form method="post" action="{{ url_for('admin_final.line_add_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+
+      <div class="mb-16">
+        <label for="expense_account_id"><strong>Expense Account</strong> <span style="color: red;">*</span></label>
+        <select name="expense_account_id" id="expense_account_id" required class="mt-4">
+          <option value="">(Select expense account)</option>
+          {% for acc in expense_accounts %}
+            <option value="{{ acc.id }}" data-approval-group-id="{{ acc.approval_group_id or '' }}">
+              {{ acc.name }}
+            </option>
+          {% endfor %}
+        </select>
+        <div class="muted small mt-4">All active accounts are listed (admin view — department visibility does not apply).</div>
+      </div>
+
+      <div class="mb-16" id="spend_type_container">
+        <label for="spend_type_id"><strong>Spend Type</strong> <span style="color: red;">*</span></label>
+        <select name="spend_type_id" id="spend_type_id" class="mt-4">
+          <option value="">(Select spend type)</option>
+        </select>
+        <div class="muted small mt-4" id="spend_type_hint"></div>
+      </div>
+
+      <div class="mb-16" style="display:flex; gap:16px;">
+        <div style="flex:1;">
+          <label for="quantity"><strong>Quantity</strong> <span style="color: red;">*</span></label>
+          <input type="number" step="any" min="0" name="quantity" id="quantity" value="1" required class="mt-4">
+        </div>
+        <div style="flex:1;">
+          <label for="unit_price"><strong>Unit Price ($)</strong> <span style="color: red;">*</span></label>
+          <input type="number" step="0.01" min="0" name="unit_price" id="unit_price" required class="mt-4">
+        </div>
+      </div>
+
+      <div class="mb-16" style="display:flex; gap:16px;">
+        <div style="flex:1;">
+          <label for="confidence_level_id"><strong>Confidence</strong> <span style="color: red;">*</span></label>
+          <select name="confidence_level_id" id="confidence_level_id" required class="mt-4">
+            <option value="">(Select)</option>
+            {% for level in confidence_levels %}
+              <option value="{{ level.id }}">{{ level.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label for="frequency_id"><strong>Frequency</strong> <span style="color: red;">*</span></label>
+          <select name="frequency_id" id="frequency_id" required class="mt-4">
+            <option value="">(Select)</option>
+            {% for freq in frequency_options %}
+              <option value="{{ freq.id }}">{{ freq.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label for="priority_id"><strong>Priority</strong> <span style="color: red;">*</span></label>
+          <select name="priority_id" id="priority_id" required class="mt-4">
+            <option value="">(Select)</option>
+            {% for pri in priority_levels %}
+              <option value="{{ pri.id }}">{{ pri.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-16">
+        <label>
+          <input type="checkbox" name="warehouse_flag"> Warehouse item
+        </label>
+      </div>
+
+      <div class="mb-16">
+        <label for="description"><strong>Description</strong></label>
+        <textarea name="description" id="description" rows="3" class="mt-4"></textarea>
+      </div>
+
+      <div class="mb-16">
+        <label for="approval_group_id"><strong>Route To Review Group</strong> <span style="color: red;">*</span></label>
+        <select name="approval_group_id" id="approval_group_id" required class="mt-4">
+          <option value="">(Select review group)</option>
+          {% for group in approval_groups %}
+            <option value="{{ group.id }}">{{ group.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="muted small mt-4">Defaults to the account's usual group when one is configured &mdash; confirm or override.</div>
+      </div>
+
+      <div class="mb-16">
+        <label for="note"><strong>Note</strong> <span style="color: red;">*</span></label>
+        <textarea name="note" id="note" rows="3" required class="mt-4"
+                  placeholder="Why is this line being added by an admin? Visible to the requester and reviewers."></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">Add Line &amp; Route For Review</button>
+        <a class="btn" href="{{ url_for('work.work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">Cancel</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const spendTypesByAccount = {{ spend_types_by_account | tojson | safe }};
+
+  const accountSelect = document.getElementById('expense_account_id');
+  const spendTypeSelect = document.getElementById('spend_type_id');
+  const spendTypeContainer = document.getElementById('spend_type_container');
+  const spendTypeHint = document.getElementById('spend_type_hint');
+  const groupSelect = document.getElementById('approval_group_id');
+
+  function refreshSpendTypes() {
+    const info = spendTypesByAccount[accountSelect.value];
+    spendTypeSelect.innerHTML = '<option value="">(Select spend type)</option>';
+    if (!info) {
+      spendTypeContainer.style.display = '';
+      spendTypeHint.textContent = '';
+      return;
+    }
+    if (info.mode === 'SINGLE_LOCKED') {
+      spendTypeContainer.style.display = 'none';
+      spendTypeSelect.removeAttribute('required');
+      spendTypeHint.textContent = 'Spend type is locked by this account.';
+      return;
+    }
+    spendTypeContainer.style.display = '';
+    spendTypeSelect.setAttribute('required', 'required');
+    for (const t of info.types) {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      spendTypeSelect.appendChild(opt);
+    }
+  }
+
+  function defaultGroupFromAccount() {
+    const opt = accountSelect.options[accountSelect.selectedIndex];
+    const gid = opt ? opt.getAttribute('data-approval-group-id') : '';
+    if (gid) groupSelect.value = gid;
+  }
+
+  accountSelect.addEventListener('change', function () {
+    refreshSpendTypes();
+    defaultGroupFromAccount();
+  });
+
+  refreshSpendTypes();
+</script>
+{% endblock %}
