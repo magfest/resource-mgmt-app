@@ -90,6 +90,16 @@
               {% if not item.is_expendable %}
                 <span class="pill pill-info">Must be returned</span>
               {% endif %}
+              {% set cart_entry = in_cart.get(item.id) %}
+              {% if cart_entry %}
+                <span class="pill">
+                  {%- if cart_entry.lines == 1 -%}
+                    In order ×{{ cart_entry.qty }}
+                  {%- else -%}
+                    In order: {{ cart_entry.lines }} lines · qty {{ cart_entry.qty }}
+                  {%- endif -%}
+                </span>
+              {% endif %}
             </div>
             {% if can_add %}
               <form method="post" action="{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="margin-top: 8px;">
@@ -141,6 +151,16 @@
                   {% endif %}
                   {% if not item.is_expendable %}
                     <span class="pill pill-info">Must be returned</span>
+                  {% endif %}
+                  {% set cart_entry = in_cart.get(item.id) %}
+                  {% if cart_entry %}
+                    <span class="pill">
+                      {%- if cart_entry.lines == 1 -%}
+                        In order ×{{ cart_entry.qty }}
+                      {%- else -%}
+                        In order: {{ cart_entry.lines }} lines · qty {{ cart_entry.qty }}
+                      {%- endif -%}
+                    </span>
                   {% endif %}
                 </div>
                 {% if item.notes %}

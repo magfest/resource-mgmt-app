@@ -250,7 +250,7 @@ class TestSupplyOrderDetail(object):
         self, app, client, seed_workflow_data
     ):
         """A DRAFT order with can_edit renders per-row Save/Remove forms
-        and a delivery-details form (Task 10 template widgets)."""
+        and a pickup-details form (Task 10 template widgets)."""
         wt = _seed_supply(seed_workflow_data)
         cycle = seed_workflow_data["cycle"]
         dept = seed_workflow_data["department"]
@@ -266,13 +266,13 @@ class TestSupplyOrderDetail(object):
         assert response.status_code == 200
         assert b"Save" in response.data
         assert b"Remove" in response.data
-        assert b'type="date" name="needed_by_date"' in response.data
-        assert b"Save delivery details" in response.data
+        assert b'<select name="pickup_time">' in response.data
+        assert b"Save pickup details" in response.data
 
     def test_submitted_order_detail_renders_read_only(
         self, app, client, seed_workflow_data
     ):
-        """A non-DRAFT order renders the cart/delivery details read-only —
+        """A non-DRAFT order renders the cart/pickup details read-only —
         no edit widgets."""
         wt = _seed_supply(seed_workflow_data)
         cycle = seed_workflow_data["cycle"]
@@ -289,8 +289,8 @@ class TestSupplyOrderDetail(object):
         )
 
         assert response.status_code == 200
-        assert b"Save delivery details" not in response.data
-        assert b'type="date" name="needed_by_date"' not in response.data
+        assert b"Save pickup details" not in response.data
+        assert b'<select name="pickup_time">' not in response.data
 
     def test_kicked_back_line_reopens_edit_form_on_submitted_order(
         self, app, client, seed_workflow_data
@@ -385,6 +385,84 @@ def _seed_catalog():
 class TestSupplyCatalog:
     """GET/POST /<event>/<dept>/supply/order/<public_id>/catalog and
     .../lines/add — browsing the item catalog and adding to the cart."""
+
+    def test_catalog_shows_in_cart_badge_single_line(
+        self, app, client, seed_workflow_data
+    ):
+        """An item already in the cart shows 'In order ×<qty>' on its row."""
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=12, notes="to power things")
+
+        _login(client, "test:admin")
+        response = client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        )
+
+        assert response.status_code == 200
+        assert "In order ×12".encode("utf-8") in response.data
+
+    def test_catalog_shows_lines_and_qty_for_multiple_lines(
+        self, app, client, seed_workflow_data
+    ):
+        """Duplicate adds are separate lines; the badge sums them."""
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=1, notes="tech booth", line_number=1)
+        _add_line(work_item, plain_item, quantity=12, notes="registration", line_number=2)
+
+        _login(client, "test:admin")
+        response = client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        )
+
+        assert response.status_code == 200
+        assert b"2 lines" in response.data
+        assert b"qty 13" in response.data
+
+    def test_catalog_no_badge_when_item_not_in_cart(
+        self, app, client, seed_workflow_data
+    ):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        _seed_catalog()
+
+        _login(client, "test:admin")
+        response = client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        )
+
+        assert response.status_code == 200
+        assert b"In order" not in response.data
+
+    def test_catalog_badge_renders_in_both_layouts_for_popular_item(
+        self, app, client, seed_workflow_data
+    ):
+        """A popular item renders in the popular-cards strip AND its dense
+        category row; the (duplicated) badge block must render in both, so
+        an edit to only one copy is caught."""
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, popular_item, quantity=5, notes="for panels")
+
+        _login(client, "test:admin")
+        response = client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        )
+
+        assert response.status_code == 200
+        assert response.data.count("In order ×5".encode("utf-8")) == 2
 
     def test_catalog_renders_item_category_and_popular(
         self, app, client, seed_workflow_data
@@ -661,7 +739,7 @@ class TestSupplyLineDelete(object):
 class TestSupplyOrderDetailsSave(object):
     """POST /<event>/<dept>/supply/order/<public_id>/details"""
 
-    def test_details_save_persists_needed_by_and_location(self, app, client, seed_workflow_data):
+    def test_details_save_persists_pickup_time(self, app, client, seed_workflow_data):
         wt = _seed_supply(seed_workflow_data)
         cycle = seed_workflow_data["cycle"]
         dept = seed_workflow_data["department"]
@@ -671,16 +749,31 @@ class TestSupplyOrderDetailsSave(object):
         response = client.post(
             f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/details",
             data={
-                "needed_by_date": "2027-01-10",
-                "delivery_location": "Warehouse dock B",
+                "pickup_time": "Tuesday Evening (after 6 PM)",
                 "additional_notes": "",
             },
         )
 
         assert response.status_code == 302
         order_detail = SupplyOrderDetail.query.filter_by(work_item_id=work_item.id).first()
-        assert order_detail.needed_by_date.isoformat() == "2027-01-10"
-        assert order_detail.delivery_location == "Warehouse dock B"
+        assert order_detail.pickup_time == "Tuesday Evening (after 6 PM)"
+
+    def test_details_save_rejects_unknown_pickup_time(self, app, client, seed_workflow_data):
+        """Values outside PICKUP_TIME_OPTIONS are a form-tampering guard."""
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+
+        _login(client, "test:admin")
+        response = client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/details",
+            data={"pickup_time": "Whenever I feel like it", "additional_notes": ""},
+        )
+
+        assert response.status_code == 302
+        order_detail = SupplyOrderDetail.query.filter_by(work_item_id=work_item.id).first()
+        assert order_detail.pickup_time is None
 
 
 class TestSupplyEndpointReferences:

@@ -1,6 +1,6 @@
 """
 Supply order creation — starting a new draft supply order (the cart) —
-plus cart-editing routes (line update/delete, delivery details save).
+plus cart-editing routes (line update/delete, pickup details save).
 
 Supply is a repeat-ordering work type: every order is PRIMARY and a
 department can place unlimited independent orders per event, so creation
@@ -8,8 +8,6 @@ is gated on require_portfolio_edit + can_edit rather than the engine's
 perms.can_create_primary (which locks after the first PRIMARY exists per
 portfolio — see the matching comment in portfolio.py).
 """
-from datetime import datetime
-
 from flask import abort, flash, redirect, request, url_for
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -32,6 +30,7 @@ from ..helpers import (
     require_portfolio_edit,
     require_work_item_view,
 )
+from .form_utils import PICKUP_TIME_OPTIONS
 
 
 def _load_order(event: str, dept: str, public_id: str):
@@ -39,7 +38,7 @@ def _load_order(event: str, dept: str, public_id: str):
 
     Mirrors catalog.py's _load_order gate idiom so 404/permission behavior
     stays identical across the cab; also eager-loads the order-level
-    delivery detail for the details-save route.
+    pickup detail for the details-save route.
     """
     ctx = get_portfolio_context(event, dept, "supply")
 
@@ -202,7 +201,7 @@ def supply_line_delete(event: str, dept: str, public_id: str, line_number: int):
 
 @work_bp.post("/<event>/<dept>/supply/order/<public_id>/details")
 def supply_order_details_save(event: str, dept: str, public_id: str):
-    """Save order-level delivery details (needed-by date, location, notes)."""
+    """Save order-level pickup details (pickup time, notes)."""
     work_item, ctx, perms = _load_order(event, dept, public_id)
     detail_url = url_for(
         "work.supply_order_detail", event=event, dept=dept, public_id=public_id,
@@ -211,16 +210,13 @@ def supply_order_details_save(event: str, dept: str, public_id: str):
     if not perms.can_edit:
         abort(403, "You do not have permission to edit this supply order.")
 
-    needed_by_str = (request.form.get("needed_by_date") or "").strip()
-    needed_by_date = None
-    if needed_by_str:
-        try:
-            needed_by_date = datetime.strptime(needed_by_str, "%Y-%m-%d").date()
-        except ValueError:
-            flash("Needed-by date must be a valid date (YYYY-MM-DD).", "error")
-            return redirect(detail_url)
+    # Empty is allowed while drafting; submit validation enforces a choice.
+    # Anything non-empty must be a known option (form tampering guard).
+    pickup_time = (request.form.get("pickup_time") or "").strip()
+    if pickup_time and pickup_time not in PICKUP_TIME_OPTIONS:
+        flash("Choose a pickup time from the list.", "error")
+        return redirect(detail_url)
 
-    delivery_location = (request.form.get("delivery_location") or "").strip()
     additional_notes = (
         request.form.get("additional_notes", "").replace("\r\n", "\n").strip()
     )
@@ -228,20 +224,17 @@ def supply_order_details_save(event: str, dept: str, public_id: str):
     user_ctx = get_user_ctx()
     order_detail = work_item.supply_order_detail
     if order_detail is None:
-        # Defensive: supply_order_new always creates one, but don't 500 if
-        # it's somehow missing.
         order_detail = SupplyOrderDetail(
             work_item_id=work_item.id,
             created_by_user_id=user_ctx.user_id,
         )
         db.session.add(order_detail)
 
-    order_detail.needed_by_date = needed_by_date
-    order_detail.delivery_location = delivery_location or None
+    order_detail.pickup_time = pickup_time or None
     order_detail.additional_notes = additional_notes or None
     order_detail.updated_by_user_id = user_ctx.user_id
 
     db.session.commit()
 
-    flash("Delivery details saved.", "success")
+    flash("Pickup details saved.", "success")
     return redirect(detail_url)

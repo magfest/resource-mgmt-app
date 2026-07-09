@@ -19,8 +19,8 @@
       <h1 style="margin:0;">Finalize {{ work_item.public_id }}</h1>
       <div class="muted" style="margin-top:4px;">
         {{ department.name }} &middot; {{ event_cycle.name }}
-        {% if order_detail and order_detail.needed_by_date %}
-          &middot; needed by {{ order_detail.needed_by_date.strftime('%Y-%m-%d') }}
+        {% if order_detail and order_detail.pickup_time %}
+          &middot; pickup: {{ order_detail.pickup_time }}
         {% endif %}
       </div>
     </div>
@@ -29,10 +29,10 @@
     </div>
   </div>
 
-  {# Order delivery context #}
+  {# Order pickup context #}
   <section class="card">
-    <div class="meta"><strong>Delivery location:</strong>
-      {{ order_detail.delivery_location if order_detail and order_detail.delivery_location else '-' }}
+    <div class="meta"><strong>Pickup time:</strong>
+      {{ order_detail.pickup_time if order_detail and order_detail.pickup_time else '-' }}
     </div>
     {% if order_detail and order_detail.additional_notes %}
       <div class="meta" style="margin-top: 8px;">

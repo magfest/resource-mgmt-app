@@ -104,11 +104,30 @@ def parse_catalog_upload(file_storage) -> list[dict]:
     return records
 
 
+# Blank spreadsheet cells can round-trip through pandas/str() as these
+# placeholder tokens; treat them as blank so they never render as
+# literal "None" text in the catalog.
+_BLANKISH_TOKENS = {"none", "nan", "null"}
+
+
 def _clean_str(value) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _clean_text(value) -> str | None:
+    """Free-text columns only: junk placeholder tokens count as blank.
+
+    Deliberately NOT applied by _parse_bool/_parse_cents/_parse_int —
+    a junk token in a boolean/numeric column must stay a loud import
+    problem, not silently coerce to the default/NULL.
+    """
+    text = _clean_str(value)
+    if text is not None and text.lower() in _BLANKISH_TOKENS:
+        return None
+    return text
 
 
 def _parse_bool(value, default: bool) -> bool:
@@ -163,10 +182,10 @@ def _parse_row_fields(row: dict) -> tuple[dict, list[str]]:
         except ValueError as exc:
             problems.append(str(exc))
 
-    parsed["notes"] = _clean_str(row.get("notes"))
-    parsed["order_guidance"] = _clean_str(row.get("order_guidance"))
-    parsed["location_zone"] = _clean_str(row.get("location_zone"))
-    parsed["bin_location"] = _clean_str(row.get("bin_location"))
+    parsed["notes"] = _clean_text(row.get("notes"))
+    parsed["order_guidance"] = _clean_text(row.get("order_guidance"))
+    parsed["location_zone"] = _clean_text(row.get("location_zone"))
+    parsed["bin_location"] = _clean_text(row.get("bin_location"))
     return parsed, problems
 
 

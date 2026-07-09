@@ -109,6 +109,18 @@ def supply_catalog(event: str, dept: str, public_id: str):
     # (mirrors order.py's own can_edit gate for mutations on this cab).
     can_add = work_item.status == WORK_ITEM_STATUS_DRAFT and perms.can_edit
 
+    # Per-item "already in this order" summary for the badge. Duplicate
+    # adds are separate lines by design (see module docstring), so the
+    # badge shows both the line count and the summed quantity.
+    in_cart: dict[int, dict[str, int]] = {}
+    for line in work_item.lines:
+        d = line.supply_detail
+        if d is None:
+            continue
+        entry = in_cart.setdefault(d.item_id, {"lines": 0, "qty": 0})
+        entry["lines"] += 1
+        entry["qty"] += d.quantity_requested or 0
+
     q = request.args.get("q", "").strip()
     categories, items_by_category, popular_items = _catalog_items(q)
 
@@ -137,6 +149,7 @@ def supply_catalog(event: str, dept: str, public_id: str):
         cart_count=len(work_item.lines),
         catalog_url=catalog_url,
         item_detail_url=item_detail_url,
+        in_cart=in_cart,
     )
 
 
@@ -178,6 +191,7 @@ def supply_catalog_browse(event: str, dept: str):
         cart_count=0,
         catalog_url=catalog_url,
         item_detail_url=item_detail_url,
+        in_cart={},
     )
 
 

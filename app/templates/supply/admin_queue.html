@@ -1,5 +1,5 @@
 {# templates/supply/admin_queue.html #}
-{# FestOps finalize queue: SUBMITTED supply orders sorted soonest-needed
+{# FestOps finalize queue: SUBMITTED supply orders sorted oldest-submitted
    first, with per-order APPROVAL_GROUP review progress and a ready-to-
    finalize badge when every line has a terminal decision. Literal-URL
    admin route (app/routes/work/supply/admin.py) — no event/dept in path. #}
@@ -26,7 +26,7 @@
           <tr>
             <th style="width: 180px;">Order</th>
             <th>Department</th>
-            <th style="width: 130px;">Needed by</th>
+            <th style="width: 220px;">Pickup time</th>
             <th style="width: 110px;" class="right">Progress</th>
             <th style="width: 150px;">Status</th>
             <th style="width: 100px;"></th>
@@ -45,9 +45,9 @@
                 {{ row.department.name }}
                 <div class="muted small">{{ row.event_cycle.name }}</div>
               </td>
-              <td data-label="Needed by">
-                {% if row.needed_by %}
-                  {{ row.needed_by.strftime('%Y-%m-%d') }}
+              <td data-label="Pickup time">
+                {% if row.pickup_time %}
+                  {{ row.pickup_time }}
                 {% else %}
                   <span class="muted small">-</span>
                 {% endif %}

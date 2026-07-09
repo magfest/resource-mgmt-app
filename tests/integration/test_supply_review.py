@@ -14,8 +14,6 @@ when config.has_admin_final is True). Task 11's tests pinned the same flag
 combo at submit time; this pins it at the "last line decided" trigger point
 inside apply_review_decision.
 """
-from datetime import date
-
 from app import db
 from app.models import (
     ApprovalGroup,
@@ -39,6 +37,7 @@ from app.models import (
     ROUTING_STRATEGY_CATEGORY,
     WORK_ITEM_STATUS_SUBMITTED,
 )
+from app.routes.work.supply.form_utils import PICKUP_TIME_OPTIONS
 
 
 def _login(client, user_id):
@@ -155,10 +154,10 @@ def _add_line(work_item, item, quantity=1, notes=None, line_number=None):
     return line
 
 
-def _set_delivery_details(work_item, needed_by=date(2027, 1, 10), location="Warehouse dock B"):
+def _set_pickup_details(work_item, pickup_time=PICKUP_TIME_OPTIONS[0], notes=None):
     detail = work_item.supply_order_detail
-    detail.needed_by_date = needed_by
-    detail.delivery_location = location
+    detail.pickup_time = pickup_time
+    detail.additional_notes = notes
     db.session.commit()
 
 
@@ -187,7 +186,7 @@ def _setup_submitted_order(app, client, seed_workflow_data, quantity=2, notes="f
 
     work_item = _make_draft_order(wt, cycle, dept)
     line = _add_line(work_item, item, quantity=quantity, notes=notes)
-    _set_delivery_details(work_item)
+    _set_pickup_details(work_item)
 
     _seed_reviewer(seed_workflow_data, group)
 

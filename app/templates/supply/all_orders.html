@@ -89,7 +89,7 @@
             <th style="width: 110px;">Status</th>
             <th style="width: 70px;" class="right">Lines</th>
             <th>Item mix</th>
-            <th style="width: 110px;">Needed by</th>
+            <th style="width: 200px;">Pickup time</th>
             <th style="width: 140px;">Updated</th>
             <th style="width: 80px;"></th>
           </tr>
@@ -129,12 +129,8 @@
                   <span class="muted small">-</span>
                 {% endif %}
               </td>
-              <td data-label="Needed by" class="muted small">
-                {% if row.needed_by %}
-                  {{ row.needed_by.strftime('%Y-%m-%d') }}
-                {% else %}
-                  -
-                {% endif %}
+              <td data-label="Pickup time" class="muted small">
+                {{ row.pickup_time if row.pickup_time else '-' }}
               </td>
               <td data-label="Updated" class="muted small">
                 {% if wi.updated_at %}
