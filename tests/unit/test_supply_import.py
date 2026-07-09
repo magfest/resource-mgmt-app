@@ -269,3 +269,35 @@ def test_parse_rejects_missing_headers(app, import_seed):
 
     with pytest.raises(ImportParseError):
         parse_catalog_upload(upload)
+
+
+def test_clean_text_treats_junk_placeholder_strings_as_blank():
+    """Blank CSV cells round-tripped through pandas/str() can arrive as
+    'None'/'nan'; they must not be stored as literal guidance text
+    (they rendered as visible 'None' under the catalog qty inputs)."""
+    from app.routes.admin.supply_import_utils import _clean_text
+
+    assert _clean_text("None") is None
+    assert _clean_text(" nan ") is None
+    assert _clean_text("NULL") is None
+    assert _clean_text("none") is None
+
+
+def test_clean_text_keeps_real_values_containing_junk_tokens():
+    from app.routes.admin.supply_import_utils import _clean_text
+
+    assert _clean_text("Nonesuch brand tape") == "Nonesuch brand tape"
+    assert _clean_text("0") == "0"
+
+
+def test_parse_bool_and_int_stay_loud_for_junk_tokens():
+    """Junk tokens are blank ONLY for free-text columns; in boolean or
+    numeric columns they must still raise a loud import problem, not
+    silently coerce to the default/NULL."""
+    from app.routes.admin.supply_import_utils import _clean_str, _parse_bool, _parse_int
+
+    assert _clean_str("None") == "None"  # no junk handling here
+    with pytest.raises(ValueError):
+        _parse_bool("none", default=False)
+    with pytest.raises(ValueError):
+        _parse_int("nan")
