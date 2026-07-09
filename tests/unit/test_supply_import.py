@@ -294,10 +294,17 @@ def test_parse_bool_and_int_stay_loud_for_junk_tokens():
     """Junk tokens are blank ONLY for free-text columns; in boolean or
     numeric columns they must still raise a loud import problem, not
     silently coerce to the default/NULL."""
-    from app.routes.admin.supply_import_utils import _clean_str, _parse_bool, _parse_int
+    from app.routes.admin.supply_import_utils import (
+        _clean_str,
+        _parse_bool,
+        _parse_cents,
+        _parse_int,
+    )
 
     assert _clean_str("None") == "None"  # no junk handling here
     with pytest.raises(ValueError):
         _parse_bool("none", default=False)
     with pytest.raises(ValueError):
         _parse_int("nan")
+    with pytest.raises(ValueError):
+        _parse_cents("nan")

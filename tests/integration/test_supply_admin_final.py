@@ -399,6 +399,9 @@ class TestSupplyAllOrdersAdminView:
         resp = client.get("/admin/supply/orders/")
         assert resp.status_code == 200
         assert work_item.public_id.encode() in resp.data
+        # Rows are dicts: a renamed key would render as a silent "-" (Jinja
+        # Undefined is falsy), so pin the real pickup string.
+        assert PICKUP_TIME_OPTIONS[0].encode() in resp.data
 
     def test_supply_all_orders_forbidden_for_non_admin(self, app, client, seed_workflow_data):
         _seed_supply(seed_workflow_data)
@@ -406,6 +409,34 @@ class TestSupplyAllOrdersAdminView:
         _login(client, "test:reviewer")
         resp = client.get("/admin/supply/orders/")
         assert resp.status_code == 403
+
+
+class TestSupplyAdminQueueView:
+    """GET /admin/supply/queue/ — the FestOps finalize queue table."""
+
+    def test_queue_renders_pickup_time_for_submitted_order(
+        self, app, client, seed_workflow_data
+    ):
+        """Rows are dicts: a renamed key would render as a silent "-" (Jinja
+        Undefined is falsy), so pin the real pickup string in the response."""
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category, unit_cost_cents=500)
+
+        work_item = _make_draft_order(wt, cycle, dept)
+        _add_line(work_item, item, quantity=3, line_number=1)
+        _set_pickup_details(work_item)
+
+        _login(client, "test:admin")
+        _submit(client, cycle, dept, work_item)
+
+        resp = client.get("/admin/supply/queue/")
+        assert resp.status_code == 200
+        assert work_item.public_id.encode() in resp.data
+        assert PICKUP_TIME_OPTIONS[0].encode() in resp.data
 
 
 class TestBuildAdminQueuesIsBudgetScoped:
