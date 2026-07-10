@@ -14,7 +14,11 @@ from app.models import (
     COMMENT_VISIBILITY_PUBLIC,
     AUDIT_EVENT_VIEW,
 )
-from app.line_details import get_line_amount_cents, get_line_detail
+from app.line_details import (
+    get_line_amount_cents,
+    get_line_detail,
+    get_line_routing_approval_group,
+)
 from app.routes import get_user_ctx
 from .. import work_bp
 from ..helpers import (
@@ -91,10 +95,11 @@ def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str 
         for line in lines
         if line.budget_detail and line.budget_detail.routed_approval_group_id
     }
-    group_names = {}
+    groups_by_id = {}
     if routed_ids:
         for ag in ApprovalGroup.query.filter(ApprovalGroup.id.in_(routed_ids)).all():
-            group_names[ag.id] = ag.name
+            groups_by_id[ag.id] = ag
+    group_names = {gid: ag.name for gid, ag in groups_by_id.items()}
 
     group_subtotals = compute_group_subtotals(lines, group_names)
     distinct_group_count = sum(1 for g in group_subtotals if g.group_id is not None)
@@ -137,6 +142,7 @@ def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str 
         total_lines_count=total_lines_count,
         lines_filtered=lines_filtered,
         group_subtotals=group_subtotals,
+        groups_by_id=groups_by_id,
         show_group_breakdown=show_group_breakdown,
         visible_requested_cents=visible_requested_cents,
         visible_approved_cents=visible_approved_cents,
@@ -293,6 +299,10 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
             "detail": detail,
             "review": review,
             "total_cents": total_cents,
+            # Routed approval group for the per-line "Review Group" pill.
+            # Polymorphic accessor, so this is safe for any worktype whose
+            # quick_review template chooses to render it.
+            "group": get_line_routing_approval_group(line),
         })
 
     # Pick the per-worktype template (same pattern as line_review).

@@ -1,0 +1,41 @@
+{# templates/macros/group_pill.html #}
+{# Renders a small colored pill for an approval (review) group.
+
+   Used on the BUDGET line-listing screens (quick_review, work item detail) so
+   reviewers can tell which approval group each line routes to at a glance:
+   - Approvers in multiple groups can distinguish their groups' lines.
+   - Super admins (who see every line) can see each line's routed group.
+
+   Color is chosen deterministically from `group.id` so the same group is the
+   same color everywhere — lines can be clustered visually even in line order.
+   The `code` text label is always shown so color is never the only signal
+   (accessibility) and rare palette collisions stay unambiguous.
+
+   `group` is an ApprovalGroup or None. None (e.g. a line whose routing
+   snapshot has not been taken yet, pre-dispatch) renders a muted dash.
+
+   Usage:
+     {% from "macros/group_pill.html" import render_group_pill %}
+     {{ render_group_pill(line_group) }}
+#}
+
+{% macro render_group_pill(group, extra_style=None) -%}
+{%- if group -%}
+  {# bg/fg pairs — light pastel background, dark readable text. #}
+  {%- set palette = [
+      ("#dbeafe", "#1e40af"),
+      ("#dcfce7", "#166534"),
+      ("#fef3c7", "#92400e"),
+      ("#ffe4e6", "#9f1239"),
+      ("#ede9fe", "#5b21b6"),
+      ("#cffafe", "#155e75"),
+      ("#ffedd5", "#9a3412"),
+      ("#ecfccb", "#3f6212"),
+  ] -%}
+  {%- set colors = palette[group.id % (palette|length)] -%}
+  <span class="pill" title="{{ group.name }}"
+        style="background: {{ colors[0] }}; color: {{ colors[1] }};{% if extra_style %} {{ extra_style }}{% endif %}">{{ group.code }}</span>
+{%- else -%}
+  <span class="muted">&mdash;</span>
+{%- endif -%}
+{%- endmacro %}
