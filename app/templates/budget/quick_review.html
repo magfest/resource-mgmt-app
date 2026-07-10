@@ -1,6 +1,7 @@
 {# templates/budget/quick_review.html #}
 {% extends "layout/base.html" %}
 {% from "macros/status_pill.html" import render_status_pill %}
+{% from "macros/group_pill.html" import render_group_pill %}
 
 {% block title %}Quick Review - {{ work_item.public_id }}{% endblock %}
 
@@ -95,6 +96,7 @@
         <tr>
           <th style="width: 50px;">#</th>
           <th style="width: 180px;">Expense Account</th>
+          <th style="width: 110px;">Review Group</th>
           <th>Description</th>
           <th style="width: 100px;" class="right">Amount</th>
           <th style="width: 100px;">Status</th>
@@ -116,6 +118,9 @@
             </td>
             <td>
               <div style="font-size: 13px;">{{ detail.expense_account.name if detail and detail.expense_account else '-' }}</div>
+            </td>
+            <td>
+              {{ render_group_pill(item.group) }}
             </td>
             <td>
               <div style="font-size: 13px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ detail.description if detail else '' }}">
