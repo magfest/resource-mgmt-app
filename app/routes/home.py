@@ -25,7 +25,6 @@ from app.models import (
     WorkTypeConfig,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STATUS_PENDING,
-    WORK_ITEM_STATUS_AWAITING_DISPATCH,
 )
 from app.routes.work.helpers import (
     get_active_work_types,
@@ -344,53 +343,6 @@ def index():
         if wt.id in user_accessible_work_types or is_super_admin
     ]
     context["work_types_with_access"] = work_types_with_access
-
-    # Get stats for budget admins (super admin or worktype admin for budget)
-    if is_budget_admin_user:
-        # Count work items at or past submitted (in the review workflow)
-        in_review_statuses = [
-            "SUBMITTED",
-            "UNDER_REVIEW",
-            "NEEDS_INFO",
-            "FINALIZED",
-        ]
-        in_review_count = (
-            db.session.query(WorkItem)
-            .filter(WorkItem.status.in_(in_review_statuses))
-            .filter(WorkItem.is_archived == False)
-            .count()
-        )
-        context["submitted_count"] = in_review_count
-
-        # Count items awaiting dispatch
-        dispatch_queue_count = (
-            db.session.query(WorkItem)
-            .filter(WorkItem.status == WORK_ITEM_STATUS_AWAITING_DISPATCH)
-            .filter(WorkItem.is_archived == False)
-            .count()
-        )
-        context["dispatch_queue_count"] = dispatch_queue_count
-
-        # Count requests needing reviewer group work (distinct WorkItems with pending lines)
-        from sqlalchemy import func
-        requests_needing_review = (
-            db.session.query(func.count(func.distinct(WorkItem.id)))
-            .join(WorkLine, WorkLine.work_item_id == WorkItem.id)
-            .filter(WorkItem.status == "SUBMITTED")
-            .filter(WorkItem.is_archived == False)
-            .filter(WorkLine.status == "PENDING")
-            .scalar()
-        ) or 0
-        context["requests_needing_review"] = requests_needing_review
-
-        # Count finalized requests
-        finalized_count = (
-            db.session.query(WorkItem)
-            .filter(WorkItem.status == "FINALIZED")
-            .filter(WorkItem.is_archived == False)
-            .count()
-        )
-        context["finalized_count"] = finalized_count
 
     # Get stats for approvers
     if approval_groups:
