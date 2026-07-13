@@ -352,7 +352,7 @@ def create_app() -> Flask:
         _ip_404_counts[ip] = [t for t in hits if t > cutoff]
         if len(_ip_404_counts[ip]) >= _BLOCK_THRESHOLD:
             _ip_blocked_until[ip] = now + _BLOCK_DURATION
-            current_app.logger.warning(
+            app.logger.warning(
                 f"Blocked IP {ip} for {_BLOCK_DURATION}s after {_BLOCK_THRESHOLD} "
                 f"scanner hits in {_BLOCK_WINDOW}s"
             )
@@ -389,8 +389,9 @@ def create_app() -> Flask:
     # -----------------------------
     # Helpers (auth + scoping)
     # -----------------------------
-    # Demo / dev seeding helpers live in app/seeds/dev_seed.py and are
-    # imported directly by their callers (routes/dev.py, routes/home.py).
+    # Demo / dev seeding helpers live in app/seeds/demo_data.py and
+    # app/seeds/demo_users.py and are imported directly by their callers
+    # (routes/dev.py, app/cli.py).
 
     def ensure_bootstrap_admins():
         """Ensure essential admin accounts exist. Runs on every deployment."""
