@@ -223,7 +223,8 @@ def safe_redirect_url(url: str | None, fallback: str = "/") -> str:
     Validate a user-supplied redirect URL to prevent open redirect attacks.
 
     Only allows relative paths on the same host. Rejects external URLs,
-    javascript: URIs, data: URIs, and protocol-relative URLs.
+    javascript: URIs, data: URIs, protocol-relative URLs (including the
+    backslash and embedded tab/CR/LF variants browsers normalize away).
 
     Returns the URL if safe, otherwise returns the fallback.
     """
@@ -232,9 +233,15 @@ def safe_redirect_url(url: str | None, fallback: str = "/") -> str:
 
     url = url.strip()
 
-    # Only allow paths that start with / (relative to our host)
-    # Reject protocol-relative URLs (//evil.com), absolute URLs, and schemes
-    if not url.startswith("/") or url.startswith("//"):
+    # Reject embedded tab/CR/LF: browsers strip these during URL parsing
+    # (WHATWG), so "/\t/evil.com" would be read as protocol-relative.
+    if any(ch in url for ch in "\t\r\n"):
+        return fallback
+
+    # Only allow paths that start with / (relative to our host).
+    # Reject protocol-relative URLs (//evil.com), absolute URLs, schemes,
+    # and the backslash variant (/\evil.com — browsers normalize \ to /).
+    if not url.startswith("/") or url[1:2] in ("/", "\\"):
         return fallback
 
     return url

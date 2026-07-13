@@ -24,6 +24,7 @@ from .context import (
     PortfolioContext,
     WorkItemPerms,
     build_portfolio_perms,
+    is_worktype_admin,
 )
 
 
@@ -161,9 +162,14 @@ def checkin_work_item(work_item: WorkItem, user_ctx: UserContext, force: bool = 
     if not locked_item.checked_out_by_user_id:
         return False  # Nothing to release
 
-    # Check permission
+    # Check permission: the current holder may always release; admins may
+    # force-release. "Admin" is worktype-scoped — SUPER_ADMIN anywhere, or
+    # WORKTYPE_ADMIN for THIS item's work type (a TechOps admin can force-
+    # release TechOps items but not Budget items).
     is_current_holder = locked_item.checked_out_by_user_id == user_ctx.user_id
-    is_admin = user_ctx.is_super_admin
+    is_admin = user_ctx.is_super_admin or is_worktype_admin(
+        user_ctx, locked_item.portfolio.work_type_id
+    )
 
     if not is_current_holder and not (is_admin and force):
         return False
