@@ -39,3 +39,23 @@ def test_dept_with_only_techops_item_is_still_missing_budget(app, seed_workflow_
     codes = {r.department_code for r in rows}
     # dept2 has a TECHOPS item but no BUDGET item — it IS missing a budget.
     assert "TECHDEPT" in codes
+
+
+def test_dept_with_budget_item_is_not_flagged_missing(app, seed_workflow_data):
+    data = seed_workflow_data
+    # seed_workflow_data already made an empty BUDGET portfolio for TESTDEPT;
+    # give it an actual BUDGET work item so it should NOT be "missing".
+    db.session.add(WorkItem(
+        portfolio_id=data["portfolio"].id,
+        request_kind=REQUEST_KIND_PRIMARY,
+        status=WORK_ITEM_STATUS_DRAFT,
+        public_id="TST2026-TESTDEPT-BUD-1",
+        created_by_user_id=data["admin"].id,
+    ))
+    db.session.commit()
+
+    rows = get_departments_without_budgets(data["cycle"].id)
+    codes = {r.department_code for r in rows}
+    # TESTDEPT now has a BUDGET item — must be excluded from the missing list.
+    # (Guards against a regression where the subquery matches nothing.)
+    assert "TESTDEPT" not in codes

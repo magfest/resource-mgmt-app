@@ -324,6 +324,8 @@ def budget_admin_home():
         friendly_status=friendly_status,
         default_event=default_event,
         event_progress=event_progress,
+        selected_cycle=selected_cycle,
+        show_all_events=show_all_events,
     )
 
 
