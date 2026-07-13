@@ -232,9 +232,10 @@ def safe_redirect_url(url: str | None, fallback: str = "/") -> str:
 
     url = url.strip()
 
-    # Only allow paths that start with / (relative to our host)
-    # Reject protocol-relative URLs (//evil.com), absolute URLs, and schemes
-    if not url.startswith("/") or url.startswith("//"):
+    # Only allow paths that start with / (relative to our host).
+    # Reject protocol-relative URLs (//evil.com), absolute URLs, schemes,
+    # and the backslash variant (/\evil.com — browsers normalize \ to /).
+    if not url.startswith("/") or url[1:2] in ("/", "\\"):
         return fallback
 
     return url
