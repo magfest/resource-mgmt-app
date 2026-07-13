@@ -1100,3 +1100,55 @@ def get_budget_approval_groups() -> List[ApprovalGroup]:
         .order_by(ApprovalGroup.sort_order.asc(), ApprovalGroup.code.asc())
         .all()
     )
+
+
+def get_budget_admin_stats(selected_cycle, show_all_events: bool) -> dict:
+    """
+    Stat-tile counts for the budget admin home, scoped to the BUDGET work
+    type and (unless show_all_events) the selected event cycle.
+
+    Both scoping axes matter: multiple work types share the WorkItem/WorkLine
+    tables, and multiple event cycles run concurrently (~7 events/year).
+    """
+    from app.models import WorkType
+
+    budget_wt = WorkType.query.filter_by(code="BUDGET").first()
+
+    def _items():
+        q = (
+            WorkItem.query
+            .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
+            .filter(WorkPortfolio.work_type_id == (budget_wt.id if budget_wt else -1))
+            .filter(WorkItem.is_archived == False)  # noqa: E712
+        )
+        if not show_all_events and selected_cycle:
+            q = q.filter(WorkPortfolio.event_cycle_id == selected_cycle.id)
+        return q
+
+    def _lines():
+        q = (
+            WorkLine.query
+            .join(WorkItem, WorkLine.work_item_id == WorkItem.id)
+            .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
+            .filter(WorkPortfolio.work_type_id == (budget_wt.id if budget_wt else -1))
+            .filter(WorkItem.is_archived == False)  # noqa: E712
+        )
+        if not show_all_events and selected_cycle:
+            q = q.filter(WorkPortfolio.event_cycle_id == selected_cycle.id)
+        return q
+
+    return {
+        "submitted_items": _items().filter(
+            WorkItem.status == WORK_ITEM_STATUS_SUBMITTED).count(),
+        "finalized_items": _items().filter(
+            WorkItem.status == WORK_ITEM_STATUS_FINALIZED).count(),
+        "pending_lines": _lines().filter(
+            WorkLine.status == WORK_LINE_STATUS_PENDING).count(),
+        "kicked_back_lines": _lines().filter(
+            WorkLine.status.in_([WORK_LINE_STATUS_NEEDS_INFO,
+                                 WORK_LINE_STATUS_NEEDS_ADJUSTMENT])).count(),
+        "approved_lines": _lines().filter(
+            WorkLine.status == WORK_LINE_STATUS_APPROVED).count(),
+        "rejected_lines": _lines().filter(
+            WorkLine.status == WORK_LINE_STATUS_REJECTED).count(),
+    }

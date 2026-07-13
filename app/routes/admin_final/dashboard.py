@@ -17,11 +17,6 @@ from app.models import (
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
-    WORK_LINE_STATUS_PENDING,
-    WORK_LINE_STATUS_NEEDS_INFO,
-    WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
-    WORK_LINE_STATUS_APPROVED,
-    WORK_LINE_STATUS_REJECTED,
 )
 from app.routes import get_user_ctx
 from app.routes.work.helpers import format_currency, friendly_status, get_budget_work_type
@@ -35,6 +30,8 @@ from .helpers import (
     get_finalization_summary,
     finalize_work_item,
     unfinalize_work_item,
+    get_budget_admin_stats,
+    get_budget_approval_groups,
 )
 
 
@@ -249,50 +246,36 @@ def budget_admin_home():
     Budget admin landing page - accessible by Budget Worktype Admins + Super Admins.
     """
     from app.routes.work.helpers import get_enabled_department_ids_for_event
+    from app.routes.home import get_selected_event_cycle
+    from app.models import WorkType
 
     user_ctx = get_user_ctx()
     require_budget_admin(user_ctx)
 
-    # Gather summary statistics
-    stats = {
-        "submitted_items": WorkItem.query.filter_by(
-            status=WORK_ITEM_STATUS_SUBMITTED,
-            is_archived=False
-        ).count(),
-        "finalized_items": WorkItem.query.filter_by(
-            status=WORK_ITEM_STATUS_FINALIZED,
-            is_archived=False
-        ).count(),
-        "pending_lines": WorkLine.query.filter_by(
-            status=WORK_LINE_STATUS_PENDING
-        ).count(),
-        "kicked_back_lines": WorkLine.query.filter(
-            WorkLine.status.in_([WORK_LINE_STATUS_NEEDS_INFO, WORK_LINE_STATUS_NEEDS_ADJUSTMENT])
-        ).count(),
-        "approved_lines": WorkLine.query.filter_by(
-            status=WORK_LINE_STATUS_APPROVED
-        ).count(),
-        "rejected_lines": WorkLine.query.filter_by(
-            status=WORK_LINE_STATUS_REJECTED
-        ).count(),
-    }
+    budget_wt = WorkType.query.filter_by(code="BUDGET").first()
+    selected_cycle, show_all_events = get_selected_event_cycle()
 
-    # Get approval groups for quick links
-    approval_groups = ApprovalGroup.query.filter_by(is_active=True).order_by(
-        ApprovalGroup.sort_order.asc(),
-        ApprovalGroup.name.asc()
-    ).all()
+    # Stat tiles: BUDGET-only, scoped to the nav's selected event
+    # ("All events" keeps the cross-event totals).
+    stats = get_budget_admin_stats(selected_cycle, show_all_events)
+
+    # Get BUDGET approval groups for quick links (other worktypes' groups
+    # belong on their own admin pages).
+    approval_groups = get_budget_approval_groups()
 
     # Get filter options for department navigation
     event_cycles = get_active_event_cycles()
     departments = get_active_departments()
 
-    # Department progress for default event
-    default_event = EventCycle.query.filter_by(is_default=True, is_active=True).first()
-    if not default_event:
-        default_event = EventCycle.query.filter_by(is_active=True).order_by(
-            EventCycle.sort_order
-        ).first()
+    # Department progress panel follows the selected event; falls back to
+    # the default cycle when "All events" is selected.
+    default_event = selected_cycle
+    if default_event is None:
+        default_event = EventCycle.query.filter_by(is_default=True, is_active=True).first()
+        if not default_event:
+            default_event = EventCycle.query.filter_by(is_active=True).order_by(
+                EventCycle.sort_order
+            ).first()
 
     event_progress = None
     if default_event:
@@ -303,6 +286,7 @@ def budget_admin_home():
             db.session.query(db.func.count(db.distinct(WorkPortfolio.department_id)))
             .join(WorkItem, WorkItem.portfolio_id == WorkPortfolio.id)
             .filter(WorkPortfolio.event_cycle_id == default_event.id)
+            .filter(WorkPortfolio.work_type_id == (budget_wt.id if budget_wt else -1))
             .filter(WorkPortfolio.is_archived.is_(False))
             .filter(WorkItem.is_archived.is_(False))
             .filter(WorkPortfolio.department_id.in_(enabled_dept_ids))
@@ -313,6 +297,7 @@ def budget_admin_home():
             db.session.query(WorkItem.status, db.func.count(WorkItem.id))
             .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
             .filter(WorkPortfolio.event_cycle_id == default_event.id)
+            .filter(WorkPortfolio.work_type_id == (budget_wt.id if budget_wt else -1))
             .filter(WorkPortfolio.is_archived.is_(False))
             .filter(WorkItem.is_archived.is_(False))
             .filter(WorkPortfolio.department_id.in_(enabled_dept_ids))
