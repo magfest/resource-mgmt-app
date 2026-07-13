@@ -15,6 +15,7 @@ from app.models import (
     Department,
     Division,
     EventCycle,
+    WorkType,
 )
 from app.routes.work.helpers import get_enabled_department_ids_for_event
 from app.routes import get_user_ctx
@@ -47,11 +48,15 @@ def get_departments_without_budgets(event_cycle_id: int) -> List[MissingBudgetRo
     # Get enabled department IDs for this event
     enabled_dept_ids = get_enabled_department_ids_for_event(event_cycle_id)
 
-    # Subquery: departments that DO have a budget request
+    budget_wt = WorkType.query.filter_by(code="BUDGET").first()
+
+    # Subquery: departments that DO have a BUDGET request (other work types
+    # — TechOps, Supply — must not count as "has a budget").
     departments_with_budgets = (
         db.session.query(WorkPortfolio.department_id)
         .join(WorkItem, WorkItem.portfolio_id == WorkPortfolio.id)
         .filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+        .filter(WorkPortfolio.work_type_id == (budget_wt.id if budget_wt else -1))
         .filter(WorkItem.is_archived == False)
         .filter(WorkPortfolio.is_archived == False)
         .distinct()

@@ -98,7 +98,15 @@
   </section>
   {% endif %}
 
-  {# Stats Overview (all events) #}
+  {# Stats Overview — scoped to the selected event (or all events) #}
+  <div class="muted small" style="margin-bottom: 8px;">
+    Showing:
+    {% if show_all_events %}
+      all events
+    {% else %}
+      {{ selected_cycle.name if selected_cycle else 'no event selected' }}
+    {% endif %}
+  </div>
   <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
     <div class="card" style="text-align: center;">
       <div style="font-size: 32px; font-weight: 700; color: #0a66c2;">{{ stats.submitted_items }}</div>
