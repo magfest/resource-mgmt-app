@@ -278,13 +278,16 @@ def index():
             x["department"].name,
         ))
 
-        # Filter out departments not enabled for this event (super admins bypass this)
-        if not is_super_admin:
-            enabled_dept_ids = get_enabled_department_ids_for_event(default_cycle.id)
-            accessible_depts = [
-                d for d in accessible_depts
-                if d["department"].id in enabled_dept_ids
-            ]
+        # Filter out departments not enabled for this event — for everyone,
+        # super admins included. This list is personal navigation; enablement
+        # is managed from the event organization dashboard. Matches
+        # division_home (division.py), which has always filtered
+        # unconditionally.
+        enabled_dept_ids = get_enabled_department_ids_for_event(default_cycle.id)
+        accessible_depts = [
+            d for d in accessible_depts
+            if d["department"].id in enabled_dept_ids
+        ]
 
         # Batch-load all portfolios for this event cycle with work items and lines
         # This replaces N×M individual queries with 1 eager-loaded query
