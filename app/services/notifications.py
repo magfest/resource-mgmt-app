@@ -710,12 +710,12 @@ def send_submission_reminders(
                 ok = False
 
             # send_email() adds the NotificationLog row but does not commit
-            # (per its docstring contract: "Caller handles commit"). HTTP
-            # routes get an implicit commit at request-end; CLI commands do
-            # not, so without this each NotificationLog row would be discarded
-            # on process exit. Commit per-recipient (not end-of-run) so a
-            # mid-run crash still leaves a clear audit trail of which sends
-            # already went out.
+            # (per its docstring contract: "Caller handles commit"). There is
+            # NO implicit commit anywhere — Flask-SQLAlchemy rolls back at
+            # request teardown. HTTP routes commit explicitly after notify_*
+            # calls; CLI commands must too. Commit per-recipient (not
+            # end-of-run) so a mid-run crash still leaves a clear audit trail
+            # of which sends already went out.
             try:
                 db.session.commit()
             except Exception:

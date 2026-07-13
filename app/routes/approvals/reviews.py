@@ -42,8 +42,6 @@ from . import approvals_bp
 from .helpers import (
     is_reviewer_for_line,
     can_respond_to_work_item,
-    require_reviewer_for_line,
-    require_checkout_for_review,
     get_review_for_line,
     get_or_create_review,
     apply_review_decision,
