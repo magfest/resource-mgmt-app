@@ -8,6 +8,7 @@
 
    Status → pill class:
    - APPROVED          → pill-success    (vivid green, line-level)
+   - APPROVED_NEEDS_REVIEW → pill-warning (amber, line-level)
    - REJECTED          → pill-rejected   (vivid red,   line-level)
    - NEEDS_INFO        → pill-warning    (vivid yellow + dark text)
    - NEEDS_ADJUSTMENT  → pill-warning
@@ -33,6 +34,7 @@
 {%- set status_upper = (status or "DRAFT")|upper -%}
 {%- set pill_class =
     "pill-success" if status_upper == "APPROVED"
+    else "pill-warning" if status_upper == "APPROVED_NEEDS_REVIEW"
     else "pill-rejected" if status_upper == "REJECTED"
     else "pill-warning" if status_upper in ["UNDER_REVIEW", "NEEDS_INFO", "NEEDS_ADJUSTMENT", "PAUSED", "AWAITING_DISPATCH"]
     else "pill-approved" if status_upper == "FINALIZED"
