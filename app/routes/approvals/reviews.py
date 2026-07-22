@@ -151,7 +151,10 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
 
     # Get comments for this line (filter admin-only for non-admins)
     comments = line.comments
-    if not user_ctx.is_super_admin:
+    # Reviewers of this line are a trusted group and may see ADMIN notes.
+    # Requesters (and other non-reviewers) still cannot.
+    can_see_admin_notes = user_ctx.is_super_admin or can_review
+    if not can_see_admin_notes:
         comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
 
     # Get audit events for this line
@@ -297,7 +300,9 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
                 REVIEW_ACTION_RESET: "[RESET]",
             }
             # Determine comment visibility
-            visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+            visibility = get_comment_visibility(
+                request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+            )
             comment = WorkLineComment(
                 work_line_id=line.id,
                 visibility=visibility,
@@ -416,7 +421,9 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
         flash("Response submitted. The line is back in review.", "success")
 
         # Add comment with the response
-        visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+        visibility = get_comment_visibility(
+            request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+        )
         comment = WorkLineComment(
             work_line_id=line.id,
             visibility=visibility,
@@ -650,7 +657,9 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
         changes_text = ", ".join(changes) if changes else "No field changes"
         comment_body = f"[ADJUSTMENT] {changes_text}\n\n{response_text}"
 
-        visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+        visibility = get_comment_visibility(
+            request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+        )
         comment = WorkLineComment(
             work_line_id=line.id,
             visibility=visibility,
@@ -706,7 +715,9 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type
         return redirect(url_for("approvals.line_review", event=event, dept=dept,
                                 public_id=public_id, line_num=line_num, work_type_slug=work_type_slug))
 
-    visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+    visibility = get_comment_visibility(
+        request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+    )
     comment = WorkLineComment(
         work_line_id=line.id,
         visibility=visibility,

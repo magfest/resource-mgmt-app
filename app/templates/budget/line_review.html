@@ -631,7 +631,7 @@
                 <label for="standalone_comment" style="font-size: 13px; font-weight: 600;">Add Comment:</label>
                 <textarea name="comment" id="standalone_comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Enter your comment..."></textarea>
               </div>
-              {% if user_ctx.is_super_admin %}
+              {% if user_ctx.is_super_admin or can_review %}
                 <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
                   <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
                   Admin-only (not visible to requesters)
