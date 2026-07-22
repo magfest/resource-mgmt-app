@@ -12,6 +12,7 @@ from app.models import (
     WorkLine,
     WorkLineComment,
     REVIEW_ACTION_APPROVE,
+    REVIEW_ACTION_APPROVE_NEEDS_REVIEW,
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
@@ -209,6 +210,13 @@ def line_approve(event: str, dept: str, public_id: str, line_num: int, work_type
     return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_APPROVE)
 
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/approve-needs-review")
+@approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/approve-needs-review")
+def line_approve_needs_review(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
+    """Approve a line but flag it for admin final review."""
+    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_APPROVE_NEEDS_REVIEW)
+
+
 @approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reject")
 @approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/reject")
 def line_reject(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
@@ -284,6 +292,7 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
     else:
         action_labels = {
             REVIEW_ACTION_APPROVE: "approved",
+            REVIEW_ACTION_APPROVE_NEEDS_REVIEW: "approved (flagged for admin review)",
             REVIEW_ACTION_REJECT: "rejected",
             REVIEW_ACTION_NEEDS_INFO: "marked as needing information",
             REVIEW_ACTION_NEEDS_ADJUSTMENT: "marked as needing adjustment",
@@ -294,6 +303,7 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
         if note:
             prefix_map = {
                 REVIEW_ACTION_APPROVE: "[APPROVED]",
+                REVIEW_ACTION_APPROVE_NEEDS_REVIEW: "[APPROVED – NEEDS REVIEW]",
                 REVIEW_ACTION_REJECT: "[REJECTED]",
                 REVIEW_ACTION_NEEDS_INFO: "[INFO REQUESTED]",
                 REVIEW_ACTION_NEEDS_ADJUSTMENT: "[ADJUSTMENT REQUESTED]",
