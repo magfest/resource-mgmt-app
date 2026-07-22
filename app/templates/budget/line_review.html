@@ -424,6 +424,11 @@
               <div class="muted small mt-4">Leave blank to recommend full amount</div>
             </div>
 
+            <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
+              <input type="checkbox" name="admin_only" value="1" id="ag_admin_only" style="margin-right: 4px;" />
+              Admin-only note (not visible to requesters)
+            </label>
+
             <div class="btn-row">
               <form method="post" action="{{ url_for('approvals.line_approve', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

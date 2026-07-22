@@ -22,6 +22,7 @@ from app.routes.work.helpers import (
     get_portfolio_context,
     require_budget_work_type,
     format_currency,
+    friendly_status,
     get_comment_visibility,
 )
 from . import admin_final_bp
@@ -109,6 +110,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         comments=comments,
         audit_events=audit_events,
         format_currency=format_currency,
+        friendly_status=friendly_status,
     )
 
 

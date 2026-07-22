@@ -1,5 +1,6 @@
 {# templates/admin_final/line_review.html #}
 {% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
 
 {% block title %}Admin Review - Line {{ line.line_number }} - {{ work_item.public_id }}{% endblock %}
 
@@ -31,6 +32,8 @@
           {% else %}
             <span class="pill" style="margin-left: 8px; font-weight: normal; background: #fee2e2; color: #991b1b;">REVIEWER REJECTED</span>
           {% endif %}
+        {% elif status == "APPROVED_NEEDS_REVIEW" %}
+          {{ render_status_pill(status, label="REC W/ COMMENTS", title="Recommended With Comments", extra_style="margin-left: 8px; font-weight: normal;") }}
         {% else %}
           <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status }}</span>
         {% endif %}
@@ -151,7 +154,13 @@
         <section class="card">
           <h3 style="margin:0 0 12px 0;">Reviewer Group Review</h3>
           <div class="meta">
-            <div><strong>Status:</strong> <span class="pill" style="background: #dbeafe; color: #1e40af;">{{ ag_review.status }}</span></div>
+            <div><strong>Status:</strong>
+              {% if ag_review.status == "APPROVED_NEEDS_REVIEW" %}
+                {{ render_status_pill(ag_review.status, label="REC W/ COMMENTS", title="Recommended With Comments") }}
+              {% else %}
+                <span class="pill" style="background: #dbeafe; color: #1e40af;">{{ friendly_status(ag_review.status) if friendly_status else ag_review.status }}</span>
+              {% endif %}
+            </div>
             {% if ag_review.decided_at %}
               <div class="muted small mt-4">
                 Decided {{ ag_review.decided_at.strftime('%Y-%m-%d %H:%M') }}

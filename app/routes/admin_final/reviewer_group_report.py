@@ -24,7 +24,7 @@ from app.models import (
     ExpenseAccount, Department, ApprovalGroup,
     WORK_LINE_STATUS_PENDING, WORK_LINE_STATUS_NEEDS_INFO,
     WORK_LINE_STATUS_NEEDS_ADJUSTMENT, WORK_LINE_STATUS_APPROVED,
-    WORK_LINE_STATUS_REJECTED,
+    WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW, WORK_LINE_STATUS_REJECTED,
 )
 from app.routes import get_user_ctx
 from app.routes.work.helpers import format_currency
@@ -166,7 +166,10 @@ def build_reviewer_group_overview(
             agg.pending_count += 1
         elif ln.line_status in (WORK_LINE_STATUS_NEEDS_INFO, WORK_LINE_STATUS_NEEDS_ADJUSTMENT):
             agg.needs_info_count += 1
-        elif ln.line_status == WORK_LINE_STATUS_APPROVED:
+        elif ln.line_status in (WORK_LINE_STATUS_APPROVED, WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW):
+            # A flagged AG recommendation is still a positive recommendation
+            # for tally purposes; fold it into the approved bucket so it
+            # isn't dropped until the item finalizes.
             agg.approved_count += 1
         elif ln.line_status == WORK_LINE_STATUS_REJECTED:
             agg.rejected_count += 1
