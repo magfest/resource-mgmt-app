@@ -43,6 +43,7 @@ from app.models import (
     WORK_LINE_STATUS_NEEDS_INFO,
     WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
     WORK_LINE_STATUS_APPROVED,
+    WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW,
     WORK_LINE_STATUS_REJECTED,
     AUDIT_EVENT_ADMIN_FINAL,
     AUDIT_EVENT_AMOUNT_OVERRIDE,
@@ -486,23 +487,32 @@ def finalize_work_item(
     if not can_do:
         return False, reason
 
-    # For any lines still PENDING, approve them at their requested amount
+    # For lines still PENDING or flagged APPROVED_NEEDS_REVIEW, resolve them to
+    # APPROVED. Flagged lines use the reviewer's recommended amount when set;
+    # everything else falls back to the requested amount.
+    _UNRESOLVED = (WORK_LINE_STATUS_PENDING, WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW)
     for line in work_item.lines:
-        if line.status == WORK_LINE_STATUS_PENDING:
+        if line.status in _UNRESOLVED:
             # Get or create admin review
             review, _created = get_or_create_admin_review(line, user_ctx)
 
-            # Approve at requested amount
+            # Requested amount (fallback)
             if line.budget_detail:
                 amount = line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
             else:
                 amount = 0
 
+            # Prefer the reviewer's recommended amount for a flagged line
+            if line.status == WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW:
+                ag_review = get_approval_group_review(line)
+                if ag_review and ag_review.approved_amount_cents is not None:
+                    amount = ag_review.approved_amount_cents
+
             review.status = REVIEW_STATUS_APPROVED
             review.approved_amount_cents = amount
             review.decided_at = datetime.utcnow()
             review.decided_by_user_id = user_ctx.user_id
-            review.note = "Auto-approved during finalization"
+            review.note = "Resolved during finalization"
 
             line.status = WORK_LINE_STATUS_APPROVED
             line.approved_amount_cents = amount
