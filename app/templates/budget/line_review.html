@@ -423,6 +423,16 @@
                 </button>
               </form>
 
+              <form method="post" action="{{ url_for('approvals.line_approve_needs_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="note" class="note-field" />
+                <input type="hidden" name="recommended_amount" class="amount-field" />
+                <input type="hidden" name="admin_only" class="admin-only-field" />
+                <button type="submit" class="btn" style="border-color: #b8860b; color: #b8860b;" data-ag-action="Approve this line but flag it for admin review?" data-require-note>
+                  Approve – Needs Review
+                </button>
+              </form>
+
               <form method="post" action="{{ url_for('approvals.line_reject', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="note" class="note-field" />
@@ -472,6 +482,13 @@
       {% if user_ctx.is_super_admin %}
         <div id="review-form-admin" style="display: none;">
           {% set admin_status = admin_review.status | upper if admin_review else 'PENDING' %}
+
+          {% if ag_review and ag_review.status == "APPROVED_NEEDS_REVIEW" %}
+            <div class="callout mb-16" style="border-left: 4px solid #b8860b;">
+              {{ render_status_pill("APPROVED_NEEDS_REVIEW", label=friendly_status("APPROVED_NEEDS_REVIEW")) }}
+              <span class="muted small" style="margin-left: 6px;">Reviewer approved but flagged concerns — see comments.</span>
+            </div>
+          {% endif %}
 
           {# Current Admin Final status #}
           {% if admin_review and admin_review.status in ['APPROVED', 'REJECTED'] %}
