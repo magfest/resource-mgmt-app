@@ -189,7 +189,7 @@
       {% if audit_events %}
         <section class="card">
           <h3 style="margin:0 0 12px 0;">Line History</h3>
-          {% for event in audit_events %}
+          {% for event in audit_events | reverse %}
             <div class="comment" style="font-size: 13px;">
               <div class="muted small">
                 {{ event.created_at.strftime('%Y-%m-%d %H:%M') }} &middot;
@@ -349,42 +349,50 @@
             </form>
           {% endif %}
         </div>
-      {% elif status == "APPROVED" %}
-        <div class="callout callout-success mb-16">
-          <strong>Reviewer Recommended</strong>
-          {% if review and review.decided_at %}
-            <div class="muted" style="margin-top:4px;">
-              Decided {{ review.decided_at.strftime('%Y-%m-%d %H:%M') }}
+      {% elif status in ["APPROVED", "APPROVED_NEEDS_REVIEW", "REJECTED"] %}
+        {# Two-stage decision trail: reviewer recommendation (AG) then admin final. #}
+        {% if ag_review and ag_review.status in ["APPROVED", "APPROVED_NEEDS_REVIEW", "REJECTED"] %}
+          {% if ag_review.status == "REJECTED" %}
+            <div class="callout callout-danger mb-16">
+              <strong>Reviewer Rejected</strong>
+          {% elif ag_review.status == "APPROVED_NEEDS_REVIEW" %}
+            <div class="callout mb-16" style="background: #fef3c7; border-left: 4px solid #b8860b;">
+              <strong>Reviewer Recommended With Comments</strong>
+          {% else %}
+            <div class="callout callout-success mb-16">
+              <strong>Reviewer Recommended</strong>
+          {% endif %}
+              {% if ag_review.decided_at %}
+                <div class="muted" style="margin-top:4px;">Decided {{ ag_review.decided_at.strftime('%Y-%m-%d %H:%M') }}</div>
+              {% endif %}
+              {% if ag_review.note %}
+                <div style="margin-top: 8px;">{{ ag_review.note }}</div>
+              {% endif %}
             </div>
-          {% endif %}
-          {% if review and review.note %}
-            <div style="margin-top: 8px;">{{ review.note }}</div>
-          {% endif %}
-        </div>
-      {% elif status == "APPROVED_NEEDS_REVIEW" and not user_ctx.is_super_admin %}
-        <div class="callout mb-16" style="background: #fef3c7; border-left: 4px solid #b8860b;">
-          <strong>Reviewer Recommended With Comments</strong>
-          {% if review and review.decided_at %}
-            <div class="muted" style="margin-top:4px;">
-              Decided {{ review.decided_at.strftime('%Y-%m-%d %H:%M') }}
-            </div>
-          {% endif %}
-          {% if review and review.note %}
-            <div style="margin-top: 8px;">{{ review.note }}</div>
-          {% endif %}
-        </div>
-      {% elif status == "REJECTED" %}
-        <div class="callout callout-danger mb-16">
-          <strong>Reviewer Rejected</strong>
-          {% if review and review.decided_at %}
-            <div class="muted" style="margin-top:4px;">
-              Decided {{ review.decided_at.strftime('%Y-%m-%d %H:%M') }}
-            </div>
-          {% endif %}
-          {% if review and review.note %}
-            <div style="margin-top: 8px;">{{ review.note }}</div>
-          {% endif %}
-        </div>
+        {% endif %}
+        {% if admin_review and admin_review.status in ["APPROVED", "REJECTED"] %}
+          <div class="callout {% if admin_review.status == 'APPROVED' %}callout-success{% else %}callout-danger{% endif %} mb-16">
+            {% if admin_review.status == 'APPROVED' %}
+              <strong>Admin Approved</strong>
+              {% if line.approved_amount_cents is not none %}
+                <span style="margin-left: 8px;">{{ format_currency(line.approved_amount_cents) }}</span>
+              {% endif %}
+            {% else %}
+              <strong>Admin Rejected</strong>
+            {% endif %}
+            {% if admin_review.decided_at %}
+              <div class="muted" style="margin-top:4px;">Decided {{ admin_review.decided_at.strftime('%Y-%m-%d %H:%M') }}</div>
+            {% endif %}
+            {# Admin note is trust-group only (reviewers/admins), not requesters #}
+            {% if admin_review.note and (user_ctx.is_super_admin or can_review) %}
+              <div style="margin-top: 8px;">{{ admin_review.note }}</div>
+            {% endif %}
+          </div>
+        {% endif %}
+        {# Fallback: neither review populated (edge) — never show blank. #}
+        {% if not ((ag_review and ag_review.status in ["APPROVED","APPROVED_NEEDS_REVIEW","REJECTED"]) or (admin_review and admin_review.status in ["APPROVED","REJECTED"])) %}
+          {{ render_status_pill(status, label=friendly_status(status) if friendly_status else status) }}
+        {% endif %}
       {% endif %}
 
       {# Reviewer Group Review Decision Form #}
@@ -503,18 +511,8 @@
           {# Current Admin Final status #}
           {% if admin_review and admin_review.status in ['APPROVED', 'REJECTED'] %}
             <div class="callout {% if admin_review.status == 'APPROVED' %}callout-success mb-16{% else %}callout-danger mb-16{% endif %}">
-              <strong>Admin Final: {{ admin_review.status }}</strong>
-              {% if admin_review.status == 'APPROVED' and line.approved_amount_cents is not none %}
-                <span style="margin-left: 8px;">Approved: {{ format_currency(line.approved_amount_cents) }}</span>
-              {% endif %}
-              {% if admin_review.decided_at %}
-                <div class="muted" style="margin-top:4px;">
-                  Decided {{ admin_review.decided_at.strftime('%Y-%m-%d %H:%M') }}
-                </div>
-              {% endif %}
-              {% if admin_review.note %}
-                <div style="margin-top: 8px;">{{ admin_review.note }}</div>
-              {% endif %}
+              <strong>Final decision recorded</strong>
+              <div class="muted" style="margin-top:4px;">See the decision summary above.</div>
 
               {# Reset option #}
               <form method="post" action="{{ url_for('admin_final.line_reset', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="margin-top: 12px;">

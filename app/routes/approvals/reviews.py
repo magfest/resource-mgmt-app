@@ -21,6 +21,8 @@ from app.models import (
     REVIEW_STATUS_PENDING,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
+    REVIEW_STATUS_APPROVED,
+    REVIEW_STATUS_REJECTED,
     COMMENT_VISIBILITY_PUBLIC,
     COMMENT_VISIBILITY_ADMIN,
 )
@@ -134,7 +136,26 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     # Check if user can review this line
     can_review = is_reviewer_for_line(line, user_ctx)
     has_checkout = work_item.checked_out_by_user_id == user_ctx.user_id
-    can_decide = can_review and has_checkout and review and review.status == REVIEW_STATUS_PENDING
+
+    # Admin Final review tab is BUDGET-only — non-BUDGET worktypes have
+    # has_admin_final=False, so don't bother loading those review rows.
+    admin_review = None
+    ag_review = None
+    if work_type_slug == "budget":
+        admin_review = get_admin_final_review(line)
+        ag_review = get_approval_group_review(line)
+
+    # Once an admin has recorded a terminal decision on this line, the
+    # approval group can no longer take review actions on it (comments
+    # remain allowed via can_respond / the standalone comment route).
+    admin_final_decided = bool(
+        admin_review and admin_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)
+    )
+    can_decide = (
+        can_review and has_checkout and review
+        and review.status == REVIEW_STATUS_PENDING
+        and not admin_final_decided
+    )
 
     # Check if user can respond to kicked-back line
     can_respond = (
@@ -160,14 +181,6 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
 
     # Get audit events for this line
     audit_events = line.audit_events
-
-    # Admin Final review tab is BUDGET-only — non-BUDGET worktypes have
-    # has_admin_final=False, so don't bother loading those review rows.
-    admin_review = None
-    ag_review = None
-    if user_ctx.is_super_admin and work_type_slug == "budget":
-        admin_review = get_admin_final_review(line)
-        ag_review = get_approval_group_review(line)
 
     # Pick the per-worktype template. Each work_type/ directory owns its
     # own line_review.html (BUDGET has the multi-stage admin-final UI,

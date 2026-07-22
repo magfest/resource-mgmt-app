@@ -32,6 +32,7 @@ from app.models import (
     SupplyOrderLineDetail,
     User,
     REVIEW_STAGE_APPROVAL_GROUP,
+    REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
@@ -319,6 +320,13 @@ def validate_review_transition(
     if allowed_role == "APPROVER":
         if not is_reviewer_for_line(line, user_ctx):
             return "", "You do not have permission to perform this action."
+        # Once an admin has made a final decision on this line, the approval
+        # group can no longer take review actions (comments remain allowed).
+        admin_final = WorkLineReview.query.filter_by(
+            work_line_id=line.id, stage=REVIEW_STAGE_ADMIN_FINAL,
+        ).first()
+        if admin_final and admin_final.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+            return "", "This line has a final admin decision and can no longer be reviewed by the approval group."
     elif allowed_role == "REQUESTER":
         # Requester must be owner or have edit rights
         if not line.needs_requester_action:
