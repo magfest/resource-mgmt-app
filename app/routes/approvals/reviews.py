@@ -292,7 +292,7 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
     else:
         action_labels = {
             REVIEW_ACTION_APPROVE: "approved",
-            REVIEW_ACTION_APPROVE_NEEDS_REVIEW: "approved (flagged for admin review)",
+            REVIEW_ACTION_APPROVE_NEEDS_REVIEW: "recommended (with comments)",
             REVIEW_ACTION_REJECT: "rejected",
             REVIEW_ACTION_NEEDS_INFO: "marked as needing information",
             REVIEW_ACTION_NEEDS_ADJUSTMENT: "marked as needing adjustment",
@@ -303,7 +303,7 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
         if note:
             prefix_map = {
                 REVIEW_ACTION_APPROVE: "[APPROVED]",
-                REVIEW_ACTION_APPROVE_NEEDS_REVIEW: "[APPROVED – NEEDS REVIEW]",
+                REVIEW_ACTION_APPROVE_NEEDS_REVIEW: "[RECOMMENDED WITH COMMENTS]",
                 REVIEW_ACTION_REJECT: "[REJECTED]",
                 REVIEW_ACTION_NEEDS_INFO: "[INFO REQUESTED]",
                 REVIEW_ACTION_NEEDS_ADJUSTMENT: "[ADJUSTMENT REQUESTED]",

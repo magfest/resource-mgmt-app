@@ -14,7 +14,7 @@ def test_status_values():
 
 
 def test_friendly_label():
-    assert friendly_status("APPROVED_NEEDS_REVIEW") == "Approved – Needs Review"
+    assert friendly_status("APPROVED_NEEDS_REVIEW") == "Recommended With Comments"
 
 
 def test_sync_line_status_maps_new_status(app):
