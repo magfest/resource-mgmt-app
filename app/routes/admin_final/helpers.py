@@ -33,6 +33,7 @@ from app.models import (
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     REVIEW_STATUS_APPROVED,
     REVIEW_STATUS_REJECTED,
+    REVIEW_STATUS_APPROVED_NEEDS_REVIEW,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
@@ -276,9 +277,11 @@ def can_finalize_work_item(work_item: WorkItem) -> Tuple[bool, str]:
             admin_review = line_reviews.get('admin')
             ag_review = line_reviews.get('ag')
 
+            _AG_DECIDED = (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED,
+                           REVIEW_STATUS_APPROVED_NEEDS_REVIEW)
             if admin_review and admin_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
                 has_any_decision = True
-            elif ag_review and ag_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+            elif ag_review and ag_review.status in _AG_DECIDED:
                 has_any_decision = True
 
     if not has_any_decision:
@@ -984,8 +987,10 @@ def build_admin_queues(
                     item_total_requested += line_total
                     item_total_recommended += recommended or line_total
                 # APPROVED or REJECTED means decided
-            elif ag_review and ag_review.status == REVIEW_STATUS_APPROVED:
-                # Ready for admin final review
+            elif ag_review and ag_review.status in (
+                REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW
+            ):
+                # Ready for admin final review (flagged lines especially need it)
                 item_ready_lines += 1
                 item_total_requested += line_total
                 item_total_recommended += recommended or line_total
