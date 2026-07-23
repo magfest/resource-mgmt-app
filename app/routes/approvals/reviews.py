@@ -40,6 +40,7 @@ from app.routes.work.helpers import (
     friendly_status,
     get_comment_visibility,
     is_checked_out,
+    is_worktype_admin,
 )
 from . import approvals_bp
 from .helpers import (
@@ -115,13 +116,19 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
+    # Admin flag scoped to the LINE's work type — lets work-type admins
+    # (not just super admins) view any line of their own work type and use
+    # the Admin Final Review tab, matching the old /admin-review page's
+    # require_budget_admin access without broadening to other work types.
+    is_admin = is_worktype_admin(user_ctx, work_item.portfolio.work_type_id)
+
     # Check view permission
     perms = require_work_item_view(work_item, ctx)
 
     # Check if user can access this specific line (approval group filtering)
     # Polymorphic: get_line_routing_approval_group dispatches by detail type,
     # so this works for BUDGET / TECHOPS / future worktypes alike.
-    if not user_ctx.is_super_admin:
+    if not is_admin:
         routed_group = get_line_routing_approval_group(line)
         routed_group_id = routed_group.id if routed_group else None
         is_in_routed_group = routed_group_id and routed_group_id in user_ctx.approval_group_ids
@@ -175,7 +182,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     comments = line.comments
     # Reviewers of this line are a trusted group and may see ADMIN notes.
     # Requesters (and other non-reviewers) still cannot.
-    can_see_admin_notes = user_ctx.is_super_admin or can_review
+    can_see_admin_notes = is_admin or can_review
     if not can_see_admin_notes:
         comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
 
@@ -192,6 +199,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         ctx=ctx,
         perms=perms,
         user_ctx=user_ctx,
+        is_admin=is_admin,
         work_item=work_item,
         line=line,
         detail=detail,
@@ -322,10 +330,10 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
                 REVIEW_ACTION_NEEDS_ADJUSTMENT: "[ADJUSTMENT REQUESTED]",
                 REVIEW_ACTION_RESET: "[RESET]",
             }
-            # Determine comment visibility
-            visibility = get_comment_visibility(
-                request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
-            )
+            # Decision rationale is always public (transparency). Non-public notes go
+            # through the standalone comment form (line_comment), which keeps its
+            # admin-only option.
+            visibility = COMMENT_VISIBILITY_PUBLIC
             comment = WorkLineComment(
                 work_line_id=line.id,
                 visibility=visibility,
@@ -739,7 +747,10 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type
                                 public_id=public_id, line_num=line_num, work_type_slug=work_type_slug))
 
     visibility = get_comment_visibility(
-        request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+        request.form,
+        user_ctx.is_super_admin
+        or is_reviewer_for_line(line, user_ctx)
+        or is_worktype_admin(user_ctx, work_item.portfolio.work_type_id),
     )
     comment = WorkLineComment(
         work_line_id=line.id,

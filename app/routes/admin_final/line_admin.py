@@ -200,8 +200,8 @@ def line_change_account_submit(event: str, dept: str, public_id: str, line_num: 
         f"Line {line_num} moved to {account.name} and sent back to {group.name} for review.",
         "success",
     )
-    # Land on the approvals-side line page — the surface admins actually
-    # review from (admin_final.line_review is only reached via the queue).
+    # Land on the unified /review page — admin_final.line_review (the old
+    # /admin-review page) was removed in favor of this consolidated view.
     return redirect(url_for(
         "approvals.line_review",
         event=event, dept=dept, public_id=public_id, line_num=line_num,

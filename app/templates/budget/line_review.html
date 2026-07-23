@@ -242,7 +242,7 @@
     <div>
 
       {# Admin Review Mode Toggle #}
-      {% if user_ctx.is_super_admin %}
+      {% if is_admin %}
         <div style="margin-bottom: 16px; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden;">
           <div style="display: flex;">
             <button type="button" id="tab-ag" class="review-tab active"
@@ -349,8 +349,12 @@
             </form>
           {% endif %}
         </div>
-      {% elif status in ["APPROVED", "APPROVED_NEEDS_REVIEW", "REJECTED"] %}
-        {# Two-stage decision trail: reviewer recommendation (AG) then admin final. #}
+      {% elif (ag_review and ag_review.status in ["APPROVED", "APPROVED_NEEDS_REVIEW", "REJECTED"]) or (admin_review and admin_review.status in ["APPROVED", "REJECTED"]) %}
+        {# Two-stage decision trail driven by the REVIEW RECORDS, not line.status,
+           so the AG recommendation stays visible even after an admin "Reset for
+           Re-review" (which sets line.status back to PENDING but leaves the AG
+           review's decision intact). Reviewer part from ag_review, admin from
+           admin_review. #}
         {% if ag_review and ag_review.status in ["APPROVED", "APPROVED_NEEDS_REVIEW", "REJECTED"] %}
           {% if ag_review.status == "REJECTED" %}
             <div class="callout callout-danger mb-16">
@@ -383,20 +387,16 @@
             {% if admin_review.decided_at %}
               <div class="muted" style="margin-top:4px;">Decided {{ admin_review.decided_at.strftime('%Y-%m-%d %H:%M') }}</div>
             {% endif %}
-            {# Admin note is trust-group only (reviewers/admins), not requesters #}
-            {% if admin_review.note and (user_ctx.is_super_admin or can_review) %}
+            {# Decision rationale is always public so requesters can see why #}
+            {% if admin_review.note %}
               <div style="margin-top: 8px;">{{ admin_review.note }}</div>
             {% endif %}
           </div>
         {% endif %}
-        {# Fallback: neither review populated (edge) — never show blank. #}
-        {% if not ((ag_review and ag_review.status in ["APPROVED","APPROVED_NEEDS_REVIEW","REJECTED"]) or (admin_review and admin_review.status in ["APPROVED","REJECTED"])) %}
-          {{ render_status_pill(status, label=friendly_status(status) if friendly_status else status) }}
-        {% endif %}
       {% endif %}
 
       {# Reviewer Group Review Decision Form #}
-      <div id="review-form-ag" {% if user_ctx.is_super_admin %}style=""{% endif %}>
+      <div id="review-form-ag" {% if is_admin %}style=""{% endif %}>
         {% if can_decide %}
           <section class="card" style="margin-bottom: 16px; background: #f8f9fa;">
             <h3 style="margin:0 0 12px 0;">Make Decision (Reviewer Group)</h3>
@@ -431,11 +431,6 @@
               />
               <div class="muted small mt-4">Leave blank to recommend full amount</div>
             </div>
-
-            <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
-              <input type="checkbox" name="admin_only" value="1" id="ag_admin_only" style="margin-right: 4px;" />
-              Admin-only note (not visible to requesters)
-            </label>
 
             <div class="btn-row">
               <form method="post" action="{{ url_for('approvals.line_approve', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
@@ -504,7 +499,7 @@
       </div>{# End review-form-ag #}
 
       {# Admin Final Review Form - Only shown to admins #}
-      {% if user_ctx.is_super_admin %}
+      {% if is_admin %}
         <div id="review-form-admin" style="display: none;">
           {% set admin_status = admin_review.status | upper if admin_review else 'PENDING' %}
 
@@ -534,39 +529,11 @@
             <section class="card" style="margin-bottom: 16px; background: #f0fdf4;">
               <h3 style="margin:0 0 12px 0;">Admin Final Decision</h3>
 
-              {# Show AG recommendation if available #}
-              {% if ag_review and ag_review.status == 'APPROVED' %}
-                <div class="callout callout-info" style="margin-bottom: 12px;">
-                  <strong>Reviewer Group Recommendation:</strong>
-                  {% if ag_review.approved_amount_cents is not none %}
-                    {{ format_currency(ag_review.approved_amount_cents) }}
-                  {% else %}
-                    Full amount ({{ format_currency(line_total) }})
-                  {% endif %}
-                  {% if ag_review.note %}
-                    <div class="muted mt-4">{{ ag_review.note }}</div>
-                  {% endif %}
-                </div>
-              {% elif ag_review and ag_review.status == 'REJECTED' %}
-                <div class="callout callout-danger" style="margin-bottom: 12px;">
-              <strong>Reviewer Group Recommended: REJECT</strong>
-                  {% if ag_review.note %}
-                    <div class="muted mt-4">{{ ag_review.note }}</div>
-                  {% endif %}
-                </div>
-              {% elif ag_review and ag_review.status == 'APPROVED_NEEDS_REVIEW' %}
-                <div class="callout" style="margin-bottom: 12px; background: #fef3c7; border-left: 4px solid #b8860b;">
-                  <strong>Reviewer Recommendation with comments:</strong>
-                  {% if ag_review.approved_amount_cents is not none %}
-                    {{ format_currency(ag_review.approved_amount_cents) }}
-                  {% else %}
-                    Full amount ({{ format_currency(line_total) }})
-                  {% endif %}
-                  {% if ag_review.note %}
-                    <div class="muted mt-4">{{ ag_review.note }}</div>
-                  {% endif %}
-                </div>
-              {% else %}
+              {# The reviewer recommendation (status, amount, and note) is shown
+                 in the decision trail above the tabs; here we only flag when the
+                 group hasn't reviewed yet. The recommended amount is still
+                 surfaced in the Approved Amount field + hint below. #}
+              {% if not (ag_review and ag_review.status in ['APPROVED', 'APPROVED_NEEDS_REVIEW', 'REJECTED']) %}
                 <div class="callout" style="margin-bottom: 12px; background: #fff3cd; border-left: 4px solid #ffc107;">
                   <strong>No Reviewer Group Review Yet</strong>
                   <div class="muted" style="margin-top:4px;">
@@ -596,10 +563,6 @@
                   Note (required for reject/needs-info/amount changes)
                 </label>
                 <textarea name="note" id="admin_note" rows="3" style="width: 100%;" placeholder="Enter your admin review notes..."></textarea>
-                <label style="display: block; margin-top: 6px; font-size: 13px; cursor: pointer;">
-                  <input type="checkbox" name="admin_only" value="1" id="admin_admin_only" style="margin-right: 4px;" />
-                  Admin-only note (not visible to requesters)
-                </label>
               </div>
 
               <div class="btn-row">
@@ -668,7 +631,7 @@
                 <label for="standalone_comment" style="font-size: 13px; font-weight: 600;">Add Comment:</label>
                 <textarea name="comment" id="standalone_comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Enter your comment..."></textarea>
               </div>
-              {% if user_ctx.is_super_admin or can_review %}
+              {% if is_admin or can_review %}
                 <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
                   <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
                   Admin-only (not visible to requesters)
