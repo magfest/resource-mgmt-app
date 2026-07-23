@@ -274,17 +274,23 @@
         </div>
       {% endif %}
 
-      {# Status-specific notices #}
-      {% if status == "NEEDS_INFO" %}
+      {# Status-specific notices. Keyed off state.awaiting (the review-state
+         read-model) rather than line.status, so an ADMIN_FINAL-stage
+         kickback also shows the notice + response form — not just an
+         APPROVAL_GROUP kickback. Which of the two forms to show (plain
+         response vs. budget-detail adjustment) still depends on the
+         kicked-back review's own status. #}
+      {% set kickback_status = state.kickback_review.status | upper if state and state.kickback_review else '' %}
+      {% if state and state.awaiting == "REQUESTER" and kickback_status == "NEEDS_INFO" %}
         <div class="callout callout-action mb-16">
           <strong>Awaiting Requester Response</strong>
           <div class="muted" style="margin-top:4px;">
             This line is waiting for the requester to provide additional information.
           </div>
-          {% if review and review.note %}
+          {% if state.kickback_review.note %}
             <div style="margin-top: 8px; padding: 8px; background: #fff; border-radius: 6px;">
               <div class="muted small">Request:</div>
-              {{ review.note }}
+              {{ state.kickback_review.note }}
             </div>
           {% endif %}
 
@@ -300,16 +306,16 @@
             </form>
           {% endif %}
         </div>
-      {% elif status == "NEEDS_ADJUSTMENT" %}
+      {% elif state and state.awaiting == "REQUESTER" and kickback_status == "NEEDS_ADJUSTMENT" %}
         <div class="callout callout-action mb-16">
           <strong>Awaiting Requester Adjustment</strong>
           <div class="muted" style="margin-top:4px;">
             This line is waiting for the requester to make adjustments.
           </div>
-          {% if review and review.note %}
+          {% if state.kickback_review.note %}
             <div style="margin-top: 8px; padding: 8px; background: #fff; border-radius: 6px;">
               <div class="muted small">Reviewer's request:</div>
-              {{ review.note }}
+              {{ state.kickback_review.note }}
             </div>
           {% endif %}
 

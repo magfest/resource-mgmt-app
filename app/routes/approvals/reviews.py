@@ -44,7 +44,7 @@ from app.routes.work.helpers import (
 )
 from app.routes.work.helpers.checkout import user_holds_checkout
 from app.routes.work.helpers.review_state import (
-    get_line_review_state, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP,
+    get_line_review_state, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP, AWAITING_REQUESTER,
 )
 from . import approvals_bp
 from .helpers import (
@@ -185,12 +185,13 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         and state.awaiting in (AWAITING_ADMIN, AWAITING_REVIEWER_GROUP)
     )
 
-    # Check if user can respond to kicked-back line
+    # Check if user can respond to kicked-back line. Keyed off the
+    # review-state read-model (not the AG `review` var) so this is true
+    # when the ADMIN_FINAL stage — not just APPROVAL_GROUP — bounced the
+    # line back to the requester.
     can_respond = (
-        line.needs_requester_action and
-        review and
-        review.status in (REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT) and
-        can_respond_to_work_item(work_item, ctx, user_ctx)
+        state.awaiting == AWAITING_REQUESTER
+        and can_respond_to_work_item(work_item, ctx, user_ctx)
     )
 
     # Polymorphic line detail + total. For non-monetary worktypes
@@ -233,6 +234,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         can_decide=can_decide,
         can_admin_decide=can_admin_decide,
         can_respond=can_respond,
+        state=state,
         is_checked_out=is_checked_out(work_item),
         format_currency=format_currency,
         friendly_status=friendly_status,
@@ -412,21 +414,12 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
-    # Get review
-    review = get_review_for_line(line)
-    if not review:
-        flash("No review found for this line.", "error")
-        return redirect(url_for(
-            "approvals.line_review",
-            event=event,
-            dept=dept,
-            public_id=public_id,
-            line_num=line_num,
-            work_type_slug=work_type_slug,
-        ))
-
-    # Validate that line needs requester action
-    if review.status not in (REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT):
+    # Route to whichever review stage actually kicked the line back —
+    # not always the APPROVAL_GROUP review (an ADMIN_FINAL kickback must
+    # reopen the ADMIN_FINAL review, not the AG one).
+    state = get_line_review_state(line)
+    review = state.kickback_review
+    if review is None or state.awaiting != AWAITING_REQUESTER:
         flash("This line is not awaiting your response.", "error")
         return redirect(url_for(
             "approvals.line_review",
@@ -544,22 +537,12 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
             work_type_slug=work_type_slug,
         ))
 
-    # Get review
-    review = get_review_for_line(line)
-    if not review:
-        flash("No review found for this line.", "error")
-        return redirect(url_for(
-            "approvals.line_review",
-            event=event,
-            dept=dept,
-            public_id=public_id,
-            line_num=line_num,
-            work_type_slug=work_type_slug,
-        ))
-
-    # Validate that line is in NEEDS_ADJUSTMENT status
-    if review.status != REVIEW_STATUS_NEEDS_ADJUSTMENT:
-        flash("This line is not awaiting adjustment.", "error")
+    # Route to whichever review stage actually kicked the line back —
+    # not always the APPROVAL_GROUP review.
+    state = get_line_review_state(line)
+    review = state.kickback_review
+    if review is None or state.awaiting != AWAITING_REQUESTER:
+        flash("This line is not awaiting your response.", "error")
         return redirect(url_for(
             "approvals.line_review",
             event=event,
