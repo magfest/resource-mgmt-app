@@ -16,7 +16,6 @@ from app.models import (
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
-    REVIEW_ACTION_RESET,
     REVIEW_ACTION_RESPOND,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
@@ -280,13 +279,6 @@ def line_needs_adjustment(event: str, dept: str, public_id: str, line_num: int, 
     return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_NEEDS_ADJUSTMENT)
 
 
-@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reset")
-@approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/reset")
-def line_reset(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
-    """Reset a line back to pending (admin only)."""
-    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_RESET)
-
-
 def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str, action: str):
     """
     Common handler for all review actions.
@@ -338,7 +330,6 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
             REVIEW_ACTION_REJECT: "rejected",
             REVIEW_ACTION_NEEDS_INFO: "marked as needing information",
             REVIEW_ACTION_NEEDS_ADJUSTMENT: "marked as needing adjustment",
-            REVIEW_ACTION_RESET: "reset to pending",
         }
 
         # Add comment with the note if provided
@@ -349,7 +340,6 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
                 REVIEW_ACTION_REJECT: "[REJECTED]",
                 REVIEW_ACTION_NEEDS_INFO: "[INFO REQUESTED]",
                 REVIEW_ACTION_NEEDS_ADJUSTMENT: "[ADJUSTMENT REQUESTED]",
-                REVIEW_ACTION_RESET: "[RESET]",
             }
             # Decision rationale is always public (transparency). Non-public notes go
             # through the standalone comment form (line_comment), which keeps its

@@ -515,13 +515,48 @@
               <strong>Final decision recorded</strong>
               <div class="muted" style="margin-top:4px;">See the decision summary above.</div>
 
-              {# Reset option #}
-              <form method="post" action="{{ url_for('admin_final.line_reset', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="margin-top: 12px;">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn" data-confirm="Reset this line for re-review?">
-                  Reset for Re-review
-                </button>
-              </form>
+              {# Reset options — only actionable while the admin holds the
+                 checkout, same as any other admin decision (C3). #}
+              {% if has_checkout %}
+                <div class="muted small" style="margin-top:12px;">
+                  Reopen keeps the reviewer's recommendation; Return clears it and sends the line back to the group.
+                </div>
+                <div class="btn-row" style="margin-top:4px;">
+                  <form method="post" action="{{ url_for('admin_final.line_reset', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn"
+                            title="Undo your final decision and decide again. The reviewer group's recommendation is kept."
+                            data-confirm="Reopen the final decision on this line? You'll decide again; the reviewer group's recommendation stays.">
+                      Reopen Final Decision
+                    </button>
+                  </form>
+
+                  {% if ag_review and ag_review.status in ['APPROVED', 'APPROVED_NEEDS_REVIEW', 'REJECTED'] %}
+                    <form method="post" action="{{ url_for('admin_final.line_return_to_group', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn"
+                              title="Send this line back to the reviewer group for a fresh recommendation. Clears the current admin decision and reviewer recommendation."
+                              data-confirm="Return this line to the reviewer group? The current admin decision AND the reviewer recommendation will be cleared.">
+                        Return to Reviewer Group
+                      </button>
+                    </form>
+                  {% endif %}
+                </div>
+              {% else %}
+                <div class="callout" style="margin-top: 12px; background: #e7f3fe; border-left: 4px solid #2196f3;">
+                  <strong>Checkout Required</strong>
+                  <div class="muted" style="margin-top:4px;">
+                    Check out this item to reopen the final decision or return this line to the reviewer group.
+                  </div>
+                  <div style="margin-top: 12px;">
+                    <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="return_to" value="{{ request.url }}">
+                      <button type="submit" class="btn btn-primary">Start Reviewing</button>
+                    </form>
+                  </div>
+                </div>
+              {% endif %}
             </div>
           {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}
             <div class="callout callout-action mb-16">
@@ -614,6 +649,27 @@
                   </button>
                 </form>
               </div>
+
+              {# Alternative to deciding yourself: send the AG recommendation
+                 back to the group instead. Only meaningful (and only shown)
+                 when the AG actually has a decision to send back, and only
+                 actionable while the admin holds the checkout — consistent
+                 with the terminal-state "Return to Reviewer Group" button. #}
+              {% if has_checkout and ag_review and ag_review.status in ['APPROVED', 'APPROVED_NEEDS_REVIEW', 'REJECTED'] %}
+                <div class="muted small" style="margin-top:16px;">
+                  …or send it back to the group: clears the reviewer's recommendation and returns the line to the reviewer group.
+                </div>
+                <div class="btn-row" style="margin-top:4px;">
+                  <form method="post" action="{{ url_for('admin_final.line_return_to_group', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn"
+                            title="Send this line back to the reviewer group for a fresh recommendation. Clears the current admin decision and reviewer recommendation."
+                            data-confirm="Return this line to the reviewer group? The current admin decision AND the reviewer recommendation will be cleared.">
+                      Return to Reviewer Group
+                    </button>
+                  </form>
+                </div>
+              {% endif %}
             </section>
           {% endif %}
         </div>

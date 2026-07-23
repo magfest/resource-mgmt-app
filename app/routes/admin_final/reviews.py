@@ -26,6 +26,7 @@ from .helpers import (
     require_budget_admin,
     apply_admin_final_decision,
     reset_line_for_rereview,
+    return_line_to_reviewer_group,
 )
 
 
@@ -101,6 +102,45 @@ def line_reset(event: str, dept: str, public_id: str, line_num: int, work_type_s
         flash(error, "error")
     else:
         flash(f"Line {line_num} reset for re-review.", "success")
+        db.session.commit()
+
+    return redirect(url_for(
+        "approvals.line_review",
+        event=event,
+        dept=dept,
+        public_id=public_id,
+        line_num=line_num,
+        work_type_slug=work_type_slug,
+    ))
+
+
+@admin_final_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/admin-return-to-group")
+@admin_final_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/admin-return-to-group")
+def line_return_to_group(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
+    """Admin sends a line back to the reviewer group: reset the AG review and
+    clear the admin decision."""
+    user_ctx = get_user_ctx()
+    require_budget_admin(user_ctx)
+
+    work_item, line, ctx = _get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
+
+    if not user_holds_checkout(work_item, user_ctx):
+        flash("You must check out this item before making an admin decision.", "error")
+        return redirect(url_for(
+            "approvals.line_review",
+            event=event,
+            dept=dept,
+            public_id=public_id,
+            line_num=line_num,
+            work_type_slug=work_type_slug,
+        ))
+
+    success, error = return_line_to_reviewer_group(line, user_ctx)
+
+    if not success:
+        flash(error, "error")
+    else:
+        flash(f"Line {line_num} returned to the reviewer group.", "success")
         db.session.commit()
 
     return redirect(url_for(

@@ -52,7 +52,6 @@ from app.models import (
     REVIEW_ACTION_APPROVE,
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
-    REVIEW_ACTION_RESET,
     REQUEST_KIND_PRIMARY,
     REQUEST_KIND_SUPPLEMENTARY,
     COMMENT_VISIBILITY_PUBLIC,
@@ -405,12 +404,6 @@ def apply_admin_final_decision(
         line.status = WORK_LINE_STATUS_NEEDS_INFO
         line.needs_requester_action = True
 
-    elif action == REVIEW_ACTION_RESET:
-        # Reset to pending for re-review
-        review.status = REVIEW_STATUS_PENDING
-        line.status = WORK_LINE_STATUS_PENDING
-        line.needs_requester_action = False
-
     else:
         return False, f"Invalid action: {action}"
 
@@ -713,6 +706,51 @@ def reset_line_for_rereview(
         "reset",
         REVIEW_STATUS_PENDING,
         "Reset for re-review",
+        user_ctx,
+    )
+
+    return True, None
+
+
+def return_line_to_reviewer_group(
+    line: WorkLine,
+    user_ctx: UserContext,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Send a line back to the approval group: reset the AG review to PENDING and
+    clear the admin decision. The line re-enters the reviewer-group stage.
+
+    Returns (success, error_message) tuple.
+    """
+    require_budget_admin(user_ctx)
+
+    ag = WorkLineReview.query.filter_by(
+        work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP).first()
+    if ag is not None:
+        ag.status = REVIEW_STATUS_PENDING
+        ag.decided_at = None
+        ag.decided_by_user_id = None
+        ag.approved_amount_cents = None
+
+    admin = get_admin_final_review(line)
+    if admin is not None:
+        admin.status = REVIEW_STATUS_PENDING
+        admin.decided_at = None
+        admin.decided_by_user_id = None
+
+    line.status = WORK_LINE_STATUS_PENDING
+    line.approved_amount_cents = None
+    line.needs_requester_action = False
+    line.current_review_stage = REVIEW_STAGE_APPROVAL_GROUP
+    line.status_changed_at = datetime.utcnow()
+    line.status_changed_by_user_id = user_ctx.user_id
+
+    _create_line_audit(
+        line,
+        AUDIT_EVENT_ADMIN_FINAL,
+        "return_to_group",
+        REVIEW_STATUS_PENDING,
+        "Returned to reviewer group",
         user_ctx,
     )
 
