@@ -399,7 +399,7 @@ class TestEntryPoints:
         _make_submitted(data)
         _login(client, "test:admin")
 
-        resp = client.get(_url(app, "admin_final.line_review", data, line_num=1))
+        resp = client.get(_url(app, "approvals.line_review", data, line_num=1))
         assert resp.status_code == 200
         assert b"change-account" in resp.data
 
@@ -410,7 +410,7 @@ class TestEntryPoints:
         db.session.commit()
         _login(client, "test:admin")
 
-        resp = client.get(_url(app, "admin_final.line_review", data, line_num=1))
+        resp = client.get(_url(app, "approvals.line_review", data, line_num=1))
         assert resp.status_code == 200
         assert b"change-account" not in resp.data
 

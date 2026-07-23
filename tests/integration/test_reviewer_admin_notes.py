@@ -8,7 +8,7 @@ from app.models import (
     ROLE_APPROVER, REQUEST_KIND_PRIMARY, REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STATUS_PENDING, WORK_ITEM_STATUS_SUBMITTED, WORK_LINE_STATUS_PENDING,
 )
-from app.models.constants import COMMENT_VISIBILITY_ADMIN
+from app.models.constants import COMMENT_VISIBILITY_ADMIN, COMMENT_VISIBILITY_PUBLIC
 
 
 def _login(client, user_id):
@@ -147,3 +147,43 @@ def test_requester_cannot_see_admin_comment(client, seed_workflow_data):
     resp = client.get(f"/TST2026/TESTDEPT/budget/item/{item.public_id}/line/1/review")
     assert resp.status_code == 200          # requester can load the page...
     assert b"secret" not in resp.data       # ...but must not see the ADMIN note
+
+
+def test_decision_note_is_public_even_if_admin_only_posted(client, seed_workflow_data):
+    """Task 13: a reviewer decision note must always be PUBLIC, even if the
+    (now-removed) admin_only field is forged/stale on the submitted form.
+    Non-public notes only exist via the standalone comment form."""
+    requester, item, line = _seed_review_for_requester(seed_workflow_data)
+
+    # test:admin is SUPER_ADMIN, which is_reviewer_for_line() treats as a
+    # valid reviewer for every line regardless of approval-group routing.
+    _login(client, "test:admin")
+    checkout_resp = client.post(
+        f"/TST2026/TESTDEPT/budget/item/{item.public_id}/checkout")
+    assert checkout_resp.status_code in (200, 302)
+
+    resp = client.post(
+        f"/TST2026/TESTDEPT/budget/item/{item.public_id}/line/1/approve",
+        data={
+            "note": "approved because the vendor quote was confirmed",
+            "admin_only": "1",  # simulates a stale/forged form value
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    comment = (
+        WorkLineComment.query.filter_by(work_line_id=line.id)
+        .order_by(WorkLineComment.id.desc())
+        .first()
+    )
+    assert comment is not None
+    assert "approved because the vendor quote was confirmed" in comment.body
+    assert comment.visibility == COMMENT_VISIBILITY_PUBLIC  # forced public despite admin_only=1
+
+    # The requester (who created the item, no reviewer/admin role) must see
+    # the decision note in the decision trail.
+    _login(client, requester.id)
+    view_resp = client.get(f"/TST2026/TESTDEPT/budget/item/{item.public_id}/line/1/review")
+    assert view_resp.status_code == 200
+    assert b"approved because the vendor quote was confirmed" in view_resp.data

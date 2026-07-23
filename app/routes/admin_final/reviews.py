@@ -3,7 +3,7 @@ Admin Final Review line review routes.
 """
 from decimal import Decimal, InvalidOperation
 
-from flask import render_template, redirect, url_for, request, abort, flash, jsonify
+from flask import redirect, url_for, request, abort, flash, jsonify
 
 from app import db
 from app.models import (
@@ -13,25 +13,25 @@ from app.models import (
     REVIEW_ACTION_APPROVE,
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
-    REVIEW_ACTION_RESET,
     COMMENT_VISIBILITY_PUBLIC,
-    COMMENT_VISIBILITY_ADMIN,
 )
 from app.routes import get_user_ctx
 from app.routes.work.helpers import (
     get_portfolio_context,
     require_budget_work_type,
-    format_currency,
-    friendly_status,
-    get_comment_visibility,
+)
+from app.routes.work.helpers.checkout import user_holds_checkout
+from app.routes.work.helpers.review_state import (
+    get_line_review_state,
+    AWAITING_ADMIN,
+    AWAITING_REVIEWER_GROUP,
 )
 from . import admin_final_bp
 from .helpers import (
     require_budget_admin,
-    get_approval_group_review,
-    get_admin_final_review,
     apply_admin_final_decision,
     reset_line_for_rereview,
+    return_line_to_reviewer_group,
 )
 
 
@@ -58,60 +58,6 @@ def _get_work_item_and_line(event: str, dept: str, public_id: str, line_num: int
         abort(404, f"Line not found: {line_num}")
 
     return work_item, line, ctx
-
-
-@admin_final_bp.get("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/admin-review")
-@admin_final_bp.get("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/admin-review")
-def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
-    """
-    Admin final review page for a specific line.
-    """
-    user_ctx = get_user_ctx()
-    require_budget_admin(user_ctx)
-
-    work_item, line, ctx = _get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
-
-    # Get reviews
-    ag_review = get_approval_group_review(line)
-    admin_review = get_admin_final_review(line)
-
-    # Get line details
-    detail = line.budget_detail
-
-    # Calculate line total
-    if detail:
-        line_total = detail.unit_price_cents * int(detail.quantity)
-    else:
-        line_total = 0
-
-    # Get recommended amount from approval group review
-    if ag_review:
-        recommended_amount = ag_review.approved_amount_cents
-    else:
-        recommended_amount = None
-
-    # Get comments
-    comments = line.comments
-
-    # Get audit events
-    audit_events = line.audit_events
-
-    return render_template(
-        "admin_final/line_review.html",
-        ctx=ctx,
-        user_ctx=user_ctx,
-        work_item=work_item,
-        line=line,
-        detail=detail,
-        ag_review=ag_review,
-        admin_review=admin_review,
-        line_total=line_total,
-        recommended_amount=recommended_amount,
-        comments=comments,
-        audit_events=audit_events,
-        format_currency=format_currency,
-        friendly_status=friendly_status,
-    )
 
 
 @admin_final_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/admin-approve")
@@ -144,6 +90,17 @@ def line_reset(event: str, dept: str, public_id: str, line_num: int, work_type_s
 
     work_item, line, ctx = _get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
+    if not user_holds_checkout(work_item, user_ctx):
+        flash("You must check out this item before making an admin decision.", "error")
+        return redirect(url_for(
+            "approvals.line_review",
+            event=event,
+            dept=dept,
+            public_id=public_id,
+            line_num=line_num,
+            work_type_slug=work_type_slug,
+        ))
+
     success, error = reset_line_for_rereview(line, user_ctx)
 
     if not success:
@@ -153,11 +110,51 @@ def line_reset(event: str, dept: str, public_id: str, line_num: int, work_type_s
         db.session.commit()
 
     return redirect(url_for(
-        "admin_final.line_review",
+        "approvals.line_review",
         event=event,
         dept=dept,
         public_id=public_id,
-        line_num=line_num
+        line_num=line_num,
+        work_type_slug=work_type_slug,
+    ))
+
+
+@admin_final_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/admin-return-to-group")
+@admin_final_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/admin-return-to-group")
+def line_return_to_group(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
+    """Admin sends a line back to the reviewer group: reset the AG review and
+    clear the admin decision."""
+    user_ctx = get_user_ctx()
+    require_budget_admin(user_ctx)
+
+    work_item, line, ctx = _get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
+
+    if not user_holds_checkout(work_item, user_ctx):
+        flash("You must check out this item before making an admin decision.", "error")
+        return redirect(url_for(
+            "approvals.line_review",
+            event=event,
+            dept=dept,
+            public_id=public_id,
+            line_num=line_num,
+            work_type_slug=work_type_slug,
+        ))
+
+    success, error = return_line_to_reviewer_group(line, user_ctx)
+
+    if not success:
+        flash(error, "error")
+    else:
+        flash(f"Line {line_num} returned to the reviewer group.", "success")
+        db.session.commit()
+
+    return redirect(url_for(
+        "approvals.line_review",
+        event=event,
+        dept=dept,
+        public_id=public_id,
+        line_num=line_num,
+        work_type_slug=work_type_slug,
     ))
 
 
@@ -174,6 +171,35 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
     # Check if this is an AJAX request
     is_ajax = request.form.get("ajax") == "1"
 
+    if not user_holds_checkout(work_item, user_ctx):
+        error = "You must check out this item before making an admin decision."
+        if is_ajax:
+            return jsonify({"success": False, "error": error})
+        flash(error, "error")
+        return redirect(url_for(
+            "approvals.line_review",
+            event=event,
+            dept=dept,
+            public_id=public_id,
+            line_num=line_num,
+            work_type_slug=work_type_slug,
+        ))
+
+    state = get_line_review_state(line)
+    if state.awaiting not in (AWAITING_ADMIN, AWAITING_REVIEWER_GROUP):
+        error = "This line is not currently awaiting an admin decision."
+        if is_ajax:
+            return jsonify({"success": False, "error": error})
+        flash(error, "error")
+        return redirect(url_for(
+            "approvals.line_review",
+            event=event,
+            dept=dept,
+            public_id=public_id,
+            line_num=line_num,
+            work_type_slug=work_type_slug,
+        ))
+
     # Get form data
     note = (request.form.get("note") or "").strip()
 
@@ -189,11 +215,12 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
                 return jsonify({"success": False, "error": "Invalid amount format."})
             flash("Invalid amount format.", "error")
             return redirect(url_for(
-                "admin_final.line_review",
+                "approvals.line_review",
                 event=event,
                 dept=dept,
                 public_id=public_id,
-                line_num=line_num
+                line_num=line_num,
+                work_type_slug=work_type_slug,
             ))
 
     # Apply decision
@@ -224,7 +251,9 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
                 REVIEW_ACTION_REJECT: "[ADMIN REJECTED]",
                 REVIEW_ACTION_NEEDS_INFO: "[ADMIN INFO REQUESTED]",
             }
-            visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+            # Decision rationale is always public (transparency). Non-public notes go
+            # through the standalone comment form, which keeps its admin-only option.
+            visibility = COMMENT_VISIBILITY_PUBLIC
             comment = WorkLineComment(
                 work_line_id=line.id,
                 visibility=visibility,
@@ -246,9 +275,10 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
         flash(f"Line {line_num} {action_labels.get(action, 'updated')}.", "success")
 
     return redirect(url_for(
-        "admin_final.line_review",
+        "approvals.line_review",
         event=event,
         dept=dept,
         public_id=public_id,
-        line_num=line_num
+        line_num=line_num,
+        work_type_slug=work_type_slug,
     ))

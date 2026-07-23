@@ -16,13 +16,9 @@ from app.models import (
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
-    REVIEW_ACTION_RESET,
     REVIEW_ACTION_RESPOND,
-    REVIEW_STATUS_PENDING,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
-    REVIEW_STATUS_APPROVED,
-    REVIEW_STATUS_REJECTED,
     COMMENT_VISIBILITY_PUBLIC,
     COMMENT_VISIBILITY_ADMIN,
 )
@@ -40,6 +36,11 @@ from app.routes.work.helpers import (
     friendly_status,
     get_comment_visibility,
     is_checked_out,
+    is_worktype_admin,
+)
+from app.routes.work.helpers.checkout import user_holds_checkout
+from app.routes.work.helpers.review_state import (
+    get_line_review_state, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP, AWAITING_REQUESTER,
 )
 from . import approvals_bp
 from .helpers import (
@@ -115,13 +116,19 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
+    # Admin flag scoped to the LINE's work type — lets work-type admins
+    # (not just super admins) view any line of their own work type and use
+    # the Admin Final Review tab, matching the old /admin-review page's
+    # require_budget_admin access without broadening to other work types.
+    is_admin = is_worktype_admin(user_ctx, work_item.portfolio.work_type_id)
+
     # Check view permission
     perms = require_work_item_view(work_item, ctx)
 
     # Check if user can access this specific line (approval group filtering)
     # Polymorphic: get_line_routing_approval_group dispatches by detail type,
     # so this works for BUDGET / TECHOPS / future worktypes alike.
-    if not user_ctx.is_super_admin:
+    if not is_admin:
         routed_group = get_line_routing_approval_group(line)
         routed_group_id = routed_group.id if routed_group else None
         is_in_routed_group = routed_group_id and routed_group_id in user_ctx.approval_group_ids
@@ -145,24 +152,42 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         admin_review = get_admin_final_review(line)
         ag_review = get_approval_group_review(line)
 
-    # Once an admin has recorded a terminal decision on this line, the
-    # approval group can no longer take review actions on it (comments
-    # remain allowed via can_respond / the standalone comment route).
-    admin_final_decided = bool(
-        admin_review and admin_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)
-    )
+    # The AG decision form is only actionable while it's genuinely the
+    # approval group's turn. Derived from the review-state read-model
+    # (state.awaiting) rather than review.status directly, so this
+    # automatically excludes the admin-terminal case (awaiting would be
+    # DONE, not REVIEWER_GROUP) — the old `admin_final_decided` guard is
+    # now subsumed by AWAITING_REVIEWER_GROUP itself.
+    state = get_line_review_state(line)
     can_decide = (
-        can_review and has_checkout and review
-        and review.status == REVIEW_STATUS_PENDING
-        and not admin_final_decided
+        state.awaiting == AWAITING_REVIEWER_GROUP
+        and is_reviewer_for_line(line, user_ctx)
+        and user_holds_checkout(work_item, user_ctx)
     )
 
-    # Check if user can respond to kicked-back line
+    # Admin final decisions require the checkout lock, same as AG decisions
+    # (Task 3). Computed off the review-state read-model so it's correct
+    # regardless of which line.status summary is currently stored.
+    #
+    # Admins may bypass approval-group review entirely for lines that don't
+    # need it (e.g. low-cost office supplies) — so the admin can act both
+    # when it's genuinely their turn (AWAITING_ADMIN) and while the AG
+    # hasn't decided yet (AWAITING_REVIEWER_GROUP, the bypass case). They
+    # cannot act while a kickback is pending on the requester (REQUESTER)
+    # or after a terminal admin decision has already been recorded (DONE).
+    can_admin_decide = (
+        is_admin
+        and user_holds_checkout(work_item, user_ctx)
+        and state.awaiting in (AWAITING_ADMIN, AWAITING_REVIEWER_GROUP)
+    )
+
+    # Check if user can respond to kicked-back line. Keyed off the
+    # review-state read-model (not the AG `review` var) so this is true
+    # when the ADMIN_FINAL stage — not just APPROVAL_GROUP — bounced the
+    # line back to the requester.
     can_respond = (
-        line.needs_requester_action and
-        review and
-        review.status in (REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT) and
-        can_respond_to_work_item(work_item, ctx, user_ctx)
+        state.awaiting == AWAITING_REQUESTER
+        and can_respond_to_work_item(work_item, ctx, user_ctx)
     )
 
     # Polymorphic line detail + total. For non-monetary worktypes
@@ -175,7 +200,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     comments = line.comments
     # Reviewers of this line are a trusted group and may see ADMIN notes.
     # Requesters (and other non-reviewers) still cannot.
-    can_see_admin_notes = user_ctx.is_super_admin or can_review
+    can_see_admin_notes = is_admin or can_review
     if not can_see_admin_notes:
         comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
 
@@ -192,6 +217,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         ctx=ctx,
         perms=perms,
         user_ctx=user_ctx,
+        is_admin=is_admin,
         work_item=work_item,
         line=line,
         detail=detail,
@@ -202,7 +228,9 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         can_review=can_review,
         has_checkout=has_checkout,
         can_decide=can_decide,
+        can_admin_decide=can_admin_decide,
         can_respond=can_respond,
+        state=state,
         is_checked_out=is_checked_out(work_item),
         format_currency=format_currency,
         friendly_status=friendly_status,
@@ -249,13 +277,6 @@ def line_needs_info(event: str, dept: str, public_id: str, line_num: int, work_t
 def line_needs_adjustment(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Request adjustment for a line."""
     return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_NEEDS_ADJUSTMENT)
-
-
-@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reset")
-@approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/reset")
-def line_reset(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
-    """Reset a line back to pending (admin only)."""
-    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_RESET)
 
 
 def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str, action: str):
@@ -309,7 +330,6 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
             REVIEW_ACTION_REJECT: "rejected",
             REVIEW_ACTION_NEEDS_INFO: "marked as needing information",
             REVIEW_ACTION_NEEDS_ADJUSTMENT: "marked as needing adjustment",
-            REVIEW_ACTION_RESET: "reset to pending",
         }
 
         # Add comment with the note if provided
@@ -320,12 +340,11 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
                 REVIEW_ACTION_REJECT: "[REJECTED]",
                 REVIEW_ACTION_NEEDS_INFO: "[INFO REQUESTED]",
                 REVIEW_ACTION_NEEDS_ADJUSTMENT: "[ADJUSTMENT REQUESTED]",
-                REVIEW_ACTION_RESET: "[RESET]",
             }
-            # Determine comment visibility
-            visibility = get_comment_visibility(
-                request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
-            )
+            # Decision rationale is always public (transparency). Non-public notes go
+            # through the standalone comment form (line_comment), which keeps its
+            # admin-only option.
+            visibility = COMMENT_VISIBILITY_PUBLIC
             comment = WorkLineComment(
                 work_line_id=line.id,
                 visibility=visibility,
@@ -382,21 +401,12 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
-    # Get review
-    review = get_review_for_line(line)
-    if not review:
-        flash("No review found for this line.", "error")
-        return redirect(url_for(
-            "approvals.line_review",
-            event=event,
-            dept=dept,
-            public_id=public_id,
-            line_num=line_num,
-            work_type_slug=work_type_slug,
-        ))
-
-    # Validate that line needs requester action
-    if review.status not in (REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT):
+    # Route to whichever review stage actually kicked the line back —
+    # not always the APPROVAL_GROUP review (an ADMIN_FINAL kickback must
+    # reopen the ADMIN_FINAL review, not the AG one).
+    state = get_line_review_state(line)
+    review = state.kickback_review
+    if review is None or state.awaiting != AWAITING_REQUESTER:
         flash("This line is not awaiting your response.", "error")
         return redirect(url_for(
             "approvals.line_review",
@@ -514,22 +524,12 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
             work_type_slug=work_type_slug,
         ))
 
-    # Get review
-    review = get_review_for_line(line)
-    if not review:
-        flash("No review found for this line.", "error")
-        return redirect(url_for(
-            "approvals.line_review",
-            event=event,
-            dept=dept,
-            public_id=public_id,
-            line_num=line_num,
-            work_type_slug=work_type_slug,
-        ))
-
-    # Validate that line is in NEEDS_ADJUSTMENT status
-    if review.status != REVIEW_STATUS_NEEDS_ADJUSTMENT:
-        flash("This line is not awaiting adjustment.", "error")
+    # Route to whichever review stage actually kicked the line back —
+    # not always the APPROVAL_GROUP review.
+    state = get_line_review_state(line)
+    review = state.kickback_review
+    if review is None or state.awaiting != AWAITING_REQUESTER:
+        flash("This line is not awaiting your response.", "error")
         return redirect(url_for(
             "approvals.line_review",
             event=event,
@@ -739,7 +739,10 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type
                                 public_id=public_id, line_num=line_num, work_type_slug=work_type_slug))
 
     visibility = get_comment_visibility(
-        request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+        request.form,
+        user_ctx.is_super_admin
+        or is_reviewer_for_line(line, user_ctx)
+        or is_worktype_admin(user_ctx, work_item.portfolio.work_type_id),
     )
     comment = WorkLineComment(
         work_line_id=line.id,

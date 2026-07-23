@@ -204,7 +204,7 @@
                 {% endif %}
               </td>
               <td>
-                <a class="btn btn-muted" href="{{ url_for('admin_final.line_review', event=event_code, dept=dept_code, public_id=wi.public_id, line_num=line.line_number, work_type_slug=work_type_slug) }}" style="padding: 4px 8px; font-size: 12px;">
+                <a class="btn btn-muted" href="{{ url_for('approvals.line_review', event=event_code, dept=dept_code, public_id=wi.public_id, line_num=line.line_number, work_type_slug=work_type_slug) }}" style="padding: 4px 8px; font-size: 12px;">
                   View
                 </a>
               </td>
