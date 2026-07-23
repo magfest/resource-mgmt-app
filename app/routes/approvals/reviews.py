@@ -18,11 +18,8 @@ from app.models import (
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
     REVIEW_ACTION_RESET,
     REVIEW_ACTION_RESPOND,
-    REVIEW_STATUS_PENDING,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
-    REVIEW_STATUS_APPROVED,
-    REVIEW_STATUS_REJECTED,
     COMMENT_VISIBILITY_PUBLIC,
     COMMENT_VISIBILITY_ADMIN,
 )
@@ -156,16 +153,17 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         admin_review = get_admin_final_review(line)
         ag_review = get_approval_group_review(line)
 
-    # Once an admin has recorded a terminal decision on this line, the
-    # approval group can no longer take review actions on it (comments
-    # remain allowed via can_respond / the standalone comment route).
-    admin_final_decided = bool(
-        admin_review and admin_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)
-    )
+    # The AG decision form is only actionable while it's genuinely the
+    # approval group's turn. Derived from the review-state read-model
+    # (state.awaiting) rather than review.status directly, so this
+    # automatically excludes the admin-terminal case (awaiting would be
+    # DONE, not REVIEWER_GROUP) — the old `admin_final_decided` guard is
+    # now subsumed by AWAITING_REVIEWER_GROUP itself.
+    state = get_line_review_state(line)
     can_decide = (
-        can_review and has_checkout and review
-        and review.status == REVIEW_STATUS_PENDING
-        and not admin_final_decided
+        state.awaiting == AWAITING_REVIEWER_GROUP
+        and is_reviewer_for_line(line, user_ctx)
+        and user_holds_checkout(work_item, user_ctx)
     )
 
     # Admin final decisions require the checkout lock, same as AG decisions
@@ -178,7 +176,6 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     # hasn't decided yet (AWAITING_REVIEWER_GROUP, the bypass case). They
     # cannot act while a kickback is pending on the requester (REQUESTER)
     # or after a terminal admin decision has already been recorded (DONE).
-    state = get_line_review_state(line)
     can_admin_decide = (
         is_admin
         and user_holds_checkout(work_item, user_ctx)
