@@ -8,6 +8,7 @@
 
    Status → pill class:
    - APPROVED          → pill-success    (vivid green, line-level)
+   - APPROVED_NEEDS_REVIEW → pill-warning (amber, line-level)
    - REJECTED          → pill-rejected   (vivid red,   line-level)
    - NEEDS_INFO        → pill-warning    (vivid yellow + dark text)
    - NEEDS_ADJUSTMENT  → pill-warning
@@ -27,17 +28,19 @@
      {{ render_status_pill(line.status, label=friendly_status(line.status)) }}
      {{ render_status_pill(status, extra_style="margin-left: 8px;") }}
      {{ render_status_pill(status, extra_class="line-status-pill") }}  # for JS targeting
+     {{ render_status_pill(status, label="REC W/ COMMENTS", title="Recommended With Comments") }}  # tooltip for abbreviated labels
 #}
 
-{% macro render_status_pill(status, label=None, extra_style=None, extra_class=None) -%}
+{% macro render_status_pill(status, label=None, extra_style=None, extra_class=None, title=None) -%}
 {%- set status_upper = (status or "DRAFT")|upper -%}
 {%- set pill_class =
     "pill-success" if status_upper == "APPROVED"
+    else "pill-warning" if status_upper == "APPROVED_NEEDS_REVIEW"
     else "pill-rejected" if status_upper == "REJECTED"
     else "pill-warning" if status_upper in ["UNDER_REVIEW", "NEEDS_INFO", "NEEDS_ADJUSTMENT", "PAUSED", "AWAITING_DISPATCH"]
     else "pill-approved" if status_upper == "FINALIZED"
     else "pill-submitted" if status_upper == "SUBMITTED"
     else "pill-draft" -%}
 {%- set display_label = label if label is not none else status_upper -%}
-<span class="pill {{ pill_class }}{% if extra_class %} {{ extra_class }}{% endif %}"{% if extra_style %} style="{{ extra_style }}"{% endif %}>{{ display_label }}</span>
+<span class="pill {{ pill_class }}{% if extra_class %} {{ extra_class }}{% endif %}"{% if extra_style %} style="{{ extra_style }}"{% endif %}{% if title %} title="{{ title }}"{% endif %}>{{ display_label }}</span>
 {%- endmacro %}

@@ -112,8 +112,14 @@
               {% else %}
                 <span class="pill" style="background: #fee2e2; color: #991b1b;">REVIEWER REJECTED</span>
               {% endif %}
+            {% elif line_status == "APPROVED_NEEDS_REVIEW" %}
+              {{ render_status_pill(line_status, label="REC W/ COMMENTS", title="Recommended With Comments") }}
+            {% elif line_status == "NEEDS_ADJUSTMENT" %}
+              {{ render_status_pill(line_status, label="CHANGES REQ.", title="Changes Requested") }}
+            {% elif line_status == "NEEDS_INFO" %}
+              {{ render_status_pill(line_status, label="INFO REQ.", title="Info Requested") }}
             {% else %}
-              {{ render_status_pill(line_status) }}
+              {{ render_status_pill(line_status, label=friendly_status(line_status) if friendly_status else line_status) }}
             {% endif %}
           </td>
           {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}

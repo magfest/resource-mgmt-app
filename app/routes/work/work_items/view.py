@@ -287,7 +287,9 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
         status = line.status.upper() if line.status else "PENDING"
         if status == "PENDING":
             summary["pending"] += 1
-        elif status == "APPROVED":
+        elif status in ("APPROVED", "APPROVED_NEEDS_REVIEW"):
+            # Flagged AG recommendations are a positive tally too; fold
+            # them into "approved" so they aren't undercounted pre-finalize.
             summary["approved"] += 1
         elif status in ("NEEDS_INFO", "NEEDS_ADJUSTMENT"):
             summary["kicked_back"] += 1

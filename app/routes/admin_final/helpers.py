@@ -33,6 +33,7 @@ from app.models import (
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     REVIEW_STATUS_APPROVED,
     REVIEW_STATUS_REJECTED,
+    REVIEW_STATUS_APPROVED_NEEDS_REVIEW,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
@@ -42,6 +43,7 @@ from app.models import (
     WORK_LINE_STATUS_NEEDS_INFO,
     WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
     WORK_LINE_STATUS_APPROVED,
+    WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW,
     WORK_LINE_STATUS_REJECTED,
     AUDIT_EVENT_ADMIN_FINAL,
     AUDIT_EVENT_AMOUNT_OVERRIDE,
@@ -276,9 +278,11 @@ def can_finalize_work_item(work_item: WorkItem) -> Tuple[bool, str]:
             admin_review = line_reviews.get('admin')
             ag_review = line_reviews.get('ag')
 
+            _AG_DECIDED = (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED,
+                           REVIEW_STATUS_APPROVED_NEEDS_REVIEW)
             if admin_review and admin_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
                 has_any_decision = True
-            elif ag_review and ag_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+            elif ag_review and ag_review.status in _AG_DECIDED:
                 has_any_decision = True
 
     if not has_any_decision:
@@ -483,23 +487,32 @@ def finalize_work_item(
     if not can_do:
         return False, reason
 
-    # For any lines still PENDING, approve them at their requested amount
+    # For lines still PENDING or flagged APPROVED_NEEDS_REVIEW, resolve them to
+    # APPROVED. Flagged lines use the reviewer's recommended amount when set;
+    # everything else falls back to the requested amount.
+    _UNRESOLVED = (WORK_LINE_STATUS_PENDING, WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW)
     for line in work_item.lines:
-        if line.status == WORK_LINE_STATUS_PENDING:
+        if line.status in _UNRESOLVED:
             # Get or create admin review
             review, _created = get_or_create_admin_review(line, user_ctx)
 
-            # Approve at requested amount
+            # Requested amount (fallback)
             if line.budget_detail:
                 amount = line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
             else:
                 amount = 0
 
+            # Prefer the reviewer's recommended amount for a flagged line
+            if line.status == WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW:
+                ag_review = get_approval_group_review(line)
+                if ag_review and ag_review.approved_amount_cents is not None:
+                    amount = ag_review.approved_amount_cents
+
             review.status = REVIEW_STATUS_APPROVED
             review.approved_amount_cents = amount
             review.decided_at = datetime.utcnow()
             review.decided_by_user_id = user_ctx.user_id
-            review.note = "Auto-approved during finalization"
+            review.note = "Resolved during finalization"
 
             line.status = WORK_LINE_STATUS_APPROVED
             line.approved_amount_cents = amount
@@ -984,8 +997,10 @@ def build_admin_queues(
                     item_total_requested += line_total
                     item_total_recommended += recommended or line_total
                 # APPROVED or REJECTED means decided
-            elif ag_review and ag_review.status == REVIEW_STATUS_APPROVED:
-                # Ready for admin final review
+            elif ag_review and ag_review.status in (
+                REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW
+            ):
+                # Ready for admin final review (flagged lines especially need it)
                 item_ready_lines += 1
                 item_total_requested += line_total
                 item_total_recommended += recommended or line_total

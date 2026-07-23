@@ -108,6 +108,7 @@ STATUS_LABELS = {
     "NEEDS_ADJUSTMENT": "Changes Requested",
     "NEEDS_RESPONSE": "Response Needed",
     "APPROVED": "Approved",
+    "APPROVED_NEEDS_REVIEW": "Recommended With Comments",
     "REJECTED": "Rejected",
     "FINALIZED": "Finalized",
     "PAUSED": "Paused",

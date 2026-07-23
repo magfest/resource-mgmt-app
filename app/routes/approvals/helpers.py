@@ -32,17 +32,21 @@ from app.models import (
     SupplyOrderLineDetail,
     User,
     REVIEW_STAGE_APPROVAL_GROUP,
+    REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     REVIEW_STATUS_APPROVED,
+    REVIEW_STATUS_APPROVED_NEEDS_REVIEW,
     REVIEW_STATUS_REJECTED,
     WORK_LINE_STATUS_PENDING,
     WORK_LINE_STATUS_NEEDS_INFO,
     WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
     WORK_LINE_STATUS_APPROVED,
+    WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW,
     WORK_LINE_STATUS_REJECTED,
     REVIEW_ACTION_APPROVE,
+    REVIEW_ACTION_APPROVE_NEEDS_REVIEW,
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
@@ -67,6 +71,8 @@ from app.routes import get_user_ctx, UserContext
 VALID_TRANSITIONS = {
     # From PENDING
     (REVIEW_STATUS_PENDING, REVIEW_ACTION_APPROVE): (REVIEW_STATUS_APPROVED, False, "APPROVER"),
+    (REVIEW_STATUS_PENDING, REVIEW_ACTION_APPROVE_NEEDS_REVIEW):
+        (REVIEW_STATUS_APPROVED_NEEDS_REVIEW, True, "APPROVER"),
     (REVIEW_STATUS_PENDING, REVIEW_ACTION_REJECT): (REVIEW_STATUS_REJECTED, True, "APPROVER"),
     (REVIEW_STATUS_PENDING, REVIEW_ACTION_NEEDS_INFO): (REVIEW_STATUS_NEEDS_INFO, True, "APPROVER"),
     (REVIEW_STATUS_PENDING, REVIEW_ACTION_NEEDS_ADJUSTMENT): (REVIEW_STATUS_NEEDS_ADJUSTMENT, True, "APPROVER"),
@@ -79,6 +85,7 @@ VALID_TRANSITIONS = {
 
     # Admin reset from terminal states
     (REVIEW_STATUS_APPROVED, REVIEW_ACTION_RESET): (REVIEW_STATUS_PENDING, False, "ADMIN"),
+    (REVIEW_STATUS_APPROVED_NEEDS_REVIEW, REVIEW_ACTION_RESET): (REVIEW_STATUS_PENDING, False, "ADMIN"),
     (REVIEW_STATUS_REJECTED, REVIEW_ACTION_RESET): (REVIEW_STATUS_PENDING, False, "ADMIN"),
 }
 
@@ -313,6 +320,13 @@ def validate_review_transition(
     if allowed_role == "APPROVER":
         if not is_reviewer_for_line(line, user_ctx):
             return "", "You do not have permission to perform this action."
+        # Once an admin has made a final decision on this line, the approval
+        # group can no longer take review actions (comments remain allowed).
+        admin_final = WorkLineReview.query.filter_by(
+            work_line_id=line.id, stage=REVIEW_STAGE_ADMIN_FINAL,
+        ).first()
+        if admin_final and admin_final.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+            return "", "This line has a final admin decision and can no longer be reviewed by the approval group."
     elif allowed_role == "REQUESTER":
         # Requester must be owner or have edit rights
         if not line.needs_requester_action:
@@ -390,6 +404,7 @@ def sync_line_status(line: WorkLine, review: WorkLineReview) -> None:
         REVIEW_STATUS_NEEDS_INFO: WORK_LINE_STATUS_NEEDS_INFO,
         REVIEW_STATUS_NEEDS_ADJUSTMENT: WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
         REVIEW_STATUS_APPROVED: WORK_LINE_STATUS_APPROVED,
+        REVIEW_STATUS_APPROVED_NEEDS_REVIEW: WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW,
         REVIEW_STATUS_REJECTED: WORK_LINE_STATUS_REJECTED,
     }
 
@@ -573,7 +588,9 @@ def apply_review_decision(
     review.decided_by_user_id = user_ctx.user_id
     review.note = (note or "").strip() or None
 
-    if amount_cents is not None and action == REVIEW_ACTION_APPROVE:
+    if amount_cents is not None and action in (
+        REVIEW_ACTION_APPROVE, REVIEW_ACTION_APPROVE_NEEDS_REVIEW
+    ):
         review.approved_amount_cents = amount_cents
 
     # 4. Sync line status

@@ -12,6 +12,7 @@ from app.models import (
     WorkLine,
     WorkLineComment,
     REVIEW_ACTION_APPROVE,
+    REVIEW_ACTION_APPROVE_NEEDS_REVIEW,
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
@@ -20,6 +21,8 @@ from app.models import (
     REVIEW_STATUS_PENDING,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
+    REVIEW_STATUS_APPROVED,
+    REVIEW_STATUS_REJECTED,
     COMMENT_VISIBILITY_PUBLIC,
     COMMENT_VISIBILITY_ADMIN,
 )
@@ -133,7 +136,26 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     # Check if user can review this line
     can_review = is_reviewer_for_line(line, user_ctx)
     has_checkout = work_item.checked_out_by_user_id == user_ctx.user_id
-    can_decide = can_review and has_checkout and review and review.status == REVIEW_STATUS_PENDING
+
+    # Admin Final review tab is BUDGET-only — non-BUDGET worktypes have
+    # has_admin_final=False, so don't bother loading those review rows.
+    admin_review = None
+    ag_review = None
+    if work_type_slug == "budget":
+        admin_review = get_admin_final_review(line)
+        ag_review = get_approval_group_review(line)
+
+    # Once an admin has recorded a terminal decision on this line, the
+    # approval group can no longer take review actions on it (comments
+    # remain allowed via can_respond / the standalone comment route).
+    admin_final_decided = bool(
+        admin_review and admin_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)
+    )
+    can_decide = (
+        can_review and has_checkout and review
+        and review.status == REVIEW_STATUS_PENDING
+        and not admin_final_decided
+    )
 
     # Check if user can respond to kicked-back line
     can_respond = (
@@ -151,19 +173,14 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
 
     # Get comments for this line (filter admin-only for non-admins)
     comments = line.comments
-    if not user_ctx.is_super_admin:
+    # Reviewers of this line are a trusted group and may see ADMIN notes.
+    # Requesters (and other non-reviewers) still cannot.
+    can_see_admin_notes = user_ctx.is_super_admin or can_review
+    if not can_see_admin_notes:
         comments = [c for c in comments if c.visibility != COMMENT_VISIBILITY_ADMIN]
 
     # Get audit events for this line
     audit_events = line.audit_events
-
-    # Admin Final review tab is BUDGET-only — non-BUDGET worktypes have
-    # has_admin_final=False, so don't bother loading those review rows.
-    admin_review = None
-    ag_review = None
-    if user_ctx.is_super_admin and work_type_slug == "budget":
-        admin_review = get_admin_final_review(line)
-        ag_review = get_approval_group_review(line)
 
     # Pick the per-worktype template. Each work_type/ directory owns its
     # own line_review.html (BUDGET has the multi-stage admin-final UI,
@@ -204,6 +221,13 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
 def line_approve(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Approve a line."""
     return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_APPROVE)
+
+
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/approve-needs-review")
+@approvals_bp.post("/<event>/<dept>/budget/item/<public_id>/line/<int:line_num>/approve-needs-review")
+def line_approve_needs_review(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
+    """Approve a line but flag it for admin final review."""
+    return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_APPROVE_NEEDS_REVIEW)
 
 
 @approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reject")
@@ -281,6 +305,7 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
     else:
         action_labels = {
             REVIEW_ACTION_APPROVE: "approved",
+            REVIEW_ACTION_APPROVE_NEEDS_REVIEW: "recommended (with comments)",
             REVIEW_ACTION_REJECT: "rejected",
             REVIEW_ACTION_NEEDS_INFO: "marked as needing information",
             REVIEW_ACTION_NEEDS_ADJUSTMENT: "marked as needing adjustment",
@@ -291,13 +316,16 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
         if note:
             prefix_map = {
                 REVIEW_ACTION_APPROVE: "[APPROVED]",
+                REVIEW_ACTION_APPROVE_NEEDS_REVIEW: "[RECOMMENDED WITH COMMENTS]",
                 REVIEW_ACTION_REJECT: "[REJECTED]",
                 REVIEW_ACTION_NEEDS_INFO: "[INFO REQUESTED]",
                 REVIEW_ACTION_NEEDS_ADJUSTMENT: "[ADJUSTMENT REQUESTED]",
                 REVIEW_ACTION_RESET: "[RESET]",
             }
             # Determine comment visibility
-            visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+            visibility = get_comment_visibility(
+                request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+            )
             comment = WorkLineComment(
                 work_line_id=line.id,
                 visibility=visibility,
@@ -416,7 +444,9 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
         flash("Response submitted. The line is back in review.", "success")
 
         # Add comment with the response
-        visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+        visibility = get_comment_visibility(
+            request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+        )
         comment = WorkLineComment(
             work_line_id=line.id,
             visibility=visibility,
@@ -650,7 +680,9 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
         changes_text = ", ".join(changes) if changes else "No field changes"
         comment_body = f"[ADJUSTMENT] {changes_text}\n\n{response_text}"
 
-        visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+        visibility = get_comment_visibility(
+            request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+        )
         comment = WorkLineComment(
             work_line_id=line.id,
             visibility=visibility,
@@ -706,7 +738,9 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type
         return redirect(url_for("approvals.line_review", event=event, dept=dept,
                                 public_id=public_id, line_num=line_num, work_type_slug=work_type_slug))
 
-    visibility = get_comment_visibility(request.form, user_ctx.is_super_admin)
+    visibility = get_comment_visibility(
+        request.form, user_ctx.is_super_admin or is_reviewer_for_line(line, user_ctx)
+    )
     comment = WorkLineComment(
         work_line_id=line.id,
         visibility=visibility,
