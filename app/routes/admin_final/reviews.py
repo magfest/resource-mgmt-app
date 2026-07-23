@@ -20,6 +20,7 @@ from app.routes.work.helpers import (
     get_portfolio_context,
     require_budget_work_type,
 )
+from app.routes.work.helpers.checkout import user_holds_checkout
 from . import admin_final_bp
 from .helpers import (
     require_budget_admin,
@@ -83,6 +84,17 @@ def line_reset(event: str, dept: str, public_id: str, line_num: int, work_type_s
 
     work_item, line, ctx = _get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
+    if not user_holds_checkout(work_item, user_ctx):
+        flash("You must check out this item before making an admin decision.", "error")
+        return redirect(url_for(
+            "approvals.line_review",
+            event=event,
+            dept=dept,
+            public_id=public_id,
+            line_num=line_num,
+            work_type_slug=work_type_slug,
+        ))
+
     success, error = reset_line_for_rereview(line, user_ctx)
 
     if not success:
@@ -113,6 +125,20 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
 
     # Check if this is an AJAX request
     is_ajax = request.form.get("ajax") == "1"
+
+    if not user_holds_checkout(work_item, user_ctx):
+        error = "You must check out this item before making an admin decision."
+        if is_ajax:
+            return jsonify({"success": False, "error": error})
+        flash(error, "error")
+        return redirect(url_for(
+            "approvals.line_review",
+            event=event,
+            dept=dept,
+            public_id=public_id,
+            line_num=line_num,
+            work_type_slug=work_type_slug,
+        ))
 
     # Get form data
     note = (request.form.get("note") or "").strip()

@@ -42,6 +42,10 @@ from app.routes.work.helpers import (
     is_checked_out,
     is_worktype_admin,
 )
+from app.routes.work.helpers.checkout import user_holds_checkout
+from app.routes.work.helpers.review_state import (
+    get_line_review_state, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP,
+)
 from . import approvals_bp
 from .helpers import (
     is_reviewer_for_line,
@@ -164,6 +168,23 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         and not admin_final_decided
     )
 
+    # Admin final decisions require the checkout lock, same as AG decisions
+    # (Task 3). Computed off the review-state read-model so it's correct
+    # regardless of which line.status summary is currently stored.
+    #
+    # Admins may bypass approval-group review entirely for lines that don't
+    # need it (e.g. low-cost office supplies) — so the admin can act both
+    # when it's genuinely their turn (AWAITING_ADMIN) and while the AG
+    # hasn't decided yet (AWAITING_REVIEWER_GROUP, the bypass case). They
+    # cannot act while a kickback is pending on the requester (REQUESTER)
+    # or after a terminal admin decision has already been recorded (DONE).
+    state = get_line_review_state(line)
+    can_admin_decide = (
+        is_admin
+        and user_holds_checkout(work_item, user_ctx)
+        and state.awaiting in (AWAITING_ADMIN, AWAITING_REVIEWER_GROUP)
+    )
+
     # Check if user can respond to kicked-back line
     can_respond = (
         line.needs_requester_action and
@@ -210,6 +231,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         can_review=can_review,
         has_checkout=has_checkout,
         can_decide=can_decide,
+        can_admin_decide=can_admin_decide,
         can_respond=can_respond,
         is_checked_out=is_checked_out(work_item),
         format_currency=format_currency,

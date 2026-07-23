@@ -524,6 +524,20 @@
                 This line is waiting for the requester to respond before admin final review can continue.
               </div>
             </div>
+          {% elif not can_admin_decide %}
+            <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
+              <strong>Checkout Required</strong>
+              <div class="muted" style="margin-top:4px;">
+                Check out this item to make a final decision on this line.
+              </div>
+              <div style="margin-top: 12px;">
+                <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="return_to" value="{{ request.url }}">
+                  <button type="submit" class="btn btn-primary">Start Reviewing</button>
+                </form>
+              </div>
+            </div>
           {% else %}
             {# Admin Final Decision Form #}
             <section class="card" style="margin-bottom: 16px; background: #f0fdf4;">
