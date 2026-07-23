@@ -99,6 +99,11 @@ def get_checkout_info(work_item: WorkItem) -> dict | None:
 # Checkout/Checkin Operations
 # ============================================================
 
+def user_holds_checkout(work_item: WorkItem, user_ctx: UserContext) -> bool:
+    """True if this user currently holds the checkout lock on the item."""
+    return work_item.checked_out_by_user_id == user_ctx.user_id
+
+
 def can_checkout(work_item: WorkItem, user_ctx: UserContext) -> tuple[bool, str]:
     """
     Check if user can checkout a work item.
@@ -109,8 +114,14 @@ def can_checkout(work_item: WorkItem, user_ctx: UserContext) -> tuple[bool, str]
     if work_item.status != WORK_ITEM_STATUS_SUBMITTED:
         return False, "Only SUBMITTED requests can be checked out for review."
 
-    # Must be a reviewer (admin or approver) - respects role override
-    if not user_ctx.is_super_admin and not user_ctx.approval_group_ids:
+    # Must be a reviewer (approver), a super admin, or a work-type admin of this
+    # work type — the latter so budget admins can hold the lock to make admin-final
+    # decisions (which require the lock, same as approval-group decisions).
+    if (
+        not user_ctx.is_super_admin
+        and not user_ctx.approval_group_ids
+        and not is_worktype_admin(user_ctx, work_item.portfolio.work_type_id)
+    ):
         return False, "Only reviewers can checkout work items."
 
     # Cannot checkout if already checked out (unless expired)
