@@ -21,6 +21,11 @@ from app.routes.work.helpers import (
     require_budget_work_type,
 )
 from app.routes.work.helpers.checkout import user_holds_checkout
+from app.routes.work.helpers.review_state import (
+    get_line_review_state,
+    AWAITING_ADMIN,
+    AWAITING_REVIEWER_GROUP,
+)
 from . import admin_final_bp
 from .helpers import (
     require_budget_admin,
@@ -168,6 +173,21 @@ def _handle_admin_decision(event: str, dept: str, public_id: str, line_num: int,
 
     if not user_holds_checkout(work_item, user_ctx):
         error = "You must check out this item before making an admin decision."
+        if is_ajax:
+            return jsonify({"success": False, "error": error})
+        flash(error, "error")
+        return redirect(url_for(
+            "approvals.line_review",
+            event=event,
+            dept=dept,
+            public_id=public_id,
+            line_num=line_num,
+            work_type_slug=work_type_slug,
+        ))
+
+    state = get_line_review_state(line)
+    if state.awaiting not in (AWAITING_ADMIN, AWAITING_REVIEWER_GROUP):
+        error = "This line is not currently awaiting an admin decision."
         if is_ajax:
             return jsonify({"success": False, "error": error})
         flash(error, "error")
