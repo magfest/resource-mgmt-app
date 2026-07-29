@@ -94,7 +94,10 @@ class UserContext:
     approval_group_ids: Set[int]   # Approval groups user can review
 ```
 
-### Work Type Admin Checks (in `app/routes/work/helpers.py`)
+### Work Type Admin Checks (in `app/routes/work/helpers/context.py`)
+
+> `app/routes/work/helpers` is a **package**, not a module — there is no
+> `helpers.py`. Both functions below are defined in `context.py` (lines 245 and 259).
 
 ```python
 # Check if user is admin for a specific work type
@@ -120,6 +123,7 @@ class WorkItemPerms:
     can_view: bool
     can_edit: bool
     can_submit: bool
+    can_recall: bool            # recall to draft while AWAITING_DISPATCH
     can_add_lines: bool
     can_delete: bool
     can_checkout: bool

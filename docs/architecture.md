@@ -189,11 +189,19 @@ Work item statuses (actual constants in `app/models/constants.py`):
   work type has that stage)
 - **FINALIZED**: Locked; amounts confirmed. Work types without an admin-final
   stage auto-finalize when the last line is decided.
+- **NEEDS_INFO**: Awaiting requester response (item-level; see below)
 - **PAUSED**: Supplementary blocked by a pending PRIMARY
-- **UNAPPROVED**: Reopened after finalize
 
-`NEEDS_INFO` / `NEEDS_ADJUSTMENT` are **line-level** statuses (kickbacks to the
-requester), not work-item statuses — see `docs/workflow.md`.
+Declared in `app/models/constants.py:18-25` but never persisted:
+
+- **UNDER_REVIEW**: display-only, derived at
+  `app/routes/work/helpers/computations.py:226`
+- **UNAPPROVED**: vestigial — nothing reads or writes it. Unfinalize resets to
+  SUBMITTED (`app/routes/admin_final/helpers.py:634`), not UNAPPROVED.
+
+`NEEDS_ADJUSTMENT` is **line-level only**. `NEEDS_INFO` exists at **both** levels —
+`app/routes/work/work_items/actions.py:321` sets it on the work item — see
+`docs/workflow.md`.
 
 ---
 
@@ -205,17 +213,17 @@ requester), not work-item statuses — see `docs/workflow.md`.
 /<event>/<dept>/budget/              # Budget portfolio
 /<event>/<dept>/budget/item/<id>     # Budget work item detail
 /<event>/<dept>/techops/             # TechOps portfolio (live)
-/<event>/<dept>/supply/              # Supply orders (coming-soon page)
-/<event>/<dept>/contracts/           # Contracts (coming-soon page)
+/<event>/<dept>/supply               # Supply orders (live — app/routes/work/supply/portfolio.py:22)
+/<event>/<dept>/contracts            # Contracts (still a placeholder — app/routes/work/portfolio.py:176)
 
 /approvals/                          # Approver dashboard
-/approvals/<group>/                  # Approval group queue
+/approvals/<group_code>              # Approval group queue (no trailing slash)
 
 /admin/dispatch/                     # Dispatch queue (BUDGET)
 /admin/                              # Admin dashboard
 /admin/config/departments/           # Department management
 /admin/config/expense-accounts/      # Expense account management
-/admin/final/                        # Final review dashboard + reports
+/admin/final-review/                 # Final review dashboard + reports
 ```
 
 ---
