@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import secrets as stdlib_secrets  # Avoid conflict with app.secrets
 import threading
@@ -69,6 +70,16 @@ def create_app() -> Flask:
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=session_timeout_minutes)
     app.config["SESSION_REFRESH_EACH_REQUEST"] = True  # Reset timeout on each request (sliding window)
 
+    # --- Checkout Lock Timeouts ---
+    # JSON object of minutes by role, e.g. {"APPROVER": 30, "SUPER_ADMIN": 120, "DEFAULT": 30}
+    # Unset (or malformed) leaves DEFAULT_CHECKOUT_TIMEOUTS in checkout.py in effect.
+    checkout_timeouts = os.environ.get("CHECKOUT_TIMEOUTS")
+    if checkout_timeouts:
+        try:
+            app.config["CHECKOUT_TIMEOUTS"] = json.loads(checkout_timeouts)
+        except ValueError:
+            app.logger.warning("CHECKOUT_TIMEOUTS is not valid JSON; using built-in defaults")
+
     # --- Beta Testing Mode ---
     # Enables role override dropdown for super-admins to test different permission levels
     beta_mode = os.environ.get("BETA_TESTING_MODE", "").lower()
@@ -135,6 +146,10 @@ def create_app() -> Flask:
     # Legacy flags for template compatibility
     app.config["GOOGLE_AUTH_ENABLED"] = app.config["AUTH_PROVIDER"] == "google"
     app.config["KEYCLOAK_AUTH_ENABLED"] = app.config["AUTH_PROVIDER"] == "keycloak"
+
+    # Organization email domains (comma-separated), used to identify staff accounts
+    # on the OAuth email-change path. Unset leaves DEFAULT_ORG_DOMAINS in auth.py in effect.
+    app.config["ORG_EMAIL_DOMAINS"] = os.environ.get("ORG_EMAIL_DOMAINS")
 
     # --- Email Notifications (AWS SES) ---
     email_enabled = os.environ.get("EMAIL_ENABLED", "").lower()
