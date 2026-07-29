@@ -12,6 +12,7 @@ magfest-budget/
 │   ├── cli.py              # Flask CLI commands (seed, send-submission-reminders)
 │   ├── line_details.py     # Generic line detail helpers (see note below)
 │   ├── secrets.py          # Env-var + optional AWS Secrets Manager loading
+│   ├── wsgi.py             # WSGI entry point (gunicorn: app.wsgi:app)
 │   ├── routing/            # Approval routing strategies
 │   ├── routes/             # Flask blueprints and route handlers
 │   ├── seeds/              # Database seeding scripts
@@ -20,8 +21,7 @@ magfest-budget/
 ├── migrations/             # Alembic database migrations
 ├── tests/                  # pytest suite (unit/ + integration/)
 ├── Procfile                # Heroku process definition (web only)
-├── requirements.txt        # Python dependencies
-└── run.py                  # Flask app entry point
+└── requirements.txt        # Python dependencies
 ```
 
 ## Detailed Breakdown
