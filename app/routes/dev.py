@@ -16,13 +16,15 @@ def _is_development_environment():
     """
     Check if running in development environment.
 
-    Returns True only if APP_ENV is NOT "production".
-    This is a strict check - defaults to False if uncertain.
+    Returns True only if APP_ENV is not "production".
+
+    The SESSION_COOKIE_SECURE check below is a consistency check, not an
+    independent second opinion: app/__init__.py:81 assigns it from the very same
+    APP_ENV comparison, so both signals always move together. What actually
+    keeps this from passing in production is create_app's APP_ENV validation,
+    which refuses to boot on an unset or unrecognized value.
     """
     env = os.environ.get("APP_ENV", "").lower()
-    # Must explicitly NOT be production
-    # If APP_ENV is not set or is anything other than "production", allow dev tools
-    # But we also check the config to be extra safe
     is_prod_env = env == "production"
     is_prod_config = current_app.config.get("SESSION_COOKIE_SECURE", False)  # Only True in prod
 
