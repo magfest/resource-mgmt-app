@@ -81,9 +81,12 @@ def create_app() -> Flask:
             app.logger.warning("CHECKOUT_TIMEOUTS is not valid JSON; using built-in defaults")
 
     # --- Beta Testing Mode ---
-    # Enables role override dropdown for super-admins to test different permission levels
+    # Enables the role-override dropdown and super-admin user impersonation
+    # (app/routes/dev.py) so permission levels can be tested. Development only:
+    # the guard sits outside the whole expression so no env value can re-enable
+    # impersonation against live data — same shape as DEV_LOGIN_ENABLED below.
     beta_mode = os.environ.get("BETA_TESTING_MODE", "").lower()
-    app.config["BETA_TESTING_MODE"] = beta_mode == "true" or (not is_production and beta_mode != "false")
+    app.config["BETA_TESTING_MODE"] = beta_mode != "false" and not is_production
 
     # --- Environment Banner ---
     # Show a warning banner for non-production environments
