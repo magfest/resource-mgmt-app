@@ -71,7 +71,7 @@ Visit `http://localhost:5000`
 
 ```bash
 docker build -t magfest-budget .
-docker run -p 8000:8000 -e DATABASE_URL=sqlite:///budget.db magfest-budget
+docker run -p 8000:8000 -e APP_ENV=development -e DATABASE_URL=sqlite:///budget.db magfest-budget
 ```
 
 ### Authentication

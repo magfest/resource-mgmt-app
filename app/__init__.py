@@ -14,6 +14,10 @@ db = SQLAlchemy()
 migrate = Migrate()
 csrf = CSRFProtect()
 
+# Recognized APP_ENV values. "production" is set only in the Heroku config vars;
+# "development" comes from .env / app.json, "testing" from CI and tests/conftest.py.
+KNOWN_APP_ENVS = ("production", "development", "testing")
+
 
 def create_app() -> Flask:
     app = Flask(__name__, instance_relative_config=True)
@@ -28,7 +32,21 @@ def create_app() -> Flask:
         app.logger.info(f"Loaded {secrets_loaded} secrets from AWS Secrets Manager")
 
     # --- Environment Detection ---
-    env = os.environ.get("APP_ENV", "development")
+    # Ten separate hardening measures key off is_production (required SECRET_KEY
+    # and DATABASE_URL, secure session cookie, shorter idle timeout, HSTS, the
+    # catch-all error handler, and the force-disabling of BETA_TESTING_MODE /
+    # DEV_LOGIN_ENABLED). All of them are opt-in on a single string comparison,
+    # so an unset or misspelled APP_ENV would silently disable every one at once
+    # — "nobody told me which environment this is" must not be read as
+    # "development". Require an explicit, recognized value instead.
+    env = os.environ.get("APP_ENV", "").strip().lower()
+    if env not in KNOWN_APP_ENVS:
+        raise RuntimeError(
+            f"APP_ENV must be set to one of {KNOWN_APP_ENVS} (got {env!r}). "
+            "Production safety measures key off this value, so an unset or "
+            "misspelled APP_ENV is treated as a configuration error rather "
+            "than silently falling back to development."
+        )
     is_production = env == "production"
 
     # --- Secret Key (REQUIRED in production) ---

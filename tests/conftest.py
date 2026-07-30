@@ -14,6 +14,12 @@ import os
 # fully resolves create_app's database_url lookup.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
+# create_app() requires an explicit, recognized APP_ENV — it will not silently
+# assume development. setdefault rather than assignment so CI's own
+# "APP_ENV: testing" (.github/workflows/tests.yml) still wins, and so an
+# individual test can export a different value before collection if it needs to.
+os.environ.setdefault("APP_ENV", "testing")
+
 import pytest
 from app import create_app, db
 from app.models import (
