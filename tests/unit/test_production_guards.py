@@ -1,11 +1,11 @@
 """APP_ENV resolution, and the flags that must not be enable-able in production.
 
 Ten hardening measures in create_app() are opt-in on `is_production`, which is a
-single comparison against APP_ENV (app/__init__.py:38-46): required SECRET_KEY
-and DATABASE_URL, SESSION_COOKIE_SECURE, the 30-minute idle timeout, HSTS, the
-catch-all error handler, and the force-disabling of BETA_TESTING_MODE and
-DEV_LOGIN_ENABLED. So APP_ENV is the single point of failure for all ten, and
-"unset" must not be readable as "development".
+single comparison against APP_ENV: required SECRET_KEY and DATABASE_URL,
+SESSION_COOKIE_SECURE, the 30-minute idle timeout, HSTS, the catch-all error
+handler, and the force-disabling of BETA_TESTING_MODE and DEV_LOGIN_ENABLED. So
+APP_ENV is the single point of failure for all ten, and "unset" must not be
+readable as "development".
 
 BETA_TESTING_MODE in particular gates super-admin user impersonation and the
 role-override dropdown (app/routes/dev.py:116, :162, :191). Those routes never
@@ -16,7 +16,7 @@ disjunct had no environment guard at all, so BETA_TESTING_MODE=true in
 production turned impersonation on against real data.
 
 SESSION_COOKIE_SECURE is used as the observable proxy for `is_production`:
-app/__init__.py:78 assigns it that value directly and nothing else touches it.
+create_app assigns it that value directly and nothing else touches it.
 """
 import pytest
 
@@ -43,7 +43,7 @@ def make_app(monkeypatch):
 
 
 def _prod(make_app, **env):
-    # SECRET_KEY is mandatory in production (app/__init__.py:51-52).
+    # SECRET_KEY is mandatory in production — create_app raises without it.
     env.setdefault("APP_ENV", "production")
     return make_app(SECRET_KEY="test-only", **env)
 
