@@ -3,8 +3,6 @@ Admin line tools: change a line's expense account, or add a line to an
 in-review request. Budget-admin-only. Both actions route the affected
 line through the approval-group stage so nothing skips review.
 """
-from decimal import Decimal, InvalidOperation
-
 from flask import render_template, redirect, url_for, request, abort, flash
 
 from app import db
@@ -21,7 +19,6 @@ from app.routes.work.helpers import (
     format_currency,
     get_allowed_spend_types,
     get_confidence_levels,
-    get_effective_account_type,
     get_frequency_options,
     get_priority_levels,
 )
@@ -31,18 +28,20 @@ from .helpers import (
     change_line_expense_account,
     require_budget_admin,
 )
+from .line_pricing import build_account_pricing_map, resolve_line_pricing
 from .reviews import _get_work_item_and_line
 
 
 def _get_admin_expense_accounts(event_cycle_id: int) -> list:
-    """All active, non-fixed accounts — admins bypass department visibility."""
-    accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(
+    """All active accounts, including fixed-cost, hotel, and badge.
+
+    Admins bypass department visibility. Inactive accounts stay out; an
+    inactive account is a retired configuration decision, and reintroducing
+    one from here would silently undo it.
+    """
+    return ExpenseAccount.query.filter_by(is_active=True).order_by(
         ExpenseAccount.sort_order.asc(), ExpenseAccount.name.asc()
     ).all()
-    return [
-        a for a in accounts
-        if not get_effective_account_type(a, event_cycle_id)[0]
-    ]
 
 
 def _get_budget_approval_groups(work_type_id: int) -> list:
@@ -69,9 +68,6 @@ def _validate_account_selection(ctx, form):
             account = None
         if not account or not account.is_active:
             errors.append("Invalid expense account.")
-            account = None
-        elif get_effective_account_type(account, ctx.event_cycle.id)[0]:
-            errors.append("Fixed-cost expense accounts cannot be used here.")
             account = None
 
     if account:
@@ -159,6 +155,7 @@ def line_change_account(event: str, dept: str, public_id: str, line_num: int, wo
         detail=detail,
         expense_accounts=expense_accounts,
         spend_types_by_account=build_spend_types_by_account(expense_accounts),
+        account_pricing=build_account_pricing_map(expense_accounts, ctx.event_cycle.id),
         approval_groups=_get_budget_approval_groups(ctx.work_type.id),
         format_currency=format_currency,
     )
@@ -175,11 +172,25 @@ def line_change_account_submit(event: str, dept: str, public_id: str, line_num: 
     note, note_errors = _parse_note(request.form)
     errors.extend(note_errors)
 
-    if not errors:
+    pricing = None
+    if account:
+        # absent_as_none=True: this form has no quantity/price/description
+        # inputs, so a missing field means "keep the line's current value,"
+        # not "reset it to zero."
+        pricing, pricing_errors = resolve_line_pricing(
+            account, ctx.event_cycle.id, request.form, absent_as_none=True
+        )
+        errors.extend(pricing_errors)
+
+    if not errors and pricing:
         success, error = change_line_expense_account(
             line=line, work_item=work_item,
             new_account=account, new_spend_type=spend_type,
             new_group=group, note=note, user_ctx=user_ctx,
+            quantity=pricing["quantity"],
+            unit_price_cents=pricing["unit_price_cents"],
+            account_default_unit_price_cents=pricing["account_default_unit_price_cents"],
+            description=pricing["description"],
         )
         if not success:
             errors.append(error)
@@ -213,37 +224,12 @@ def line_change_account_submit(event: str, dept: str, public_id: str, line_num: 
 # ============================================================
 
 def _parse_line_numbers(form):
-    """
-    Validate quantity / unit_price / confidence / frequency / priority /
-    warehouse / description. Mirrors app/routes/work/lines.py:237-294.
-    Returns (values_dict, errors).
+    """Validate confidence, frequency, priority, and the warehouse flag.
+
+    Quantity, unit price, and description live in line_pricing.resolve_line_pricing.
     """
     errors = []
     values = {}
-
-    quantity = Decimal("1")
-    quantity_str = (form.get("quantity") or "1").strip()
-    if quantity_str:
-        try:
-            quantity = Decimal(quantity_str)
-            if quantity <= 0:
-                errors.append("Quantity must be greater than 0.")
-        except InvalidOperation:
-            errors.append("Invalid quantity value.")
-    values["quantity"] = quantity
-
-    unit_price_cents = 0
-    unit_price_str = (form.get("unit_price") or "0").strip()
-    if unit_price_str:
-        try:
-            unit_price_dollars = Decimal(unit_price_str)
-            if unit_price_dollars < 0:
-                errors.append("Unit price cannot be negative.")
-            else:
-                unit_price_cents = int(unit_price_dollars * 100)
-        except InvalidOperation:
-            errors.append("Invalid unit price value.")
-    values["unit_price_cents"] = unit_price_cents
 
     for field, model, label in (
         ("confidence_level_id", ConfidenceLevel, "Confidence level"),
@@ -265,12 +251,6 @@ def _parse_line_numbers(form):
         values[field.replace("_id", "")] = obj
 
     values["warehouse_flag"] = form.get("warehouse_flag") == "on"
-
-    from app.routes.admin.helpers import MAX_FREEFORM_TEXT_LENGTH
-    description_raw = (form.get("description") or "").replace("\r\n", "\n").replace("\r", "\n")
-    if len(description_raw) > MAX_FREEFORM_TEXT_LENGTH:
-        errors.append(f"Line description is too long (max {MAX_FREEFORM_TEXT_LENGTH:,} characters).")
-    values["description"] = description_raw.strip()
 
     return values, errors
 
@@ -304,6 +284,7 @@ def line_add(event: str, dept: str, public_id: str, work_type_slug: str = "budge
         work_item=work_item,
         expense_accounts=expense_accounts,
         spend_types_by_account=build_spend_types_by_account(expense_accounts),
+        account_pricing=build_account_pricing_map(expense_accounts, ctx.event_cycle.id),
         approval_groups=_get_budget_approval_groups(ctx.work_type.id),
         confidence_levels=get_confidence_levels(),
         frequency_options=get_frequency_options(),
@@ -324,15 +305,24 @@ def line_add_submit(event: str, dept: str, public_id: str, work_type_slug: str =
     errors.extend(value_errors)
     errors.extend(note_errors)
 
+    pricing = None
+    if account:
+        pricing, pricing_errors = resolve_line_pricing(
+            account, ctx.event_cycle.id, request.form
+        )
+        errors.extend(pricing_errors)
+
     line = None
     if not errors:
         line, error = admin_add_line(
             work_item=work_item, user_ctx=user_ctx,
             expense_account=account, spend_type=spend_type, approval_group=group,
-            quantity=values["quantity"], unit_price_cents=values["unit_price_cents"],
+            quantity=pricing["quantity"],
+            unit_price_cents=pricing["unit_price_cents"],
+            account_default_unit_price_cents=pricing["account_default_unit_price_cents"],
             confidence_level=values["confidence_level"], frequency=values["frequency"],
             priority=values["priority"], warehouse_flag=values["warehouse_flag"],
-            description=values["description"], note=note,
+            description=pricing["description"], note=note,
         )
         if not line:
             errors.append(error)

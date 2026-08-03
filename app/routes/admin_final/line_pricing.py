@@ -135,12 +135,20 @@ def _parse_unit_price_cents(form, errors):
     return int(dollars * 100)
 
 
-def resolve_line_pricing(account, event_cycle_id, form):
+def resolve_line_pricing(account, event_cycle_id, form, absent_as_none=False):
     """Decide quantity, unit price, and description for an admin-written line.
 
     Hotel accounts take rooms and nights instead of a raw quantity; the stored
     quantity is room-nights. Fixed-cost, hotel, and badge accounts take the
     account default price unless the form carries an explicit override.
+
+    With absent_as_none=True, a field missing from the form resolves to None
+    instead of a default. change-account has no quantity, price, or
+    description inputs today; its caller reads None as "keep the line's
+    current value." A hotel account still requires rooms and nights
+    explicitly: an existing line's quantity means units, but a hotel line's
+    quantity means room-nights, and carrying the old number over would
+    mislabel it and corrupt the hotel rooms report.
 
     Returns:
         (values, errors). values carries quantity, unit_price_cents,
@@ -149,22 +157,36 @@ def resolve_line_pricing(account, event_cycle_id, form):
     errors = []
     kind = classify_account(account, event_cycle_id)
 
-    raw_description = (form.get("description") or "")
-    raw_description = raw_description.replace("\r\n", "\n").replace("\r", "\n")
-    description = strip_rooms_prefix(raw_description)
+    if absent_as_none and "description" not in form:
+        description = None
+    else:
+        raw_description = (form.get("description") or "")
+        raw_description = raw_description.replace("\r\n", "\n").replace("\r", "\n")
+        description = strip_rooms_prefix(raw_description)
 
     if kind == KIND_HOTEL:
-        rooms = _parse_positive_int(form, "rooms", "Rooms", errors)
-        nights = _parse_positive_int(form, "nights", "Nights", errors)
-        quantity = Decimal(rooms * nights)
-        if rooms > 1:
-            description = f"{rooms} rooms: {description}".strip()
+        if absent_as_none and ("rooms" not in form or "nights" not in form):
+            errors.append(
+                "Rooms and nights are required when booking to a hotel account."
+            )
+            quantity = None
+        else:
+            rooms = _parse_positive_int(form, "rooms", "Rooms", errors)
+            nights = _parse_positive_int(form, "nights", "Nights", errors)
+            quantity = Decimal(rooms * nights)
+            if rooms > 1 and description is not None:
+                description = f"{rooms} rooms: {description}".strip()
+    elif absent_as_none and "quantity" not in form:
+        quantity = None
     else:
         quantity = _parse_quantity(form, errors)
 
     if kind == KIND_STANDARD:
         account_default = None
-        unit_price_cents = _parse_unit_price_cents(form, errors)
+        if absent_as_none and "unit_price" not in form:
+            unit_price_cents = None
+        else:
+            unit_price_cents = _parse_unit_price_cents(form, errors)
     else:
         settings = get_effective_fixed_cost_settings(account, event_cycle_id)
         account_default = settings["unit_price_cents"]

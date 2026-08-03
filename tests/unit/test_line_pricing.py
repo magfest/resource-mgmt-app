@@ -251,3 +251,56 @@ class TestResolveLinePricing:
             "quantity": "1", "unit_price": "Infinity", "description": "Bad",
         })
         assert any("unit price" in e.lower() for e in errors)
+
+
+class TestResolveLinePricingAbsentAsNone:
+    """change-account has no quantity/price/description inputs; a field
+    missing from the form must resolve to None, not a bare-form default, so
+    the caller can tell "not submitted" apart from "submitted as zero"."""
+
+    def test_absent_quantity_returns_none_with_no_error(self, app):
+        from app.routes.admin_final.line_pricing import resolve_line_pricing
+        acct = _account("STD_ABSENT_QTY", is_fixed=False)
+        values, errors = resolve_line_pricing(
+            acct, None, {"unit_price": "10.00"}, absent_as_none=True,
+        )
+        assert errors == []
+        assert values["quantity"] is None
+
+    def test_absent_description_returns_none(self, app):
+        from app.routes.admin_final.line_pricing import resolve_line_pricing
+        acct = _account("STD_ABSENT_DESC", is_fixed=False)
+        values, errors = resolve_line_pricing(
+            acct, None, {"quantity": "1", "unit_price": "10.00"},
+            absent_as_none=True,
+        )
+        assert errors == []
+        assert values["description"] is None
+
+    def test_standard_account_absent_unit_price_returns_none(self, app):
+        from app.routes.admin_final.line_pricing import resolve_line_pricing
+        acct = _account("STD_ABSENT_PRICE", is_fixed=False)
+        values, errors = resolve_line_pricing(
+            acct, None, {"quantity": "1"}, absent_as_none=True,
+        )
+        assert errors == []
+        assert values["unit_price_cents"] is None
+
+    def test_fixed_account_absent_unit_price_still_returns_account_default(self, app):
+        from app.routes.admin_final.line_pricing import resolve_line_pricing
+        acct = _account("ETH_ABSENT_PRICE", True, None, 25000)
+        values, errors = resolve_line_pricing(
+            acct, None, {"quantity": "1"}, absent_as_none=True,
+        )
+        assert errors == []
+        assert values["unit_price_cents"] == 25000
+        assert values["account_default_unit_price_cents"] == 25000
+
+    def test_hotel_account_absent_rooms_returns_error(self, app):
+        from app.routes.admin_final.line_pricing import resolve_line_pricing
+        acct = _account("HTL_ABSENT_ROOMS", True, UI_GROUP_HOTEL_SERVICES, 15900)
+        values, errors = resolve_line_pricing(
+            acct, None, {"nights": "2"}, absent_as_none=True,
+        )
+        assert any("Rooms and nights" in e for e in errors)
+        assert values["quantity"] is None

@@ -316,6 +316,12 @@ class TestChangeAccountRoutes:
         assert data["detail"].expense_account_id == acct2.id
         assert data["line"].status == WORK_LINE_STATUS_PENDING
         assert notified["groups"] == [group2.id]
+        # This route's form has no quantity/price/description inputs today;
+        # an account-only change must leave the existing values alone rather
+        # than resetting them to resolve_line_pricing's bare-form defaults.
+        assert data["detail"].quantity == 1
+        assert data["detail"].unit_price_cents == 5000
+        assert data["detail"].description is None
 
     def test_post_rejected_for_non_admin(self, app, client, seed_draft_work_item):
         data = seed_draft_work_item
@@ -332,6 +338,39 @@ class TestChangeAccountRoutes:
             },
         )
         assert resp.status_code == 403
+
+    def test_account_only_change_preserves_quantity_price_and_description(
+        self, app, client, seed_draft_work_item
+    ):
+        """Regression test for the Task 6 review finding: change-account has
+        no quantity/price/description inputs, so resolve_line_pricing must
+        treat those fields as absent-not-zero. Before the fix this silently
+        zeroed out an existing line's pricing on every account correction."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        detail = data["detail"]
+        detail.quantity = 4
+        detail.unit_price_cents = 25000
+        detail.description = "Original important description"
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.post(
+            _url(app, "admin_final.line_change_account_submit", data, line_num=1),
+            data={
+                "expense_account_id": str(acct2.id),
+                "approval_group_id": str(group2.id),
+                "note": "Wrong account selected at submission",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+
+        db.session.refresh(detail)
+        assert detail.quantity == 4
+        assert detail.unit_price_cents == 25000
+        assert detail.description == "Original important description"
 
 
 class TestAdminAddLineRoutes:
@@ -446,3 +485,248 @@ class TestPriceSnapshotColumn:
         db.session.commit()
         db.session.refresh(data["detail"])
         assert data["detail"].account_default_unit_price_cents == 15900
+
+
+class TestAdminAccountList:
+    def test_includes_fixed_hotel_and_badge_excludes_inactive(
+        self, app, seed_draft_work_item
+    ):
+        from app.models import UI_GROUP_BADGES, UI_GROUP_HOTEL_SERVICES
+        from app.routes.admin_final.line_admin import _get_admin_expense_accounts
+
+        data = seed_draft_work_item
+        for code, fixed, group, active in [
+            ("HTL_DOUBLE_MAGPAID", True, UI_GROUP_HOTEL_SERVICES, True),
+            ("BADGE_STAFF", True, UI_GROUP_BADGES, True),
+            ("ETH_DROP", True, None, True),
+            ("RETIRED_ACCT", True, None, False),
+        ]:
+            db.session.add(ExpenseAccount(
+                code=code, name=code.title(), is_active=active,
+                is_fixed_cost=fixed, ui_display_group=group,
+                default_unit_price_cents=15900,
+                spend_type_mode=SPEND_TYPE_MODE_SINGLE_LOCKED,
+                default_spend_type_id=data["spend_type"].id,
+            ))
+        db.session.commit()
+
+        codes = {
+            a.code for a in _get_admin_expense_accounts(data["cycle"].id)
+        }
+        assert "HTL_DOUBLE_MAGPAID" in codes
+        assert "BADGE_STAFF" in codes
+        assert "ETH_DROP" in codes
+        assert "RETIRED_ACCT" not in codes
+
+
+class TestSnapshotThroughHelpers:
+    def test_add_line_stores_snapshot(self, app, seed_draft_work_item):
+        from app.routes.admin_final.helpers import admin_add_line
+        data = seed_draft_work_item
+        _make_submitted(data)
+        cl, fq, pr = _make_line_refs()
+        acct2, group2 = _make_target_account(data)
+
+        line, err = admin_add_line(
+            work_item=data["work_item"], user_ctx=_admin_ctx(),
+            expense_account=acct2, spend_type=data["spend_type"],
+            approval_group=group2, quantity=1, unit_price_cents=18900,
+            confidence_level=cl, frequency=fq, priority=pr,
+            warehouse_flag=False, description="Guest of honor suite",
+            note="Negotiated rate", account_default_unit_price_cents=15900,
+        )
+        db.session.commit()
+
+        assert err is None
+        assert line.budget_detail.unit_price_cents == 18900
+        assert line.budget_detail.account_default_unit_price_cents == 15900
+
+    def test_change_account_writes_price_and_snapshot(
+        self, app, seed_draft_work_item
+    ):
+        from app.routes.admin_final.helpers import change_line_expense_account
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+
+        ok, err = change_line_expense_account(
+            line=data["line"], work_item=data["work_item"],
+            new_account=acct2, new_spend_type=data["spend_type"],
+            new_group=group2, note="Wrong account", user_ctx=_admin_ctx(),
+            quantity=6, unit_price_cents=18900,
+            account_default_unit_price_cents=15900,
+            description="2 rooms: Guest of honor",
+        )
+        db.session.commit()
+
+        assert ok is True
+        detail = data["line"].budget_detail
+        assert detail.unit_price_cents == 18900
+        assert detail.quantity == 6
+        assert detail.account_default_unit_price_cents == 15900
+        assert detail.description == "2 rooms: Guest of honor"
+
+    def test_omitted_fields_leave_existing_values_but_snapshot_updates(
+        self, app, seed_draft_work_item
+    ):
+        """quantity/price/description are guarded by `is not None`; the
+        account snapshot is not, so it always takes the passed-in value."""
+        from app.routes.admin_final.helpers import change_line_expense_account
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        detail = data["line"].budget_detail
+        orig_quantity = detail.quantity
+        orig_price = detail.unit_price_cents
+        orig_description = detail.description
+
+        ok, err = change_line_expense_account(
+            line=data["line"], work_item=data["work_item"],
+            new_account=acct2, new_spend_type=data["spend_type"],
+            new_group=group2, note="Account only", user_ctx=_admin_ctx(),
+            account_default_unit_price_cents=15900,
+        )
+        db.session.commit()
+
+        assert ok is True
+        assert detail.quantity == orig_quantity
+        assert detail.unit_price_cents == orig_price
+        assert detail.description == orig_description
+        assert detail.account_default_unit_price_cents == 15900
+
+    def test_omitted_snapshot_clears_existing_snapshot(
+        self, app, seed_draft_work_item
+    ):
+        """Omitting account_default_unit_price_cents clears any prior
+        snapshot; the write is unconditional, unlike quantity/price/description."""
+        from app.routes.admin_final.helpers import change_line_expense_account
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        detail = data["line"].budget_detail
+        detail.account_default_unit_price_cents = 9900
+        db.session.commit()
+
+        ok, err = change_line_expense_account(
+            line=data["line"], work_item=data["work_item"],
+            new_account=acct2, new_spend_type=data["spend_type"],
+            new_group=group2, note="Re-booked", user_ctx=_admin_ctx(),
+            quantity=6, unit_price_cents=18900,
+        )
+        db.session.commit()
+
+        assert ok is True
+        assert detail.quantity == 6
+        assert detail.unit_price_cents == 18900
+        assert detail.account_default_unit_price_cents is None
+
+    def test_audit_records_pre_change_values(self, app, seed_draft_work_item):
+        """Old values must be captured before the writes, not after, or the
+        audit trail would record a no-op instead of the real change."""
+        from app.models import WorkLineAuditEvent
+        from app.routes.admin_final.helpers import change_line_expense_account
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        detail = data["line"].budget_detail
+        orig_quantity = detail.quantity
+        orig_price = detail.unit_price_cents
+
+        ok, err = change_line_expense_account(
+            line=data["line"], work_item=data["work_item"],
+            new_account=acct2, new_spend_type=data["spend_type"],
+            new_group=group2, note="Corrected quantity and rate",
+            user_ctx=_admin_ctx(), quantity=6, unit_price_cents=18900,
+        )
+        db.session.commit()
+        assert ok is True
+
+        events = WorkLineAuditEvent.query.filter_by(
+            work_line_id=data["line"].id
+        ).all()
+        qty_event = next(e for e in events if e.field_name == "quantity")
+        assert qty_event.old_value == str(orig_quantity)
+        assert qty_event.new_value == "6"
+
+        price_event = next(e for e in events if e.field_name == "unit_price")
+        assert price_event.old_value == f"${orig_price / 100:,.2f}"
+        assert price_event.new_value == "$189.00"
+
+
+class TestHotelLineThroughRoute:
+    def _hotel_account(self, data):
+        from app.models import UI_GROUP_HOTEL_SERVICES
+        acct = ExpenseAccount(
+            code="HTL_DOUBLE_MAGPAID", name="Double, MAGFest Paid",
+            is_active=True, is_fixed_cost=True,
+            ui_display_group=UI_GROUP_HOTEL_SERVICES,
+            default_unit_price_cents=15900,
+            spend_type_mode=SPEND_TYPE_MODE_SINGLE_LOCKED,
+            default_spend_type_id=data["spend_type"].id,
+            approval_group_id=data["approval_group"].id,
+        )
+        db.session.add(acct)
+        db.session.commit()
+        return acct
+
+    def test_add_hotel_line_with_override(self, app, client, seed_draft_work_item):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        cl, fq, pr = _make_line_refs()
+        acct = self._hotel_account(data)
+        _login(client, "test:admin")
+
+        resp = client.post(
+            _url(app, "admin_final.line_add_submit", data),
+            data={
+                "expense_account_id": acct.id,
+                "approval_group_id": data["approval_group"].id,
+                "rooms": "2", "nights": "3",
+                "unit_price": "189.00", "price_override": "on",
+                "confidence_level_id": cl.id,
+                "frequency_id": fq.id,
+                "priority_id": pr.id,
+                "description": "Guest of honor suite",
+                "note": "Negotiated rate for a special room",
+            },
+            follow_redirects=False,
+        )
+
+        assert resp.status_code == 302
+        new_line = [
+            l for l in data["work_item"].lines if l.line_number == 2
+        ][0]
+        detail = new_line.budget_detail
+        assert detail.quantity == 6
+        assert detail.unit_price_cents == 18900
+        assert detail.account_default_unit_price_cents == 15900
+        assert detail.description == "2 rooms: Guest of honor suite"
+
+    def test_add_hotel_line_without_override_uses_default(
+        self, app, client, seed_draft_work_item
+    ):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        cl, fq, pr = _make_line_refs()
+        acct = self._hotel_account(data)
+        _login(client, "test:admin")
+
+        client.post(
+            _url(app, "admin_final.line_add_submit", data),
+            data={
+                "expense_account_id": acct.id,
+                "approval_group_id": data["approval_group"].id,
+                "rooms": "1", "nights": "2",
+                "unit_price": "999.00",
+                "confidence_level_id": cl.id,
+                "frequency_id": fq.id,
+                "priority_id": pr.id,
+                "description": "Standard crash space",
+                "note": "Extra room needed",
+            },
+        )
+
+        new_line = [
+            l for l in data["work_item"].lines if l.line_number == 2
+        ][0]
+        assert new_line.budget_detail.unit_price_cents == 15900
