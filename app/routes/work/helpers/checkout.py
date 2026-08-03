@@ -16,7 +16,6 @@ from app.models import (
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_SUBMITTED,
-    WORK_ITEM_STATUS_NEEDS_INFO,
 )
 from app.routes import UserContext
 from app.line_details import get_line_routing_approval_group
@@ -245,7 +244,6 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
 
     is_draft = item.status == WORK_ITEM_STATUS_DRAFT
     is_submitted = item.status == WORK_ITEM_STATUS_SUBMITTED
-    is_needs_info = item.status == WORK_ITEM_STATUS_NEEDS_INFO
 
     # Check if user is a reviewer (admin or approver for lines in this item)
     is_approver_for_item = _is_approver_for_work_item(item, ctx.user_ctx)
@@ -292,12 +290,6 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
     # Can checkin: current user has checkout OR admin can force release
     can_checkin_item = is_checked_out_by_current_user or (portfolio_perms.is_worktype_admin and item_is_checked_out)
 
-    # Can request info: has checkout on item (current user)
-    can_request_info = is_checked_out_by_current_user and is_submitted
-
-    # Can respond to info: is requester/editor AND status is NEEDS_INFO
-    can_respond_to_info = portfolio_perms.can_edit and is_needs_info
-
     return WorkItemPerms(
         can_view=can_view,
         can_edit=can_edit,
@@ -307,8 +299,6 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
         can_delete=can_delete,
         can_checkout=can_checkout_item,
         can_checkin=can_checkin_item,
-        can_request_info=can_request_info,
-        can_respond_to_info=can_respond_to_info,
         is_worktype_admin=portfolio_perms.is_worktype_admin,
         is_draft=is_draft,
         is_checked_out=item_is_checked_out,

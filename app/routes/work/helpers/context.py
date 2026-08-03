@@ -79,8 +79,6 @@ class WorkItemPerms:
     can_delete: bool
     can_checkout: bool
     can_checkin: bool
-    can_request_info: bool
-    can_respond_to_info: bool
     is_worktype_admin: bool
     is_draft: bool
     is_checked_out: bool

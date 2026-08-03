@@ -21,7 +21,12 @@ WORK_ITEM_STATUS_SUBMITTED = "SUBMITTED"
 WORK_ITEM_STATUS_UNDER_REVIEW = "UNDER_REVIEW"
 WORK_ITEM_STATUS_FINALIZED = "FINALIZED"
 WORK_ITEM_STATUS_UNAPPROVED = "UNAPPROVED"  # reopened after finalize
-WORK_ITEM_STATUS_NEEDS_INFO = "NEEDS_INFO"  # awaiting requester response
+# Written only by line-level kickbacks as of August 2026. The request-level
+# "Request Information" action also set this on the work item, but no template
+# posted to its response route, so those items could never be checked out
+# again; that action was removed. Item-level reads stay for historical rows in
+# computations.py and admin_final/helpers.py.
+WORK_ITEM_STATUS_NEEDS_INFO = "NEEDS_INFO"
 WORK_ITEM_STATUS_PAUSED = "PAUSED"  # supplementary blocked while primary is unfinalized
 
 # ============================================================

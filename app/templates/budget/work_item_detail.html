@@ -359,23 +359,6 @@
     </div>
   {% endif %}
 
-  {# Request Information Form (for reviewers with checkout) #}
-  {% if perms.can_request_info %}
-    <div class="card" style="margin-bottom: 16px; background: #f8f9fa;">
-      <h4 style="margin:0 0 12px 0;">Request Information</h4>
-      <form method="post" action="{{ url_for('work.work_item_request_info', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div style="margin-bottom: 8px;">
-          <label for="message"><strong>What information do you need?</strong></label>
-          <textarea name="message" id="message" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Describe what additional information you need from the requester..." required></textarea>
-        </div>
-        <button type="submit" class="btn" data-confirm="Request information? This will change the status to NEEDS_INFO and release your lock.">
-          Request Information
-        </button>
-      </form>
-    </div>
-  {% endif %}
-
   {# ================================================================ #}
   {# TABBED LAYOUT FOR ADMINS #}
   {# ================================================================ #}
