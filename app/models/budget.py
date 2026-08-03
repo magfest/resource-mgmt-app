@@ -294,6 +294,12 @@ class BudgetLineDetail(db.Model):
     unit_price_cents = db.Column(db.Integer, nullable=False)
     quantity = db.Column(Numeric(12, 3), nullable=False, default=1)
 
+    # Snapshot of the account's effective default price when this line was
+    # written. NULL means no snapshot was taken; only the admin line tools set
+    # it. A stored price that differs from this is a deliberate one-off
+    # override, not drift.
+    account_default_unit_price_cents = db.Column(db.Integer, nullable=True)
+
     confidence_level_id = db.Column(
         db.Integer,
         db.ForeignKey("confidence_levels.id", name="fk_budget_line_details_confidence_level_id"),
