@@ -433,3 +433,16 @@ class TestEntryPoints:
         resp = client.get(_url(app, "approvals.line_review", data, line_num=1))
         assert resp.status_code == 200
         assert b"change-account" in resp.data
+
+
+class TestPriceSnapshotColumn:
+    def test_column_defaults_to_none(self, app, seed_draft_work_item):
+        data = seed_draft_work_item
+        assert data["detail"].account_default_unit_price_cents is None
+
+    def test_column_round_trips(self, app, seed_draft_work_item):
+        data = seed_draft_work_item
+        data["detail"].account_default_unit_price_cents = 15900
+        db.session.commit()
+        db.session.refresh(data["detail"])
+        assert data["detail"].account_default_unit_price_cents == 15900
