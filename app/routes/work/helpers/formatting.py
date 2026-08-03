@@ -5,11 +5,8 @@ Status labels, currency formatting, public ID generation, line filtering, and mi
 """
 from __future__ import annotations
 
-import secrets
-
 from app import db
 from app.models import (
-    WorkType,
     WorkItem,
     WorkLine,
     WorkLineReview,
@@ -28,35 +25,6 @@ from app.routes import UserContext
 # ============================================================
 # Public ID Generation
 # ============================================================
-
-def generate_public_id(prefix: str = "BUD") -> str:
-    """Generate unique public ID like BUD-A3F9K2."""
-    while True:
-        # Generate 6 random alphanumeric characters
-        random_part = secrets.token_urlsafe(4).upper().replace("-", "").replace("_", "")[:6]
-        candidate = f"{prefix}-{random_part}"
-
-        # Check for uniqueness
-        exists = db.session.query(WorkItem.id).filter_by(public_id=candidate).first()
-        if not exists:
-            return candidate
-
-
-def generate_public_id_for_work_type(work_type: WorkType) -> str:
-    """
-    Generate a public ID using the work type's configured prefix.
-
-    Args:
-        work_type: The work type to generate an ID for
-
-    Returns:
-        A unique public ID like "BUD-A3F9K2" or "CON-X7Y8Z9"
-    """
-    prefix = "REQ"  # Default fallback
-    if work_type.config:
-        prefix = work_type.config.public_id_prefix
-    return generate_public_id(prefix)
-
 
 def generate_public_id_for_portfolio(portfolio) -> str:
     """

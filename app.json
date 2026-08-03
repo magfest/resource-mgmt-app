@@ -19,7 +19,6 @@
   ],
   "env": {
     "APP_ENV": "development",
-    "BETA_TESTING_MODE": "True",
     "DEV_LOGIN_ENABLED": "True",
     "ENV_BANNER_MESSAGE": "Review App",
     "SECRET_KEY": {

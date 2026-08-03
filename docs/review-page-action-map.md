@@ -68,8 +68,8 @@ the AG review is `PENDING` **and** the admin has **not** already made a terminal
 ### 2b. Admin-final actions
 Go through: route → `_handle_admin_decision` (`admin_final/reviews.py:108`) →
 `apply_admin_final_decision` (`admin_final/helpers.py:334`) → audit `ADMIN_FINAL` + a
-**PUBLIC** comment (Task 13). **Precondition: `require_budget_admin` only — NO checkout
-check** (Concern C3).
+**PUBLIC** comment (Task 13). **Precondition: `require_budget_admin` AND
+`user_holds_checkout`** (`admin_final/reviews.py:174`) — C3 is RESOLVED.
 
 | Button | Route | admin_review → | line.status → | Other effects |
 |---|---|---|---|---|
@@ -176,12 +176,24 @@ Every display/gate that needs stage-specific truth should read `ag_review`/`admi
 Consider a small helper (e.g. `line_stage_state(line) -> {ag, admin}`) or explicit derived
 properties, so future code stops reaching for `line.status`.
 
-### C3 — 🟠 Checkout asymmetry: admin decisions bypass the lock
-AG decisions require the acting user to hold the checkout (`apply_review_decision:559`).
-Admin decisions require **only** `require_budget_admin` (`admin_final/reviews.py:110`) — **no
-checkout**. So two admins (or an admin + a reviewer) can act on the same line concurrently
-with no lock on the admin side. Decide whether admin-final decisions should also respect
-checkout, or whether that's intentional.
+### C3 — ✅ RESOLVED: checkout asymmetry on admin decisions
+~~AG decisions require the acting user to hold the checkout; admin decisions require only
+`require_budget_admin`, so two admins could act on the same line concurrently.~~
+
+Fixed by commit `a6ba076` ("require checkout for admin decisions"). Every admin-final
+entry point now enforces the lock:
+
+- `_handle_admin_decision` — `admin_final/reviews.py:174`
+- `line_reset` — `admin_final/reviews.py:93`
+- `line_return_to_group` — `admin_final/reviews.py:132`
+- the `can_admin_decide` display gate — `approvals/reviews.py:178-180`
+
+all via `user_holds_checkout(work_item, user_ctx)`, failing with "You must check out this
+item before making an admin decision."
+
+Relatedly, `can_checkout` (`work/helpers/checkout.py:120-125`) was widened so a work-type
+admin can acquire the lock in the first place — otherwise the new requirement would have
+locked budget admins out of their own final review.
 
 ### C4 — 🟡 Reset semantics are split and one path is dead
 - The UI "Reset for Re-review" button → `reset_line_for_rereview` (`helpers.py:687`): resets
@@ -218,6 +230,7 @@ but the redundancy means three places to keep in sync. Not urgent; note for futu
 
 ## 6. Suggested next steps (not yet actioned)
 1. Decide C1 (admin kickback → requester vs reviewer group). This is the live bug.
-2. Decide C3 (checkout on admin decisions).
-3. Clean up C4 dead reset path + C7 orphan route once C1/C3 are settled.
+2. ~~Decide C3 (checkout on admin decisions).~~ ✅ Resolved by `a6ba076` — admin-final
+   decisions now require the checkout lock.
+3. Clean up C4 dead reset path + C7 orphan route once C1 is settled.
 4. Consider C2 (a stage-state helper) to stop the recurring `line.status` misreads.

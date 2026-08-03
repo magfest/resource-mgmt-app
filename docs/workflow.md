@@ -49,12 +49,25 @@ admin-final (it auto-finalizes when the last line is decided).
 | DRAFT | Requester is building the request | Requester |
 | AWAITING_DISPATCH | Submitted; waiting for approval group assignment (dispatch work types only) | No one |
 | SUBMITTED | Lines under review | Reviewers (via checkout); requester responds to kickbacks |
+| NEEDS_INFO | Awaiting requester response | Requester |
 | FINALIZED | Locked and complete | No one (admin can unfinalize) |
 | PAUSED | Supplementary blocked by pending PRIMARY | No one |
-| UNAPPROVED | Reopened after finalize | Per admin action |
 
-(`NEEDS_INFO`/`NEEDS_ADJUSTMENT` are line-level, not item-level; a line kickback
-sets `needs_requester_action` on the line and flags the item.)
+Two further statuses are declared in `app/models/constants.py:18-25` but are never
+written to `work_item.status`:
+
+- **`UNDER_REVIEW`** — display-only. Derived at
+  `app/routes/work/helpers/computations.py:226` when an item is SUBMITTED with at least
+  one PENDING line. The database never holds this value, so never compare
+  `work_item.status` against it. The same derivation also emits `NEEDS_RESPONSE`
+  (computations.py:219), which is not a constant at all.
+- **`UNAPPROVED`** — vestigial; no code reads or writes it. Unfinalizing does *not*
+  produce it — `unfinalize_work_item` resets the item to SUBMITTED
+  (`app/routes/admin_final/helpers.py:634`).
+
+`NEEDS_ADJUSTMENT` is line-level only. `NEEDS_INFO` exists at **both** levels: a line
+kickback sets `needs_requester_action` on the line, and the request-info route sets the
+item status as well (`app/routes/work/work_items/actions.py:321`).
 
 ### Work Line Statuses
 
@@ -64,6 +77,7 @@ sets `needs_requester_action` on the line and flags the item.)
 | NEEDS_INFO | Question asked | Requester responds |
 | NEEDS_ADJUSTMENT | Change requested | Requester adjusts |
 | APPROVED | Approved at current stage | Moves to next stage |
+| APPROVED_NEEDS_REVIEW | Recommended with comments — approval-group terminal, awaits an admin decision | Admin decides; resolves to APPROVED at the recommended amount on finalize |
 | REJECTED | Denied | Requester may revise |
 
 ## Review Stages
@@ -75,11 +89,13 @@ Lines go through two review stages:
 Lines are routed to approval groups based on the work type's routing strategy:
 - **Budget** (live): Routed via expense account
 - **TechOps** (live): Routed via service type (category strategy)
-- **Supply Orders** (in development): Will route via item category
+- **Supply Orders** (live): Routed via item category
 - **Contracts** (future): Will route via contract type
 
 Approvers in that group can:
 - Approve the line
+- Recommend with comments (approve, but flag for admin final review) —
+  route `approvals.line_approve_needs_review`
 - Reject the line
 - Request more information
 - Request adjustment
@@ -99,7 +115,10 @@ To prevent conflicts when editing:
 2. **Edit**: Only the user with checkout can edit
 3. **Release**: Checkout released on save or timeout
 
-Admins can force-release checkouts if needed.
+Force-release is work-type scoped, not global (`app/routes/work/helpers/checkout.py:181-186`):
+a SUPER_ADMIN can force-release anywhere, a WORKTYPE_ADMIN only for items of their own
+work type — a TechOps admin cannot force-release a Budget item. The current holder can
+always release their own lock.
 
 ## Typical Flow
 
@@ -169,8 +188,8 @@ Notification failures are non-blocking — the workflow operation completes even
 | `/<event>/<dept>/budget/primary/new` | Create primary request |
 | `/<event>/<dept>/budget/item/<id>` | View/edit request |
 | `/approvals/` | Approver dashboard |
-| `/approvals/<group>/` | Approval group queue |
-| `/admin/final/` | Admin final review dashboard |
+| `/approvals/<group_code>` | Approval group queue (no trailing slash) |
+| `/admin/final-review/` | Admin final review dashboard |
 
 ## Code Locations
 

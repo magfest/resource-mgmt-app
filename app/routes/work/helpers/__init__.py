@@ -91,8 +91,6 @@ from .computations import (
 # Re-export formatting/utility functions
 from .formatting import (
     # Public ID
-    generate_public_id,
-    generate_public_id_for_work_type,
     generate_public_id_for_portfolio,
     # Formatting
     format_currency,
@@ -191,8 +189,6 @@ __all__ = [
     "compute_portfolio_status_summary",
     "compute_portfolio_status_from_loaded",
     # Public ID
-    "generate_public_id",
-    "generate_public_id_for_work_type",
     "generate_public_id_for_portfolio",
     # Formatting
     "format_currency",

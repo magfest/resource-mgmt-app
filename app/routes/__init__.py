@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable, Any, Set
-from flask import Flask, render_template, abort
+from flask import Flask, render_template
 
 from .. import db
 
@@ -88,19 +88,7 @@ def get_user_ctx() -> UserContext:
     )
 
 
-def _require_super_admin():
-    """Abort with 403 if user is not a super admin."""
-    if not h.is_super_admin():
-        abort(403)
-
-
 def render_page(template: str, **ctx):
-    user_ctx = get_user_ctx()
-    return render_template(template, user_ctx=user_ctx, **ctx)
-
-
-def render_admin_page(template: str, **ctx):
-    _require_super_admin()
     user_ctx = get_user_ctx()
     return render_template(template, user_ctx=user_ctx, **ctx)
 

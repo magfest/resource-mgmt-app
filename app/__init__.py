@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import secrets as stdlib_secrets  # Avoid conflict with app.secrets
 import threading
@@ -12,6 +13,10 @@ from flask_wtf.csrf import CSRFProtect
 db = SQLAlchemy()
 migrate = Migrate()
 csrf = CSRFProtect()
+
+# Recognized APP_ENV values. "production" is set only in the Heroku config vars;
+# "development" comes from .env / app.json, "testing" from CI and tests/conftest.py.
+KNOWN_APP_ENVS = ("production", "development", "testing")
 
 
 def create_app() -> Flask:
@@ -27,7 +32,21 @@ def create_app() -> Flask:
         app.logger.info(f"Loaded {secrets_loaded} secrets from AWS Secrets Manager")
 
     # --- Environment Detection ---
-    env = os.environ.get("APP_ENV", "development")
+    # Ten separate hardening measures key off is_production (required SECRET_KEY
+    # and DATABASE_URL, secure session cookie, shorter idle timeout, HSTS, the
+    # catch-all error handler, and the force-disabling of BETA_TESTING_MODE /
+    # DEV_LOGIN_ENABLED). All of them are opt-in on a single string comparison,
+    # so an unset or misspelled APP_ENV would silently disable every one at once
+    # — "nobody told me which environment this is" must not be read as
+    # "development". Require an explicit, recognized value instead.
+    env = os.environ.get("APP_ENV", "").strip().lower()
+    if env not in KNOWN_APP_ENVS:
+        raise RuntimeError(
+            f"APP_ENV must be set to one of {KNOWN_APP_ENVS} (got {env!r}). "
+            "Production safety measures key off this value, so an unset or "
+            "misspelled APP_ENV is treated as a configuration error rather "
+            "than silently falling back to development."
+        )
     is_production = env == "production"
 
     # --- Secret Key (REQUIRED in production) ---
@@ -69,10 +88,23 @@ def create_app() -> Flask:
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=session_timeout_minutes)
     app.config["SESSION_REFRESH_EACH_REQUEST"] = True  # Reset timeout on each request (sliding window)
 
+    # --- Checkout Lock Timeouts ---
+    # JSON object of minutes by role, e.g. {"APPROVER": 30, "SUPER_ADMIN": 120, "DEFAULT": 30}
+    # Unset (or malformed) leaves DEFAULT_CHECKOUT_TIMEOUTS in checkout.py in effect.
+    checkout_timeouts = os.environ.get("CHECKOUT_TIMEOUTS")
+    if checkout_timeouts:
+        try:
+            app.config["CHECKOUT_TIMEOUTS"] = json.loads(checkout_timeouts)
+        except ValueError:
+            app.logger.warning("CHECKOUT_TIMEOUTS is not valid JSON; using built-in defaults")
+
     # --- Beta Testing Mode ---
-    # Enables role override dropdown for super-admins to test different permission levels
+    # Enables the role-override dropdown and super-admin user impersonation
+    # (app/routes/dev.py) so permission levels can be tested. Development only:
+    # the guard sits outside the whole expression so no env value can re-enable
+    # impersonation against live data — same shape as DEV_LOGIN_ENABLED below.
     beta_mode = os.environ.get("BETA_TESTING_MODE", "").lower()
-    app.config["BETA_TESTING_MODE"] = beta_mode == "true" or (not is_production and beta_mode != "false")
+    app.config["BETA_TESTING_MODE"] = beta_mode != "false" and not is_production
 
     # --- Environment Banner ---
     # Show a warning banner for non-production environments
@@ -135,6 +167,10 @@ def create_app() -> Flask:
     # Legacy flags for template compatibility
     app.config["GOOGLE_AUTH_ENABLED"] = app.config["AUTH_PROVIDER"] == "google"
     app.config["KEYCLOAK_AUTH_ENABLED"] = app.config["AUTH_PROVIDER"] == "keycloak"
+
+    # Organization email domains (comma-separated), used to identify staff accounts
+    # on the OAuth email-change path. Unset leaves DEFAULT_ORG_DOMAINS in auth.py in effect.
+    app.config["ORG_EMAIL_DOMAINS"] = os.environ.get("ORG_EMAIL_DOMAINS")
 
     # --- Email Notifications (AWS SES) ---
     email_enabled = os.environ.get("EMAIL_ENABLED", "").lower()

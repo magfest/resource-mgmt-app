@@ -58,9 +58,10 @@ def seed_work_types() -> dict[str, WorkType]:
     """
     print("Seeding work types...")
 
-    # is_active=False for work types whose UI isn't built yet (CONTRACT,
-    # SUPPLY) or that should opt-in per environment (TECHOPS is enabled
-    # in staging only via the admin Work Types page after seeding).
+    # is_active=False for work types whose UI isn't built yet (CONTRACT, AV)
+    # or that should opt-in per environment (TECHOPS is enabled in staging
+    # only via the admin Work Types page after seeding).
+    # SUPPLY is seeded active — its UI shipped.
     # Inactive worktypes still let URL routing resolve their slugs.
     work_types_data = [
         ("BUDGET", "Budget Requests", 10, True),
