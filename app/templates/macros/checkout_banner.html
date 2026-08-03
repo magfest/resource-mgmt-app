@@ -44,3 +44,31 @@
   {%- endif %}
 {%- endif %}
 {%- endmacro %}
+
+{# Renders the "Start Reviewing" button, or the reason it is unavailable.
+
+   Gated on perms.can_checkout, which is the same flag the checkout route
+   enforces. Callers used to render this form off can_review or
+   can_admin_decide, neither of which knows whether checkout would be granted,
+   so the button appeared in states where the POST always failed.
+
+   Usage:
+     {% from "macros/checkout_banner.html" import render_checkout_action %}
+     {{ render_checkout_action(work_item, perms, ctx) }}
+#}
+
+{% macro render_checkout_action(work_item, perms, ctx) -%}
+<div style="margin-top: 12px;">
+  {%- if perms.can_checkout %}
+    <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ request.url }}">
+      <button type="submit" class="btn btn-primary">Start Reviewing</button>
+    </form>
+  {%- elif perms.is_checked_out %}
+    <span class="muted">Another reviewer has this request checked out.</span>
+  {%- else %}
+    <span class="muted">This request is not open for review right now.</span>
+  {%- endif %}
+</div>
+{%- endmacro %}

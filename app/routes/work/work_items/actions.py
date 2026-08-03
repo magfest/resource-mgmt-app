@@ -20,6 +20,7 @@ from ..helpers import (
     require_work_item_view,
     require_work_item_edit,
     compute_work_item_totals,
+    can_checkout,
     checkout_work_item,
     checkin_work_item,
     is_budget_admin,
@@ -193,7 +194,13 @@ def work_item_checkout(event: str, dept: str, public_id: str, work_type_slug: st
     )
 
     if not perms.can_checkout:
-        flash("You cannot start a review session for this budget request.", "error")
+        # perms.can_checkout is the stricter gate; it also requires a line in
+        # this item routed to the user's approval groups. can_checkout() can
+        # still answer OK here, so only use its reason when it refuses too.
+        allowed, reason = can_checkout(work_item, get_user_ctx())
+        if allowed:
+            reason = "You are not a reviewer for any line on this request."
+        flash(reason, "error")
         return redirect(return_to or default_redirect)
 
     user_ctx = get_user_ctx()
