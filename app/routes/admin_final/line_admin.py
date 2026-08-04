@@ -28,7 +28,15 @@ from .helpers import (
     change_line_expense_account,
     require_budget_admin,
 )
-from .line_pricing import build_account_pricing_map, resolve_line_pricing
+from .hotel_rooms_report import derive_rooms_and_nights
+from .line_pricing import (
+    KIND_HOTEL,
+    KIND_STANDARD,
+    build_account_pricing_map,
+    classify_account,
+    resolve_line_pricing,
+    strip_rooms_prefix,
+)
 from .reviews import _get_work_item_and_line
 
 
@@ -146,6 +154,51 @@ def line_change_account(event: str, dept: str, public_id: str, line_num: int, wo
         abort(404, "Line has no budget details.")
 
     expense_accounts = _get_admin_expense_accounts(ctx.event_cycle.id)
+
+    # A line already on a hotel account has a meaningful rooms/nights split.
+    # Preserve it. A non-hotel quantity has no such split, so guessing one
+    # (e.g. defaulting to 1/1) would produce a plausible-looking wrong
+    # booking. Only derive when the line's current account is hotel-kind,
+    # using the same parsing the hotel rooms report trusts.
+    current_rooms = current_nights = None
+    if classify_account(detail.expense_account, ctx.event_cycle.id) == KIND_HOTEL:
+        current_rooms, current_nights, _ = derive_rooms_and_nights(
+            detail.quantity, detail.description
+        )
+
+    # Built once and passed as both account_pricing (for the form script) and
+    # the source of current_price_is_override below, so the two can never
+    # disagree about what the account's current default price is.
+    account_pricing = build_account_pricing_map(expense_accounts, ctx.event_cycle.id)
+
+    # account_default_unit_price_cents is only written by the admin tools, so
+    # every requester-created fixed-cost/hotel/badge line has it NULL; using
+    # it here would treat all of them as "not an override" and let
+    # refreshPricing() silently reset their stored price on page load.
+    # Compare against the account's live default instead, the same value the
+    # form script itself would write.
+    info = account_pricing.get(detail.expense_account_id)
+    current_price_is_override = (
+        info is not None
+        and info["kind"] != KIND_STANDARD
+        and detail.unit_price_cents != info["default_unit_price_cents"]
+    )
+
+    # Same inputs as current_price_is_override, so the two can never
+    # disagree: the field is locked exactly when there is a default to lock
+    # to and the admin hasn't already overridden it. Rendered server-side so
+    # the field never paints as editable before refreshPricing() runs.
+    current_price_is_locked = (
+        info is not None
+        and info["kind"] != KIND_STANDARD
+        and not current_price_is_override
+    )
+
+    # The server re-adds the "N rooms: " prefix from the Rooms field on
+    # submit, so showing it in the textarea too invites an admin to hand-edit
+    # it there; that edit would be silently discarded.
+    current_description = strip_rooms_prefix(detail.description)
+
     from app.routes.work.lines import build_spend_types_by_account
     return render_template(
         "admin_final/line_change_account.html",
@@ -155,9 +208,14 @@ def line_change_account(event: str, dept: str, public_id: str, line_num: int, wo
         detail=detail,
         expense_accounts=expense_accounts,
         spend_types_by_account=build_spend_types_by_account(expense_accounts),
-        account_pricing=build_account_pricing_map(expense_accounts, ctx.event_cycle.id),
+        account_pricing=account_pricing,
         approval_groups=_get_budget_approval_groups(ctx.work_type.id),
         format_currency=format_currency,
+        current_rooms=current_rooms,
+        current_nights=current_nights,
+        current_price_is_override=current_price_is_override,
+        current_price_is_locked=current_price_is_locked,
+        current_description=current_description,
     )
 
 
@@ -174,9 +232,9 @@ def line_change_account_submit(event: str, dept: str, public_id: str, line_num: 
 
     pricing = None
     if account:
-        # absent_as_none=True: this form has no quantity/price/description
-        # inputs, so a missing field means "keep the line's current value,"
-        # not "reset it to zero."
+        # absent_as_none=True: a missing key means keep the line's current
+        # value. The browser form always sends these fields now; this guards
+        # hand-built or replayed POSTs that omit one, not normal submissions.
         pricing, pricing_errors = resolve_line_pricing(
             account, ctx.event_cycle.id, request.form, absent_as_none=True
         )

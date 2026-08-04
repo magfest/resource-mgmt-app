@@ -143,12 +143,21 @@ def resolve_line_pricing(account, event_cycle_id, form, absent_as_none=False):
     account default price unless the form carries an explicit override.
 
     With absent_as_none=True, a field missing from the form resolves to None
-    instead of a default. change-account has no quantity, price, or
-    description inputs today; its caller reads None as "keep the line's
-    current value." A hotel account still requires rooms and nights
-    explicitly: an existing line's quantity means units, but a hotel line's
-    quantity means room-nights, and carrying the old number over would
-    mislabel it and corrupt the hotel rooms report.
+    instead of a default. The browser form always sends quantity, price, and
+    description now; this guards hand-built or replayed POSTs that omit one,
+    and the caller reads None as "keep the line's current value." A hotel
+    account still requires rooms and nights explicitly: an existing line's
+    quantity means units, but a hotel line's quantity means room-nights, and
+    carrying the old number over would mislabel it and corrupt the hotel
+    rooms report.
+
+    Description is the exception to that "keep the current value" rule: it
+    is always required, on both tools, so a missing or blank description
+    is an error rather than None. An admin adds or re-books a line for a
+    reason, and description is the only field that reaches the reports; the
+    note field answers a different question and goes to the comment thread,
+    not the line. This also stops a hotel line from storing "N rooms: "
+    with nothing after it.
 
     Returns:
         (values, errors). values carries quantity, unit_price_cents,
@@ -163,6 +172,9 @@ def resolve_line_pricing(account, event_cycle_id, form, absent_as_none=False):
         raw_description = (form.get("description") or "")
         raw_description = raw_description.replace("\r\n", "\n").replace("\r", "\n")
         description = strip_rooms_prefix(raw_description)
+
+    if not description:
+        errors.append("Description is required.")
 
     if kind == KIND_HOTEL:
         if absent_as_none and ("rooms" not in form or "nights" not in form):

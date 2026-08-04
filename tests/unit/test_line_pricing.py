@@ -126,13 +126,16 @@ class TestResolveLinePricing:
         assert values["description"] == "Crash space"
         assert values["quantity"] == 4
 
-    def test_hotel_empty_description_gets_no_trailing_space(self, app):
+    def test_hotel_empty_description_requires_description(self, app):
+        """An empty description used to slip through as the bare "3 rooms:"
+        prefix with nothing after it. Description is now required, so this
+        is always an error; callers check errors before using values."""
         from app.routes.admin_final.line_pricing import resolve_line_pricing
         acct = _account("HTL_DOUBLE_HELD", True, UI_GROUP_HOTEL_SERVICES, 15900)
         values, errors = resolve_line_pricing(acct, None, {
             "rooms": "3", "nights": "2", "description": "",
         })
-        assert values["description"] == "3 rooms:"
+        assert errors == ["Description is required."]
 
     def test_fixed_uses_default_when_override_absent(self, app):
         from app.routes.admin_final.line_pricing import resolve_line_pricing
@@ -254,34 +257,31 @@ class TestResolveLinePricing:
 
 
 class TestResolveLinePricingAbsentAsNone:
-    """change-account has no quantity/price/description inputs; a field
-    missing from the form must resolve to None, not a bare-form default, so
-    the caller can tell "not submitted" apart from "submitted as zero"."""
+    """change-account has no quantity/price inputs; a field missing from the
+    form must resolve to None, not a bare-form default, so the caller can
+    tell "not submitted" apart from "submitted as zero." Description is the
+    exception: it is required on every submission, so a missing description
+    is always an error, never a silent None -- see
+    TestDescriptionRequired."""
 
     def test_absent_quantity_returns_none_with_no_error(self, app):
         from app.routes.admin_final.line_pricing import resolve_line_pricing
         acct = _account("STD_ABSENT_QTY", is_fixed=False)
         values, errors = resolve_line_pricing(
-            acct, None, {"unit_price": "10.00"}, absent_as_none=True,
-        )
-        assert errors == []
-        assert values["quantity"] is None
-
-    def test_absent_description_returns_none(self, app):
-        from app.routes.admin_final.line_pricing import resolve_line_pricing
-        acct = _account("STD_ABSENT_DESC", is_fixed=False)
-        values, errors = resolve_line_pricing(
-            acct, None, {"quantity": "1", "unit_price": "10.00"},
+            acct, None,
+            {"unit_price": "10.00", "description": "Kept as-is"},
             absent_as_none=True,
         )
         assert errors == []
-        assert values["description"] is None
+        assert values["quantity"] is None
 
     def test_standard_account_absent_unit_price_returns_none(self, app):
         from app.routes.admin_final.line_pricing import resolve_line_pricing
         acct = _account("STD_ABSENT_PRICE", is_fixed=False)
         values, errors = resolve_line_pricing(
-            acct, None, {"quantity": "1"}, absent_as_none=True,
+            acct, None,
+            {"quantity": "1", "description": "Kept as-is"},
+            absent_as_none=True,
         )
         assert errors == []
         assert values["unit_price_cents"] is None
@@ -290,7 +290,9 @@ class TestResolveLinePricingAbsentAsNone:
         from app.routes.admin_final.line_pricing import resolve_line_pricing
         acct = _account("ETH_ABSENT_PRICE", True, None, 25000)
         values, errors = resolve_line_pricing(
-            acct, None, {"quantity": "1"}, absent_as_none=True,
+            acct, None,
+            {"quantity": "1", "description": "Kept as-is"},
+            absent_as_none=True,
         )
         assert errors == []
         assert values["unit_price_cents"] == 25000
@@ -300,7 +302,39 @@ class TestResolveLinePricingAbsentAsNone:
         from app.routes.admin_final.line_pricing import resolve_line_pricing
         acct = _account("HTL_ABSENT_ROOMS", True, UI_GROUP_HOTEL_SERVICES, 15900)
         values, errors = resolve_line_pricing(
-            acct, None, {"nights": "2"}, absent_as_none=True,
+            acct, None,
+            {"nights": "2", "description": "Kept as-is"},
+            absent_as_none=True,
         )
         assert any("Rooms and nights" in e for e in errors)
         assert values["quantity"] is None
+
+
+class TestDescriptionRequired:
+    """Description is required on both admin line tools: an admin adds or
+    re-books a line for a reason, and description is the only field that
+    reaches the reports. This is a behavior change from the other
+    absent_as_none fields, which fall back to "keep the current value";
+    a missing or blank description is always an error instead."""
+
+    def test_absent_description_key_is_required_error(self, app):
+        """A hand-built POST that omits the key entirely, on the
+        absent_as_none=True (change-account) path."""
+        from app.routes.admin_final.line_pricing import resolve_line_pricing
+        acct = _account("STD_ABSENT_DESC", is_fixed=False)
+        values, errors = resolve_line_pricing(
+            acct, None, {"quantity": "1", "unit_price": "10.00"},
+            absent_as_none=True,
+        )
+        assert errors == ["Description is required."]
+        assert values["description"] is None
+
+    def test_blank_description_is_required_error(self, app):
+        """A submitted-but-empty description, on the add-line
+        (absent_as_none=False) path -- the ordinary browser-form case."""
+        from app.routes.admin_final.line_pricing import resolve_line_pricing
+        acct = _account("STD_BLANK_DESC", is_fixed=False)
+        values, errors = resolve_line_pricing(
+            acct, None, {"quantity": "1", "unit_price": "10.00", "description": "   "},
+        )
+        assert errors == ["Description is required."]

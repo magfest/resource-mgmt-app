@@ -850,7 +850,9 @@ def change_line_expense_account(
     line.current_review_stage = REVIEW_STAGE_APPROVAL_GROUP
 
     from app.routes.approvals.helpers import audit_line_field_changes
-    changes = [("expense_account", old_account_name, new_account.name)]
+    changes = []
+    if old_account_name != new_account.name:
+        changes.append(("expense_account", old_account_name, new_account.name))
     if old_spend_type_name != new_spend_type.name:
         changes.append(("spend_type", old_spend_type_name, new_spend_type.name))
     if old_group_name != new_group.name:
@@ -863,7 +865,8 @@ def change_line_expense_account(
             f"${old_price_cents / 100:,.2f}",
             f"${unit_price_cents / 100:,.2f}",
         ))
-    audit_line_field_changes(line, changes, user_ctx)
+    if changes:
+        audit_line_field_changes(line, changes, user_ctx)
 
     db.session.add(WorkLineComment(
         work_line_id=line.id,

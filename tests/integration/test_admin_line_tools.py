@@ -2,6 +2,8 @@
 Integration tests for budget-admin line tools:
 expense account correction + admin add-line on in-review requests.
 """
+import re
+from collections import Counter
 from datetime import datetime, timedelta
 
 from flask import url_for
@@ -304,6 +306,7 @@ class TestChangeAccountRoutes:
             data={
                 "expense_account_id": str(acct2.id),
                 "approval_group_id": str(group2.id),
+                "description": "Corrected to the right account",
                 "note": "Wrong account selected at submission",
             },
             follow_redirects=True,
@@ -316,12 +319,12 @@ class TestChangeAccountRoutes:
         assert data["detail"].expense_account_id == acct2.id
         assert data["line"].status == WORK_LINE_STATUS_PENDING
         assert notified["groups"] == [group2.id]
-        # This route's form has no quantity/price/description inputs today;
-        # an account-only change must leave the existing values alone rather
-        # than resetting them to resolve_line_pricing's bare-form defaults.
+        # absent_as_none keeps quantity/unit_price at their current values
+        # when the form omits them; description is required now, so it is
+        # always written from what was submitted.
         assert data["detail"].quantity == 1
         assert data["detail"].unit_price_cents == 5000
-        assert data["detail"].description is None
+        assert data["detail"].description == "Corrected to the right account"
 
     def test_post_rejected_for_non_admin(self, app, client, seed_draft_work_item):
         data = seed_draft_work_item
@@ -334,6 +337,7 @@ class TestChangeAccountRoutes:
             data={
                 "expense_account_id": str(acct2.id),
                 "approval_group_id": str(group2.id),
+                "description": "Corrected account",
                 "note": "x",
             },
         )
@@ -342,10 +346,11 @@ class TestChangeAccountRoutes:
     def test_account_only_change_preserves_quantity_price_and_description(
         self, app, client, seed_draft_work_item
     ):
-        """Regression test for the Task 6 review finding: change-account has
-        no quantity/price/description inputs, so resolve_line_pricing must
-        treat those fields as absent-not-zero. Before the fix this silently
-        zeroed out an existing line's pricing on every account correction."""
+        """Regression test for the Task 6 review finding: change-account's
+        quantity and unit_price inputs are absent-not-zero via
+        absent_as_none, so an account-only change must leave them alone.
+        Description is no longer part of that contract: it is required on
+        every submission and is always written from what was posted."""
         data = seed_draft_work_item
         _make_submitted(data)
         acct2, group2 = _make_target_account(data)
@@ -361,6 +366,7 @@ class TestChangeAccountRoutes:
             data={
                 "expense_account_id": str(acct2.id),
                 "approval_group_id": str(group2.id),
+                "description": "Corrected account, same pricing",
                 "note": "Wrong account selected at submission",
             },
             follow_redirects=True,
@@ -370,7 +376,38 @@ class TestChangeAccountRoutes:
         db.session.refresh(detail)
         assert detail.quantity == 4
         assert detail.unit_price_cents == 25000
-        assert detail.description == "Original important description"
+        assert detail.description == "Corrected account, same pricing"
+
+    def test_post_without_description_is_rejected_and_writes_nothing(
+        self, app, client, seed_draft_work_item
+    ):
+        """Description is required on every change-account submission; a
+        POST that omits it must be rejected before anything is written, not
+        silently keep the line on its old account with the old value."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        detail = data["detail"]
+        original_account_id = detail.expense_account_id
+        original_description = detail.description
+        _login(client, "test:admin")
+
+        resp = client.post(
+            _url(app, "admin_final.line_change_account_submit", data, line_num=1),
+            data={
+                "expense_account_id": str(acct2.id),
+                "approval_group_id": str(group2.id),
+                "note": "Wrong account selected at submission",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"Description is required." in resp.data
+
+        db.session.refresh(detail)
+        assert detail.expense_account_id == original_account_id
+        assert detail.expense_account_id != acct2.id
+        assert detail.description == original_description
 
 
 class TestAdminAddLineRoutes:
@@ -430,6 +467,37 @@ class TestAdminAddLineRoutes:
 
         resp = client.post(_url(app, "admin_final.line_add_submit", data), data={})
         assert resp.status_code == 403
+
+    def test_post_without_description_is_rejected_and_creates_no_line(
+        self, app, client, seed_draft_work_item
+    ):
+        """Description is required on every add-line submission; a POST
+        that omits it must be rejected before a line is created."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+        cl, fq, pr = _make_line_refs()
+        _login(client, "test:admin")
+
+        resp = client.post(
+            _url(app, "admin_final.line_add_submit", data),
+            data={
+                "expense_account_id": str(acct2.id),
+                "approval_group_id": str(group2.id),
+                "quantity": "3",
+                "unit_price": "45.50",
+                "confidence_level_id": str(cl.id),
+                "frequency_id": str(fq.id),
+                "priority_id": str(pr.id),
+                "note": "Missed during original submission",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"Description is required." in resp.data
+
+        db.session.refresh(data["work_item"])
+        assert len(data["work_item"].lines) == 1
 
 
 class TestEntryPoints:
@@ -652,6 +720,57 @@ class TestSnapshotThroughHelpers:
         assert price_event.old_value == f"${orig_price / 100:,.2f}"
         assert price_event.new_value == "$189.00"
 
+    def test_no_op_account_resubmit_records_no_expense_account_audit_row(
+        self, app, seed_draft_work_item
+    ):
+        """spend_type/review_group/quantity/unit_price are only audited when
+        they actually change; expense_account must be guarded the same way,
+        or re-submitting without touching the dropdown logs a fake
+        "X -> X" change."""
+        from app.models import WorkLineAuditEvent
+        from app.routes.admin_final.helpers import change_line_expense_account
+        data = seed_draft_work_item
+        _make_submitted(data)
+
+        ok, err = change_line_expense_account(
+            line=data["line"], work_item=data["work_item"],
+            new_account=data["expense_account"], new_spend_type=data["spend_type"],
+            new_group=data["approval_group"], note="Re-confirming the account is correct",
+            user_ctx=_admin_ctx(),
+        )
+        db.session.commit()
+        assert ok is True
+
+        events = WorkLineAuditEvent.query.filter_by(
+            work_line_id=data["line"].id, field_name="expense_account",
+        ).all()
+        assert events == []
+
+    def test_real_account_change_records_expense_account_audit_row(
+        self, app, seed_draft_work_item
+    ):
+        from app.models import WorkLineAuditEvent
+        from app.routes.admin_final.helpers import change_line_expense_account
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct2, group2 = _make_target_account(data)
+
+        ok, err = change_line_expense_account(
+            line=data["line"], work_item=data["work_item"],
+            new_account=acct2, new_spend_type=data["spend_type"],
+            new_group=group2, note="Wrong account selected at submission",
+            user_ctx=_admin_ctx(),
+        )
+        db.session.commit()
+        assert ok is True
+
+        events = WorkLineAuditEvent.query.filter_by(
+            work_line_id=data["line"].id, field_name="expense_account",
+        ).all()
+        assert len(events) == 1
+        assert events[0].old_value == data["expense_account"].name
+        assert events[0].new_value == acct2.name
+
 
 class TestHotelLineThroughRoute:
     def _hotel_account(self, data):
@@ -730,3 +849,322 @@ class TestHotelLineThroughRoute:
             l for l in data["work_item"].lines if l.line_number == 2
         ][0]
         assert new_line.budget_detail.unit_price_cents == 15900
+
+
+class TestAdminLineForms:
+    def _hotel_account(self, data):
+        from app.models import UI_GROUP_HOTEL_SERVICES
+        acct = ExpenseAccount(
+            code="HTL_STD_MAGPAID", name="Standard, MAGFest Paid",
+            is_active=True, is_fixed_cost=True,
+            ui_display_group=UI_GROUP_HOTEL_SERVICES,
+            default_unit_price_cents=15900,
+            spend_type_mode=SPEND_TYPE_MODE_SINGLE_LOCKED,
+            default_spend_type_id=data["spend_type"].id,
+            approval_group_id=data["approval_group"].id,
+        )
+        db.session.add(acct)
+        db.session.commit()
+        return acct
+
+    def _price_override_tag(self, body):
+        match = re.search(r'<input[^>]*name="price_override"[^>]*>', body)
+        assert match is not None, "price_override checkbox not found in rendered form"
+        return match.group(0)
+
+    def _price_input_tag(self, body):
+        match = re.search(r'<input[^>]*name="unit_price"[^>]*>', body)
+        assert match is not None, "unit_price input not found in rendered form"
+        return match.group(0)
+
+    def test_add_form_renders_hotel_and_override_controls(
+        self, app, client, seed_draft_work_item
+    ):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _make_line_refs()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(app, "admin_final.line_add", data))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert 'name="rooms"' in body
+        assert 'name="nights"' in body
+        assert 'name="price_override"' in body
+
+        # A value="1" here would submit the string "1", not "on", and
+        # resolve_line_pricing only treats the literal "on" as an override
+        # request -- see test_price_override_requires_exact_literal_on.
+        assert 'value=' not in self._price_override_tag(body)
+
+    def test_change_account_form_renders_description(
+        self, app, client, seed_draft_work_item
+    ):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert 'name="description"' in body
+        assert 'name="rooms"' in body
+        assert 'value=' not in self._price_override_tag(body)
+
+    def test_change_account_renders_the_lines_own_stored_price(
+        self, app, client, seed_draft_work_item
+    ):
+        """Pins the value _line_account_fields_js.html's originalPrice reads
+        from the DOM at load. If the server ever stopped rendering the
+        line's own price here, the JS fix for switching back to a STANDARD
+        account after a defaulted one would have nothing correct to restore."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        detail = data["detail"]
+        detail.unit_price_cents = 30000
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert re.search(r'name="unit_price"[^>]*value="300\.00"', body)
+
+    def test_change_account_renders_locked_styling_for_fixed_cost_account(
+        self, app, client, seed_draft_work_item
+    ):
+        """A readOnly input gets no browser styling on its own, so the field
+        must carry the price-locked class hook whenever it's readonly, or it
+        looks editable while silently rejecting keystrokes."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct = self._hotel_account(data)
+        detail = data["detail"]
+        detail.expense_account_id = acct.id
+        detail.spend_type_id = acct.default_spend_type_id
+        detail.quantity = 1
+        detail.unit_price_cents = acct.default_unit_price_cents
+        detail.account_default_unit_price_cents = None
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+        tag = self._price_input_tag(body)
+
+        assert resp.status_code == 200
+        assert "price-locked" in tag
+        assert "readonly" in tag
+
+    def test_change_account_renders_unlocked_styling_for_standard_account(
+        self, app, client, seed_draft_work_item
+    ):
+        """seed_draft_work_item's line is on a STANDARD account (no account
+        default), so the price field must render fully editable."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+        tag = self._price_input_tag(body)
+
+        assert resp.status_code == 200
+        assert "price-locked" not in tag
+        assert "readonly" not in tag
+
+    def test_change_account_prefills_rooms_and_nights_for_hotel_line(
+        self, app, client, seed_draft_work_item
+    ):
+        """An existing hotel line's room/night split must survive opening the
+        change-account form, not collapse to a 1/1 default."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct = self._hotel_account(data)
+        detail = data["detail"]
+        detail.expense_account_id = acct.id
+        detail.spend_type_id = acct.default_spend_type_id
+        detail.quantity = 6
+        detail.description = "3 rooms: Suite block"
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert re.search(r'name="rooms"[^>]*value="3"', body)
+        assert re.search(r'name="nights"[^>]*value="2"', body)
+
+    def test_change_account_strips_rooms_prefix_from_description(
+        self, app, client, seed_draft_work_item
+    ):
+        """The server re-adds "N rooms: " from the Rooms field on submit;
+        showing it in the textarea too invites a hand-edit that submit would
+        then silently discard."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct = self._hotel_account(data)
+        detail = data["detail"]
+        detail.expense_account_id = acct.id
+        detail.spend_type_id = acct.default_spend_type_id
+        detail.quantity = 6
+        detail.description = "3 rooms: Suite block"
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        textarea = re.search(
+            r'<textarea[^>]*name="description"[^>]*>(.*?)</textarea>', body, re.DOTALL
+        )
+        assert textarea is not None, "description textarea not found"
+        assert "3 rooms:" not in textarea.group(1)
+        assert "Suite block" in textarea.group(1)
+
+    def test_change_account_leaves_rooms_and_nights_empty_for_non_hotel_line(
+        self, app, client, seed_draft_work_item
+    ):
+        """seed_draft_work_item's line is on a STANDARD account; there is no
+        room/night split to preserve, and 1/1 would be an invented booking."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert re.search(r'name="rooms"[^>]*value=""', body)
+        assert re.search(r'name="nights"[^>]*value=""', body)
+
+    def test_change_account_prechecks_override_when_price_differs_from_snapshot(
+        self, app, client, seed_draft_work_item
+    ):
+        """A stored price that differs from the account's current default is
+        a deliberate override; the checkbox must start checked or
+        refreshPricing() would silently reset it on page load."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct = self._hotel_account(data)
+        detail = data["detail"]
+        detail.expense_account_id = acct.id
+        detail.spend_type_id = acct.default_spend_type_id
+        detail.quantity = 6
+        detail.unit_price_cents = 18900
+        detail.account_default_unit_price_cents = 15900
+        detail.description = "3 rooms: Suite block"
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert "checked" in self._price_override_tag(body)
+
+    def test_change_account_prechecks_override_with_null_snapshot(
+        self, app, client, seed_draft_work_item
+    ):
+        """Every requester-created fixed-cost/hotel/badge line has a NULL
+        account_default_unit_price_cents; the override check must not depend
+        on that column, or every such line's price gets silently reset."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct = self._hotel_account(data)
+        detail = data["detail"]
+        detail.expense_account_id = acct.id
+        detail.spend_type_id = acct.default_spend_type_id
+        detail.quantity = 6
+        detail.unit_price_cents = 18900
+        detail.account_default_unit_price_cents = None
+        detail.description = "3 rooms: Suite block"
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert "checked" in self._price_override_tag(body)
+
+    def test_change_account_leaves_override_unchecked_when_price_matches_snapshot(
+        self, app, client, seed_draft_work_item
+    ):
+        data = seed_draft_work_item
+        _make_submitted(data)
+        acct = self._hotel_account(data)
+        detail = data["detail"]
+        detail.expense_account_id = acct.id
+        detail.spend_type_id = acct.default_spend_type_id
+        detail.quantity = 6
+        detail.unit_price_cents = 15900
+        detail.account_default_unit_price_cents = 15900
+        detail.description = "3 rooms: Suite block"
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert "checked" not in self._price_override_tag(body)
+
+    def test_no_duplicate_element_ids_in_either_form(
+        self, app, client, seed_draft_work_item
+    ):
+        """Regression guard: both templates used to carry their own
+        expense_account_id/spend_type_id blocks before the shared partial. A
+        leftover copy would silently break the shared script."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        _make_line_refs()
+        _login(client, "test:admin")
+
+        bodies = [
+            client.get(_url(app, "admin_final.line_add", data)).get_data(as_text=True),
+            client.get(_url(
+                app, "admin_final.line_change_account", data,
+                line_num=data["line"].line_number,
+            )).get_data(as_text=True),
+        ]
+
+        for body in bodies:
+            counts = Counter(re.findall(r'\bid="([^"]+)"', body))
+            dupes = {k: v for k, v in counts.items() if v > 1}
+            assert dupes == {}, f"duplicate element ids: {dupes}"

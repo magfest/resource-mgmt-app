@@ -29,28 +29,9 @@
     <form method="post" action="{{ url_for('admin_final.line_change_account_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-      <div class="mb-16">
-        <label for="expense_account_id"><strong>New Expense Account</strong> <span style="color: red;">*</span></label>
-        <select name="expense_account_id" id="expense_account_id" required class="mt-4">
-          <option value="">(Select expense account)</option>
-          {% for acc in expense_accounts %}
-            <option value="{{ acc.id }}"
-                    data-approval-group-id="{{ acc.approval_group_id or '' }}"
-                    {% if acc.id == detail.expense_account_id %}selected{% endif %}>
-              {{ acc.name }}
-            </option>
-          {% endfor %}
-        </select>
-        <div class="muted small mt-4">All active accounts are listed (admin view — department visibility does not apply).</div>
-      </div>
-
-      <div class="mb-16" id="spend_type_container">
-        <label for="spend_type_id"><strong>Spend Type</strong> <span style="color: red;">*</span></label>
-        <select name="spend_type_id" id="spend_type_id" class="mt-4">
-          <option value="">(Select spend type)</option>
-        </select>
-        <div class="muted small mt-4" id="spend_type_hint"></div>
-      </div>
+      {% set current_detail = detail %}
+      {% set current_spend_type_id = detail.spend_type_id or "" %}
+      {% include "admin_final/_line_account_fields.html" %}
 
       <div class="mb-16">
         <label for="approval_group_id"><strong>Send Back To Review Group</strong> <span style="color: red;">*</span></label>
@@ -78,52 +59,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce }}">
-  const spendTypesByAccount = {{ spend_types_by_account | tojson | safe }};
-  const currentSpendTypeId = '{{ detail.spend_type_id or "" }}';
-
-  const accountSelect = document.getElementById('expense_account_id');
-  const spendTypeSelect = document.getElementById('spend_type_id');
-  const spendTypeContainer = document.getElementById('spend_type_container');
-  const spendTypeHint = document.getElementById('spend_type_hint');
-  const groupSelect = document.getElementById('approval_group_id');
-
-  function refreshSpendTypes(preselectId) {
-    const info = spendTypesByAccount[accountSelect.value];
-    spendTypeSelect.innerHTML = '<option value="">(Select spend type)</option>';
-    if (!info) {
-      spendTypeContainer.style.display = '';
-      spendTypeHint.textContent = '';
-      return;
-    }
-    if (info.mode === 'SINGLE_LOCKED') {
-      spendTypeContainer.style.display = 'none';
-      spendTypeSelect.removeAttribute('required');
-      spendTypeHint.textContent = 'Spend type is locked by this account.';
-      return;
-    }
-    spendTypeContainer.style.display = '';
-    spendTypeSelect.setAttribute('required', 'required');
-    for (const t of info.types) {
-      const opt = document.createElement('option');
-      opt.value = t.id;
-      opt.textContent = t.name;
-      if (String(t.id) === String(preselectId)) opt.selected = true;
-      spendTypeSelect.appendChild(opt);
-    }
-  }
-
-  function defaultGroupFromAccount() {
-    const opt = accountSelect.options[accountSelect.selectedIndex];
-    const gid = opt ? opt.getAttribute('data-approval-group-id') : '';
-    if (gid) groupSelect.value = gid;
-  }
-
-  accountSelect.addEventListener('change', function () {
-    refreshSpendTypes('');
-    defaultGroupFromAccount();
-  });
-
-  refreshSpendTypes(currentSpendTypeId);
-</script>
+{% include "admin_final/_line_account_fields_js.html" %}
 {% endblock %}
