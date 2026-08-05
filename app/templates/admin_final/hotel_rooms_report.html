@@ -1,5 +1,6 @@
 {# templates/admin_final/hotel_rooms_report.html #}
 {% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
 {% from "admin_final/report_macros.html" import
     report_header, report_filters, report_context,
     empty_state_no_event, empty_state_no_data
@@ -98,7 +99,8 @@
             </thead>
             <tbody>
               {% for r in group.rows %}
-                <tr>
+                {% set is_rejected = r.line_status == "REJECTED" %}
+                <tr{% if is_rejected %} class="muted" style="opacity: 0.65;"{% endif %}>
                   <td>{{ r.department_name }}</td>
                   <td><strong>{{ r.work_item_public_id }}</strong></td>
                   <td>{{ r.room_type }}</td>
@@ -106,7 +108,7 @@
                   <td class="right num">{{ r.nights }}</td>
                   <td class="right num">{{ format_currency(r.unit_price_cents) }}</td>
                   <td class="right num">{{ format_currency(r.total_cents) }}</td>
-                  <td>{{ r.line_status }}</td>
+                  <td>{{ render_status_pill(r.line_status) }}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -119,6 +121,15 @@
                 <td class="right num">{{ format_currency(group.cents_subtotal) }}</td>
                 <td></td>
               </tr>
+              {% if group.rejected_count %}
+                <tr class="muted" style="font-weight: normal;">
+                  <td colspan="8" class="small">
+                    {{ group.rejected_count }} rejected line{{ 's' if group.rejected_count != 1 }}
+                    ({{ format_currency(group.rejected_cents) }}) excluded from the
+                    subtotal and the summary above.
+                  </td>
+                </tr>
+              {% endif %}
             </tfoot>
           </table>
         </div>
