@@ -2,6 +2,7 @@
 {% extends "layout/base.html" %}
 {% from "macros/status_pill.html" import render_status_pill %}
 {% from "macros/checkout_banner.html" import render_checkout_action with context %}
+{% from "macros/price_override_badge.html" import price_override_badge with context %}
 
 {% block title %}Line {{ line.line_number }} Review - {{ work_item.public_id }}{% endblock %}
 
@@ -120,7 +121,7 @@
           </tr>
           <tr>
             <th>Unit Price</th>
-            <td class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
+            <td class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}{{ price_override_badge(detail) }}</td>
           </tr>
           <tr>
             <th>Total Requested</th>

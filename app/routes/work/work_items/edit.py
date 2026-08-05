@@ -409,6 +409,18 @@ def work_item_edit_save(event: str, dept: str, public_id: str, work_type_slug: s
     ))
 
 
+def _keeps_admin_price_override(detail) -> bool:
+    """True when a line's price was deliberately set away from the account default.
+
+    The admin line tools record the account default in
+    account_default_unit_price_cents when they write a line
+    (app/routes/admin_final/line_pricing.py). A NULL snapshot means no admin
+    tool wrote this line, so there is nothing to protect.
+    """
+    snapshot = detail.account_default_unit_price_cents
+    return snapshot is not None and snapshot != detail.unit_price_cents
+
+
 @work_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/fixed-costs")
 @work_bp.post("/<event>/<dept>/budget/item/<public_id>/fixed-costs")
 def work_item_fixed_costs_save(event: str, dept: str, public_id: str, work_type_slug: str = "budget"):
@@ -511,11 +523,15 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str, work_type_
                 if existing_line:
                     detail = BudgetLineDetail.query.filter_by(work_line_id=existing_line_id).first()
                     if detail:
-                        # Audit qty/price changes
+                        # Do not reset a price an admin set through the line
+                        # tools. Rewriting it here would silently undo a
+                        # deliberate one-off and leave no audit trail.
+                        keep_price = _keeps_admin_price_override(detail)
+
                         fc_changes = []
                         if detail.quantity != quantity:
                             fc_changes.append(("quantity", str(detail.quantity), str(quantity)))
-                        if detail.unit_price_cents != settings["unit_price_cents"]:
+                        if not keep_price and detail.unit_price_cents != settings["unit_price_cents"]:
                             fc_changes.append(("unit_price", f"${detail.unit_price_cents / 100:,.2f}", f"${settings['unit_price_cents'] / 100:,.2f}"))
                         for field_name, old_val, new_val in fc_changes:
                             db.session.add(WorkItemAuditEvent(
@@ -527,7 +543,8 @@ def work_item_fixed_costs_save(event: str, dept: str, public_id: str, work_type_
                                 created_by_user_id=user_ctx.user_id,
                             ))
                         detail.quantity = quantity
-                        detail.unit_price_cents = settings["unit_price_cents"]
+                        if not keep_price:
+                            detail.unit_price_cents = settings["unit_price_cents"]
                         detail.description = notes if notes else expense_account.name
                     existing_line.updated_by_user_id = user_ctx.user_id
             else:
@@ -692,11 +709,16 @@ def work_item_badges_save(event: str, dept: str, public_id: str, work_type_slug:
                 if existing_line:
                     detail = BudgetLineDetail.query.filter_by(work_line_id=existing_line_id).first()
                     if detail:
+                        # Do not reset a price an admin set through the line
+                        # tools. Rewriting it here would silently undo a
+                        # deliberate one-off and leave no audit trail.
+                        keep_price = _keeps_admin_price_override(detail)
+
                         # Audit qty/price changes
                         badge_changes = []
                         if detail.quantity != quantity:
                             badge_changes.append(("quantity", str(detail.quantity), str(quantity)))
-                        if detail.unit_price_cents != settings["unit_price_cents"]:
+                        if not keep_price and detail.unit_price_cents != settings["unit_price_cents"]:
                             badge_changes.append(("unit_price", f"${detail.unit_price_cents / 100:,.2f}", f"${settings['unit_price_cents'] / 100:,.2f}"))
                         for field_name, old_val, new_val in badge_changes:
                             db.session.add(WorkItemAuditEvent(
@@ -708,7 +730,8 @@ def work_item_badges_save(event: str, dept: str, public_id: str, work_type_slug:
                                 created_by_user_id=user_ctx.user_id,
                             ))
                         detail.quantity = quantity
-                        detail.unit_price_cents = settings["unit_price_cents"]  # Should be 0
+                        if not keep_price:
+                            detail.unit_price_cents = settings["unit_price_cents"]  # Normally 0; an admin override can set it otherwise
                         detail.description = notes if notes else expense_account.name
                     existing_line.updated_by_user_id = user_ctx.user_id
             else:

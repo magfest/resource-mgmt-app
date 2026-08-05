@@ -1,0 +1,13 @@
+{# Flags a line whose stored price differs from the account default recorded
+   when the line was written. A NULL snapshot means no admin tool wrote this
+   line, so no badge. Pass compact=True in tight columns. #}
+{% macro price_override_badge(detail, compact=False) %}
+  {% if detail and detail.account_default_unit_price_cents is not none
+        and detail.account_default_unit_price_cents != detail.unit_price_cents %}
+    {% set original = '$%.2f' % (detail.account_default_unit_price_cents / 100) %}
+    <span class="pill pill-warning"
+          title="Price differs from the account default recorded when this line was written ({{ original }}).">
+      {% if compact %}OVR{% else %}Price Overridden{% endif %}
+    </span>
+  {% endif %}
+{% endmacro %}

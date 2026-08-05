@@ -769,6 +769,10 @@ def change_line_expense_account(
     new_group: "ApprovalGroup",
     note: str,
     user_ctx: UserContext,
+    quantity=None,
+    unit_price_cents: Optional[int] = None,
+    account_default_unit_price_cents: Optional[int] = None,
+    description: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """
     Admin-only correction: move a line to a different expense account and
@@ -801,10 +805,27 @@ def change_line_expense_account(
     old_account_name = detail.expense_account.name if detail.expense_account else str(detail.expense_account_id)
     old_spend_type_name = detail.spend_type.name if detail.spend_type else str(detail.spend_type_id)
     old_group_name = detail.routed_approval_group.name if detail.routed_approval_group else "Unassigned"
+    old_quantity = detail.quantity
+    old_price_cents = detail.unit_price_cents
 
     detail.expense_account_id = new_account.id
     detail.spend_type_id = new_spend_type.id
     detail.routed_approval_group_id = new_group.id
+
+    # Quantity and price move with the account. A hotel account stores
+    # room-nights, so leaving the old quantity behind would misreport rooms.
+    if quantity is not None:
+        detail.quantity = quantity
+    if unit_price_cents is not None:
+        detail.unit_price_cents = unit_price_cents
+    # Unreachable from routes: resolve_line_pricing rejects a falsy description
+    # before this helper runs. Kept for tests that call this helper directly.
+    if description is not None:
+        detail.description = description
+    # Unconditional: a caller that omits this clears the snapshot. The old
+    # snapshot belongs to the old account, so a re-booked line without one
+    # should show no default rather than a stale one from a different account.
+    detail.account_default_unit_price_cents = account_default_unit_price_cents
 
     ag_review = get_approval_group_review(line)
     if ag_review:
@@ -831,12 +852,23 @@ def change_line_expense_account(
     line.current_review_stage = REVIEW_STAGE_APPROVAL_GROUP
 
     from app.routes.approvals.helpers import audit_line_field_changes
-    changes = [("expense_account", old_account_name, new_account.name)]
+    changes = []
+    if old_account_name != new_account.name:
+        changes.append(("expense_account", old_account_name, new_account.name))
     if old_spend_type_name != new_spend_type.name:
         changes.append(("spend_type", old_spend_type_name, new_spend_type.name))
     if old_group_name != new_group.name:
         changes.append(("review_group", old_group_name, new_group.name))
-    audit_line_field_changes(line, changes, user_ctx)
+    if quantity is not None and old_quantity != quantity:
+        changes.append(("quantity", str(old_quantity), str(quantity)))
+    if unit_price_cents is not None and old_price_cents != unit_price_cents:
+        changes.append((
+            "unit_price",
+            f"${old_price_cents / 100:,.2f}",
+            f"${unit_price_cents / 100:,.2f}",
+        ))
+    if changes:
+        audit_line_field_changes(line, changes, user_ctx)
 
     db.session.add(WorkLineComment(
         work_line_id=line.id,
@@ -863,6 +895,7 @@ def admin_add_line(
     warehouse_flag: bool,
     description: str,
     note: str,
+    account_default_unit_price_cents: Optional[int] = None,
 ) -> Tuple[Optional[WorkLine], Optional[str]]:
     """
     Admin-only: add a new line to an in-review work item, fully routed
@@ -901,6 +934,7 @@ def admin_add_line(
         expense_account_id=expense_account.id,
         spend_type_id=spend_type.id,
         unit_price_cents=unit_price_cents,
+        account_default_unit_price_cents=account_default_unit_price_cents,
         quantity=quantity,
         confidence_level_id=confidence_level.id,
         frequency_id=frequency.id,

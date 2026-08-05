@@ -2,6 +2,7 @@
 {# Partial: Budget lines table for work_item_detail.html #}
 {% from "macros/status_pill.html" import render_status_pill %}
 {% from "macros/group_pill.html" import render_group_pill %}
+{% from "macros/price_override_badge.html" import price_override_badge with context %}
 
 <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
   <h3 style="margin:0;">Budget Lines</h3>
@@ -71,7 +72,7 @@
             {% endif %}
           </td>
           <td data-label="Qty." class="right num">{{ detail.quantity|format_qty if detail else '-' }}</td>
-          <td data-label="Unit cost" class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}</td>
+          <td data-label="Unit cost" class="right num">{{ format_currency(detail.unit_price_cents) if detail else '-' }}{{ price_override_badge(detail, compact=True) }}</td>
           <td data-label="Total requested" class="right num">{{ format_currency(line_total) }}</td>
           {% if show_approved_column %}
             <td data-label="Approved" class="right num">
