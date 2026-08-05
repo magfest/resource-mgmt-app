@@ -30,7 +30,6 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       {% set current_detail = detail %}
-      {% set current_spend_type_id = detail.spend_type_id or "" %}
       {% include "admin_final/_line_account_fields.html" %}
 
       <div class="mb-16">

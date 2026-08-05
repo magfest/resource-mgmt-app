@@ -818,6 +818,8 @@ def change_line_expense_account(
         detail.quantity = quantity
     if unit_price_cents is not None:
         detail.unit_price_cents = unit_price_cents
+    # Unreachable from routes: resolve_line_pricing rejects a falsy description
+    # before this helper runs. Kept for tests that call this helper directly.
     if description is not None:
         detail.description = description
     # Unconditional: a caller that omits this clears the snapshot. The old

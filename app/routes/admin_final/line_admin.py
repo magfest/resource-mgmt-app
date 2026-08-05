@@ -216,6 +216,7 @@ def line_change_account(event: str, dept: str, public_id: str, line_num: int, wo
         current_price_is_override=current_price_is_override,
         current_price_is_locked=current_price_is_locked,
         current_description=current_description,
+        current_spend_type_id=detail.spend_type_id or "",
     )
 
 

@@ -939,6 +939,29 @@ class TestAdminLineForms:
         assert resp.status_code == 200
         assert re.search(r'name="unit_price"[^>]*value="300\.00"', body)
 
+    def test_change_account_renders_current_spend_type_id_for_js(
+        self, app, client, seed_draft_work_item
+    ):
+        """currentSpendTypeId must come from the route, not a template-level
+        {% set %}: _line_account_fields_js.html renders in the scripts block,
+        a different frame than line_change_account.html's content block, so
+        a block-scoped set is invisible there and silently falls back to ''.
+        Uses an ALLOW_LIST account, since SINGLE_LOCKED accounts fix the
+        spend type regardless and would make this assertion vacuous."""
+        data = seed_draft_work_item
+        _make_submitted(data)
+        assert data["expense_account"].spend_type_mode != SPEND_TYPE_MODE_SINGLE_LOCKED
+        _login(client, "test:admin")
+
+        resp = client.get(_url(
+            app, "admin_final.line_change_account", data,
+            line_num=data["line"].line_number,
+        ))
+        body = resp.get_data(as_text=True)
+
+        assert resp.status_code == 200
+        assert f"const currentSpendTypeId = '{data['spend_type'].id}';" in body
+
     def test_change_account_renders_locked_styling_for_fixed_cost_account(
         self, app, client, seed_draft_work_item
     ):
@@ -1064,7 +1087,7 @@ class TestAdminLineForms:
         assert re.search(r'name="rooms"[^>]*value=""', body)
         assert re.search(r'name="nights"[^>]*value=""', body)
 
-    def test_change_account_prechecks_override_when_price_differs_from_snapshot(
+    def test_change_account_prechecks_override_when_price_differs_from_account_default(
         self, app, client, seed_draft_work_item
     ):
         """A stored price that differs from the account's current default is
@@ -1168,3 +1191,180 @@ class TestAdminLineForms:
             counts = Counter(re.findall(r'\bid="([^"]+)"', body))
             dupes = {k: v for k, v in counts.items() if v > 1}
             assert dupes == {}, f"duplicate element ids: {dupes}"
+
+
+class TestOverrideBadge:
+    def _render(self, app, detail):
+        from flask import render_template_string
+        return render_template_string(
+            "{% from 'macros/price_override_badge.html' import price_override_badge"
+            " with context %}{{ price_override_badge(d) }}",
+            d=detail,
+        )
+
+    def test_badge_absent_when_no_snapshot(self, app, seed_draft_work_item):
+        data = seed_draft_work_item
+        with app.test_request_context():
+            assert "Price Overridden" not in self._render(app, data["detail"])
+
+    def test_badge_absent_when_price_matches_default(
+        self, app, seed_draft_work_item
+    ):
+        data = seed_draft_work_item
+        data["detail"].account_default_unit_price_cents = 5000
+        db.session.commit()
+        with app.test_request_context():
+            assert "Price Overridden" not in self._render(app, data["detail"])
+
+    def test_badge_present_when_price_differs(self, app, seed_draft_work_item):
+        data = seed_draft_work_item
+        data["detail"].account_default_unit_price_cents = 15900
+        db.session.commit()
+        with app.test_request_context():
+            body = self._render(app, data["detail"])
+            assert "Price Overridden" in body
+            assert "159.00" in body
+
+
+class TestFixedCostSaveRespectsOverride:
+    def test_override_survives_a_fixed_cost_save(self, app, seed_draft_work_item):
+        """work_item_fixed_costs_save must not reset a price an admin deliberately set.
+
+        Unreachable in production today: requester edit needs DRAFT
+        (checkout.py:256) and the admin tools need SUBMITTED or NEEDS_INFO
+        (admin_final/helpers.py:783, :875). This asserts the invariant anyway,
+        because nothing in either file states it.
+        """
+        from app.routes.work.helpers import get_effective_fixed_cost_settings
+
+        data = seed_draft_work_item
+        detail = data["detail"]
+        detail.account_default_unit_price_cents = 15900
+        detail.unit_price_cents = 18900
+        db.session.commit()
+
+        account = detail.expense_account
+        account.is_fixed_cost = True
+        account.default_unit_price_cents = 15900
+        db.session.commit()
+
+        settings = get_effective_fixed_cost_settings(account, data["cycle"].id)
+        assert settings["unit_price_cents"] == 15900
+
+        from app.routes.work.work_items.edit import _keeps_admin_price_override
+        assert _keeps_admin_price_override(detail) is True
+
+        detail.account_default_unit_price_cents = 15900
+        detail.unit_price_cents = 15900
+        db.session.commit()
+        assert _keeps_admin_price_override(detail) is False
+
+    def test_route_keeps_override_price_but_applies_quantity_change(
+        self, app, client, seed_draft_work_item
+    ):
+        """End-to-end: the guard must be wired into the handler, not just
+        exist as an isolated predicate. Asserts quantity too, since a guard
+        that freezes the whole line (not just the price) would also pass a
+        price-only check."""
+        data = seed_draft_work_item
+        detail = data["detail"]
+        account = detail.expense_account
+        account.is_fixed_cost = True
+        account.default_unit_price_cents = 15900
+        detail.unit_price_cents = 18900
+        detail.account_default_unit_price_cents = 15900
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.post(
+            _url(app, "work.work_item_fixed_costs_save", data),
+            data={f"fixed_qty_{account.id}": "3"},
+        )
+        assert resp.status_code == 302
+
+        db.session.refresh(detail)
+        assert detail.unit_price_cents == 18900
+        assert detail.quantity == 3
+
+    def test_route_refreshes_price_for_a_line_with_no_override(
+        self, app, client, seed_draft_work_item
+    ):
+        """Mirror case: a NULL snapshot means no admin tool ever touched this
+        line, so the save must still refresh its price to the account
+        default, same as before the guard existed."""
+        data = seed_draft_work_item
+        detail = data["detail"]
+        account = detail.expense_account
+        account.is_fixed_cost = True
+        account.default_unit_price_cents = 15900
+        db.session.commit()
+        assert detail.account_default_unit_price_cents is None
+        _login(client, "test:admin")
+
+        resp = client.post(
+            _url(app, "work.work_item_fixed_costs_save", data),
+            data={f"fixed_qty_{account.id}": "2"},
+        )
+        assert resp.status_code == 302
+
+        db.session.refresh(detail)
+        assert detail.unit_price_cents == 15900
+        assert detail.quantity == 2
+
+
+class TestBadgeSaveRespectsOverride:
+    """Badge accounts became reachable from the admin line tools in an
+    earlier task of this plan, so work_item_badges_save needs the same
+    guard as work_item_fixed_costs_save against clobbering an admin's
+    deliberate price override."""
+
+    def test_route_keeps_override_price_but_applies_quantity_change(
+        self, app, client, seed_draft_work_item
+    ):
+        from app.models import UI_GROUP_BADGES
+
+        data = seed_draft_work_item
+        detail = data["detail"]
+        account = detail.expense_account
+        account.is_fixed_cost = True
+        account.ui_display_group = UI_GROUP_BADGES
+        account.default_unit_price_cents = 0
+        detail.unit_price_cents = 500
+        detail.account_default_unit_price_cents = 0
+        db.session.commit()
+        _login(client, "test:admin")
+
+        resp = client.post(
+            _url(app, "work.work_item_badges_save", data),
+            data={f"badge_qty_{account.id}": "3"},
+        )
+        assert resp.status_code == 302
+
+        db.session.refresh(detail)
+        assert detail.unit_price_cents == 500
+        assert detail.quantity == 3
+
+    def test_route_refreshes_price_for_a_line_with_no_override(
+        self, app, client, seed_draft_work_item
+    ):
+        from app.models import UI_GROUP_BADGES
+
+        data = seed_draft_work_item
+        detail = data["detail"]
+        account = detail.expense_account
+        account.is_fixed_cost = True
+        account.ui_display_group = UI_GROUP_BADGES
+        account.default_unit_price_cents = 0
+        db.session.commit()
+        assert detail.account_default_unit_price_cents is None
+        _login(client, "test:admin")
+
+        resp = client.post(
+            _url(app, "work.work_item_badges_save", data),
+            data={f"badge_qty_{account.id}": "2"},
+        )
+        assert resp.status_code == 302
+
+        db.session.refresh(detail)
+        assert detail.unit_price_cents == 0
+        assert detail.quantity == 2
