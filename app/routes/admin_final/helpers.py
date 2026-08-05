@@ -480,38 +480,53 @@ def finalize_work_item(
     if not can_do:
         return False, reason
 
-    # For lines still PENDING or flagged APPROVED_NEEDS_REVIEW, resolve them to
-    # APPROVED. Flagged lines use the reviewer's recommended amount when set;
-    # everything else falls back to the requested amount.
-    _UNRESOLVED = (WORK_LINE_STATUS_PENDING, WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW)
+    # Resolve every line the admin has not already decided at ADMIN_FINAL.
+    # This is a denylist by design. An allowlist of statuses to resolve is what
+    # let AG-approved lines fall through with a null amount and contribute zero
+    # to the item total; a status added later would repeat that.
+    # can_finalize_work_item blocks NEEDS_INFO and NEEDS_ADJUSTMENT, so a line
+    # here is PENDING, APPROVED, APPROVED_NEEDS_REVIEW, or REJECTED.
+    _ADMIN_TERMINAL = (WORK_LINE_STATUS_APPROVED, WORK_LINE_STATUS_REJECTED)
     for line in work_item.lines:
-        if line.status in _UNRESOLVED:
-            # Get or create admin review
-            review, _created = get_or_create_admin_review(line, user_ctx)
+        if (line.current_review_stage == REVIEW_STAGE_ADMIN_FINAL
+                and line.status in _ADMIN_TERMINAL):
+            continue
 
-            # Requested amount (fallback)
-            if line.budget_detail:
-                amount = line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
-            else:
-                amount = 0
+        review, _created = get_or_create_admin_review(line, user_ctx)
 
-            # Prefer the reviewer's recommended amount for a flagged line
-            if line.status == WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW:
+        # Requested amount is the fallback for every approval path.
+        if line.budget_detail:
+            amount = line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+        else:
+            amount = 0
+
+        if line.status == WORK_LINE_STATUS_REJECTED:
+            # A reviewer rejection stands. Store 0 rather than leaving the
+            # column null; the template's $0.00 was masking the missing write.
+            new_line_status = WORK_LINE_STATUS_REJECTED
+            new_review_status = REVIEW_STATUS_REJECTED
+            amount = 0
+        else:
+            new_line_status = WORK_LINE_STATUS_APPROVED
+            new_review_status = REVIEW_STATUS_APPROVED
+            # Carry forward the reviewer's amount when they set one.
+            if line.status in (WORK_LINE_STATUS_APPROVED,
+                               WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW):
                 ag_review = get_approval_group_review(line)
                 if ag_review and ag_review.approved_amount_cents is not None:
                     amount = ag_review.approved_amount_cents
 
-            review.status = REVIEW_STATUS_APPROVED
-            review.approved_amount_cents = amount
-            review.decided_at = datetime.utcnow()
-            review.decided_by_user_id = user_ctx.user_id
-            review.note = "Resolved during finalization"
+        review.status = new_review_status
+        review.approved_amount_cents = amount
+        review.decided_at = datetime.utcnow()
+        review.decided_by_user_id = user_ctx.user_id
+        review.note = "Resolved during finalization"
 
-            line.status = WORK_LINE_STATUS_APPROVED
-            line.approved_amount_cents = amount
-            line.status_changed_at = datetime.utcnow()
-            line.status_changed_by_user_id = user_ctx.user_id
-            line.current_review_stage = REVIEW_STAGE_ADMIN_FINAL
+        line.status = new_line_status
+        line.approved_amount_cents = amount
+        line.status_changed_at = datetime.utcnow()
+        line.status_changed_by_user_id = user_ctx.user_id
+        line.current_review_stage = REVIEW_STAGE_ADMIN_FINAL
 
     # Capture old status for audit before changing
     old_status = work_item.status
