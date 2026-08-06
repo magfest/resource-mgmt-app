@@ -71,9 +71,12 @@
                   {%- else -%}Response Needed{%- endif -%}
                 </a>
               {% elif status == "UNDER_REVIEW" or status == "SUBMITTED" %}
-                <a href="{{ wt_url }}" class="pill pill-submitted pill-link">{{ status | replace('_', ' ') | title }}</a>
+                <a href="{{ wt_url }}" class="pill pill-submitted pill-link">{{ friendly_status(status) }}</a>
+              {% elif status == "PENDING_BOARD_APPROVAL" %}
+                {# Same amber family as render_status_pill on the item detail page. #}
+                <a href="{{ wt_url }}" class="pill pill-warning pill-link">{{ friendly_status(status) }}</a>
               {% else %}
-                <a href="{{ wt_url }}" class="pill pill-link">{{ status | replace('_', ' ') | title }}</a>
+                <a href="{{ wt_url }}" class="pill pill-link">{{ friendly_status(status) }}</a>
               {% endif %}
               {% if wt_status.supplementary_count > 0 %}
                 {% if wt_status.supplementary_draft_count > 0 %}
