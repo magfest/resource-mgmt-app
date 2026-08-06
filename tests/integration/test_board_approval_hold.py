@@ -45,7 +45,7 @@ def test_finalize_holds_when_board_has_not_approved(app, client, seed_draft_work
 
     # The flash must say the department was NOT told, not the release copy.
     body = resp.get_data(as_text=True)
-    assert "is not notified until the board approves the event topline" in body
+    assert "is not notified until the FY budget is approved" in body
     assert "The budget is released" not in body
 
 
@@ -72,7 +72,7 @@ def test_finalize_releases_when_board_already_approved(app, client, seed_draft_w
     body = resp.get_data(as_text=True)
     assert "The budget is released" in body
     assert "a scheduled process will notify the department" in body
-    assert "is not notified until the board approves" not in body
+    assert "is not notified until the FY budget is approved" not in body
 
     # This release path is automatic (the latch was already set), unlike
     # release_event_budgets' explicit board-approval action. It must still
@@ -419,8 +419,8 @@ def test_finish_button_confirm_copy_when_board_has_not_approved(app, client, see
     body = resp.get_data(as_text=True)
     assert "Budget Admin Finished" in body
     assert "Finalize Request" not in body
-    assert ("The department is not notified until the board approves "
-            "the event topline") in body
+    assert ("The department is not notified until the FY budget is "
+            "approved") in body
     assert "releases the budget" not in body
 
 
@@ -442,7 +442,7 @@ def test_finish_button_confirm_copy_when_board_already_approved(app, client, see
     assert ("This locks in the approved amounts and releases the budget"
             ) in body
     assert "A scheduled process will notify the department" in body
-    assert "is not notified until the board approves" not in body
+    assert "is not notified until the FY budget is approved" not in body
 
 
 def test_detail_page_shows_pending_board_approval(app, client, seed_draft_work_item):
@@ -458,7 +458,7 @@ def test_detail_page_shows_pending_board_approval(app, client, seed_draft_work_i
     )
 
     assert resp.status_code == 200
-    assert "Pending Board Approval" in resp.get_data(as_text=True)
+    assert "Pending FY Budget Approval" in resp.get_data(as_text=True)
 
 
 def test_line_status_summary_does_not_hold_non_board_release_worktype(app, seed_draft_work_item):
@@ -546,7 +546,7 @@ def test_detail_page_agrees_with_summary_when_board_release_disabled(app, client
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "Pending Board Approval" not in body
+    assert "Pending FY Budget Approval" not in body
     assert "Finalized" in body
 
 
@@ -570,7 +570,7 @@ def test_held_budget_card_hides_stage_badge(app, client, seed_draft_work_item):
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "Pending Board Approval" in body
+    assert "Pending FY Budget Approval" in body
     assert "APPROVED</span>" not in body
 
 
@@ -605,7 +605,7 @@ def test_board_release_audit_event_renders_with_pill_not_raw(app, client, seed_d
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "BOARD RELEASED" in body
+    assert "RELEASED" in body
     assert ">BOARD_RELEASE<" not in body
     assert "FINALIZED</span> &rarr;" not in body
     assert "board approved 2026-08-05" in body

@@ -560,7 +560,7 @@ def finalize_work_item(
             event_type=AUDIT_EVENT_BOARD_RELEASE,
             old_value=None,
             new_value=None,
-            reason="Automatic release: board approval was already recorded for this event.",
+            reason="Automatic release: FY budget approval was already recorded for this event.",
             created_by_user_id=user_ctx.user_id,
         ))
 
@@ -1336,7 +1336,7 @@ def release_event_budgets(
     require_budget_admin(user_ctx)
 
     if not (note or "").strip():
-        return 0, "A note is required to record board approval."
+        return 0, "A note is required to record FY budget approval."
 
     now = datetime.utcnow()
 

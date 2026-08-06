@@ -81,17 +81,25 @@ STATUS_LABELS = {
     "FINALIZED": "Finalized",
     # Display-only. Never written to work_item.status; derived from
     # board_released_at being null on a FINALIZED item.
-    "PENDING_BOARD_APPROVAL": "Pending Board Approval",
+    "PENDING_BOARD_APPROVAL": "Pending FY Budget Approval",
     "PAUSED": "Paused",
     "PENDING": "Pending",
 }
 
 
 def friendly_status(status: str) -> str:
-    """Convert a status code to a user-friendly label."""
+    """Convert a status code to a user-friendly label.
+
+    Falls back to title-casing the raw status for anything not in
+    STATUS_LABELS, so a new or derived status still reads as words
+    instead of a raw constant like "SOME_STATUS".
+    """
     if not status:
         return ""
-    return STATUS_LABELS.get(status.upper(), status)
+    status_upper = status.upper()
+    if status_upper in STATUS_LABELS:
+        return STATUS_LABELS[status_upper]
+    return status_upper.replace("_", " ").title()
 
 
 # ============================================================

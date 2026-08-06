@@ -269,7 +269,7 @@
                     Budget Admin Finished
                   </button>
                 {% else %}
-                  <button type="submit" class="btn btn-primary" data-confirm="Finish this budget admin review? This locks in the approved amounts. The department is not notified until the board approves the event topline.">
+                  <button type="submit" class="btn btn-primary" data-confirm="Finish this budget admin review? This locks in the approved amounts. The department is not notified until the FY budget is approved.">
                     Budget Admin Finished
                   </button>
                 {% endif %}
@@ -359,11 +359,12 @@
     {# Reuses display_status (set above) so the banner and the header pill can
        never disagree about whether the board has released this item. #}
     <div class="callout callout-success mb-16">
-      <strong>{{ "Pending Board Approval" if display_status == "PENDING_BOARD_APPROVAL" else "Finalized" }}</strong>
+      <strong>{{ "Pending FY Budget Approval" if display_status == "PENDING_BOARD_APPROVAL" else "Finalized" }}</strong>
       <div class="muted" style="margin-top:4px;">
         {% if display_status == "PENDING_BOARD_APPROVAL" %}
-          Budget admin review is complete. Amounts are locked and shown below, but
-          they are not final until the board approves the event topline.
+          Budget admin review is complete. Amounts are locked and shown below.
+          They become final once the organization's FY budget is approved.
+          No further review of this department is pending.
         {% else %}
           This request has been finalized.
           {% if work_item.finalized_at %}
