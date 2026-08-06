@@ -124,7 +124,18 @@ def finalize(work_item_id: int):
     if not success:
         flash(error, "error")
     else:
-        flash(f"Work item {work_item.public_id} finalized.", "success")
+        if work_item.board_released_at is not None:
+            flash(
+                f"Work item {work_item.public_id} finished. The budget is "
+                "released; a scheduled process will notify the department.",
+                "success",
+            )
+        else:
+            flash(
+                f"Work item {work_item.public_id} finished. The department "
+                "is not notified until the board approves the event topline.",
+                "success",
+            )
         db.session.commit()
 
         # Finalized email is sent by `flask send-board-release-emails`, not here.

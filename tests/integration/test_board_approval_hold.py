@@ -35,13 +35,18 @@ def test_finalize_holds_when_board_has_not_approved(app, client, seed_draft_work
     assert data["cycle"].board_approved_at is None
 
     _login(client, "test:admin")
-    client.post(f"/admin/final-review/finalize/{item.id}",
-                data={"note": "ok"}, follow_redirects=True)
+    resp = client.post(f"/admin/final-review/finalize/{item.id}",
+                        data={"note": "ok"}, follow_redirects=True)
 
     db.session.refresh(item)
     assert item.status == WORK_ITEM_STATUS_FINALIZED
     assert item.board_released_at is None
     assert item.finalized_notified_at is None
+
+    # The flash must say the department was NOT told, not the release copy.
+    body = resp.get_data(as_text=True)
+    assert "is not notified until the board approves the event topline" in body
+    assert "The budget is released" not in body
 
 
 def test_finalize_releases_when_board_already_approved(app, client, seed_draft_work_item):
@@ -54,14 +59,20 @@ def test_finalize_releases_when_board_already_approved(app, client, seed_draft_w
     db.session.commit()
 
     _login(client, "test:admin")
-    client.post(f"/admin/final-review/finalize/{item.id}",
-                data={"note": "ok"}, follow_redirects=True)
+    resp = client.post(f"/admin/final-review/finalize/{item.id}",
+                        data={"note": "ok"}, follow_redirects=True)
 
     db.session.refresh(item)
     assert item.status == WORK_ITEM_STATUS_FINALIZED
     assert item.board_released_at is not None
     # The scheduled command sends, not this request.
     assert item.finalized_notified_at is None
+
+    # The flash must say the budget released, not the held copy.
+    body = resp.get_data(as_text=True)
+    assert "The budget is released" in body
+    assert "a scheduled process will notify the department" in body
+    assert "is not notified until the board approves" not in body
 
     # This release path is automatic (the latch was already set), unlike
     # release_event_budgets' explicit board-approval action. It must still
@@ -391,6 +402,47 @@ def test_unfinalize_clears_release_stamps(app, seed_draft_work_item):
     db.session.refresh(item)
     assert item.board_released_at is None
     assert item.finalized_notified_at is None
+
+
+def test_finish_button_confirm_copy_when_board_has_not_approved(app, client, seed_draft_work_item):
+    """The confirm dialog must say the department waits, not that it's told now."""
+    data = seed_draft_work_item
+    item = _ready_to_finalize(data)
+    assert data["cycle"].board_approved_at is None
+
+    _login(client, "test:admin")
+    resp = client.get(
+        f"/{data['cycle'].code}/{data['department'].code}/budget/item/{item.public_id}"
+    )
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Budget Admin Finished" in body
+    assert "Finalize Request" not in body
+    assert ("The department is not notified until the board approves "
+            "the event topline") in body
+    assert "releases the budget" not in body
+
+
+def test_finish_button_confirm_copy_when_board_already_approved(app, client, seed_draft_work_item):
+    """The confirm dialog must say the budget releases, not that it waits."""
+    data = seed_draft_work_item
+    item = _ready_to_finalize(data)
+    data["cycle"].board_approved_at = datetime(2026, 8, 1, 12, 0)
+    db.session.commit()
+
+    _login(client, "test:admin")
+    resp = client.get(
+        f"/{data['cycle'].code}/{data['department'].code}/budget/item/{item.public_id}"
+    )
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Budget Admin Finished" in body
+    assert ("This locks in the approved amounts and releases the budget"
+            ) in body
+    assert "A scheduled process will notify the department" in body
+    assert "is not notified until the board approves" not in body
 
 
 def test_detail_page_shows_pending_board_approval(app, client, seed_draft_work_item):

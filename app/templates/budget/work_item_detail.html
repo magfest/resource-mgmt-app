@@ -232,15 +232,16 @@
 
       {% if finalization_summary.kicked_back_lines > 0 %}
         <div class="callout callout-danger" style="margin-bottom: 12px;">
-          <strong>Not Ready to Finalize</strong>
+          <strong>Not Ready to Finish</strong>
           <div class="muted" style="margin-top:4px;">
             {{ finalization_summary.kicked_back_lines }} line(s) are awaiting requester response.
           </div>
         </div>
       {% elif can_finalize %}
+        {% set board_approved = work_item.portfolio.event_cycle.board_approved_at %}
         <div id="finalize-section">
           <button type="button" class="btn btn-primary" data-show="finalize-form-container" data-hide-self>
-            Finalize Request
+            Budget Admin Finished
           </button>
           <span class="muted" style="margin-left: 8px;">
             {% if finalization_summary.pending_lines > 0 %}
@@ -254,18 +255,24 @@
               <input type="hidden" name="referrer" value="{{ request.url }}" />
               <div style="margin-bottom: 12px;">
                 <label for="finalize-note" style="font-weight: 600; display: block; margin-bottom: 4px;">
-                  Finalization Note <span style="color: #dc3545;">*</span>
+                  Finishing Note <span style="color: #dc3545;">*</span>
                 </label>
                 <textarea name="note" id="finalize-note" rows="4" style="width: 100%;"
-                          placeholder="Enter your finalization notes... (e.g., budget adjustments made, items flagged for follow-up, conditions of approval)" required></textarea>
+                          placeholder="Enter your notes... (e.g., budget adjustments made, items flagged for follow-up, conditions of approval)" required></textarea>
                 <div class="muted small mt-4">
                   This note will be recorded in the audit trail and may be visible to department heads.
                 </div>
               </div>
               <div class="btn-row">
-                <button type="submit" class="btn btn-primary" data-confirm="Finalize this request? This action will lock in all approved amounts.">
-                  Confirm Finalization
-                </button>
+                {% if board_approved %}
+                  <button type="submit" class="btn btn-primary" data-confirm="Finish this budget admin review? This locks in the approved amounts and releases the budget. A scheduled process will notify the department.">
+                    Budget Admin Finished
+                  </button>
+                {% else %}
+                  <button type="submit" class="btn btn-primary" data-confirm="Finish this budget admin review? This locks in the approved amounts. The department is not notified until the board approves the event topline.">
+                    Budget Admin Finished
+                  </button>
+                {% endif %}
                 <button type="button" class="btn" data-hide="finalize-form-container" data-show-selector="#finalize-section > button">
                   Cancel
                 </button>
@@ -275,7 +282,7 @@
         </div>
       {% else %}
         <div class="muted">
-          At least one line must be reviewed before finalization.
+          At least one line must be reviewed before finishing.
         </div>
       {% endif %}
     </div>
