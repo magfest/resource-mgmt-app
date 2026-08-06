@@ -29,6 +29,7 @@ from app.models import (
     ROLE_WORKTYPE_ADMIN,
     ROLE_SUPER_ADMIN,
     ROLE_APPROVER,
+    NOTIF_STATUS_SENT,
 )
 from .email import send_email
 from .email_templates import render_email_template
@@ -223,12 +224,33 @@ def notify_response_received(work_item: WorkItem, reviewer_user_id: str) -> bool
     return success
 
 
-def notify_work_item_finalized(work_item: WorkItem) -> int:
+@dataclass(frozen=True)
+class FinalizedNotifyResult:
+    """Outcome of one notify_work_item_finalized() call.
+
+    `attempted` is the department-member recipient count, computed before any
+    rate limit or debounce check. `sent` counts only recipients whose
+    send_email() call actually wrote a SENT NotificationLog row, via
+    send_email()'s status_out parameter; its boolean return alone cannot
+    tell delivery from rate-limited or suppressed. `send-board-release-emails`
+    stamps finalized_notified_at only when sent == attempted, so a partial
+    send (some members rate-limited) keeps the item queued for retry instead
+    of silently skipping the members who didn't get through.
+    """
+    sent: int
+    attempted: int
+
+
+def notify_work_item_finalized(work_item: WorkItem) -> FinalizedNotifyResult:
     """
     Notify department members that their work item has been finalized.
 
-    Called after: admin finalizes the work item.
-    Returns: Number of emails sent.
+    Called after: the board releases the budget (see
+    `flask send-board-release-emails`), not at finalize time itself.
+    Returns: sent and attempted counts, so the caller can detect a partial
+    send. `sent` reflects actual delivery (see FinalizedNotifyResult); a
+    rate-limited or suppressed recipient does not raise but also does not
+    count, so `sent` can be less than `attempted` with no exception.
     """
     recipients = _get_department_member_emails(
         department_id=work_item.portfolio.department_id,
@@ -243,7 +265,7 @@ def notify_work_item_finalized(work_item: WorkItem) -> int:
 
     _send_slack(work_item, 'finalized', format_finalized)
 
-    return sent_count
+    return FinalizedNotifyResult(sent=sent_count, attempted=len(recipients))
 
 
 # ============================================================
@@ -287,13 +309,22 @@ def _send_emails(
 
     sent_count = 0
     for email in recipients:
-        if send_email(
+        # send_email() returns True for rate-limited, suppressed, debounced,
+        # and circuit-broken calls too (see its docstring); a truthy return
+        # only means "did not raise", not "delivered". status_out carries
+        # the NotificationLog status this call actually wrote, so counting
+        # SENT there (not the return value) is what makes `sent_count`
+        # mean delivered mail.
+        status_out = []
+        send_email(
             to=email,
             subject=rendered.subject,
             body_text=rendered.body_text,
             template_key=template_key,
             work_item_id=work_item.id,
-        ):
+            status_out=status_out,
+        )
+        if status_out and status_out[0] == NOTIF_STATUS_SENT:
             sent_count += 1
 
     logger.info(

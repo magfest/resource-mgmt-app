@@ -32,7 +32,10 @@ from .helpers import (
     unfinalize_work_item,
     get_budget_admin_stats,
     get_budget_approval_groups,
+    get_held_budgets,
+    release_event_budgets,
 )
+from .report_utils import resolve_report_filters
 
 
 def _require_has_admin_final(work_item: WorkItem) -> None:
@@ -124,17 +127,9 @@ def finalize(work_item_id: int):
         flash(f"Work item {work_item.public_id} finalized.", "success")
         db.session.commit()
 
-        # Send notification to department members (non-blocking)
-        try:
-            from app.services.notifications import notify_work_item_finalized
-            notify_work_item_finalized(work_item)
-            db.session.commit()  # Commit notification log
-        except Exception:
-            db.session.rollback()
-            import logging
-            logging.getLogger(__name__).exception(
-                "Failed to send finalization notification for %s", work_item.public_id
-            )
+        # Finalized email is sent by `flask send-board-release-emails`, not here.
+        # A bulk board release fans out one SES call per department, which does
+        # not fit inside Heroku's 30-second request limit.
 
     # Redirect back to referrer or dashboard
     from app.routes.admin.helpers import safe_redirect_url
@@ -326,6 +321,7 @@ def budget_admin_home():
         event_progress=event_progress,
         selected_cycle=selected_cycle,
         show_all_events=show_all_events,
+        held_budget_count=len(get_held_budgets(default_event.id)) if default_event else 0,
     )
 
 
@@ -450,3 +446,63 @@ def all_requests():
         format_currency=format_currency,
         friendly_status=friendly_status,
     )
+
+
+# ============================================================
+# Board Release
+# ============================================================
+
+@admin_final_bp.get("/admin/final-review/board-release/")
+def board_release_form():
+    """Show the event topline and the budgets waiting on the board."""
+    user_ctx = get_user_ctx()
+    require_budget_admin(user_ctx)
+
+    filters = resolve_report_filters()
+    held = get_held_budgets(filters.event_cycle_id) if filters.has_event else []
+
+    # The topline is what the board actually approves, so it leads the page.
+    topline_cents = sum(
+        (line.approved_amount_cents or 0)
+        for item in held for line in item.lines
+    )
+
+    return render_template(
+        "admin_final/board_release.html",
+        user_ctx=user_ctx,
+        held=held,
+        topline_cents=topline_cents,
+        event_cycles=get_active_event_cycles(),
+        selected_event=filters.event_code,
+        selected_event_cycle=filters.event_cycle,
+        format_currency=format_currency,
+    )
+
+
+@admin_final_bp.post("/admin/final-review/board-release/")
+def board_release():
+    """Record the board's approval and release every held budget in the event."""
+    user_ctx = get_user_ctx()
+    require_budget_admin(user_ctx)
+
+    event_code = (request.form.get("event") or "").strip()
+    note = request.form.get("note") or ""
+
+    cycle = EventCycle.query.filter_by(code=event_code).first()
+    if cycle is None:
+        flash("Select an event cycle.", "error")
+        return redirect(url_for("admin_final.board_release_form"))
+
+    count, error = release_event_budgets(cycle, user_ctx, note)
+    if error:
+        db.session.rollback()
+        flash(error, "error")
+        return redirect(url_for("admin_final.board_release_form", event=event_code))
+
+    db.session.commit()
+    flash(
+        f"Board approval recorded for {cycle.code}. {count} budget(s) released. "
+        f"Departments are emailed by the next scheduled run.",
+        "success",
+    )
+    return redirect(url_for("admin_final.board_release_form", event=event_code))

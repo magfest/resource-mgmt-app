@@ -98,6 +98,18 @@
   </section>
   {% endif %}
 
+  {% if held_budget_count %}
+    <div class="card mb-16" style="background: #fef3c7; border: 1px solid #d97706;">
+      <strong>{{ held_budget_count }} budget(s) finished and waiting on the board.</strong>
+      Departments are not told until the topline is approved.
+      {% if default_event %}
+        <a class="btn" href="{{ url_for('admin_final.board_release_form', event=default_event.code) }}">
+          Record Board Approval
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+
   {# Stats Overview — scoped to the selected event (or all events) #}
   <div class="muted small" style="margin-bottom: 8px;">
     Showing:

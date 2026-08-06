@@ -79,6 +79,9 @@ STATUS_LABELS = {
     "APPROVED_NEEDS_REVIEW": "Recommended With Comments",
     "REJECTED": "Rejected",
     "FINALIZED": "Finalized",
+    # Display-only. Never written to work_item.status; derived from
+    # board_released_at being null on a FINALIZED item.
+    "PENDING_BOARD_APPROVAL": "Pending Board Approval",
     "PAUSED": "Paused",
     "PENDING": "Pending",
 }

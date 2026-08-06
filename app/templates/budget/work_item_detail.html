@@ -11,6 +11,15 @@
 
   {% set status = work_item.status | upper %}
 
+  {# Display only. `status` above drives the action and section branching and
+     must stay the raw value. is_pending_board_approval comes from the view's
+     compute_line_status_summary() call, which gates on uses_board_release.
+     A second, unscoped derivation here previously disagreed with that gate
+     whenever BUDGET's uses_board_release flag was False; reading the same
+     computed fact keeps the header pill and the banner from drifting. #}
+  {% set display_status = "PENDING_BOARD_APPROVAL"
+       if is_pending_board_approval else status %}
+
   {% set is_supplementary = work_item.request_kind == 'SUPPLEMENTARY' %}
 
   {# Header #}
@@ -18,7 +27,7 @@
     <div>
       <h1 style="margin:0;">
         {{ work_item.public_id }}
-        {{ render_status_pill(status, label=friendly_status(status) if friendly_status else status, extra_style="margin-left: 8px; font-weight: normal;") }}
+        {{ render_status_pill(display_status, label=friendly_status(display_status) if friendly_status else display_status, extra_style="margin-left: 8px; font-weight: normal;") }}
         {{ extension_badge(work_item, users_by_id=users_by_id if users_by_id is defined else None) }}
       </h1>
       <div class="muted" style="margin-top:4px; line-height:1.5;">
@@ -340,12 +349,19 @@
       </div>
     </div>
   {% elif status == "FINALIZED" %}
+    {# Reuses display_status (set above) so the banner and the header pill can
+       never disagree about whether the board has released this item. #}
     <div class="callout callout-success mb-16">
-      <strong>Finalized</strong>
+      <strong>{{ "Pending Board Approval" if display_status == "PENDING_BOARD_APPROVAL" else "Finalized" }}</strong>
       <div class="muted" style="margin-top:4px;">
-        This request has been finalized.
-        {% if work_item.finalized_at %}
-          Finalized {{ work_item.finalized_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if display_status == "PENDING_BOARD_APPROVAL" %}
+          Budget admin review is complete. Amounts are locked and shown below, but
+          they are not final until the board approves the event topline.
+        {% else %}
+          This request has been finalized.
+          {% if work_item.finalized_at %}
+            Finalized {{ work_item.finalized_at.strftime('%Y-%m-%d %H:%M') }}
+          {% endif %}
         {% endif %}
       </div>
     </div>

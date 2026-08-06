@@ -214,7 +214,18 @@ def compute_line_status_summary(item: WorkItem) -> LineStatusSummary:
     elif item.status == WORK_ITEM_STATUS_AWAITING_DISPATCH:
         effective_status = "AWAITING_DISPATCH"
     elif item.status == WORK_ITEM_STATUS_FINALIZED:
-        effective_status = "FINALIZED"
+        # FINALIZED does not mean the department was told. A budget waits until
+        # the board approves the event topline. Display-only, like UNDER_REVIEW
+        # below; nothing writes this to work_item.status.
+        # Scoped by uses_board_release because this function summarizes every
+        # work type. Only BUDGET writes board_released_at, so an unscoped check
+        # would mark every finalized TechOps and Supply item as held forever.
+        config = item.portfolio.work_type.config if item.portfolio.work_type else None
+        if (config is not None and config.uses_board_release
+                and item.board_released_at is None):
+            effective_status = "PENDING_BOARD_APPROVAL"
+        else:
+            effective_status = "FINALIZED"
     elif needs_info > 0 and needs_adjustment > 0:
         effective_status = "NEEDS_RESPONSE"
     elif needs_info > 0:

@@ -189,16 +189,25 @@ def send_email(
     recipient_user_id: Optional[str] = None,
     skip_debounce: bool = False,
     skip_rate_limit: bool = False,
+    status_out: Optional[list] = None,
 ) -> bool:
     """
     Send an email via AWS SES.
 
     Returns True if sent (or skipped due to debounce/limits), False on error.
+    Existing callers rely on True meaning "do not retry" even when nothing
+    left, so this return value is unchanged; do not repurpose it.
 
     Safety mechanisms:
     - Debounce: Same template+recipient+work_item within 1 hour = skip
     - Rate limit: Max 50/hour and 200/day by default
     - Circuit breaker: Pauses if 5+ failures in 10 minutes
+
+    Pass `status_out` (an empty list) to learn what actually happened.
+    On return, status_out[0] holds the NotificationLog status this call
+    wrote (SENT, DEBOUNCED, SUPPRESSED, RATE_LIMITED, CIRCUIT_OPEN, or
+    FAILED) — the only reliable way to tell delivery from a same-return
+    non-send.
     """
     # Check debounce
     if not skip_debounce and work_item_id:
@@ -211,6 +220,8 @@ def send_email(
                 recipient_user_id=recipient_user_id,
                 subject=subject,
             )
+            if status_out is not None:
+                status_out.append(NOTIF_STATUS_DEBOUNCED)
             return True
 
     # Check if disabled
@@ -224,6 +235,8 @@ def send_email(
             subject=subject,
             error="Email disabled",
         )
+        if status_out is not None:
+            status_out.append(NOTIF_STATUS_SUPPRESSED)
         return True
 
     # Check rate limits (unless bypassed for test emails)
@@ -240,6 +253,8 @@ def send_email(
                 error=reason,
             )
             current_app.logger.warning(f"Email rate limited: {reason}")
+            if status_out is not None:
+                status_out.append(NOTIF_STATUS_RATE_LIMITED)
             return True  # Return True so callers don't retry immediately
 
         # Check circuit breaker
@@ -255,6 +270,8 @@ def send_email(
                 error=reason,
             )
             current_app.logger.warning(f"Email circuit breaker open: {reason}")
+            if status_out is not None:
+                status_out.append(NOTIF_STATUS_CIRCUIT_OPEN)
             return True  # Return True so callers don't retry immediately
 
     try:
@@ -324,6 +341,8 @@ def send_email(
             subject=subject,
             provider_message_id=response.get('MessageId'),
         )
+        if status_out is not None:
+            status_out.append(NOTIF_STATUS_SENT)
         return True
 
     except ClientError as e:
@@ -337,6 +356,8 @@ def send_email(
             error=str(e),
         )
         current_app.logger.error(f"SES send failed: {e}")
+        if status_out is not None:
+            status_out.append(NOTIF_STATUS_FAILED)
         return False
 
 

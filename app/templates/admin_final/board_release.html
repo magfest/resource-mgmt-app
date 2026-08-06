@@ -1,0 +1,80 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Board Release - Budget Admin{% endblock %}
+
+{% block content %}
+  <h1 style="margin:0 0 4px 0;">Record Board Approval</h1>
+  <p class="muted" style="margin:0 0 16px 0;">
+    Budgets below are finished and locked. Their departments have not been told.
+    Recording the board's approval releases all of them.
+  </p>
+
+  <form method="get" class="mb-16">
+    <label for="event" class="form-label">Event cycle</label>
+    <select id="event" name="event">
+      <option value="">Select an event</option>
+      {% for c in event_cycles %}
+        <option value="{{ c.code }}" {% if c.code == selected_event %}selected{% endif %}>
+          {{ c.code }} - {{ c.name }}
+        </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn">Show</button>
+  </form>
+
+  {% if selected_event_cycle %}
+    {% if selected_event_cycle.board_approved_at %}
+      <div class="card mb-16">
+        Board approved {{ selected_event_cycle.board_approved_at.strftime('%Y-%m-%d %H:%M') }}.
+        Budgets finished after that date release automatically.
+      </div>
+    {% endif %}
+
+    {% if held %}
+      <div class="card mb-16">
+        <h2 style="margin:0;">{{ format_currency(topline_cents) }}</h2>
+        <div class="muted">Topline across {{ held|length }} held budget(s)</div>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Request</th>
+              <th>Department</th>
+              <th class="right">Approved</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in held %}
+              <tr>
+                <td><strong>{{ item.public_id }}</strong></td>
+                <td>{{ item.portfolio.department.name }}</td>
+                <td class="right num">
+                  {# sum(attribute=) raises on a null amount, and a budget
+                     finalized before the resolution fix can still carry one. #}
+                  {{ format_currency(item.lines | map(attribute='approved_amount_cents')
+                                     | reject('none') | sum) }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <form method="post" class="mt-16">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="event" value="{{ selected_event_cycle.code }}">
+        <label for="note" class="form-label">Note (required)</label>
+        <textarea id="note" name="note" rows="3" required
+                  placeholder="Board meeting date and the approved topline."></textarea>
+        <button type="submit" class="btn btn-primary mt-8"
+                data-confirm="Release {{ held|length }} budget(s)? Departments will be emailed.">
+          Record Board Approval
+        </button>
+      </form>
+    {% else %}
+      <div class="card">No budgets are waiting on the board for this event.</div>
+    {% endif %}
+  {% endif %}
+{% endblock %}

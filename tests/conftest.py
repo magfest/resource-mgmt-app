@@ -156,7 +156,7 @@ def seed_workflow_data(app):
         work_type_id=wt.id, url_slug="budget",
         public_id_prefix="BUD", line_detail_type="budget",
         routing_strategy=ROUTING_STRATEGY_DIRECT,
-        uses_dispatch=True, has_admin_final=True,
+        uses_dispatch=True, has_admin_final=True, uses_board_release=True,
     )
     db.session.add(wtc)
 

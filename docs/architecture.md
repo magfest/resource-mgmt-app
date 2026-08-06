@@ -192,10 +192,14 @@ Work item statuses (actual constants in `app/models/constants.py`):
 - **NEEDS_INFO**: Awaiting requester response (item-level; see below)
 - **PAUSED**: Supplementary blocked by a pending PRIMARY
 
+`FINALIZED` does not mean the department was told. BUDGET holds release until
+the board approves the event topline; see [Workflow: Statuses](./workflow.md#work-item-statuses)
+for `board_released_at` and the derived `PENDING_BOARD_APPROVAL` status.
+
 Declared in `app/models/constants.py:18-25` but never persisted:
 
-- **UNDER_REVIEW**: display-only, derived at
-  `app/routes/work/helpers/computations.py:226`
+- **UNDER_REVIEW**: display-only, derived in `compute_line_status_summary()`
+  (`app/routes/work/helpers/computations.py`)
 - **UNAPPROVED**: vestigial — nothing reads or writes it. Unfinalize resets to
   SUBMITTED (`app/routes/admin_final/helpers.py:634`), not UNAPPROVED.
 
@@ -241,4 +245,4 @@ Declared in `app/models/constants.py:18-25` but never persisted:
 | `app/routes/work/techops/` | TECHOPS work type (reference pattern for new types) |
 | `app/routes/home.py` | Main dashboard |
 | `app/seeds/bootstrap.py` | Database seeding (`config_seed.py` is a wrapper) |
-| `app/cli.py` | Flask CLI commands (`flask seed`, `flask send-submission-reminders`) |
+| `app/cli.py` | Flask CLI commands (`flask seed`, `flask send-submission-reminders`, `flask send-board-release-emails`) |

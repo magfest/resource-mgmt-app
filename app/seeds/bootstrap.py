@@ -175,6 +175,7 @@ def seed_work_type_configs(work_types: dict[str, WorkType]) -> None:
             supports_fixed_costs=True,
             uses_dispatch=True,
             has_admin_final=True,
+            uses_board_release=True,
             item_singular="Budget Request",
             item_plural="Budget Requests",
             line_singular="Line Item",
