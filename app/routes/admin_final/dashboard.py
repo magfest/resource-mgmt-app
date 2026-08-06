@@ -13,6 +13,8 @@ from app.models import (
     EventCycle,
     Department,
     ApprovalGroup,
+    WorkItemAuditEvent,
+    AUDIT_EVENT_BOARD_RELEASE,
     WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
@@ -36,6 +38,29 @@ from .helpers import (
     release_event_budgets,
 )
 from .report_utils import resolve_report_filters
+
+
+def _get_board_approval_note(event_cycle_id: int):
+    """Return the admin's note from the event's original board-approval release.
+
+    `release_event_budgets` writes one BOARD_RELEASE audit event per item it
+    releases, all sharing the admin's note text. `finalize_work_item`'s latch
+    path writes later BOARD_RELEASE events with a fixed boilerplate reason
+    instead. Ordering by created_at (then id) picks the earliest event, which
+    is always from the original release action, not the boilerplate.
+    Returns None if the event cycle has no BOARD_RELEASE event at all (the
+    latch can be set with nothing held, so no audit event is written).
+    """
+    event = (
+        WorkItemAuditEvent.query
+        .join(WorkItem, WorkItem.id == WorkItemAuditEvent.work_item_id)
+        .join(WorkPortfolio, WorkPortfolio.id == WorkItem.portfolio_id)
+        .filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+        .filter(WorkItemAuditEvent.event_type == AUDIT_EVENT_BOARD_RELEASE)
+        .order_by(WorkItemAuditEvent.created_at.asc(), WorkItemAuditEvent.id.asc())
+        .first()
+    )
+    return event.reason if event else None
 
 
 def _require_has_admin_final(work_item: WorkItem) -> None:
@@ -133,7 +158,7 @@ def finalize(work_item_id: int):
         else:
             flash(
                 f"Work item {work_item.public_id} finished. The department "
-                "is not notified until the board approves the event topline.",
+                "is not notified until the FY budget is approved.",
                 "success",
             )
         db.session.commit()
@@ -320,6 +345,12 @@ def budget_admin_home():
             "finalized": status_counts.get(WORK_ITEM_STATUS_FINALIZED, 0),
         }
 
+    board_approval_note = (
+        _get_board_approval_note(default_event.id)
+        if default_event and default_event.board_approved_at
+        else None
+    )
+
     return render_template(
         "admin_final/budget_home.html",
         user_ctx=user_ctx,
@@ -333,6 +364,7 @@ def budget_admin_home():
         selected_cycle=selected_cycle,
         show_all_events=show_all_events,
         held_budget_count=len(get_held_budgets(default_event.id)) if default_event else 0,
+        board_approval_note=board_approval_note,
     )
 
 
@@ -512,7 +544,7 @@ def board_release():
 
     db.session.commit()
     flash(
-        f"Board approval recorded for {cycle.code}. {count} budget(s) released. "
+        f"FY budget approval recorded for {cycle.code}. {count} budget(s) released. "
         f"Departments are emailed by the next scheduled run.",
         "success",
     )

@@ -1,5 +1,6 @@
 {# templates/admin_final/budget_home.html #}
 {% extends "layout/base.html" %}
+{% from "macros/status_pill.html" import render_status_pill %}
 
 {% block title %}Budget Administration{% endblock %}
 
@@ -48,7 +49,15 @@
   <section class="card" style="margin-bottom: 24px;">
     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
       <div>
-        <h3 style="margin:0;">{{ default_event.name }} Progress</h3>
+        <h3 style="margin:0; display: flex; align-items: center; gap: 8px;">
+          {{ default_event.name }} Progress
+          {% if default_event.board_approved_at %}
+            {% set approval_title = "Approved " ~ default_event.board_approved_at.strftime('%b %d, %Y') ~ " by " ~ (default_event.board_approved_by_user_id|user_display) ~ (". Note: " ~ board_approval_note if board_approval_note else ".") %}
+            {{ render_status_pill("APPROVED", label="FY Budget Approved", title=approval_title) }}
+          {% else %}
+            {{ render_status_pill("PENDING_BOARD_APPROVAL", label="Awaiting FY Budget Approval", title="Departments are not notified until the topline is approved.") }}
+          {% endif %}
+        </h3>
         <div class="muted small" style="margin-top: 4px;">
           {% if default_event.submission_deadline %}
             Submission deadline: {{ default_event.submission_deadline.strftime('%b %d, %Y') }}
@@ -100,11 +109,11 @@
 
   {% if held_budget_count %}
     <div class="card mb-16" style="background: #fef3c7; border: 1px solid #d97706;">
-      <strong>{{ held_budget_count }} budget(s) finished and waiting on the board.</strong>
+      <strong>{{ held_budget_count }} budget(s) finished and waiting on FY budget approval.</strong>
       Departments are not told until the topline is approved.
       {% if default_event %}
         <a class="btn" href="{{ url_for('admin_final.board_release_form', event=default_event.code) }}">
-          Record Board Approval
+          Record FY Budget Approval
         </a>
       {% endif %}
     </div>
