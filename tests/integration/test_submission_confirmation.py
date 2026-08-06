@@ -24,6 +24,7 @@ from app.models import (
     WorkItem,
     WorkLine,
     BudgetLineDetail,
+    NOTIF_STATUS_SENT,
     ROUTING_STRATEGY_CATEGORY,
     REQUEST_KIND_PRIMARY,
     WORK_ITEM_STATUS_DRAFT,
@@ -31,6 +32,19 @@ from app.models import (
     REVIEW_STAGE_APPROVAL_GROUP,
 )
 from app.services.notifications import notify_submission_confirmation
+
+
+def _mock_delivered_send(**kwargs):
+    """Stand in for a real send_email() call that delivered.
+
+    _send_emails() now counts status_out, not the boolean return (see
+    Defect 1 fix), so a bare `return_value=True` mock no longer reads as
+    "sent". This mirrors what a real SENT call writes to status_out.
+    """
+    status_out = kwargs.get("status_out")
+    if status_out is not None:
+        status_out.append(NOTIF_STATUS_SENT)
+    return True
 
 
 @pytest.fixture
@@ -85,7 +99,9 @@ class TestSubmissionConfirmation:
 
         # Patch only the SES-bound send_email so we can assert call args
         # without hitting the rate limiter / SUPPRESSED log path.
-        with patch("app.services.notifications.send_email", return_value=True) as send:
+        with patch(
+            "app.services.notifications.send_email", side_effect=_mock_delivered_send,
+        ) as send:
             sent = notify_submission_confirmation(data["work_item"])
 
         assert sent == 1
@@ -145,7 +161,9 @@ class TestSubmissionConfirmation:
         ))
         db.session.commit()
 
-        with patch("app.services.notifications.send_email", return_value=True) as send:
+        with patch(
+            "app.services.notifications.send_email", side_effect=_mock_delivered_send,
+        ) as send:
             sent = notify_submission_confirmation(data["work_item"])
 
         recipients = {c.kwargs["to"] for c in send.call_args_list}
