@@ -18,6 +18,7 @@ from app import db
 from app.models import (
     BudgetLineDetail, WorkLine, WorkItem, WorkPortfolio,
     ExpenseAccount, Department, UI_GROUP_HOTEL_SERVICES,
+    WORK_LINE_STATUS_REJECTED,
 )
 from app.routes import get_user_ctx
 from app.routes.work.helpers import format_currency
@@ -187,13 +188,21 @@ def group_hotel_rows(rows: List[HotelRoomLineRow]) -> List[dict]:
     groups = []
     for key in ordered_keys:
         group_rows = by_key[key]
+        # Stable sort, so the SQL ordering survives within each half.
+        group_rows.sort(key=lambda r: r.line_status == WORK_LINE_STATUS_REJECTED)
+        live = [r for r in group_rows if r.line_status != WORK_LINE_STATUS_REJECTED]
+        rejected = [r for r in group_rows if r.line_status == WORK_LINE_STATUS_REJECTED]
         groups.append({
             "pay_type_key": key,
             "pay_type": group_rows[0].pay_type,
             "rows": group_rows,
-            "room_subtotal": sum(r.rooms for r in group_rows),
-            "room_nights_subtotal": sum(r.room_nights for r in group_rows),
-            "cents_subtotal": sum(r.total_cents for r in group_rows),
+            # Subtotals cover live rows only, so the breakout agrees with the
+            # summary. Rejected weight is reported separately below the table.
+            "room_subtotal": sum(r.rooms for r in live),
+            "room_nights_subtotal": sum(r.room_nights for r in live),
+            "cents_subtotal": sum(r.total_cents for r in live),
+            "rejected_count": len(rejected),
+            "rejected_cents": sum(r.total_cents for r in rejected),
         })
     return groups
 
@@ -202,12 +211,18 @@ def build_hotel_summary(rows: List[HotelRoomLineRow]) -> dict:
     """
     Cross-tab of room counts by room type (rows) x pay type (columns), with row
     totals (per room type), column totals (per pay type), a grand total, and a
-    dollar total per pay-type column.
+    dollar total per pay-type column. Rejected lines are excluded.
 
     Returned shape is template-friendly: `pay_labels` and the per-column lists
     (`col_rooms`, `col_cents`) are all aligned to the same pay-type order, and
     each `matrix_rows` entry's `cells` list is aligned to that same order.
     """
+    # Rejected rooms are excluded here but still render in the breakout. The
+    # summary is a planning number; a rejected room will not be booked.
+    # The filter lives in this function rather than at the call site so a
+    # future caller cannot forget it.
+    rows = [r for r in rows if r.line_status != WORK_LINE_STATUS_REJECTED]
+
     # Ordered pay types present: known order first, then any unexpected keys.
     present_pay = {r.pay_type_key for r in rows}
     pay_keys = [k for k in PAY_TYPE_ORDER if k in present_pay]
@@ -296,6 +311,8 @@ def hotel_rooms_report_export():
         abort(400, "Event cycle is required for export")
 
     rows = get_hotel_rooms_data(filters.event_cycle_id, filters.department_id)
+    # Match the on-screen order so the export can be diffed against the page.
+    rows.sort(key=lambda r: r.line_status == WORK_LINE_STATUS_REJECTED)
 
     headers = [
         "Pay Type", "Department", "Request", "Room Type",

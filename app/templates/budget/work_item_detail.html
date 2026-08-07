@@ -115,29 +115,10 @@
       </a>
     {% endif %}
 
-    {# Admin Dispatch button #}
-    {% if perms.is_worktype_admin and status == "SUBMITTED" %}
-      <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
-      <a class="btn" href="{{ url_for('dispatch.dashboard') }}" style="position: relative;">
-      Assign Reviewers</a>
-    {% endif %}
-
-    {# Dashboard link for reviewers (not shown for drafts) #}
-    {% if not perms.is_draft and (perms.is_worktype_admin or perms.is_checked_out_by_current_user) %}
-      <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
-        Review Queue
-      </a>
-    {% endif %}
-
-    {# Admin Final Review button #}
-    {% if perms.is_worktype_admin and status == "SUBMITTED" %}
-      <a class="btn" href="{{ url_for('admin_final.dashboard') }}">
-        Admin Final Queue
-      </a>
-    {% endif %}
-
     {# Extension Grant/Revoke button (admin only) #}
-    {% if perms.is_worktype_admin %}
+    {# Extensions move the submission deadline, so they are meaningless once the
+       request is in. The badge stays as the historical record. #}
+    {% if perms.is_worktype_admin and perms.is_draft %}
       {% if work_item.extension_granted %}
         <form method="post"
               action="{{ url_for('work.work_item_revoke_extension', event=ctx.event_cycle.code, dept=ctx.department.code, work_type_slug=ctx.work_type.config.url_slug, public_id=work_item.public_id) }}"
