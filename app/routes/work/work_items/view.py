@@ -24,6 +24,7 @@ from .. import work_bp
 from ..helpers import (
     require_work_item_view,
     compute_work_item_totals,
+    compute_line_status_summary,
     format_currency,
     friendly_status,
     get_comment_visibility,
@@ -67,6 +68,13 @@ def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str 
 
     # Compute totals (from ALL lines for context)
     totals = compute_work_item_totals(work_item)
+
+    # Single source of truth for the board-release hold. compute_line_status_summary
+    # already scopes this on WorkTypeConfig.uses_board_release; the template must
+    # read that result rather than re-deriving the condition on its own.
+    is_pending_board_approval = (
+        compute_line_status_summary(work_item).effective_status == "PENDING_BOARD_APPROVAL"
+    )
 
     # Check if user is a department member (requester/dept member should see all lines)
     # This is different from perms.can_view which includes reviewer access
@@ -139,6 +147,7 @@ def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str 
         work_item=work_item,
         lines=lines,
         totals=totals,
+        is_pending_board_approval=is_pending_board_approval,
         total_lines_count=total_lines_count,
         lines_filtered=lines_filtered,
         group_subtotals=group_subtotals,

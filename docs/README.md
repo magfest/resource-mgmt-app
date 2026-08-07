@@ -36,6 +36,18 @@ This application manages work requests for MAGFest events through a shared workf
 - **Auth**: Keycloak SSO or Google OAuth (prod), Dev login (local)
 - **Deployment**: Heroku (`Procfile`, `app.json`), Gunicorn; Heroku Scheduler for periodic CLI jobs
 
+### Scheduled Jobs (Heroku Scheduler)
+
+Each job below is configured manually in the Heroku Scheduler add-on. No deploy
+step wires these up.
+
+- Run `flask send-submission-reminders <EVENT_CODE> --send` for each active
+  event. It emails departments that have not yet submitted a budget. Without
+  `--send` it lists who would receive a reminder and exits.
+- Run `flask send-board-release-emails --send`. It emails departments whose
+  budgets the board has released and stamps `work_items.finalized_notified_at`.
+  Without `--send` it lists what it would send and exits.
+
 ## Getting Started
 
 ```bash

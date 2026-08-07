@@ -89,6 +89,7 @@ from .constants import (
     # Work item audit event types
     AUDIT_EVENT_FINALIZE,
     AUDIT_EVENT_UNFINALIZE,
+    AUDIT_EVENT_BOARD_RELEASE,
     AUDIT_EVENT_SUBMIT,
     AUDIT_EVENT_RECALL_TO_DRAFT,
     AUDIT_EVENT_DISPATCH,
@@ -262,6 +263,7 @@ __all__ = [
     # Constants - Work item audit event types
     "AUDIT_EVENT_FINALIZE",
     "AUDIT_EVENT_UNFINALIZE",
+    "AUDIT_EVENT_BOARD_RELEASE",
     "AUDIT_EVENT_SUBMIT",
     "AUDIT_EVENT_RECALL_TO_DRAFT",
     "AUDIT_EVENT_DISPATCH",

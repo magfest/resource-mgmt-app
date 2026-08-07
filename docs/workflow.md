@@ -53,14 +53,23 @@ admin-final (it auto-finalizes when the last line is decided).
 | FINALIZED | Locked and complete | No one (admin can unfinalize) |
 | PAUSED | Supplementary blocked by pending PRIMARY | No one |
 
+For BUDGET, `FINALIZED` does not mean the department was told. A finished
+budget waits for the board to approve the event topline before it releases.
+`EventCycle.board_approved_at` is the gate; `WorkItem.board_released_at` records
+the release, and `finalized_notified_at` records the email. The detail page
+shows a held item as `PENDING_BOARD_APPROVAL`, a display-only status like
+`UNDER_REVIEW` below. It is not a constant in `constants.py`, and it is scoped
+to work types where `WorkTypeConfig.uses_board_release` is true, which as of
+August 2026 is BUDGET only.
+
 Two further statuses are declared in `app/models/constants.py:18-25` but are never
 written to `work_item.status`:
 
-- **`UNDER_REVIEW`** — display-only. Derived at
-  `app/routes/work/helpers/computations.py:226` when an item is SUBMITTED with at least
-  one PENDING line. The database never holds this value, so never compare
-  `work_item.status` against it. The same derivation also emits `NEEDS_RESPONSE`
-  (computations.py:219), which is not a constant at all.
+- **`UNDER_REVIEW`** — display-only. Derived in `compute_line_status_summary()`
+  (`app/routes/work/helpers/computations.py`) when an item is SUBMITTED with at
+  least one PENDING line. The database never holds this value, so never compare
+  `work_item.status` against it. The same function also emits `NEEDS_RESPONSE`,
+  which is not a constant at all.
 - **`UNAPPROVED`** — vestigial; no code reads or writes it. Unfinalizing does *not*
   produce it — `unfinalize_work_item` resets the item to SUBMITTED
   (`app/routes/admin_final/helpers.py:634`).

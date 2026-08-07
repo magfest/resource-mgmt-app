@@ -766,6 +766,16 @@ def create_app() -> Flask:
     from app.routes.admin.site_content import get_site_content
     app.jinja_env.globals['get_site_content'] = get_site_content
 
+    # Make friendly_status available in all templates, not just the views
+    # that pass it as a render kwarg. Registered as a global, not a filter,
+    # because call sites already use friendly_status(status) function syntax;
+    # a filter would only work with the |friendly_status pipe. Deferred to
+    # after register_all_routes() for the same reason as get_site_content
+    # above: importing app.routes.work.helpers.formatting pulls in the work
+    # blueprint's route modules.
+    from app.routes.work.helpers.formatting import friendly_status
+    app.jinja_env.globals['friendly_status'] = friendly_status
+
     # Register CLI commands (flask seed, etc.)
     from app.cli import register_cli
     register_cli(app)

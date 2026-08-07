@@ -60,9 +60,12 @@
               {%- else -%}Response Needed{%- endif -%}
             </span>
           {% elif status == "UNDER_REVIEW" or status == "SUBMITTED" %}
-            <span class="pill pill-submitted">{{ status | replace('_', ' ') | title }}</span>
+            <span class="pill pill-submitted">{{ friendly_status(status) }}</span>
+          {% elif status == "PENDING_BOARD_APPROVAL" %}
+            {# Same amber family as render_status_pill on the item detail page. #}
+            <span class="pill pill-warning">{{ friendly_status(status) }}</span>
           {% else %}
-            <span class="pill">{{ status | replace('_', ' ') | title }}</span>
+            <span class="pill">{{ friendly_status(status) }}</span>
           {% endif %}
         {% else %}
           <span class="muted small">Not started</span>

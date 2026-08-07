@@ -11,6 +11,15 @@
 
   {% set status = work_item.status | upper %}
 
+  {# Display only. `status` above drives the action and section branching and
+     must stay the raw value. is_pending_board_approval comes from the view's
+     compute_line_status_summary() call, which gates on uses_board_release.
+     A second, unscoped derivation here previously disagreed with that gate
+     whenever BUDGET's uses_board_release flag was False; reading the same
+     computed fact keeps the header pill and the banner from drifting. #}
+  {% set display_status = "PENDING_BOARD_APPROVAL"
+       if is_pending_board_approval else status %}
+
   {% set is_supplementary = work_item.request_kind == 'SUPPLEMENTARY' %}
 
   {# Header #}
@@ -18,7 +27,7 @@
     <div>
       <h1 style="margin:0;">
         {{ work_item.public_id }}
-        {{ render_status_pill(status, label=friendly_status(status) if friendly_status else status, extra_style="margin-left: 8px; font-weight: normal;") }}
+        {{ render_status_pill(display_status, label=friendly_status(display_status) if friendly_status else display_status, extra_style="margin-left: 8px; font-weight: normal;") }}
         {{ extension_badge(work_item, users_by_id=users_by_id if users_by_id is defined else None) }}
       </h1>
       <div class="muted" style="margin-top:4px; line-height:1.5;">
@@ -204,15 +213,16 @@
 
       {% if finalization_summary.kicked_back_lines > 0 %}
         <div class="callout callout-danger" style="margin-bottom: 12px;">
-          <strong>Not Ready to Finalize</strong>
+          <strong>Not Ready to Finish</strong>
           <div class="muted" style="margin-top:4px;">
             {{ finalization_summary.kicked_back_lines }} line(s) are awaiting requester response.
           </div>
         </div>
       {% elif can_finalize %}
+        {% set board_approved = work_item.portfolio.event_cycle.board_approved_at %}
         <div id="finalize-section">
           <button type="button" class="btn btn-primary" data-show="finalize-form-container" data-hide-self>
-            Finalize Request
+            Budget Admin Finished
           </button>
           <span class="muted" style="margin-left: 8px;">
             {% if finalization_summary.pending_lines > 0 %}
@@ -226,18 +236,24 @@
               <input type="hidden" name="referrer" value="{{ request.url }}" />
               <div style="margin-bottom: 12px;">
                 <label for="finalize-note" style="font-weight: 600; display: block; margin-bottom: 4px;">
-                  Finalization Note <span style="color: #dc3545;">*</span>
+                  Finishing Note <span style="color: #dc3545;">*</span>
                 </label>
                 <textarea name="note" id="finalize-note" rows="4" style="width: 100%;"
-                          placeholder="Enter your finalization notes... (e.g., budget adjustments made, items flagged for follow-up, conditions of approval)" required></textarea>
+                          placeholder="Enter your notes... (e.g., budget adjustments made, items flagged for follow-up, conditions of approval)" required></textarea>
                 <div class="muted small mt-4">
                   This note will be recorded in the audit trail and may be visible to department heads.
                 </div>
               </div>
               <div class="btn-row">
-                <button type="submit" class="btn btn-primary" data-confirm="Finalize this request? This action will lock in all approved amounts.">
-                  Confirm Finalization
-                </button>
+                {% if board_approved %}
+                  <button type="submit" class="btn btn-primary" data-confirm="Finish this budget admin review? This locks in the approved amounts and releases the budget. A scheduled process will notify the department.">
+                    Budget Admin Finished
+                  </button>
+                {% else %}
+                  <button type="submit" class="btn btn-primary" data-confirm="Finish this budget admin review? This locks in the approved amounts. The department is not notified until the FY budget is approved.">
+                    Budget Admin Finished
+                  </button>
+                {% endif %}
                 <button type="button" class="btn" data-hide="finalize-form-container" data-show-selector="#finalize-section > button">
                   Cancel
                 </button>
@@ -247,7 +263,7 @@
         </div>
       {% else %}
         <div class="muted">
-          At least one line must be reviewed before finalization.
+          At least one line must be reviewed before finishing.
         </div>
       {% endif %}
     </div>
@@ -321,12 +337,20 @@
       </div>
     </div>
   {% elif status == "FINALIZED" %}
+    {# Reuses display_status (set above) so the banner and the header pill can
+       never disagree about whether the board has released this item. #}
     <div class="callout callout-success mb-16">
-      <strong>Finalized</strong>
+      <strong>{{ "Pending FY Budget Approval" if display_status == "PENDING_BOARD_APPROVAL" else "Finalized" }}</strong>
       <div class="muted" style="margin-top:4px;">
-        This request has been finalized.
-        {% if work_item.finalized_at %}
-          Finalized {{ work_item.finalized_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if display_status == "PENDING_BOARD_APPROVAL" %}
+          Budget admin review is complete. Amounts are locked and shown below.
+          They become final once the organization's FY budget is approved.
+          No further review of this department is pending.
+        {% else %}
+          This request has been finalized.
+          {% if work_item.finalized_at %}
+            Finalized {{ work_item.finalized_at.strftime('%Y-%m-%d %H:%M') }}
+          {% endif %}
         {% endif %}
       </div>
     </div>

@@ -35,6 +35,12 @@ class EventCycle(db.Model):
     approval_target_date = db.Column(db.Date, nullable=True)      # Target for completing approvals
     finalization_date = db.Column(db.Date, nullable=True)         # When budgets are locked/finalized
 
+    # The board's sign-off on the event topline. Latches: once set, budgets
+    # finished afterward release without a second action. Clearing it does not
+    # un-release anything, because sent email cannot be unsent.
+    board_approved_at = db.Column(db.DateTime, nullable=True)
+    board_approved_by_user_id = db.Column(db.String(64), nullable=True)
+
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by_user_id = db.Column(db.String(64), nullable=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

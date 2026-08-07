@@ -20,6 +20,7 @@ from app.models import (
     WorkItemAuditEvent,
     WorkLineAuditEvent,
     WorkPortfolio,
+    WorkTypeConfig,
     BudgetLineDetail,
     EventCycle,
     Department,
@@ -49,6 +50,7 @@ from app.models import (
     AUDIT_EVENT_AMOUNT_OVERRIDE,
     AUDIT_EVENT_FINALIZE,
     AUDIT_EVENT_UNFINALIZE,
+    AUDIT_EVENT_BOARD_RELEASE,
     REVIEW_ACTION_APPROVE,
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
@@ -536,6 +538,32 @@ def finalize_work_item(
     work_item.finalized_at = datetime.utcnow()
     work_item.finalized_by_user_id = user_ctx.user_id
 
+    # The board approves one topline for the whole event. If they already have,
+    # this budget releases immediately; otherwise it waits for the release page.
+    # FINALIZED alone does not mean the department was told.
+    #
+    # Gated on WorkTypeConfig.uses_board_release: has_admin_final is True for
+    # Contract and Supply too, so this finalize path is reachable for their
+    # work items, not just Budget's. Without this check a Supply item finalized
+    # after the board topline landed would get stamped and swept into a later
+    # BUDGET-only send.
+    work_type_config = WorkTypeConfig.query.filter_by(
+        work_type_id=work_item.portfolio.work_type_id).first()
+    if (work_type_config is not None and work_type_config.uses_board_release
+            and work_item.portfolio.event_cycle.board_approved_at is not None):
+        work_item.board_released_at = datetime.utcnow()
+        # release_event_budgets writes this same event type for a bulk
+        # release; without it here, a budget finalized after the board
+        # already approved the event would release with no audit trail.
+        db.session.add(WorkItemAuditEvent(
+            work_item_id=work_item.id,
+            event_type=AUDIT_EVENT_BOARD_RELEASE,
+            old_value=None,
+            new_value=None,
+            reason="Automatic release: FY budget approval was already recorded for this event.",
+            created_by_user_id=user_ctx.user_id,
+        ))
+
     # Create audit event
     audit = WorkItemAuditEvent(
         work_item_id=work_item.id,
@@ -649,6 +677,11 @@ def unfinalize_work_item(
     work_item.status = WORK_ITEM_STATUS_SUBMITTED
     work_item.finalized_at = None
     work_item.finalized_by_user_id = None
+
+    # Sending a budget back undoes its release. A later re-finalize notifies the
+    # department again, which is correct; the numbers changed.
+    work_item.board_released_at = None
+    work_item.finalized_notified_at = None
 
     # Optionally reset line reviews
     if reset_lines:
@@ -1254,3 +1287,77 @@ def get_budget_admin_stats(selected_cycle, show_all_events: bool) -> dict:
         "rejected_lines": _lines().filter(
             WorkLine.status == WORK_LINE_STATUS_REJECTED).count(),
     }
+
+
+# ============================================================
+# Board Release
+# ============================================================
+
+def get_held_budgets(event_cycle_id: int) -> List[WorkItem]:
+    """Return finalized budgets in an event whose departments have not been told.
+
+    Held means the budget admin is done but the board has not approved the event
+    topline. These are the rows the release page totals.
+
+    Joined to WorkTypeConfig.uses_board_release: only BUDGET holds for board
+    approval. Without this filter a finalized TechOps or Supply item in the same
+    event would be swept into a budget release it has no part in.
+    """
+    return (
+        WorkItem.query
+        .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
+        .join(WorkTypeConfig, WorkPortfolio.work_type_id == WorkTypeConfig.work_type_id)
+        .filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+        .filter(WorkTypeConfig.uses_board_release == True)  # noqa: E712
+        .filter(WorkItem.status == WORK_ITEM_STATUS_FINALIZED)
+        .filter(WorkItem.board_released_at.is_(None))
+        .filter(WorkItem.is_archived == False)  # noqa: E712
+        .filter(WorkPortfolio.is_archived == False)  # noqa: E712
+        .order_by(WorkItem.public_id.asc())
+        .all()
+    )
+
+
+def release_event_budgets(
+    event_cycle: EventCycle,
+    user_ctx: UserContext,
+    note: str,
+) -> Tuple[int, Optional[str]]:
+    """Record the board's approval of an event topline and release held budgets.
+
+    Sets the event latch, then stamps every held budget. Emails are sent later by
+    `flask send-board-release-emails`; a bulk fan-out of SES calls does not fit
+    inside Heroku's 30-second request limit.
+
+    Idempotent. A second run finds nothing held and returns 0.
+
+    Returns (released_count, error_message).
+    """
+    require_budget_admin(user_ctx)
+
+    if not (note or "").strip():
+        return 0, "A note is required to record FY budget approval."
+
+    now = datetime.utcnow()
+
+    # The latch is set once. Re-running release for stragglers must not rewrite
+    # the date the board actually approved.
+    if event_cycle.board_approved_at is None:
+        event_cycle.board_approved_at = now
+        event_cycle.board_approved_by_user_id = user_ctx.user_id
+
+    held = get_held_budgets(event_cycle.id)
+    for item in held:
+        item.board_released_at = now
+        # Status doesn't change here (it's already FINALIZED), so old/new
+        # carry no transition; the audit log renders the reason instead.
+        db.session.add(WorkItemAuditEvent(
+            work_item_id=item.id,
+            event_type=AUDIT_EVENT_BOARD_RELEASE,
+            old_value=None,
+            new_value=None,
+            reason=note.strip(),
+            created_by_user_id=user_ctx.user_id,
+        ))
+
+    return len(held), None

@@ -7,7 +7,7 @@ and configuration changes.
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import BigInteger
+from sqlalchemy import BigInteger, Integer
 
 from app import db
 from .constants import NOTIF_STATUS_QUEUED
@@ -71,7 +71,12 @@ class NotificationLog(db.Model):
     """Proof of notifications sent (email now, other channels later)."""
     __tablename__ = "notification_logs"
 
-    id = db.Column(BigInteger, primary_key=True)
+    # SQLite's rowid autoincrement only kicks in for a column declared
+    # exactly INTEGER PRIMARY KEY; plain BIGINT PRIMARY KEY is a normal
+    # column there, so every insert failed NOT NULL on id under the SQLite
+    # dev DB and the pytest in-memory DB. Postgres (prod) is unaffected;
+    # the variant only swaps the sqlite-dialect type.
+    id = db.Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
     sent_at = db.Column(db.DateTime, nullable=True, index=True)

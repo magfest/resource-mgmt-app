@@ -102,6 +102,11 @@ class WorkTypeConfig(db.Model):
     uses_dispatch = db.Column(db.Boolean, nullable=False, default=False)
     has_admin_final = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Whether finished items wait for a board sign-off before their department
+    # is told. Only BUDGET uses this; the flag keeps the shared status
+    # derivation in computations.py from marking other work types as held.
+    uses_board_release = db.Column(db.Boolean, nullable=False, default=False)
+
     # Display labels
     item_singular = db.Column(db.String(32), nullable=False, default="Request")
     item_plural = db.Column(db.String(32), nullable=False, default="Requests")
@@ -291,6 +296,15 @@ class WorkItem(db.Model):
     extension_granted = db.Column(db.Boolean, nullable=False, default=False, index=True)
     extension_granted_at = db.Column(db.DateTime, nullable=True, index=True)
     extension_granted_by_user_id = db.Column(db.String(64), nullable=True, index=True)
+
+    # When this budget was officially released to its department. Status
+    # FINALIZED alone does NOT mean the department was told; a finished budget
+    # waits here until the board approves the event topline.
+    board_released_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    # When the finalized email actually left. Separate from board_released_at
+    # because a scheduled command sends, not the request that releases.
+    finalized_notified_at = db.Column(db.DateTime, nullable=True, index=True)
 
     # Soft archive (rare; normally archive portfolios instead)
     is_archived = db.Column(db.Boolean, nullable=False, default=False, index=True)

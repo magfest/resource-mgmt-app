@@ -196,3 +196,150 @@ def register_cli(app: Flask) -> None:
         if summary.emails_sent < summary.emails_attempted:
             sys.exit(3)
         sys.exit(0)
+
+    @app.cli.command("send-board-release-emails")
+    @click.option(
+        "--send",
+        is_flag=True,
+        default=False,
+        help="Actually send emails. Without this flag, the command runs as a dry-run.",
+    )
+    @with_appcontext
+    def send_board_release_emails_command(send):
+        """Email departments whose budgets the board has released.
+
+        Selects finalized work items that are released but not yet notified.
+        Dry-run by default; pass --send to actually fire.
+
+        Runs under Heroku Scheduler. No web request sends these emails, because
+        a bulk board release fans out one SES call per department and would
+        exceed Heroku's 30-second request limit.
+
+        \b
+        Exit codes:
+          0  Success (dry-run completed or all sends succeeded)
+          2  Template 'finalized' not found or inactive
+          3  At least one item did not fully send (rate limit, no members,
+             missing template render, or an exception); left unstamped for retry
+        """
+        import sys
+        from datetime import datetime
+
+        from app.models import (
+            WorkItem,
+            WorkPortfolio,
+            WorkTypeConfig,
+            EmailTemplate,
+            WORK_ITEM_STATUS_FINALIZED,
+        )
+        from app.services import notifications
+
+        # Guard missing/inactive template, same contract as
+        # send-submission-reminders: an operator can silence board-release
+        # emails at the DB level and this command should exit loudly, not
+        # loop stamping nothing.
+        template = EmailTemplate.query.filter_by(template_key='finalized').first()
+        if template is None:
+            click.echo(
+                "Email template 'finalized' not found. Run migrations.",
+                err=True,
+            )
+            sys.exit(2)
+        if not template.is_active:
+            click.echo(
+                "Email template 'finalized' is inactive (is_active=False) "
+                "in the email_templates table. Re-activate before sending.",
+                err=True,
+            )
+            sys.exit(2)
+
+        # Joined to WorkTypeConfig.uses_board_release, matching
+        # get_held_budgets() in admin_final/helpers.py. Both write sites for
+        # board_released_at (release_event_budgets and finalize_work_item)
+        # already check this flag, so the join is defence in depth, not the
+        # only guard. This command runs unattended under Heroku Scheduler
+        # with no reviewer between a bad write and a sent email, so a work
+        # type that should never be swept in stays excluded even if a future
+        # write site forgets the check.
+        pending = (
+            WorkItem.query
+            .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
+            .join(WorkTypeConfig, WorkPortfolio.work_type_id == WorkTypeConfig.work_type_id)
+            .filter(WorkTypeConfig.uses_board_release == True)  # noqa: E712
+            .filter(WorkItem.status == WORK_ITEM_STATUS_FINALIZED)
+            .filter(WorkItem.board_released_at.isnot(None))
+            .filter(WorkItem.finalized_notified_at.is_(None))
+            .filter(WorkItem.is_archived == False)  # noqa: E712
+            .filter(WorkPortfolio.is_archived == False)  # noqa: E712
+            .order_by(WorkItem.public_id.asc())
+            .all()
+        )
+
+        if not pending:
+            click.echo("No released budgets awaiting notification.")
+            sys.exit(0)
+
+        click.echo(f"Released budgets awaiting notification: {len(pending)}")
+        for item in pending:
+            click.echo(f"  {item.public_id:<28} {item.portfolio.department.name}")
+        click.echo()
+
+        if not send:
+            click.echo("DRY RUN - no emails sent. Pass --send to actually send.")
+            sys.exit(0)
+
+        failures = 0
+        for item in pending:
+            # Captured before notify_work_item_finalized() runs: a prior
+            # item's per-item commit (below) expires every loaded instance,
+            # including this one. If notify_work_item_finalized() then fails
+            # at the DB level, the session needs an explicit rollback before
+            # it can run any query again — including the implicit SELECT a
+            # later `item.public_id` access would trigger. Reading it now,
+            # while the session is still known-good, avoids that trap.
+            public_id = item.public_id
+
+            try:
+                result = notifications.notify_work_item_finalized(item)
+            except Exception as exc:
+                failures += 1
+                click.echo(f"  FAILED {public_id}: {exc}", err=True)
+                # A raise mid-item can leave the session in a state where
+                # further queries or the next item's writes fail too.
+                # Roll back so this item's failure can't poison later ones.
+                db.session.rollback()
+                continue
+
+            # Stamp only on a complete send. `sent` counts actual SENT
+            # NotificationLog rows (see FinalizedNotifyResult), so it can be
+            # 0 (rate limit, missing template render, no department members)
+            # or between 0 and `attempted` (some members rate-limited)
+            # without raising. Leaving the item unstamped on either outcome
+            # means the next scheduled run retries it; a stamped item is
+            # never re-driven by anything.
+            if result.attempted == 0 or result.sent != result.attempted:
+                failures += 1
+                click.echo(
+                    f"  FAILED {public_id}: sent {result.sent}/{result.attempted}",
+                    err=True,
+                )
+            else:
+                item.finalized_notified_at = datetime.utcnow()
+
+            # Commit per item, not once after the loop. send_email() writes
+            # NotificationLog rows without committing (caller's job), and a
+            # single end-of-loop commit means one bad item later in `pending`
+            # could roll back every stamp and log row already earned by
+            # earlier items. send_submission_reminders commits per recipient
+            # for the same reason.
+            try:
+                db.session.commit()
+            except Exception as exc:
+                failures += 1
+                click.echo(f"  FAILED {public_id}: commit error: {exc}", err=True)
+                db.session.rollback()
+
+        click.echo(f"Sent {len(pending) - failures} of {len(pending)}.")
+        if failures:
+            sys.exit(3)
+        sys.exit(0)
