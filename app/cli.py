@@ -57,7 +57,7 @@ def register_cli(app: Flask) -> None:
         "--send",
         is_flag=True,
         default=False,
-        help="Actually send emails. Without this flag, the command runs as a dry-run.",
+        help="Queue the emails. Without this flag, the command runs as a dry-run.",
     )
     @with_appcontext
     def send_submission_reminders_command(event_code, send):
@@ -67,14 +67,16 @@ def register_cli(app: Flask) -> None:
         EVENT_CODE  Required. The EventCycle.code (e.g. SMF2027).
 
         Dry-run by default - prints the list of departments + recipients
-        and a sample rendered email body, but sends nothing. Pass --send
-        to actually fire.
+        and a sample rendered email body, but queues nothing. Pass --send
+        to queue the rows.
+
+        Queues one email_outbox row per recipient and exits. The Heroku
+        Scheduler drainer sends them; this command never calls SES.
 
         Exit codes:
-          0  Success (dry-run completed or all sends succeeded)
+          0  Success (dry-run completed, or the queue run finished)
           1  Event code didn't resolve, or event inactive in non-interactive mode
           2  Template 'submission_reminder' not found or inactive
-          3  At least one send_email() returned False (partial-send failure)
         """
         import sys
         from app.models import EventCycle, EmailTemplate
@@ -137,7 +139,7 @@ def register_cli(app: Flask) -> None:
 
         # Show the per-dept table only in dry-run mode.
         if not send:
-            click.echo("DRY RUN - no emails will be sent. Pass --send to actually send.")
+            click.echo("DRY RUN - nothing queued. Pass --send to queue the rows.")
             click.echo()
             click.echo(f"Departments needing reminder: {len(targets)}")
             for t in targets:
@@ -173,28 +175,33 @@ def register_cli(app: Flask) -> None:
             total_would_send = sum(len(t.recipient_emails) for t in targets)
             skipped = sum(1 for t in targets if not t.recipient_emails)
             click.echo(
-                f"Would send: {total_would_send} emails across "
+                f"Would queue: {total_would_send} emails across "
                 f"{len(targets) - skipped} departments"
                 + (f" ({skipped} skipped, no members)" if skipped else "")
             )
-            click.echo("Re-run with --send to actually send.")
+            click.echo("Re-run with --send to queue them.")
             sys.exit(0)
 
-        # Live send.
-        click.echo(f"Sending submission reminders for {cycle.code}...")
+        # Live run. Queues rows; the drainer sends them.
+        click.echo(f"Queueing submission reminders for {cycle.code}...")
         summary = send_submission_reminders(cycle, dry_run=False)
         click.echo(
-            f"Sent: {summary.emails_sent} / {summary.emails_attempted} emails "
+            f"Queued: {summary.rows_queued} / {summary.recipients_total} rows "
             f"across {summary.targets_with_recipients} departments"
         )
+        if summary.rows_queued < summary.recipients_total:
+            # A same-day re-run is the normal cause: the dedup key is keyed to
+            # the calendar day, so the second run queues nothing new.
+            click.echo(
+                f"Already queued today: "
+                f"{summary.recipients_total - summary.rows_queued}"
+            )
         if summary.targets_without_recipients:
             click.echo(
                 f"Skipped (no members): "
                 f"{', '.join(summary.targets_without_recipients)}"
             )
 
-        if summary.emails_sent < summary.emails_attempted:
-            sys.exit(3)
         sys.exit(0)
 
     @app.cli.command("send-board-release-emails")
@@ -202,25 +209,27 @@ def register_cli(app: Flask) -> None:
         "--send",
         is_flag=True,
         default=False,
-        help="Actually send emails. Without this flag, the command runs as a dry-run.",
+        help="Queue the emails. Without this flag, the command runs as a dry-run.",
     )
     @with_appcontext
     def send_board_release_emails_command(send):
-        """Email departments whose budgets the board has released.
+        """Queue release emails for departments whose budgets the board released.
 
-        Selects finalized work items that are released but not yet notified.
-        Dry-run by default; pass --send to actually fire.
+        Selects finalized work items that are released but not yet notified,
+        queues one email_outbox row per department member, and stamps the item.
+        Dry-run by default; pass --send to queue.
 
-        Runs under Heroku Scheduler. No web request sends these emails, because
-        a bulk board release fans out one SES call per department and would
-        exceed Heroku's 30-second request limit.
+        Runs under Heroku Scheduler. No web request queues these, because a
+        bulk board release fans out one row per department member and the
+        Slack announcement per item would exceed Heroku's 30-second request
+        limit.
 
         \b
         Exit codes:
-          0  Success (dry-run completed or all sends succeeded)
+          0  Success (dry-run completed, or every item queued and stamped)
+          1  At least one item raised or failed to commit; left unstamped for
+             the next scheduled run
           2  Template 'finalized' not found or inactive
-          3  At least one item did not fully send (rate limit, no members,
-             missing template render, or an exception); left unstamped for retry
         """
         import sys
         from datetime import datetime
@@ -230,8 +239,8 @@ def register_cli(app: Flask) -> None:
             WorkPortfolio,
             WorkTypeConfig,
             EmailTemplate,
-            WORK_ITEM_STATUS_FINALIZED,
         )
+        from app.models.constants import WORK_ITEM_STATUS_FINALIZED
         from app.services import notifications
 
         # Guard missing/inactive template, same contract as
@@ -285,61 +294,52 @@ def register_cli(app: Flask) -> None:
         click.echo()
 
         if not send:
-            click.echo("DRY RUN - no emails sent. Pass --send to actually send.")
+            click.echo("DRY RUN - nothing queued. Pass --send to queue.")
             sys.exit(0)
 
         failures = 0
         for item in pending:
-            # Captured before notify_work_item_finalized() runs: a prior
-            # item's per-item commit (below) expires every loaded instance,
-            # including this one. If notify_work_item_finalized() then fails
-            # at the DB level, the session needs an explicit rollback before
-            # it can run any query again — including the implicit SELECT a
-            # later `item.public_id` access would trigger. Reading it now,
-            # while the session is still known-good, avoids that trap.
+            # Captured before the commit below: a commit expires every
+            # loaded instance, and a later DB-level failure leaves the session
+            # needing an explicit rollback before it can run any query again,
+            # including the implicit SELECT an `item.public_id` access would
+            # trigger. Reading it now, while the session is known-good, avoids
+            # that trap.
             public_id = item.public_id
 
             try:
-                result = notifications.notify_work_item_finalized(item)
-            except Exception as exc:
-                failures += 1
-                click.echo(f"  FAILED {public_id}: {exc}", err=True)
-                # A raise mid-item can leave the session in a state where
-                # further queries or the next item's writes fail too.
-                # Roll back so this item's failure can't poison later ones.
-                db.session.rollback()
-                continue
-
-            # Stamp only on a complete send. `sent` counts actual SENT
-            # NotificationLog rows (see FinalizedNotifyResult), so it can be
-            # 0 (rate limit, missing template render, no department members)
-            # or between 0 and `attempted` (some members rate-limited)
-            # without raising. Leaving the item unstamped on either outcome
-            # means the next scheduled run retries it; a stamped item is
-            # never re-driven by anything.
-            if result.attempted == 0 or result.sent != result.attempted:
-                failures += 1
-                click.echo(
-                    f"  FAILED {public_id}: sent {result.sent}/{result.attempted}",
-                    err=True,
-                )
-            else:
+                notifications.notify_work_item_finalized(item)
+                # finalized_notified_at now means "queued", not "delivered".
+                # Delivery truth lives in email_outbox.status and
+                # NotificationLog, queryable per item.
+                #
+                # Stamp even when the department has no members. Departments
+                # without members are expected rather than exceptional, and
+                # re-listing them every run fills the pending table with rows
+                # nobody can act on.
                 item.finalized_notified_at = datetime.utcnow()
-
-            # Commit per item, not once after the loop. send_email() writes
-            # NotificationLog rows without committing (caller's job), and a
-            # single end-of-loop commit means one bad item later in `pending`
-            # could roll back every stamp and log row already earned by
-            # earlier items. send_submission_reminders commits per recipient
-            # for the same reason.
-            try:
+                # Commit per item, not once after the loop. The outbox rows and
+                # the stamp must land together, and one bad item later in
+                # `pending` must not roll back stamps earlier items already
+                # earned.
                 db.session.commit()
             except Exception as exc:
                 failures += 1
-                click.echo(f"  FAILED {public_id}: commit error: {exc}", err=True)
+                click.echo(f"  FAILED {public_id}: {exc}", err=True)
+                # A DB-level failure leaves the session unusable until it is
+                # rolled back. Without this, this item's failure poisons the
+                # rest of the loop.
                 db.session.rollback()
+                continue
 
-        click.echo(f"Sent {len(pending) - failures} of {len(pending)}.")
+            # Slack is a webhook call with a 10 second timeout. Run it after
+            # the commit; inside the transaction it would hold the work item's
+            # row locks for that long. notify_work_item_finalized no longer
+            # posts to Slack, so without this line the channel goes quiet with
+            # no error and no failing test.
+            notifications.announce_work_item_event(item, 'finalized')
+
+        click.echo(f"Queued {len(pending) - failures} of {len(pending)}.")
         if failures:
-            sys.exit(3)
+            sys.exit(1)
         sys.exit(0)

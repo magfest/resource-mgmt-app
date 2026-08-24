@@ -94,10 +94,8 @@ def email_debug():
         "channel_id": current_app.config.get("SLACK_CHANNEL_ID") or "not set",
     }
 
-    # Get rate limit status
-    from app.services.email import get_rate_limit_status
-    rate_limits = get_rate_limit_status()
-
+    # No rate-limit panel: the limiter went with the outbox rebuild. Task 12
+    # puts queue health here instead.
     return render_template(
         "admin_final/email_debug.html",
         user_ctx=user_ctx,
@@ -112,7 +110,6 @@ def email_debug():
         status_counts=status_counts,
         email_config=email_config,
         slack_config=slack_config,
-        rate_limits=rate_limits,
     )
 
 

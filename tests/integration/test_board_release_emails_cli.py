@@ -1,7 +1,9 @@
 """The scheduled command owns finalized-email delivery.
 
-No request sends these. A bulk board release fans out one SES call per
-department, which does not fit inside Heroku's 30-second request limit.
+The command queues outbox rows and exits; it never calls SES. No request does
+this work, because a bulk board release fans out one row per department member
+plus a Slack webhook per item, which does not fit inside Heroku's 30-second
+request limit.
 """
 from datetime import datetime
 from unittest.mock import patch
@@ -12,12 +14,16 @@ from app import db
 from app.models import (
     User,
     DepartmentMembership,
+    EmailOutbox,
     EmailTemplate,
     NotificationLog,
     WorkItem,
+)
+from app.models.constants import (
+    OUTBOX_STATUS_QUEUED,
     WORK_ITEM_STATUS_FINALIZED,
 )
-from app.services.notifications import FinalizedNotifyResult
+from app.services import notifications
 
 
 @pytest.fixture
@@ -26,8 +32,7 @@ def seed_finalized_template(app):
 
     db.create_all() builds tables from the ORM but skips Alembic data
     migrations (see k1l2m3n4o5p6_add_email_templates_table.py), so any test
-    that reaches the CLI's template preflight or a real send must seed this
-    row itself.
+    that reaches the CLI's template preflight must seed this row itself.
     """
     db.session.add(EmailTemplate(
         template_key='finalized',
@@ -39,6 +44,15 @@ def seed_finalized_template(app):
         version=1,
     ))
     db.session.commit()
+
+
+def _release(data, at=datetime(2026, 8, 5, 10, 0)):
+    """Put the seeded work item in the state the command selects on."""
+    item = data["work_item"]
+    item.status = WORK_ITEM_STATUS_FINALIZED
+    item.board_released_at = at
+    db.session.commit()
+    return item
 
 
 def _add_department_member(data, suffix):
@@ -59,11 +73,7 @@ def _add_department_member(data, suffix):
 
 
 def _add_second_finalized_item(data, public_id_suffix):
-    """Add a second released-but-unnotified WorkItem to the same portfolio.
-
-    Used for tests where two items must go through the CLI's per-item loop
-    (e.g. one item's failure must not affect a prior item's stamp).
-    """
+    """Add a second released-but-unnotified WorkItem to the same portfolio."""
     item = WorkItem(
         portfolio_id=data["portfolio"].id,
         status=WORK_ITEM_STATUS_FINALIZED,
@@ -76,40 +86,94 @@ def _add_second_finalized_item(data, public_id_suffix):
     return item
 
 
-def test_dry_run_sends_nothing(app, seed_draft_work_item, seed_finalized_template):
+def test_dry_run_queues_nothing(app, seed_draft_work_item, seed_finalized_template):
     data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
-    db.session.commit()
+    item = _release(data)
+    _add_department_member(data, "a")
 
-    with patch("app.services.notifications.notify_work_item_finalized") as mock:
-        result = app.test_cli_runner().invoke(args=["send-board-release-emails"])
+    result = app.test_cli_runner().invoke(args=["send-board-release-emails"])
 
     assert result.exit_code == 0
-    assert mock.call_count == 0
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 0
     db.session.refresh(item)
     assert item.finalized_notified_at is None
     assert item.public_id in result.output
 
 
-def test_send_notifies_and_stamps(app, seed_draft_work_item, seed_finalized_template):
+def test_send_queues_one_row_per_member_and_stamps(
+    app, seed_draft_work_item, seed_finalized_template,
+):
     data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
-    db.session.commit()
+    item = _release(data)
+    _add_department_member(data, "a")
+    _add_department_member(data, "b")
 
-    with patch(
-        "app.services.notifications.notify_work_item_finalized",
-        return_value=FinalizedNotifyResult(sent=1, attempted=1),
-    ) as mock:
+    with patch("app.services.email.send_via_ses") as ses:
         result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
 
     assert result.exit_code == 0
-    assert mock.call_count == 1
+    assert ses.call_count == 0, "the command must queue, never send"
+
+    db.session.rollback()
+    rows = db.session.query(EmailOutbox).all()
+    assert len(rows) == 2
+    assert {r.status for r in rows} == {OUTBOX_STATUS_QUEUED}
+    assert {r.template_key for r in rows} == {"finalized"}
+    assert {r.recipient_email for r in rows} == {
+        "membera@test.local", "memberb@test.local",
+    }
     db.session.refresh(item)
     assert item.finalized_notified_at is not None
+
+
+def test_second_run_queues_nothing_more(
+    app, seed_draft_work_item, seed_finalized_template,
+):
+    """Idempotency. The stamp is what stops a second run, so this fails loudly
+    if the stamp moves back behind a delivery condition."""
+    data = seed_draft_work_item
+    item = _release(data)
+    _add_department_member(data, "a")
+
+    app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
+    db.session.rollback()
+    first_count = db.session.query(EmailOutbox).count()
+    db.session.refresh(item)
+    first_stamp = item.finalized_notified_at
+
+    result2 = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
+
+    assert result2.exit_code == 0
+    assert "No released budgets awaiting notification." in result2.output
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == first_count == 1
+    db.session.refresh(item)
+    assert item.finalized_notified_at == first_stamp
+
+
+def test_department_without_members_is_stamped(
+    app, seed_draft_work_item, seed_finalized_template,
+):
+    """A department with no members queues nothing and is still stamped.
+
+    Departments without members are expected rather than exceptional. Leaving
+    them unstamped re-lists them every run and fills the pending table with
+    rows nobody can act on.
+    """
+    data = seed_draft_work_item
+    item = _release(data)
+
+    result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
+
+    assert result.exit_code == 0
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 0
+    db.session.refresh(item)
+    assert item.finalized_notified_at is not None
+
+    result2 = app.test_cli_runner().invoke(args=["send-board-release-emails"])
+    assert item.public_id not in result2.output
 
 
 def test_unreleased_budgets_are_skipped(app, seed_draft_work_item, seed_finalized_template):
@@ -118,22 +182,19 @@ def test_unreleased_budgets_are_skipped(app, seed_draft_work_item, seed_finalize
     item = data["work_item"]
     item.status = WORK_ITEM_STATUS_FINALIZED
     item.board_released_at = None
-    db.session.commit()
+    _add_department_member(data, "a")
 
-    with patch("app.services.notifications.notify_work_item_finalized") as mock:
-        result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
+    result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
 
     assert result.exit_code == 0
-    assert mock.call_count == 0
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 0
 
 
 def test_missing_template_exits_2(app, seed_draft_work_item):
     """No 'finalized' EmailTemplate row at all: refuse before touching any item."""
     data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
-    db.session.commit()
+    item = _release(data)
 
     result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
 
@@ -145,9 +206,7 @@ def test_missing_template_exits_2(app, seed_draft_work_item):
 
 def test_inactive_template_exits_2(app, seed_draft_work_item, seed_finalized_template):
     data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
+    item = _release(data)
     template = EmailTemplate.query.filter_by(template_key='finalized').first()
     template.is_active = False
     db.session.commit()
@@ -159,185 +218,115 @@ def test_inactive_template_exits_2(app, seed_draft_work_item, seed_finalized_tem
     assert item.finalized_notified_at is None
 
 
-def test_zero_send_leaves_item_unstamped_and_retries(app, seed_draft_work_item, seed_finalized_template):
-    """CRITICAL regression case: a department with no members sends 0 emails
-    without raising. The CLI must not stamp finalized_notified_at, must
-    exit 3, and must still pick the item up on a second run.
+def test_slack_announcement_fires_after_the_stamp(
+    app, seed_draft_work_item, seed_finalized_template,
+):
+    """The Slack post moved out of notify_work_item_finalized in the outbox
+    rebuild. Nothing else fails if this call goes missing, so this test is the
+    only thing standing between a dropped line and a silently quiet channel.
 
-    notify_work_item_finalized is deliberately NOT patched here — that's
-    what let the original bug (Finding 1) hide behind three green tests
-    that all mocked it away.
+    Ordering is asserted by recording observed events, not by probing session
+    state at announce time. A state probe was tried first and cannot work
+    here: the formatter's lazy loads autoflush the pending stamp, and on
+    SQLite's shared in-memory connection a flushed row reads back exactly like
+    a committed one. The probe passed against a deliberately mis-ordered
+    build. This version fails against it.
+
+    The first recorded event must be the commit, and the stamp must be durable
+    once that commit returns, which is what ties the ordering to THIS item's
+    commit rather than to any earlier one.
     """
     data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
-    db.session.commit()
-    # No DepartmentMembership rows exist for this department/event, so the
-    # real notify_work_item_finalized() call returns sent=0, attempted=0.
-
-    result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
-
-    assert result.exit_code == 3
-    db.session.refresh(item)
-    assert item.finalized_notified_at is None
-
-    # A second scheduled run must still see the item as pending.
-    result2 = app.test_cli_runner().invoke(args=["send-board-release-emails"])
-    assert item.public_id in result2.output
-
-
-def test_partial_send_leaves_item_unstamped(app, seed_draft_work_item, seed_finalized_template):
-    """Two recipients, one rate-limited: sent < attempted must not stamp.
-
-    This is the Finding 1 tradeoff: stamping on any(sent > 0) would let the
-    rate-limited member never get retried. Runs the real send_email() with
-    EMAIL_HOURLY_LIMIT=1 so the first recipient's send genuinely counts
-    against the limit and the second is genuinely rate-limited (not a
-    scripted return value) — only the SES boundary (boto3) is mocked, so
-    this can never reach AWS.
-    """
-    data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
+    item = _release(data)
     _add_department_member(data, "a")
-    _add_department_member(data, "b")
-    db.session.commit()
+    item_id = item.id
 
-    app.config["EMAIL_ENABLED"] = True
-    app.config["EMAIL_HOURLY_LIMIT"] = 1
+    events = []
+    real_commit = db.session.commit
 
-    with patch("app.services.email.boto3.client") as mock_boto:
-        mock_boto.return_value.send_email.return_value = {"MessageId": "test-1"}
-        result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
+    def _spy_commit():
+        real_commit()
+        stamp = db.session.query(WorkItem.finalized_notified_at).filter(
+            WorkItem.id == item_id
+        ).scalar()
+        events.append(("commit", stamp))
 
-    assert result.exit_code == 3
-    db.session.refresh(item)
-    assert item.finalized_notified_at is None
-    statuses = sorted(
-        log.status for log in NotificationLog.query.filter_by(work_item_id=item.id)
-    )
-    assert statuses == ["RATE_LIMITED", "SENT"]
+    def _probe(**kwargs):
+        events.append(("announce", None))
 
-
-def test_full_send_stamps_item(app, seed_draft_work_item, seed_finalized_template):
-    """Baseline: every recipient sends successfully, so the item stamps and
-    exits 0. Runs the real send_email() end to end; only the SES boundary
-    (boto3) is mocked, so this can never reach AWS.
-    """
-    data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
-    _add_department_member(data, "a")
-    _add_department_member(data, "b")
-    db.session.commit()
-
-    app.config["EMAIL_ENABLED"] = True
-
-    with patch("app.services.email.boto3.client") as mock_boto:
-        mock_boto.return_value.send_email.return_value = {"MessageId": "test-1"}
+    with patch.object(db.session, "commit", side_effect=_spy_commit), \
+            patch("app.services.notifications.is_slack_enabled", return_value=True), \
+            patch(
+                "app.services.notifications.send_slack_message",
+                side_effect=_probe,
+            ) as slack:
         result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
 
     assert result.exit_code == 0
-    db.session.refresh(item)
-    assert item.finalized_notified_at is not None
-    statuses = [
-        log.status for log in NotificationLog.query.filter_by(work_item_id=item.id)
-    ]
-    assert statuses == ["SENT", "SENT"]
+    assert slack.call_count == 1
+    assert slack.call_args.kwargs["template_key"] == "finalized"
+    assert slack.call_args.kwargs["work_item_id"] == item.id
+
+    assert [e[0] for e in events[:2]] == ["commit", "announce"], (
+        f"the announcement must follow the item's commit; observed {events}"
+    )
+    assert events[0][1] is not None, "the first commit must have persisted the stamp"
 
 
-def test_all_recipients_rate_limited_leaves_item_unstamped(
+def test_announcement_failure_does_not_abort_the_remaining_items(
     app, seed_draft_work_item, seed_finalized_template,
 ):
-    """Defect 1 regression: send_email() returns True for a rate-limited
-    call (email.py:243, "so callers don't retry immediately"), which is not
-    delivery. EMAIL_HOURLY_LIMIT=0 rate-limits every recipient before any
-    SES call, through the real send path (no send_email mock). The item
-    must stay unstamped and the run must exit non-zero.
+    """The announce sits outside the per-item try, so it must not raise.
+
+    A formatter that blew up on the first item would otherwise skip every
+    remaining item in `pending` for that run. Those items stay unstamped, so
+    the next run picks them up, but the failure is silent until someone reads
+    the Scheduler log.
     """
     data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
+    item1 = _release(data)
+    item2 = _add_second_finalized_item(data, "2")
     _add_department_member(data, "a")
-    _add_department_member(data, "b")
-    db.session.commit()
 
-    app.config["EMAIL_ENABLED"] = True
-    app.config["EMAIL_HOURLY_LIMIT"] = 0
+    def _boom(_):
+        raise RuntimeError("formatter reached a detached relation")
 
-    result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
+    with patch("app.services.notifications.is_slack_enabled", return_value=True), \
+            patch.dict(
+                notifications._ANNOUNCEMENT_FORMATTERS,
+                {"finalized": _boom},
+            ):
+        result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
 
-    assert result.exit_code == 3
-    db.session.refresh(item)
-    assert item.finalized_notified_at is None
-    statuses = [
-        log.status for log in NotificationLog.query.filter_by(work_item_id=item.id)
-    ]
-    assert statuses == ["RATE_LIMITED", "RATE_LIMITED"]
-
-
-def test_email_disabled_leaves_item_unstamped(
-    app, seed_draft_work_item, seed_finalized_template,
-):
-    """Defect 1 regression: send_email() returns True when EMAIL_ENABLED is
-    false (email.py:227, logged SUPPRESSED), which is not delivery. Under
-    pytest EMAIL_ENABLED already defaults to false (app/__init__.py reads it
-    from an unset env var), so this is the CLI's default test-time state,
-    not an override. The item must stay unstamped and exit non-zero.
-    """
-    data = seed_draft_work_item
-    item = data["work_item"]
-    item.status = WORK_ITEM_STATUS_FINALIZED
-    item.board_released_at = datetime(2026, 8, 5, 10, 0)
-    _add_department_member(data, "a")
-    _add_department_member(data, "b")
-    db.session.commit()
-
-    assert app.config["EMAIL_ENABLED"] is False
-
-    result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
-
-    assert result.exit_code == 3
-    db.session.refresh(item)
-    assert item.finalized_notified_at is None
-    statuses = [
-        log.status for log in NotificationLog.query.filter_by(work_item_id=item.id)
-    ]
-    assert statuses == ["SUPPRESSED", "SUPPRESSED"]
+    assert result.exit_code == 0
+    db.session.rollback()
+    db.session.refresh(item1)
+    db.session.refresh(item2)
+    assert item1.finalized_notified_at is not None
+    assert item2.finalized_notified_at is not None
 
 
 def test_later_item_failure_does_not_discard_earlier_item_stamp(
     app, seed_draft_work_item, seed_finalized_template,
 ):
-    """Defect 2 regression: a single commit after the loop lets one poisoned
-    item roll back every stamp already earned by earlier items.
+    """A single commit after the loop would let one poisoned item roll back
+    every stamp already earned by earlier items.
 
-    The first item's notify call succeeds normally. The second's writes a
-    row that violates a NOT NULL constraint and flushes it directly —
-    a genuine DB-level failure, not a plain Python exception — which is
-    what actually poisons a SQLAlchemy session (a bare `raise` inside a
-    mock never touches the DB, so it can't reproduce the poisoning and
-    would pass whether or not the fix is applied). The first item's stamp
-    must survive the second item's failure.
+    The second item's notify writes a row that violates a NOT NULL constraint
+    and flushes it directly. That is a genuine DB-level failure, which is what
+    actually poisons a SQLAlchemy session; a bare `raise` inside a mock never
+    touches the DB and would pass with or without the per-item commit.
     """
     data = seed_draft_work_item
-    item1 = data["work_item"]
-    item1.status = WORK_ITEM_STATUS_FINALIZED
-    item1.board_released_at = datetime(2026, 8, 5, 10, 0)
+    item1 = _release(data)
     item2 = _add_second_finalized_item(data, "2")
-    db.session.commit()
     item1_id = item1.id
 
     def _notify_side_effect(work_item):
         if work_item.id == item1_id:
-            return FinalizedNotifyResult(sent=1, attempted=1)
+            return 0
         # recipient_email is NOT NULL; this flush fails at the DB level and
-        # leaves the session needing an explicit rollback before further use,
-        # exactly like a real constraint violation or connection error would.
+        # leaves the session needing an explicit rollback before further use.
         db.session.add(NotificationLog(
             recipient_email=None,
             template_key="finalized",
@@ -352,7 +341,8 @@ def test_later_item_failure_does_not_discard_earlier_item_stamp(
     ):
         result = app.test_cli_runner().invoke(args=["send-board-release-emails", "--send"])
 
-    assert result.exit_code == 3
+    assert result.exit_code == 1
+    db.session.rollback()
     db.session.refresh(item1)
     db.session.refresh(item2)
     assert item1.finalized_notified_at is not None

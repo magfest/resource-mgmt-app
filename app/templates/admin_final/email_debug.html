@@ -101,51 +101,6 @@
     </table>
   </section>
 
-  {# Rate Limits #}
-  <section class="card" style="margin-bottom: 24px;">
-    <h3 style="margin:0 0 16px 0;">Rate Limits (Safety Mechanisms)</h3>
-    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
-      {# Hourly limit #}
-      <div style="text-align: center; padding: 16px; background: {% if rate_limits.hourly_sent >= rate_limits.hourly_limit %}#fef2f2{% else %}#f9fafb{% endif %}; border-radius: 8px;">
-        <div style="font-size: 24px; font-weight: 700; {% if rate_limits.hourly_sent >= rate_limits.hourly_limit %}color: #dc2626;{% endif %}">
-          {{ rate_limits.hourly_sent }} / {{ rate_limits.hourly_limit }}
-        </div>
-        <div class="muted small">Hourly Limit</div>
-        {% if rate_limits.hourly_sent >= rate_limits.hourly_limit %}
-          <div class="small" style="color: #dc2626; margin-top: 4px;">LIMIT REACHED</div>
-        {% endif %}
-      </div>
-
-      {# Daily limit #}
-      <div style="text-align: center; padding: 16px; background: {% if rate_limits.daily_sent >= rate_limits.daily_limit %}#fef2f2{% else %}#f9fafb{% endif %}; border-radius: 8px;">
-        <div style="font-size: 24px; font-weight: 700; {% if rate_limits.daily_sent >= rate_limits.daily_limit %}color: #dc2626;{% endif %}">
-          {{ rate_limits.daily_sent }} / {{ rate_limits.daily_limit }}
-        </div>
-        <div class="muted small">Daily Limit</div>
-        {% if rate_limits.daily_sent >= rate_limits.daily_limit %}
-          <div class="small" style="color: #dc2626; margin-top: 4px;">LIMIT REACHED</div>
-        {% endif %}
-      </div>
-
-      {# Circuit breaker #}
-      <div style="text-align: center; padding: 16px; background: {% if rate_limits.recent_failures >= rate_limits.circuit_breaker_threshold %}#fef2f2{% else %}#f9fafb{% endif %}; border-radius: 8px;">
-        <div style="font-size: 24px; font-weight: 700; {% if rate_limits.recent_failures >= rate_limits.circuit_breaker_threshold %}color: #dc2626;{% endif %}">
-          {{ rate_limits.recent_failures }} / {{ rate_limits.circuit_breaker_threshold }}
-        </div>
-        <div class="muted small">Failures ({{ rate_limits.circuit_breaker_window }} min)</div>
-        {% if rate_limits.recent_failures >= rate_limits.circuit_breaker_threshold %}
-          <div class="small" style="color: #dc2626; margin-top: 4px;">CIRCUIT OPEN</div>
-        {% else %}
-          <div class="small" style="color: #059669; margin-top: 4px;">Circuit Closed</div>
-        {% endif %}
-      </div>
-    </div>
-    <p class="muted small" style="margin: 16px 0 0 0;">
-      Safety limits prevent runaway email sends. Emails exceeding limits are logged but not sent.
-      Configure via EMAIL_HOURLY_LIMIT, EMAIL_DAILY_LIMIT, EMAIL_CIRCUIT_BREAKER_THRESHOLD.
-    </p>
-  </section>
-
   {# Send Test Notifications #}
   <section class="card" style="margin-bottom: 24px;">
     <h3 style="margin:0 0 16px 0;">Send Test Notifications</h3>
