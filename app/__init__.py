@@ -294,11 +294,20 @@ def create_app() -> Flask:
     @app.after_request
     def add_security_headers(response):
         """Add security headers to all responses."""
-        # Prevent clickjacking - don't allow embedding in iframes.
-        # setdefault, not assignment: the admin email-body route serves an
-        # isolated document that its own admin page frames, and DENY blocks
-        # that even same-origin.
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        # Endpoints that set their own X-Frame-Options and CSP. This list is
+        # the only way to opt out; a view cannot exempt itself by setting the
+        # header, because both are assigned unconditionally below.
+        #
+        # admin_final.email_message_body serves stored email HTML, the one
+        # document this app returns that it did not write. It needs a stricter
+        # policy than the default and must stay framable by its own admin page,
+        # which frame-ancestors 'none' and X-Frame-Options DENY both prevent.
+        # Adding an entry here widens a security boundary.
+        self_policing = request.endpoint in {"admin_final.email_message_body"}
+
+        # Prevent clickjacking - don't allow embedding in iframes
+        if not self_policing:
+            response.headers["X-Frame-Options"] = "DENY"
 
         # Prevent MIME type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -339,12 +348,7 @@ def create_app() -> Flask:
             "base-uri 'self'",
             "object-src 'none'",
         ]
-        # A view that already set its own policy keeps it. The admin
-        # email-body route (admin_final/email_debug.py) serves
-        # attacker-influenced HTML under default-src 'none'; this policy's
-        # script-src 'self' and frame-ancestors 'none' would both be wrong
-        # there.
-        if "Content-Security-Policy" not in response.headers:
+        if not self_policing:
             response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
 
         # HSTS - force HTTPS (only in production)

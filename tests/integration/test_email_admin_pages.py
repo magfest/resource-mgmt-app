@@ -229,3 +229,23 @@ def test_other_pages_keep_the_app_wide_policy(app, client, seed_workflow_data):
     resp = client.get("/admin/email/")
     assert "frame-ancestors 'none'" in resp.headers["Content-Security-Policy"]
     assert resp.headers["X-Frame-Options"] == "DENY"
+
+
+def test_a_view_cannot_exempt_itself_from_the_security_headers(app, client):
+    """Only the allowlist in add_security_headers grants an exemption.
+
+    The earlier fix let any response keep a policy it had already set, which
+    made opting out of the app's security headers a one-line change invisible
+    from app/__init__.py. The allowlist names its exemptions in the same place
+    the policy is written.
+    """
+    @app.route("/__policy_probe__")
+    def _policy_probe():
+        resp = app.response_class("ok")
+        resp.headers["Content-Security-Policy"] = "default-src 'none'"
+        resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+        return resp
+
+    resp = client.get("/__policy_probe__")
+    assert "frame-ancestors 'none'" in resp.headers["Content-Security-Policy"]
+    assert resp.headers["X-Frame-Options"] == "DENY"
