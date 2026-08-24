@@ -70,6 +70,22 @@ def register_cli(app: Flask) -> None:
         if summary.stopped_reason:
             click.echo(f"stopped: {summary.stopped_reason}")
 
+    # Deliberately not folded into the drainer. The drainer prunes queue work state
+    # on every tick; this carries a different retention period and a different risk
+    # profile, and runs on its own Scheduler entry.
+    @app.cli.command("prune-email-audit")
+    @with_appcontext
+    def prune_email_audit_command():
+        """Delete expired email bodies and notification log rows.
+
+        Runs under Heroku Scheduler daily. Adding the Scheduler job is a manual
+        step; it is not reproducible from this repo.
+        """
+        from app.services.email_drainer import prune_email_audit
+
+        summary = prune_email_audit()
+        click.echo(f"bodies={summary.bodies} logs={summary.logs}")
+
     @app.cli.command("send-submission-reminders")
     @click.argument("event_code")
     @click.option(

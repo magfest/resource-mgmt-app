@@ -193,6 +193,7 @@ def create_app() -> Flask:
     app.config["EMAIL_RENDER_MAX_AGE_DAYS"] = int(os.environ.get("EMAIL_RENDER_MAX_AGE_DAYS", "7"))
     app.config["EMAIL_BODY_RETENTION_MONTHS"] = int(os.environ.get("EMAIL_BODY_RETENTION_MONTHS", "24"))
     app.config["EMAIL_OUTBOX_RETENTION_DAYS"] = int(os.environ.get("EMAIL_OUTBOX_RETENTION_DAYS", "90"))
+    app.config["EMAIL_LOG_RETENTION_DAYS"] = int(os.environ.get("EMAIL_LOG_RETENTION_DAYS", str(4 * 365)))
 
     # --- Slack Notifications ---
     app.config["SLACK_ENABLED"] = os.environ.get("SLACK_ENABLED", "").lower() == "true"

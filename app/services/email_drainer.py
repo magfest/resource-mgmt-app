@@ -660,3 +660,60 @@ def drain_outbox(now=None) -> DrainSummary:
 
     summary.pruned = _prune_outbox(now)
     return summary
+
+
+# ------------------------------------------------------- audit-table retention
+
+# Defaults for the two retention windows, mirroring app.config the same way the
+# drainer's defaults above do.
+_DEFAULT_BODY_RETENTION_MONTHS = 24
+_DEFAULT_LOG_RETENTION_DAYS = 4 * 365
+
+
+@dataclass
+class PruneSummary:
+    bodies: int = 0
+    logs: int = 0
+
+
+def prune_email_audit(now=None) -> PruneSummary:
+    """Delete expired message bodies and notification log rows. Commits.
+
+    Bodies go at EMAIL_BODY_RETENTION_MONTHS, log rows at
+    EMAIL_LOG_RETENTION_DAYS, so a four-year-old log normally survives with no
+    body. This is not the outbox prune; that one runs on every drain tick and
+    clears queue work state at 90 days.
+
+    The body delete is explicit and must stay that way. SQLite defaults PRAGMA
+    foreign_keys to OFF and this app registers no connect listener, so the
+    ON DELETE CASCADE on email_message_bodies fires on Postgres and silently
+    does not in dev or test; relying on it would orphan a body on every
+    developer machine while the tests stayed green.
+    """
+    now = now or datetime.utcnow()
+    # A month is 30 days here. Calendar months would need dateutil, and a
+    # retention boundary does not warrant the dependency.
+    months = _config("EMAIL_BODY_RETENTION_MONTHS", _DEFAULT_BODY_RETENTION_MONTHS)
+    body_cutoff = now - timedelta(days=30 * months)
+    log_cutoff = now - timedelta(days=_config("EMAIL_LOG_RETENTION_DAYS",
+                                              _DEFAULT_LOG_RETENTION_DAYS))
+
+    bodies = db.session.query(EmailMessageBody).filter(
+        EmailMessageBody.created_at < body_cutoff
+    ).delete(synchronize_session=False)
+
+    doomed_logs = (
+        db.session.query(NotificationLog.id)
+        .filter(NotificationLog.created_at < log_cutoff)
+        .scalar_subquery()
+    )
+    bodies += db.session.query(EmailMessageBody).filter(
+        EmailMessageBody.notification_log_id.in_(doomed_logs)
+    ).delete(synchronize_session=False)
+
+    logs = db.session.query(NotificationLog).filter(
+        NotificationLog.created_at < log_cutoff
+    ).delete(synchronize_session=False)
+
+    db.session.commit()
+    return PruneSummary(bodies=bodies, logs=logs)
