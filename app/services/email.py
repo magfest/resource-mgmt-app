@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import boto3
+from botocore.config import Config as BotocoreConfig
 from botocore.exceptions import ClientError
 from dataclasses import dataclass
 from datetime import datetime
@@ -86,6 +87,18 @@ def build_message_parts(body_text: str) -> MessageParts:
     return MessageParts(text=plain_text, html=html)
 
 
+# botocore defaults to 60s connect, 60s read, and 4 retries. An unreachable SES
+# endpoint would then hold one row for about five minutes and consume the
+# drainer's whole 420s window on every tick while the queue grows behind it.
+# The drainer runs its own retry ladder, so botocore retrying underneath it
+# multiplies the delay without adding reliability.
+_SES_CONFIG = BotocoreConfig(
+    connect_timeout=5,
+    read_timeout=10,
+    retries={"max_attempts": 2},
+)
+
+
 def _ses_client():
     """Build a boto3 SES client from configured credentials or the default chain."""
     access_key = current_app.config.get('AWS_SES_ACCESS_KEY')
@@ -97,9 +110,10 @@ def _ses_client():
             region_name=region,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
+            config=_SES_CONFIG,
         )
     # Default credential chain: IAM role, env vars, etc.
-    return boto3.client('ses', region_name=region)
+    return boto3.client('ses', region_name=region, config=_SES_CONFIG)
 
 
 def send_via_ses(to: str, subject: str, parts: MessageParts) -> EmailSendResult:

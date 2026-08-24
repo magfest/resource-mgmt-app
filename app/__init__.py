@@ -181,11 +181,18 @@ def create_app() -> Flask:
     app.config["AWS_SES_ACCESS_KEY"] = os.environ.get("AWS_SES_ACCESS_KEY")
     app.config["AWS_SES_SECRET_KEY"] = os.environ.get("AWS_SES_SECRET_KEY")
 
-    # Email rate limits (safety mechanisms)
-    app.config["EMAIL_HOURLY_LIMIT"] = int(os.environ.get("EMAIL_HOURLY_LIMIT", "50"))
-    app.config["EMAIL_DAILY_LIMIT"] = int(os.environ.get("EMAIL_DAILY_LIMIT", "200"))
-    app.config["EMAIL_CIRCUIT_BREAKER_THRESHOLD"] = int(os.environ.get("EMAIL_CIRCUIT_BREAKER_THRESHOLD", "5"))
-    app.config["EMAIL_CIRCUIT_BREAKER_WINDOW"] = int(os.environ.get("EMAIL_CIRCUIT_BREAKER_WINDOW", "10"))
+    # Outbox drainer limits. The daily limit is a cap on SES sends per 24
+    # hours, not the old per-process throttle; nothing enforced the previous
+    # 200 default, so raising it to 5000 loosens nothing.
+    app.config["EMAIL_DAILY_LIMIT"] = int(os.environ.get("EMAIL_DAILY_LIMIT", "5000"))
+    app.config["EMAIL_SEND_RATE_PER_SEC"] = int(os.environ.get("EMAIL_SEND_RATE_PER_SEC", "2"))
+    app.config["EMAIL_DRAIN_BATCH_SIZE"] = int(os.environ.get("EMAIL_DRAIN_BATCH_SIZE", "500"))
+    app.config["EMAIL_DRAIN_MAX_SECONDS"] = int(os.environ.get("EMAIL_DRAIN_MAX_SECONDS", "420"))
+    app.config["EMAIL_MAX_ATTEMPTS"] = int(os.environ.get("EMAIL_MAX_ATTEMPTS", "7"))
+    app.config["EMAIL_RENDER_RETRY_MINUTES"] = int(os.environ.get("EMAIL_RENDER_RETRY_MINUTES", "60"))
+    app.config["EMAIL_RENDER_MAX_AGE_DAYS"] = int(os.environ.get("EMAIL_RENDER_MAX_AGE_DAYS", "7"))
+    app.config["EMAIL_BODY_RETENTION_MONTHS"] = int(os.environ.get("EMAIL_BODY_RETENTION_MONTHS", "24"))
+    app.config["EMAIL_OUTBOX_RETENTION_DAYS"] = int(os.environ.get("EMAIL_OUTBOX_RETENTION_DAYS", "90"))
 
     # --- Slack Notifications ---
     app.config["SLACK_ENABLED"] = os.environ.get("SLACK_ENABLED", "").lower() == "true"

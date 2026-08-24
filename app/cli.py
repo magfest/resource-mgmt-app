@@ -51,6 +51,25 @@ def register_cli(app: Flask) -> None:
 
         click.echo(f"\nflask seed {target}: done.")
 
+    @app.cli.command("drain-email-outbox")
+    @with_appcontext
+    def drain_email_outbox_command():
+        """Send queued email. The only code path that calls SES.
+
+        Runs under Heroku Scheduler every 10 minutes. Adding the Scheduler job
+        is a manual step; it is not reproducible from this repo.
+        """
+        from app.services.email_drainer import drain_outbox
+
+        summary = drain_outbox()
+        click.echo(
+            f"claimed={summary.claimed} sent={summary.sent} failed={summary.failed} "
+            f"suppressed={summary.suppressed} cancelled={summary.cancelled} "
+            f"render_blocked={summary.render_blocked} pruned={summary.pruned}"
+        )
+        if summary.stopped_reason:
+            click.echo(f"stopped: {summary.stopped_reason}")
+
     @app.cli.command("send-submission-reminders")
     @click.argument("event_code")
     @click.option(

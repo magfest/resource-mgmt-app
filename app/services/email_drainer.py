@@ -1,13 +1,18 @@
-"""Claim, reap, and per-row processing for the outbox drainer.
+"""Claim, reap, per-row processing, and the run loop for the outbox drainer.
 
-The run loop (`drain_outbox`) is separate work; this module stops at the
-primitives it calls. Claim is claim-then-select-by-run-id rather than
+`drain_outbox` is the only code path that calls SES; everything else in the app
+enqueues. Claim is claim-then-select-by-run-id rather than
 `UPDATE ... RETURNING`: Postgres does not accept `LIMIT` on `UPDATE`, and
 SQLite only gained `RETURNING` in 3.35. `process_row` commits per row, so a
 killed dyno loses at most the row in flight and the reaper recovers that one.
 """
 import json
+import signal
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from flask import current_app
 
@@ -18,6 +23,7 @@ from app.models import (
     EmailOutbox,
     EmailSuppression,
     EventCycle,
+    NotificationLog,
     WorkItem,
     WorkType,
 )
@@ -35,6 +41,7 @@ from app.models.constants import (
     OUTBOX_STATUS_SENDING,
     OUTBOX_STATUS_SENT,
     OUTBOX_STATUS_SUPPRESSED,
+    OUTBOX_TERMINAL_STATUSES,
 )
 from app.services.email import (
     build_message_parts,
@@ -51,12 +58,30 @@ from app.services.email_errors import (
     classify_ses_error,
 )
 from app.services.email_templates import get_template, render_email_template
+from app.services.slack import send_slack_message
 
-# Task 10 sets these in app.config. The defaults live here as well so one
-# missing key cannot raise in the middle of a drain.
+# app.config carries these; the defaults live here as well so one missing key
+# cannot raise in the middle of a drain.
 _DEFAULT_MAX_ATTEMPTS = 7
 _DEFAULT_RENDER_RETRY_MINUTES = 60
 _DEFAULT_RENDER_MAX_AGE_DAYS = 7
+_DEFAULT_BATCH_SIZE = 500
+_DEFAULT_SEND_RATE_PER_SEC = 2
+_DEFAULT_MAX_SECONDS = 420
+_DEFAULT_DAILY_LIMIT = 5000
+_DEFAULT_OUTBOX_RETENTION_DAYS = 90
+
+# Five failures with no success between them means SES or the network, not the
+# recipients. Sending row six only lengthens the outage.
+_CONSECUTIVE_FAILURE_LIMIT = 5
+
+# Rows between daily-limit re-counts. Per row it would add a COUNT query to
+# every send; only once would let a long run walk past the cap.
+_DAILY_LIMIT_CHECK_EVERY = 50
+
+# NotificationLog.channel for email. Slack alerts write "SLACK" rows, which
+# must not count against the email cap.
+_EMAIL_CHANNEL = "EMAIL"
 
 # NotificationLog carries its own status vocabulary. Map explicitly rather than
 # writing the outbox status through, so the audit table keeps one set of names.
@@ -381,3 +406,257 @@ def process_row(row, run_id: str) -> str:
         return _terminate(row, OUTBOX_STATUS_SENT, None, rendered=rendered,
                           parts=parts, provider_message_id=result.provider_message_id)
     return _handle_transport_failure(row, result, rendered, parts)
+
+
+# ------------------------------------------------------------------ run loop
+
+
+@dataclass
+class DrainSummary:
+    claimed: int = 0
+    sent: int = 0
+    failed: int = 0
+    suppressed: int = 0
+    cancelled: int = 0
+    render_blocked: int = 0
+    pruned: int = 0
+    stopped_reason: str | None = None
+
+
+def _sent_in_last_24h(now) -> int:
+    """Count email sends logged in the last 24 hours.
+
+    Filtered to the EMAIL channel so the drainer's own Slack alerts do not eat
+    the send budget.
+    """
+    return db.session.query(NotificationLog).filter(
+        NotificationLog.channel == _EMAIL_CHANNEL,
+        NotificationLog.status == NOTIF_STATUS_SENT,
+        NotificationLog.created_at >= now - timedelta(hours=24),
+    ).count()
+
+
+def _alert(text: str, template_key: str) -> None:
+    """Post one operator alert to Slack and commit its audit row.
+
+    send_slack_message adds a NotificationLog row and leaves the commit to the
+    caller (slack.py:88-110). Without this commit the alert's audit row
+    disappears at the next rollback, including the drainer's own. A failed
+    alert must not end the run; the queue matters more than the notice about
+    it.
+    """
+    try:
+        send_slack_message(text, template_key)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Drain alert could not be recorded: {e}")
+
+
+def _release_claims(run_id: str) -> int:
+    """Return this run's unprocessed claims to the queue. Commits.
+
+    Re-queries by run id and SENDING rather than iterating the claimed list. A
+    row process_row already terminated is no longer SENDING, and writing over
+    it from the in-memory list would resurrect a sent email back into the
+    queue. Attempt counts stay put: these rows never reached the transport.
+    """
+    rows = db.session.query(EmailOutbox).filter(
+        EmailOutbox.claimed_by == run_id,
+        EmailOutbox.status == OUTBOX_STATUS_SENDING,
+    ).all()
+    for row in rows:
+        row.status = (OUTBOX_STATUS_RENDER_BLOCKED if row.blocked_since
+                      else OUTBOX_STATUS_QUEUED)
+        _clear_claim(row)
+    db.session.commit()
+    return len(rows)
+
+
+def _prune_outbox(now) -> int:
+    """Delete terminal outbox rows past the retention window. Commits.
+
+    This is not the archive. NotificationLog and EmailMessageBody hold the
+    long-term record; the outbox is a work queue, and a row still QUEUED at 90
+    days is a stuck row an operator needs to see, not a row to delete.
+    """
+    cutoff = now - timedelta(days=_config("EMAIL_OUTBOX_RETENTION_DAYS",
+                                          _DEFAULT_OUTBOX_RETENTION_DAYS))
+    deleted = db.session.query(EmailOutbox).filter(
+        EmailOutbox.status.in_(OUTBOX_TERMINAL_STATUSES),
+        EmailOutbox.created_at < cutoff,
+    ).delete(synchronize_session=False)
+    db.session.commit()
+    return deleted
+
+
+@contextmanager
+def _sigterm_watch():
+    """Set a flag on SIGTERM so the loop stops between rows.
+
+    Heroku sends SIGTERM about ten seconds before SIGKILL on a dyno restart.
+    Finishing the row in flight and releasing claims beats being killed
+    mid-send. signal.signal raises ValueError off the main thread; there the
+    watch is a no-op and the run ends on the wall clock instead.
+    """
+    flag = {"stopped": False}
+
+    def handler(signum, frame):
+        flag["stopped"] = True
+
+    previous = None
+    installed = False
+    try:
+        previous = signal.signal(signal.SIGTERM, handler)
+        installed = True
+    except ValueError:
+        pass
+    try:
+        yield flag
+    finally:
+        if installed:
+            signal.signal(signal.SIGTERM, previous)
+
+
+def drain_outbox(now=None) -> DrainSummary:
+    """Send every due row in one batch, then prune. Commits throughout.
+
+    The only code path that calls SES. Runs under Heroku Scheduler, so the run
+    is bounded by EMAIL_DRAIN_MAX_SECONDS and ends before the next tick starts;
+    whatever it did not reach is claimed by that tick.
+    """
+    now = now or datetime.utcnow()
+    summary = DrainSummary()
+    batch_size = _config("EMAIL_DRAIN_BATCH_SIZE", _DEFAULT_BATCH_SIZE)
+    rate = max(1, _config("EMAIL_SEND_RATE_PER_SEC", _DEFAULT_SEND_RATE_PER_SEC))
+    max_seconds = _config("EMAIL_DRAIN_MAX_SECONDS", _DEFAULT_MAX_SECONDS)
+    daily_limit = _config("EMAIL_DAILY_LIMIT", _DEFAULT_DAILY_LIMIT)
+
+    if batch_size / rate > max_seconds:
+        current_app.logger.warning(
+            f"EMAIL_DRAIN_BATCH_SIZE {batch_size} at {rate}/sec needs "
+            f"{batch_size / rate:.0f}s, past the {max_seconds}s "
+            f"EMAIL_DRAIN_MAX_SECONDS window. The run will stop on the clock "
+            f"and release the rest of the batch."
+        )
+
+    reap_stale_claims(now=now)
+
+    # uuid4, not a timestamp. Heroku Scheduler runs can overlap, and two runs
+    # sharing a second-resolution id would each sweep up the other's claims.
+    run_id = uuid4().hex
+    rows = claim_due_rows(run_id, batch_size, now=now)
+    summary.claimed = len(rows)
+
+    started = time.monotonic()
+    consecutive_failures = 0
+    render_keys = set()
+
+    try:
+        with _sigterm_watch() as flag:
+            if _sent_in_last_24h(now) >= daily_limit:
+                summary.stopped_reason = (
+                    f"EMAIL_DAILY_LIMIT of {daily_limit} sends in 24 hours reached"
+                )
+                rows = []
+
+            for index, row in enumerate(rows):
+                if flag["stopped"]:
+                    summary.stopped_reason = "SIGTERM received"
+                    break
+                if time.monotonic() - started > max_seconds:
+                    summary.stopped_reason = (
+                        f"Run passed EMAIL_DRAIN_MAX_SECONDS ({max_seconds}s)"
+                    )
+                    break
+                if index and index % _DAILY_LIMIT_CHECK_EVERY == 0:
+                    if _sent_in_last_24h(datetime.utcnow()) >= daily_limit:
+                        summary.stopped_reason = (
+                            f"EMAIL_DAILY_LIMIT of {daily_limit} sends in 24 "
+                            f"hours reached"
+                        )
+                        break
+
+                try:
+                    outcome = process_row(row, run_id)
+                except AccountHaltError as e:
+                    summary.stopped_reason = f"SES sending is paused account-wide: {e}"
+                    _alert(
+                        f"Email drain stopped: SES has paused sending for the "
+                        f"whole account. {e}",
+                        "email_account_halt",
+                    )
+                    break
+                except ThrottleStopError as e:
+                    summary.stopped_reason = f"SES throttled the account: {e}"
+                    break
+
+                if outcome == OUTBOX_STATUS_SENT:
+                    summary.sent += 1
+                elif outcome == OUTBOX_STATUS_SUPPRESSED:
+                    summary.suppressed += 1
+                elif outcome == OUTBOX_STATUS_CANCELLED:
+                    summary.cancelled += 1
+                elif outcome == OUTBOX_STATUS_RENDER_BLOCKED:
+                    summary.render_blocked += 1
+                    render_keys.add(row.template_key)
+                elif outcome == OUTBOX_STATUS_FAILED:
+                    summary.failed += 1
+                    if row.blocked_since:
+                        render_keys.add(row.template_key)
+
+                # FAILED has two causes and only one is the transport. A render
+                # block that aged past EMAIL_RENDER_MAX_AGE_DAYS still carries
+                # blocked_since; process_row clears it the moment a template
+                # renders, so a transport failure never does. Counting broken
+                # templates here would stop the run on five bad templates while
+                # SES was healthy.
+                transport_failed = (
+                    outcome in (OUTBOX_STATUS_QUEUED, OUTBOX_STATUS_FAILED)
+                    and row.blocked_since is None
+                )
+                hit_transport = transport_failed or outcome == OUTBOX_STATUS_SENT
+
+                if transport_failed:
+                    consecutive_failures += 1
+                else:
+                    consecutive_failures = 0
+
+                if consecutive_failures >= _CONSECUTIVE_FAILURE_LIMIT:
+                    summary.stopped_reason = (
+                        f"{_CONSECUTIVE_FAILURE_LIMIT} consecutive transport failures"
+                    )
+                    _alert(
+                        f"Email drain stopped after "
+                        f"{_CONSECUTIVE_FAILURE_LIMIT} consecutive transport "
+                        f"failures. Last error: {row.last_error}",
+                        "email_transport_failures",
+                    )
+                    break
+
+                # Pace only the rows that reached SES. The rate limit exists to
+                # protect the SES quota, and a cancelled or render-blocked row
+                # spends none of it. Sleeping for those lets one broken template
+                # fill a batch and burn the whole window on zero sends, starving
+                # the email that would otherwise have gone out.
+                if hit_transport and index < len(rows) - 1:
+                    time.sleep(1.0 / rate)
+
+        if render_keys:
+            _alert(
+                f"Email templates failed to render: "
+                f"{', '.join(sorted(render_keys))}. "
+                f"{summary.render_blocked} row(s) blocked; each retries in "
+                f"{_config('EMAIL_RENDER_RETRY_MINUTES', _DEFAULT_RENDER_RETRY_MINUTES)} "
+                f"minutes and fails for good after "
+                f"{_config('EMAIL_RENDER_MAX_AGE_DAYS', _DEFAULT_RENDER_MAX_AGE_DAYS)} days.",
+                "email_render_blocked",
+            )
+    finally:
+        # Roll back first: if the run died with the session in a failed state,
+        # the release query below would raise over the original exception.
+        db.session.rollback()
+        _release_claims(run_id)
+
+    summary.pruned = _prune_outbox(now)
+    return summary
