@@ -89,33 +89,22 @@ def work_item_submit(event: str, dept: str, public_id: str, work_type_slug: str 
     # - False (TECHOPS): routes lines and creates reviews inline; status → SUBMITTED.
     submit_work_item(work_item, user_ctx)
 
+    # Queue the notifications before the commit, not after. Both only INSERT
+    # into email_outbox, so one commit covers the status change and its
+    # emails; a submit that rolls back cannot leave a queued email behind.
+    from app.services.notifications import (
+        announce_work_item_event,
+        notify_submission_confirmation,
+        notify_work_item_submitted,
+    )
+    notify_work_item_submitted(work_item)
+    notify_submission_confirmation(work_item)
+
     db.session.commit()
 
-    # Send notification (non-blocking) — recipients depend on uses_dispatch
-    try:
-        from app.services.notifications import notify_work_item_submitted
-        notify_work_item_submitted(work_item)
-        db.session.commit()  # Commit notification log
-    except Exception:
-        db.session.rollback()
-        import logging
-        logging.getLogger(__name__).exception(
-            "Failed to send submission notification for %s", work_item.public_id
-        )
-
-    # Send the BUDGET-only confirmation back to the submitting department
-    # in a separate non-blocking block so a failure here cannot roll back
-    # the admin-notification log committed above.
-    try:
-        from app.services.notifications import notify_submission_confirmation
-        notify_submission_confirmation(work_item)
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        import logging
-        logging.getLogger(__name__).exception(
-            "Failed to send submission confirmation for %s", work_item.public_id
-        )
+    # Slack after the commit. It is a webhook call; inside the transaction it
+    # would hold the work item's row locks for the length of an HTTP request.
+    announce_work_item_event(work_item, 'submitted')
 
     flash(
         "Budget request submitted! A budget admin will assign reviewers and "

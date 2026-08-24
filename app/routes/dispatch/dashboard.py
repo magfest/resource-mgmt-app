@@ -306,25 +306,26 @@ def dispatch_to_queue(work_item_id: int):
     )
     db.session.add(audit_event)
 
-    db.session.commit()
-
     # Collect unique approval group IDs for notification
     approval_group_ids = set()
     for line in work_item.lines:
         if line.budget_detail and line.budget_detail.routed_approval_group_id:
             approval_group_ids.add(line.budget_detail.routed_approval_group_id)
 
-    # Send notification to approval group members (non-blocking)
-    try:
-        from app.services.notifications import notify_work_item_dispatched
-        notify_work_item_dispatched(work_item, list(approval_group_ids))
-        db.session.commit()  # Commit notification log
-    except Exception:
-        db.session.rollback()
-        import logging
-        logging.getLogger(__name__).exception(
-            "Failed to send dispatch notification for %s", work_item.public_id
-        )
+    # Queue before the commit. notify only INSERTs into email_outbox, so one
+    # commit covers the dispatch and the approvers' emails.
+    from app.services.notifications import (
+        announce_work_item_event,
+        notify_work_item_dispatched,
+    )
+    notify_work_item_dispatched(work_item, list(approval_group_ids))
+
+    db.session.commit()
+
+    # Slack after the commit; it is a webhook call, not a local INSERT. Gated
+    # on a real dispatch, matching the pre-split behaviour.
+    if approval_group_ids:
+        announce_work_item_event(work_item, 'dispatched')
 
     # Build redirect URL to work item detail
     portfolio = work_item.portfolio

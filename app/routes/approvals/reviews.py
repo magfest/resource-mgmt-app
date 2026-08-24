@@ -353,20 +353,19 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
             )
             db.session.add(comment)
 
+        # Queue the kickback notification before the commit. It only INSERTs
+        # into email_outbox, so the decision and its email land together.
+        kicked_back = action in (REVIEW_ACTION_NEEDS_INFO, REVIEW_ACTION_NEEDS_ADJUSTMENT)
+        if kicked_back:
+            from app.services.notifications import notify_needs_attention
+            notify_needs_attention(work_item)
+
         db.session.commit()
 
-        # Send notification if line was kicked back (NEEDS_INFO or NEEDS_ADJUSTMENT)
-        if action in (REVIEW_ACTION_NEEDS_INFO, REVIEW_ACTION_NEEDS_ADJUSTMENT):
-            try:
-                from app.services.notifications import notify_needs_attention
-                notify_needs_attention(work_item)
-                db.session.commit()  # Commit notification log
-            except Exception:
-                db.session.rollback()
-                import logging
-                logging.getLogger(__name__).exception(
-                    "Failed to send needs_attention notification for %s", work_item.public_id
-                )
+        # Slack after the commit; it is a webhook call, not a local INSERT.
+        if kicked_back:
+            from app.services.notifications import announce_work_item_event
+            announce_work_item_event(work_item, 'needs_attention')
 
         if is_ajax:
             return jsonify({
@@ -464,20 +463,19 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
             created_by_user_id=user_ctx.user_id,
         )
         db.session.add(comment)
+
+        # Queue the reviewer notification before the commit. It only INSERTs
+        # into email_outbox, so the response and its email land together.
+        if reviewer_user_id:
+            from app.services.notifications import notify_response_received
+            notify_response_received(work_item, reviewer_user_id)
+
         db.session.commit()
 
-        # Notify the reviewer that a response was received (non-blocking)
+        # Slack after the commit; it is a webhook call, not a local INSERT.
         if reviewer_user_id:
-            try:
-                from app.services.notifications import notify_response_received
-                notify_response_received(work_item, reviewer_user_id)
-                db.session.commit()  # Commit notification log
-            except Exception:
-                db.session.rollback()
-                import logging
-                logging.getLogger(__name__).exception(
-                    "Failed to send response_received notification for %s", work_item.public_id
-                )
+            from app.services.notifications import announce_work_item_event
+            announce_work_item_event(work_item, 'response_received')
 
     return redirect(url_for(
         "approvals.line_review",
@@ -690,20 +688,19 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
             created_by_user_id=user_ctx.user_id,
         )
         db.session.add(comment)
+
+        # Queue the reviewer notification before the commit. It only INSERTs
+        # into email_outbox, so the response and its email land together.
+        if reviewer_user_id:
+            from app.services.notifications import notify_response_received
+            notify_response_received(work_item, reviewer_user_id)
+
         db.session.commit()
 
-        # Notify the reviewer that a response was received (non-blocking)
+        # Slack after the commit; it is a webhook call, not a local INSERT.
         if reviewer_user_id:
-            try:
-                from app.services.notifications import notify_response_received
-                notify_response_received(work_item, reviewer_user_id)
-                db.session.commit()  # Commit notification log
-            except Exception:
-                db.session.rollback()
-                import logging
-                logging.getLogger(__name__).exception(
-                    "Failed to send response_received notification for %s", work_item.public_id
-                )
+            from app.services.notifications import announce_work_item_event
+            announce_work_item_event(work_item, 'response_received')
 
     return redirect(url_for(
         "approvals.line_review",

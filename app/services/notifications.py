@@ -3,9 +3,17 @@ High-level notification functions for work-item lifecycle events.
 
 Each function:
 - Gets recipient emails via helper functions
-- Renders email template from database
-- Sends via send_email() which handles rate limits, debounce, and logging
+- Queues one email_outbox row per recipient
 - Logs warnings for edge cases (no recipients, user not found, etc.)
+
+These functions do not send. They INSERT into email_outbox and leave the
+commit to the caller, so an email cannot outlive a workflow change that
+rolled back. Rendering happens at send time, in the drainer.
+
+The Slack channel announcement is a separate call, announce_work_item_event.
+It is a webhook request, so it must run AFTER the caller's commit; inside the
+transaction it would hold the work item's row locks for the length of an HTTP
+round trip.
 
 Names are worktype-neutral (notify_work_item_*). The submit notification
 branches on WorkTypeConfig.uses_dispatch to pick between worktype admins
@@ -14,6 +22,7 @@ branches on WorkTypeConfig.uses_dispatch to pick between worktype admins
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 from flask import current_app
 from typing import List, Set
@@ -29,10 +38,9 @@ from app.models import (
     ROLE_WORKTYPE_ADMIN,
     ROLE_SUPER_ADMIN,
     ROLE_APPROVER,
-    NOTIF_STATUS_SENT,
 )
-from .email import send_email
-from .email_templates import render_email_template
+from app.models.constants import ENQUEUE_OUTCOME_CREATED
+from .email_enqueue import build_dedup_key, enqueue_email, resolve_template_key
 from .slack import send_slack_message, is_slack_enabled
 from .slack_messages import (
     format_submitted, format_dispatched, format_needs_attention,
@@ -56,18 +64,16 @@ def notify_work_item_submitted(work_item: WorkItem) -> int:
     - uses_dispatch=False: notify routed approval groups directly
 
     Called after: work_item.status transitions out of DRAFT.
-    Returns: Number of emails sent.
+    Returns: Number of outbox rows queued.
     """
-    sent_count = _send_emails(
+    queued = _enqueue_emails(
         recipients=_get_submit_recipients(work_item),
-        template_key='submitted',
+        kind='submitted',
         work_item=work_item,
         empty_recipients_msg="No recipients found for submission notification",
     )
 
-    _send_slack(work_item, 'submitted', format_submitted)
-
-    return sent_count
+    return queued
 
 
 def notify_submission_confirmation(work_item: WorkItem) -> int:
@@ -89,7 +95,7 @@ def notify_submission_confirmation(work_item: WorkItem) -> int:
     template wording explicitly frames these as "requested" so they
     cannot be misread as an approval.
 
-    Returns: Number of emails sent.
+    Returns: Number of outbox rows queued.
     """
     portfolio = work_item.portfolio
     work_type = portfolio.work_type if portfolio else None
@@ -110,9 +116,9 @@ def notify_submission_confirmation(work_item: WorkItem) -> int:
         event_cycle_id=portfolio.event_cycle_id,
     )
 
-    return _send_emails(
+    return _enqueue_emails(
         recipients=recipients,
-        template_key='submission_confirmation',
+        kind='submission_confirmation',
         work_item=work_item,
         empty_recipients_msg=(
             "No department member recipients found for submission_confirmation"
@@ -129,30 +135,29 @@ def notify_work_item_dispatched(work_item: WorkItem, approval_group_ids: List[in
     Notify approval group members that a work item is ready for their review.
 
     Called after: work_item dispatched to approval groups.
-    Returns: Number of emails sent.
+    Returns: Number of outbox rows queued.
 
-    The Slack channel announcement fires whenever the dispatch action
-    succeeded (approval_group_ids is non-empty), even if no individual
-    approvers have email — channel-level visibility is independent of
-    whether approvers are configured yet.
+    The channel announcement is the caller's separate, post-commit
+    announce_work_item_event('dispatched') call. It fires whenever the
+    dispatch action succeeded (approval_group_ids is non-empty), even if no
+    individual approvers have email; channel-level visibility is independent
+    of whether approvers are configured yet.
     """
     if not approval_group_ids:
         logger.warning(f"No approval groups provided for dispatch notification: {work_item.public_id}")
         return 0
 
     recipients = _get_approval_group_emails(approval_group_ids)
-    sent_count = _send_emails(
+    queued = _enqueue_emails(
         recipients=recipients,
-        template_key='dispatched',
+        kind='dispatched',
         work_item=work_item,
         empty_recipients_msg=(
             f"No approver recipients found for groups {approval_group_ids}"
         ),
     )
 
-    _send_slack(work_item, 'dispatched', format_dispatched)
-
-    return sent_count
+    return queued
 
 
 def notify_needs_attention(work_item: WorkItem) -> int:
@@ -160,197 +165,269 @@ def notify_needs_attention(work_item: WorkItem) -> int:
     Notify department members that their work item needs attention.
 
     Called after: reviewer marks a line as NEEDS_INFO or NEEDS_ADJUSTMENT.
-    Returns: Number of emails sent.
+    Returns: Number of outbox rows queued.
     """
     recipients = _get_department_member_emails(
         department_id=work_item.portfolio.department_id,
         event_cycle_id=work_item.portfolio.event_cycle_id,
     )
-    sent_count = _send_emails(
+    queued = _enqueue_emails(
         recipients=recipients,
-        template_key='needs_attention',
+        kind='needs_attention',
         work_item=work_item,
         empty_recipients_msg="No department member recipients found for needs_attention",
     )
 
-    _send_slack(work_item, 'needs_attention', format_needs_attention)
-
-    return sent_count
+    return queued
 
 
-def notify_response_received(work_item: WorkItem, reviewer_user_id: str) -> bool:
+def notify_response_received(work_item: WorkItem, reviewer_user_id: str) -> int:
     """
-    Notify the reviewer that the requester has responded to their feedback.
+    Queue the reviewer's notification that the requester has responded.
 
-    Called after: requester responds to NEEDS_INFO or NEEDS_ADJUSTMENT
-    Returns: True if email sent, False otherwise
+    Called after: requester responds to NEEDS_INFO or NEEDS_ADJUSTMENT.
+    Returns: Number of outbox rows queued (0 or 1).
+
+    Single-recipient, so it does not go through _enqueue_emails. It is the
+    only notify_* that carries recipient_user_id; the reviewer is known by id
+    here, while the other audiences are resolved to bare addresses.
     """
     user = db.session.query(User).filter_by(id=reviewer_user_id).first()
     if not user:
         logger.warning(f"Reviewer user not found for response notification: user_id={reviewer_user_id}, work_item={work_item.public_id}")
-        return False
+        return 0
 
     if not user.email:
         logger.warning(f"Reviewer has no email for response notification: user_id={reviewer_user_id}, work_item={work_item.public_id}")
-        return False
+        return 0
 
-    # Render template from database
-    rendered = render_email_template('response_received', {
-        'work_item': work_item,
-        'base_url': get_base_url(),
-    })
+    portfolio = work_item.portfolio
+    work_type = portfolio.work_type if portfolio else None
+    template_key = resolve_template_key('response_received', work_type.code if work_type else None)
 
-    if not rendered:
-        logger.error(f"Failed to render 'response_received' template for {work_item.public_id}")
-        return False
+    # Never call session.rollback() here. The caller commits this row in the
+    # same transaction as the response it announces, so a rollback would
+    # discard the requester's response. The savepoint is what makes that
+    # promise hold on Postgres; see _recipient_savepoint.
+    try:
+        with _recipient_savepoint():
+            outcome = enqueue_email(
+                template_key,
+                user.email,
+                recipient_user_id=user.id,
+                work_item=work_item,
+                event_cycle=portfolio.event_cycle if portfolio else None,
+                department=portfolio.department if portfolio else None,
+                work_type=work_type,
+                dedup_key=build_dedup_key(
+                    'response_received',
+                    work_item_id=work_item.id,
+                    recipient_email=user.email,
+                ),
+            )
+    except Exception:
+        logger.exception(
+            f"Could not queue response_received for {user.email} on {work_item.public_id}"
+        )
+        outcome = None
 
-    success = send_email(
-        to=user.email,
-        subject=rendered.subject,
-        body_text=rendered.body_text,
-        template_key='response_received',
-        work_item_id=work_item.id,
-        recipient_user_id=user.id,
-    )
+    queued = 1 if outcome == ENQUEUE_OUTCOME_CREATED else 0
+    if queued:
+        logger.info(f"Queued response_received for {user.email} on {work_item.public_id}")
 
-    if success:
-        logger.info(f"Sent response_received notification to {user.email} for {work_item.public_id}")
-
-    # Slack channel notification
-    if is_slack_enabled():
-        text, blocks = format_response_received(work_item)
-        send_slack_message(text=text, blocks=blocks, template_key='response_received', work_item_id=work_item.id)
-
-    return success
+    return queued
 
 
-@dataclass(frozen=True)
-class FinalizedNotifyResult:
-    """Outcome of one notify_work_item_finalized() call.
-
-    `attempted` is the department-member recipient count, computed before any
-    rate limit or debounce check. `sent` counts only recipients whose
-    send_email() call actually wrote a SENT NotificationLog row, via
-    send_email()'s status_out parameter; its boolean return alone cannot
-    tell delivery from rate-limited or suppressed. `send-board-release-emails`
-    stamps finalized_notified_at only when sent == attempted, so a partial
-    send (some members rate-limited) keeps the item queued for retry instead
-    of silently skipping the members who didn't get through.
+def notify_work_item_finalized(work_item: WorkItem) -> int:
     """
-    sent: int
-    attempted: int
-
-
-def notify_work_item_finalized(work_item: WorkItem) -> FinalizedNotifyResult:
-    """
-    Notify department members that their work item has been finalized.
+    Queue the finalized notification for department members.
 
     Called after: the board releases the budget (see
     `flask send-board-release-emails`), not at finalize time itself.
-    Returns: sent and attempted counts, so the caller can detect a partial
-    send. `sent` reflects actual delivery (see FinalizedNotifyResult); a
-    rate-limited or suppressed recipient does not raise but also does not
-    count, so `sent` can be less than `attempted` with no exception.
+    Returns: Number of outbox rows queued.
+
+    The sent/attempted pair this used to return is gone. Nothing at enqueue
+    time can observe delivery; delivery truth lives in email_outbox.status.
     """
     recipients = _get_department_member_emails(
         department_id=work_item.portfolio.department_id,
         event_cycle_id=work_item.portfolio.event_cycle_id,
     )
-    sent_count = _send_emails(
+    queued = _enqueue_emails(
         recipients=recipients,
-        template_key='finalized',
+        kind='finalized',
         work_item=work_item,
         empty_recipients_msg="No department member recipients found for finalized notification",
     )
 
-    _send_slack(work_item, 'finalized', format_finalized)
-
-    return FinalizedNotifyResult(sent=sent_count, attempted=len(recipients))
+    return queued
 
 
 # ============================================================
 # Email + Slack send helpers
 # ============================================================
 
-def _send_emails(
+@contextmanager
+def _recipient_savepoint():
+    """Isolate one recipient's INSERT so a failure cannot poison the caller.
+
+    On Postgres a DBAPI error aborts the whole transaction: without a
+    SAVEPOINT the except below swallows the error, every later recipient
+    fails, and the caller's commit raises, losing the workflow change.
+
+    Skipped on SQLite, and that is not a shortcut. pysqlite issues BEGIN only
+    before DML, so a SAVEPOINT emitted before any write runs in autocommit
+    and RELEASE SAVEPOINT commits it for real; the caller's later rollback
+    then cannot take the row back. That breaks the outbox guarantee on the
+    dev database. SQLite has no aborted-transaction state to protect against,
+    so the plain try/except is sufficient there.
+    """
+    if db.session.get_bind().dialect.name == "sqlite":
+        yield
+        return
+    with db.session.begin_nested():
+        yield
+
+
+def _event_stamp(kind: str, work_item: WorkItem):
+    """Return the timestamp that makes a once-per-event dedup key unique.
+
+    submission_confirmation is scoped to this submission, finalized to this
+    board release. Both recur on the same work item by design, so the key
+    needs the event timestamp or the second one is dropped as a duplicate.
+    """
+    if kind == 'submission_confirmation':
+        return work_item.submitted_at
+    if kind == 'finalized':
+        return work_item.board_released_at
+    return None
+
+
+def _enqueue_emails(
     recipients: List[str],
-    template_key: str,
+    kind: str,
     work_item: WorkItem,
     empty_recipients_msg: str,
     extra_context: dict | None = None,
 ) -> int:
-    """
-    Render a DB-backed email template and send to each recipient.
+    """Queue one outbox row per recipient. Returns rows enqueued, not sent.
 
-    Returns the number of emails actually sent. Logs warnings for empty
-    recipient lists and errors for template-render failures, but does
-    not raise — callers depend on this being non-blocking.
+    Nothing at enqueue time can know about delivery. The row is rendered at
+    send time so the email reflects current names with frozen numbers, which
+    is why no body is built here.
 
-    `extra_context` lets a caller pass template variables beyond the
-    default `work_item` / `base_url` (e.g. precomputed line totals).
-    Keys in `extra_context` win on collision.
+    Does not commit. The caller commits these rows with the workflow change
+    that caused them.
     """
     if not recipients:
         logger.warning(f"{empty_recipients_msg}: {work_item.public_id}")
         return 0
 
-    context = {
-        'work_item': work_item,
-        'base_url': get_base_url(),
-    }
-    if extra_context:
-        context.update(extra_context)
+    portfolio = work_item.portfolio
+    work_type = portfolio.work_type if portfolio else None
+    template_key = resolve_template_key(kind, work_type.code if work_type else None)
 
-    rendered = render_email_template(template_key, context)
-
-    if not rendered:
-        logger.error(f"Failed to render {template_key!r} template for {work_item.public_id}")
-        return 0
-
-    sent_count = 0
+    queued = 0
     for email in recipients:
-        # send_email() returns True for rate-limited, suppressed, debounced,
-        # and circuit-broken calls too (see its docstring); a truthy return
-        # only means "did not raise", not "delivered". status_out carries
-        # the NotificationLog status this call actually wrote, so counting
-        # SENT there (not the return value) is what makes `sent_count`
-        # mean delivered mail.
-        status_out = []
-        send_email(
-            to=email,
-            subject=rendered.subject,
-            body_text=rendered.body_text,
-            template_key=template_key,
-            work_item_id=work_item.id,
-            status_out=status_out,
-        )
-        if status_out and status_out[0] == NOTIF_STATUS_SENT:
-            sent_count += 1
+        # Catch per recipient and NEVER call session.rollback(). The caller
+        # now commits this in the same transaction as the workflow change, so
+        # a rollback here would undo the approval that triggered the email.
+        # The savepoint is not ceremony; see _recipient_savepoint for what a
+        # DBAPI error does to the caller's transaction without it.
+        try:
+            with _recipient_savepoint():
+                outcome = enqueue_email(
+                    template_key,
+                    email,
+                    work_item=work_item,
+                    event_cycle=portfolio.event_cycle if portfolio else None,
+                    department=portfolio.department if portfolio else None,
+                    work_type=work_type,
+                    context=extra_context,
+                    dedup_key=build_dedup_key(
+                        kind,
+                        work_item_id=work_item.id,
+                        recipient_email=email,
+                        event_stamp=_event_stamp(kind, work_item),
+                    ),
+                )
+        except Exception:
+            logger.exception(f"Could not queue {kind} for {email} on {work_item.public_id}")
+            continue
+        if outcome == ENQUEUE_OUTCOME_CREATED:
+            queued += 1
 
-    logger.info(
-        f"Sent {sent_count}/{len(recipients)} {template_key} notifications "
-        f"for {work_item.public_id}"
-    )
-    return sent_count
+    logger.info(f"Queued {queued}/{len(recipients)} {kind} rows for {work_item.public_id}")
+    return queued
 
 
-def _send_slack(work_item: WorkItem, template_key: str, formatter) -> None:
+# Every kind that has a channel announcement, in one place. Absence is
+# meaningful: submission_confirmation is a paper trail for one department, not
+# channel news, so it has no entry. A new work type reuses these kinds rather
+# than adding to this map.
+_ANNOUNCEMENT_FORMATTERS = {
+    'submitted': format_submitted,
+    'dispatched': format_dispatched,
+    'needs_attention': format_needs_attention,
+    'response_received': format_response_received,
+    'finalized': format_finalized,
+}
+
+
+def announce_work_item_event(work_item: WorkItem, kind: str) -> None:
     """
-    Send the channel-level Slack announcement for a work-item event.
+    Post the channel-level Slack announcement for a work-item event.
+
+    Call this AFTER the caller's commit, never before it. This is a webhook
+    request with a 10 second timeout (slack.py:186-193); run inside the
+    workflow transaction it holds the work item's row locks for that long.
 
     Fires whenever Slack is enabled — independent of whether email
     recipients exist. Channel announcements are about visibility for the
     whole team, not personal notifications.
+
+    Never raises. Every caller runs this after committing the workflow change
+    it announces, so an exception here would 500 a request whose real work
+    already landed, and would abort the board-release loop partway through its
+    pending items. A missing announcement is the cheaper failure.
+
+    Commits the NotificationLog row that send_slack_message writes. Nothing
+    else would; this runs after the caller's last commit.
     """
+    formatter = _ANNOUNCEMENT_FORMATTERS.get(kind)
+    if formatter is None:
+        logger.error(
+            f"No Slack announcement formatter for kind {kind!r} "
+            f"({work_item.public_id}); nothing announced."
+        )
+        return
+
     if not is_slack_enabled():
         return
-    text, blocks = formatter(work_item)
-    send_slack_message(
-        text=text,
-        blocks=blocks,
-        template_key=template_key,
-        work_item_id=work_item.id,
-    )
+
+    # One try around format, send, and commit, not just the commit. A
+    # formatter reaching a detached relation raises as readily as the commit
+    # does, and the caller is equally unable to do anything about it.
+    #
+    # The commit is not optional bookkeeping: send_slack_message only adds the
+    # NotificationLog row, and without the commit the row dies at teardown, so
+    # slack._was_recently_sent finds nothing and the one-hour debounce never
+    # fires. Repeat events then post to the channel twice.
+    try:
+        text, blocks = formatter(work_item)
+        send_slack_message(
+            text=text,
+            blocks=blocks,
+            template_key=kind,
+            work_item_id=work_item.id,
+        )
+        db.session.commit()
+    except Exception:
+        logger.exception(
+            f"Slack announcement failed for {kind} on {work_item.public_id}; "
+            f"the workflow change is already committed and stands."
+        )
+        db.session.rollback()
 
 
 # ============================================================
@@ -626,8 +703,8 @@ class ReminderRunSummary:
     targets_total: int
     targets_with_recipients: int
     targets_without_recipients: list[str]   # dept codes
-    emails_sent: int
-    emails_attempted: int
+    rows_queued: int        # outbox rows actually created
+    recipients_total: int   # recipients considered; queued < this means deduped
     dry_run: bool
 
 
@@ -635,19 +712,18 @@ def send_submission_reminders(
     event_cycle: 'EventCycle',
     dry_run: bool,
 ) -> 'ReminderRunSummary':
-    """
-    Render the 'submission_reminder' template once per department and send
-    one copy per recipient via the existing send_email().
+    """Queue one 'submission_reminder' outbox row per department recipient.
 
-    Template context per render:
-        department  — the Department being reminded
-        event_cycle — the EventCycle
-        base_url    — from get_base_url()
+    Nothing is rendered or sent here. The drainer renders the row against its
+    department and event cycle at send time.
 
-    When dry_run=True, no send_email() calls are made; the summary still
-    reports targets and counts. The orchestrator does no DB writes of its
-    own; send_email() owns NotificationLog. send_email() exceptions are
-    contained per-recipient so one bad row does not abort the run.
+    The dedup key carries the event cycle id, so two events reminding the same
+    department on the same day both queue. Department rows are global; keying
+    on department and day alone would drop the second event's rows silently.
+
+    Commits per department. This is a CLI entry point with no surrounding
+    workflow transaction, so nothing else would commit these rows, and a
+    mid-run crash keeps the departments already queued.
     """
     # Function-level import follows existing pattern in this file
     # (_get_department_member_emails does the same for Department).
@@ -667,31 +743,29 @@ def send_submission_reminders(
         targets_without_recipients=[
             t.department_code for t in targets if not t.recipient_emails
         ],
-        emails_sent=0,
-        emails_attempted=0,
+        rows_queued=0,
+        recipients_total=0,
         dry_run=dry_run,
     )
 
     for code in summary.targets_without_recipients:
         logger.warning(
-            f"Submission-reminder target {code} has no recipients; skipping send."
+            f"Submission-reminder target {code} has no recipients; skipping."
         )
 
     if dry_run:
         logger.info(
-            f"Completed (dry-run): would send to "
-            f"{sum(len(t.recipient_emails) for t in targets)} recipients across "
+            f"Completed (dry-run): would queue "
+            f"{sum(len(t.recipient_emails) for t in targets)} rows across "
             f"{summary.targets_with_recipients} departments"
         )
         return summary
 
-    base_url = get_base_url()
+    # The reminder audience is BUDGET-only by construction; the audience query
+    # above filters on the BUDGET work type. There is no work-type variant of
+    # this template to resolve.
+    template_key = 'submission_reminder'
 
-    # Per-target render failures (`continue`) and per-recipient send failures
-    # (`try/except`) are handled asymmetrically by design: a render failure is
-    # almost always a programming error (missing template, Jinja syntax, gone
-    # department) that affects every recipient of that target the same way,
-    # while a send failure may be a transient per-recipient SES issue.
     for target in targets:
         if not target.recipient_emails:
             continue
@@ -699,8 +773,8 @@ def send_submission_reminders(
         dept = db.session.get(Department, target.department_id)
         if dept is None:
             # Department row vanished between the audience query and now (race
-            # with admin delete). Skip rather than letting Jinja AttributeError
-            # propagate past render_email_template's UndefinedError handler.
+            # with admin delete). Queueing a row whose department FK is gone
+            # gives the drainer nothing to render against.
             logger.error(
                 f"Department id={target.department_id} disappeared mid-run; "
                 f"skipping {len(target.recipient_emails)} recipients for "
@@ -708,59 +782,49 @@ def send_submission_reminders(
             )
             continue
 
-        # Render once per department (department + event_cycle vary across targets,
-        # but are identical for all recipients within one target).
-        rendered = render_email_template('submission_reminder', {
-            'department': dept,
-            'event_cycle': event_cycle,
-            'base_url': base_url,
-        })
-        if not rendered:
-            logger.error(
-                f"Failed to render submission_reminder template for "
-                f"{target.department_code}; skipping {len(target.recipient_emails)} "
-                f"recipients."
-            )
-            continue
-
+        dept_queued = 0
         for email in target.recipient_emails:
-            summary.emails_attempted += 1
+            summary.recipients_total += 1
+            # Per-recipient isolation, same contract as _enqueue_emails: one
+            # bad INSERT costs that recipient, not the rest of the run.
             try:
-                ok = send_email(
-                    to=email,
-                    subject=rendered.subject,
-                    body_text=rendered.body_text,
-                    template_key='submission_reminder',
-                    work_item_id=None,
-                )
+                with _recipient_savepoint():
+                    outcome = enqueue_email(
+                        template_key,
+                        email,
+                        event_cycle=event_cycle,
+                        department=dept,
+                        dedup_key=build_dedup_key(
+                            'submission_reminder',
+                            event_cycle_id=event_cycle.id,
+                            department_id=dept.id,
+                            recipient_email=email,
+                        ),
+                    )
             except Exception:
                 logger.exception(
-                    f"send_email raised for {email} "
+                    f"Could not queue submission_reminder for {email} "
                     f"(dept={target.department_code}); continuing run."
                 )
-                ok = False
+                continue
+            if outcome == ENQUEUE_OUTCOME_CREATED:
+                dept_queued += 1
 
-            # send_email() adds the NotificationLog row but does not commit
-            # (per its docstring contract: "Caller handles commit"). There is
-            # NO implicit commit anywhere — Flask-SQLAlchemy rolls back at
-            # request teardown. HTTP routes commit explicitly after notify_*
-            # calls; CLI commands must too. Commit per-recipient (not
-            # end-of-run) so a mid-run crash still leaves a clear audit trail
-            # of which sends already went out.
-            try:
-                db.session.commit()
-            except Exception:
-                logger.exception(
-                    f"Failed to commit NotificationLog for {email} "
-                    f"(dept={target.department_code}); rolling back this row."
-                )
-                db.session.rollback()
-
-            if ok:
-                summary.emails_sent += 1
+        # Count after the commit, not before it. A rolled-back department has
+        # no rows, and a summary that says otherwise is the miscount this
+        # rebuild exists to remove.
+        try:
+            db.session.commit()
+            summary.rows_queued += dept_queued
+        except Exception:
+            logger.exception(
+                f"Failed to commit submission_reminder rows for "
+                f"{target.department_code}; rolling back this department."
+            )
+            db.session.rollback()
 
     logger.info(
-        f"Completed: {summary.emails_sent}/{summary.emails_attempted} sent across "
-        f"{summary.targets_with_recipients} departments"
+        f"Completed: queued {summary.rows_queued}/{summary.recipients_total} rows "
+        f"across {summary.targets_with_recipients} departments"
     )
     return summary

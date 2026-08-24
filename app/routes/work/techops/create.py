@@ -38,10 +38,12 @@ from .form_utils import (
 
 def _do_submit(work_item, user_ctx):
     """Run the submit lifecycle: synthesize the no-services line if needed,
-    then call submit_work_item, commit, and fire the submit notification.
+    call submit_work_item, queue the submit notification, commit once, then
+    announce on Slack.
 
-    Notification failure is logged but does not roll back the submit — the
-    request is already SUBMITTED in the DB and routed to reviewers.
+    The notification is queued inside the submit transaction; the outbox rows
+    and the SUBMITTED status land together or not at all. The announcement is
+    a webhook call and runs after the commit.
     """
     from app.routes.work.helpers.lifecycle import submit_work_item
 
@@ -57,18 +59,19 @@ def _do_submit(work_item, user_ctx):
         db.session.flush()
 
     submit_work_item(work_item, user_ctx)
+
+    # Queue before the commit. notify only INSERTs into email_outbox, so one
+    # commit covers the status change and its emails.
+    from app.services.notifications import (
+        announce_work_item_event,
+        notify_work_item_submitted,
+    )
+    notify_work_item_submitted(work_item)
+
     db.session.commit()
 
-    try:
-        from app.services.notifications import notify_work_item_submitted
-        notify_work_item_submitted(work_item)
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        import logging
-        logging.getLogger(__name__).exception(
-            "Failed to send submission notification for %s", work_item.public_id
-        )
+    # Slack after the commit; it is a webhook call, not a local INSERT.
+    announce_work_item_event(work_item, 'submitted')
 
     return True
 

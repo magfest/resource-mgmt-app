@@ -1,11 +1,13 @@
 """
 Tests for notify_submission_confirmation() — the BUDGET-only paper-trail
-email sent to the submitting department after a request leaves DRAFT.
+email queued for the submitting department after a request leaves DRAFT.
 
 These tests exercise the audience selection, BUDGET-only gate, and
-template-context wiring at the function level. The integration test for
-the route-level wiring lives separately.
+template-context wiring at the function level. The function queues outbox
+rows and does not render; the body assertions moved to the drainer's tests.
+The integration test for the route-level wiring lives separately.
 """
+import json
 from unittest.mock import patch
 
 import pytest
@@ -17,6 +19,7 @@ from app.models import (
     Division,
     DepartmentMembership,
     DivisionMembership,
+    EmailOutbox,
     EmailTemplate,
     WorkType,
     WorkTypeConfig,
@@ -24,7 +27,6 @@ from app.models import (
     WorkItem,
     WorkLine,
     BudgetLineDetail,
-    NOTIF_STATUS_SENT,
     ROUTING_STRATEGY_CATEGORY,
     REQUEST_KIND_PRIMARY,
     WORK_ITEM_STATUS_DRAFT,
@@ -32,19 +34,6 @@ from app.models import (
     REVIEW_STAGE_APPROVAL_GROUP,
 )
 from app.services.notifications import notify_submission_confirmation
-
-
-def _mock_delivered_send(**kwargs):
-    """Stand in for a real send_email() call that delivered.
-
-    _send_emails() now counts status_out, not the boolean return (see
-    Defect 1 fix), so a bare `return_value=True` mock no longer reads as
-    "sent". This mirrors what a real SENT call writes to status_out.
-    """
-    status_out = kwargs.get("status_out")
-    if status_out is not None:
-        status_out.append(NOTIF_STATUS_SENT)
-    return True
 
 
 @pytest.fixture
@@ -79,9 +68,9 @@ class TestSubmissionConfirmation:
         self, app, seed_draft_work_item, seed_submission_confirmation_template,
     ):
         """
-        For a BUDGET submission, every dept member gets one email with
-        the submission_confirmation template, and the rendered context
-        carries the computed line_count + total_requested_dollars.
+        For a BUDGET submission, every dept member gets one outbox row on
+        the submission_confirmation template, and the stored context carries
+        the computed line_count + total_requested_dollars.
         """
         data = seed_draft_work_item
         # Add a second dept member so we can confirm multi-recipient send.
@@ -97,20 +86,19 @@ class TestSubmissionConfirmation:
         ))
         db.session.commit()
 
-        # Patch only the SES-bound send_email so we can assert call args
-        # without hitting the rate limiter / SUPPRESSED log path.
-        with patch(
-            "app.services.notifications.send_email", side_effect=_mock_delivered_send,
-        ) as send:
-            sent = notify_submission_confirmation(data["work_item"])
+        queued = notify_submission_confirmation(data["work_item"])
+        db.session.commit()
 
-        assert sent == 1
-        assert send.call_count == 1
-        call = send.call_args
-        assert call.kwargs["to"] == "member@test.local"
-        assert call.kwargs["template_key"] == "submission_confirmation"
-        # Line math: fixture has 1 line at $50 (5000 cents, qty 1).
-        assert "1 line totaling $50.00 requested" in call.kwargs["body_text"]
+        assert queued == 1
+        rows = db.session.query(EmailOutbox).all()
+        assert len(rows) == 1
+        assert rows[0].recipient_email == "member@test.local"
+        assert rows[0].template_key == "submission_confirmation"
+        # Line math: fixture has 1 line at $50 (5000 cents, qty 1). The row
+        # carries the numbers; the body is rendered from them at send time.
+        context = json.loads(rows[0].context_json)
+        assert context["line_count"] == 1
+        assert context["total_requested_dollars"] == 50.0
 
     def test_skipped_for_non_budget_worktype(self, app, seed_draft_work_item):
         """
@@ -132,11 +120,10 @@ class TestSubmissionConfirmation:
         data["portfolio"].work_type_id = techops_wt.id
         db.session.commit()
 
-        with patch("app.services.notifications.send_email") as send:
-            sent = notify_submission_confirmation(data["work_item"])
+        queued = notify_submission_confirmation(data["work_item"])
 
-        assert sent == 0
-        send.assert_not_called()
+        assert queued == 0
+        assert db.session.query(EmailOutbox).count() == 0
 
     def test_recipients_include_division_members(
         self, app, seed_draft_work_item, seed_submission_confirmation_template,
@@ -161,14 +148,12 @@ class TestSubmissionConfirmation:
         ))
         db.session.commit()
 
-        with patch(
-            "app.services.notifications.send_email", side_effect=_mock_delivered_send,
-        ) as send:
-            sent = notify_submission_confirmation(data["work_item"])
+        queued = notify_submission_confirmation(data["work_item"])
+        db.session.commit()
 
-        recipients = {c.kwargs["to"] for c in send.call_args_list}
+        recipients = {r.recipient_email for r in db.session.query(EmailOutbox).all()}
         assert "divhead@test.local" in recipients
-        assert sent == len(recipients)
+        assert queued == len(recipients)
 
 
 class TestSubmissionConfirmationWiring:
