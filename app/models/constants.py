@@ -111,6 +111,10 @@ NOTIF_STATUS_QUEUED = "QUEUED"
 NOTIF_STATUS_SENT = "SENT"
 NOTIF_STATUS_FAILED = "FAILED"
 NOTIF_STATUS_SUPPRESSED = "SUPPRESSED"
+# Outbox outcomes that predate any send attempt. The email debug page
+# builds its status filter from distinct values, so these need no UI change.
+NOTIF_STATUS_CANCELLED = "CANCELLED"
+NOTIF_STATUS_RENDER_BLOCKED = "RENDER_BLOCKED"
 
 # ============================================================
 # Config audit actions
