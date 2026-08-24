@@ -15,6 +15,7 @@ This application manages work requests for MAGFest events through a shared workf
 | [Permissions](./permissions.md) | RBAC, memberships, and access control |
 | [Workflow](./workflow.md) | Request lifecycle: draft → submit → review → finalize |
 | [Security](./security.md) | CSP, inline scripts, audit logging |
+| [Email outbox](./email-outbox.md) | How email is queued and sent, and what `SENT` does not mean |
 | [Design Language](./design-language.md) | UI patterns, buttons, pills, spacing |
 | [Scaling & Monitoring](./scaling-and-monitoring.md) | Infrastructure, connection pooling, capacity |
 

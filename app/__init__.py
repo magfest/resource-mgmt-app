@@ -294,8 +294,11 @@ def create_app() -> Flask:
     @app.after_request
     def add_security_headers(response):
         """Add security headers to all responses."""
-        # Prevent clickjacking - don't allow embedding in iframes
-        response.headers["X-Frame-Options"] = "DENY"
+        # Prevent clickjacking - don't allow embedding in iframes.
+        # setdefault, not assignment: the admin email-body route serves an
+        # isolated document that its own admin page frames, and DENY blocks
+        # that even same-origin.
+        response.headers.setdefault("X-Frame-Options", "DENY")
 
         # Prevent MIME type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -336,7 +339,13 @@ def create_app() -> Flask:
             "base-uri 'self'",
             "object-src 'none'",
         ]
-        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+        # A view that already set its own policy keeps it. The admin
+        # email-body route (admin_final/email_debug.py) serves
+        # attacker-influenced HTML under default-src 'none'; this policy's
+        # script-src 'self' and frame-ancestors 'none' would both be wrong
+        # there.
+        if "Content-Security-Policy" not in response.headers:
+            response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
 
         # HSTS - force HTTPS (only in production)
         if is_production:

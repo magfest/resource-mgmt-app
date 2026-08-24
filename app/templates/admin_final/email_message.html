@@ -1,0 +1,87 @@
+{# templates/admin_final/email_message.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Email Message{% endblock %}
+
+{% block content %}
+
+  <div style="margin-bottom: 24px;">
+    <a class="muted small" href="{{ url_for('admin_final.email_message_lookup') }}">&larr; Back to lookup</a>
+    <h1 style="margin: 4px 0 0 0;">Email Message</h1>
+    <div class="muted" style="margin-top:4px;">
+      What was rendered and handed to SES, log entry {{ log.id }}.
+    </div>
+  </div>
+
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 16px 0;">Details</h3>
+    <table style="width: auto;">
+      <tr>
+        <td class="muted" style="padding-right: 24px;">Sent to</td>
+        <td>{{ log.recipient_email }}</td>
+      </tr>
+      <tr>
+        <td class="muted">Subject</td>
+        <td>{{ (body.subject if body else None) or log.subject or '-' }}</td>
+      </tr>
+      <tr>
+        <td class="muted">Template</td>
+        <td><code>{{ log.template_key }}</code></td>
+      </tr>
+      <tr>
+        <td class="muted">Status</td>
+        <td>{{ status_label(log.status, log.channel) }}</td>
+      </tr>
+      <tr>
+        <td class="muted">Created</td>
+        <td>{{ log.created_at.strftime("%Y-%m-%d %H:%M") }} UTC</td>
+      </tr>
+      <tr>
+        <td class="muted">Provider message id</td>
+        <td><code class="small">{{ log.provider_message_id or '-' }}</code></td>
+      </tr>
+      {% if log.error_message %}
+        <tr>
+          <td class="muted">Error</td>
+          <td style="color: #dc2626;">{{ log.error_message }}</td>
+        </tr>
+      {% endif %}
+    </table>
+  </section>
+
+  {% if body %}
+    {# The stored body is attacker-influenced: a requester writes the line
+       descriptions that end up in it. It reaches this page only through the
+       iframe's own route, under default-src 'none'. Never interpolate it
+       here, and never with |safe. #}
+    <section class="card" style="margin-bottom: 24px;">
+      <h3 style="margin:0 0 4px 0;">HTML Body</h3>
+      <div class="muted small" style="margin-bottom: 12px;">
+        Rendered in an isolated frame that cannot run script or load anything.
+        Images and links will not resolve here.
+      </div>
+      {% if body.body_html %}
+        <iframe
+          sandbox=""
+          title="Stored HTML body"
+          src="{{ url_for('admin_final.email_message_body', log_id=log.id) }}"
+          style="width: 100%; height: 600px; border: 1px solid #ddd; background: #fff;"></iframe>
+      {% else %}
+        <div class="muted small">No HTML part was stored for this message.</div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h3 style="margin:0 0 12px 0;">Plain-text Body</h3>
+      <pre style="white-space: pre-wrap; margin: 0;">{{ body.body_text or '-' }}</pre>
+    </section>
+  {% else %}
+    <section class="card">
+      <div class="muted">
+        No body was stored for this message. Bodies expire at 24 months; the log
+        entry itself is kept for four years.
+      </div>
+    </section>
+  {% endif %}
+
+{% endblock %}

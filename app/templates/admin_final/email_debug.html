@@ -10,10 +10,180 @@
     <div>
       <h1 style="margin:0;">Notifications Debug</h1>
       <div class="muted" style="margin-top:4px;">
-        Test sending and view notification logs (Email &amp; Slack)
+        Outbox health, notification logs, and test sends (Email &amp; Slack)
       </div>
     </div>
+    <a class="btn" href="{{ url_for('admin_final.email_message_lookup') }}">Look up a message</a>
   </div>
+
+  {# Outbox Health #}
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 4px 0;">Outbox Health</h3>
+    <div class="muted small" style="margin-bottom: 16px;">
+      Queue state right now. The drainer runs on Heroku Scheduler; to drain by
+      hand, run <code>heroku run flask drain-email-outbox</code>. There is no
+      button for it: the drain throttles across minutes and Heroku's router
+      cuts a web request at 30 seconds, which would leave rows claimed and
+      half-finished.
+    </div>
+
+    <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
+      <div class="card" style="text-align:center; min-width: 140px; padding: 16px;">
+        <div style="font-size: 24px; font-weight: 700;
+          {% if health.oldest_due_minutes > 60 %}color: #dc2626;{% else %}color: #059669;{% endif %}">
+          {{ health.oldest_due_minutes }} min
+        </div>
+        <div class="muted small">Oldest overdue row</div>
+      </div>
+      <div class="card" style="text-align:center; min-width: 140px; padding: 16px;">
+        <div style="font-size: 24px; font-weight: 700; color: #6b7280;">{{ health.scheduled_count }}</div>
+        <div class="muted small">Scheduled for later</div>
+      </div>
+      <div class="card" style="text-align:center; min-width: 140px; padding: 16px;">
+        <div style="font-size: 24px; font-weight: 700;
+          {% if health.render_blocked_count %}color: #dc2626;{% else %}color: #6b7280;{% endif %}">
+          {{ health.render_blocked_count }}
+        </div>
+        <div class="muted small">Render blocked</div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 32px; flex-wrap: wrap;">
+      <div>
+        <h4 style="margin: 0 0 8px 0;">Queue depth by status</h4>
+        {% if health.depth_by_status %}
+          <table style="width: auto;">
+            {% for status, count in health.depth_by_status.items() %}
+              <tr>
+                <td class="muted" style="padding-right: 24px;"><code class="small">{{ status }}</code></td>
+                <td>{{ count }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          <div class="muted small">Outbox is empty.</div>
+        {% endif %}
+      </div>
+
+      <div>
+        <h4 style="margin: 0 0 8px 0;">Render-blocked templates</h4>
+        {% if health.render_blocked_templates %}
+          <ul style="margin: 0; padding-left: 18px;">
+            {% for template_key in health.render_blocked_templates %}
+              <li><code class="small">{{ template_key }}</code></li>
+            {% endfor %}
+          </ul>
+          <div class="muted small" style="margin-top: 6px;">
+            These rows fail to render, so nothing was handed to SES.
+          </div>
+        {% else %}
+          <div class="muted small">None.</div>
+        {% endif %}
+      </div>
+
+      <div>
+        <h4 style="margin: 0 0 8px 0;">SES sending quota</h4>
+        {% if ses_quota %}
+          <table style="width: auto;">
+            <tr><td class="muted" style="padding-right: 24px;">Sent, last 24h</td><td>{{ ses_quota.sent_last_24_hours }}</td></tr>
+            <tr><td class="muted">24-hour maximum</td><td>{{ ses_quota.max_24_hour }}</td></tr>
+            <tr><td class="muted">Max send rate</td><td>{{ ses_quota.max_send_rate }}/sec</td></tr>
+          </table>
+        {% else %}
+          <div class="muted small">
+            Not available. Either EMAIL_ENABLED is false or the SES quota call failed;
+            check the application log.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {# Recent Failed Outbox Rows #}
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 4px 0;">Recent Failed Outbox Rows</h3>
+    <div class="muted small" style="margin-bottom: 12px;">
+      Rows that exhausted their retries. These are terminal; the drainer will
+      not pick them up again.
+    </div>
+    {% if recent_failures %}
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Created</th>
+              <th>Template</th>
+              <th>Recipient</th>
+              <th>Attempts</th>
+              <th>Last Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in recent_failures %}
+              <tr>
+                <td class="nowrap small">{{ row.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td><code class="small">{{ row.template_key }}</code></td>
+                <td class="small">{{ row.recipient_email }}</td>
+                <td class="small">{{ row.attempt_count }}</td>
+                <td class="small" style="color: #dc2626;">{{ (row.last_error or '-')[:120] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="muted small">None.</div>
+    {% endif %}
+  </section>
+
+  {# Suppression List #}
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 4px 0;">Suppression List</h3>
+    <div class="muted small" style="margin-bottom: 12px;">
+      The drainer marks a queued row SUPPRESSED instead of sending when the
+      recipient is listed here. Matching is case-insensitive.
+    </div>
+
+    <form method="post" action="{{ url_for('admin_final.email_suppression_add') }}"
+          style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="small muted" style="display: block; margin-bottom: 4px;">Email</label>
+        <input type="email" name="email" required style="width: 280px;">
+      </div>
+      <div>
+        <label class="small muted" style="display: block; margin-bottom: 4px;">Reason</label>
+        <input type="text" name="reason" maxlength="256" style="width: 280px;">
+      </div>
+      <button type="submit" class="btn">Suppress</button>
+    </form>
+
+    {% if suppressions %}
+      <table>
+        <thead>
+          <tr><th>Email</th><th>Reason</th><th>Added</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for s in suppressions %}
+            <tr>
+              <td class="small">{{ s.email }}</td>
+              <td class="small">{{ s.reason or '-' }}</td>
+              <td class="nowrap small">{{ s.created_at.strftime("%Y-%m-%d") }}</td>
+              <td>
+                <form method="post" action="{{ url_for('admin_final.email_suppression_remove') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="email" value="{{ s.email }}">
+                  <button type="submit" class="btn">Remove</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="muted small">No addresses suppressed.</div>
+    {% endif %}
+  </section>
 
   {# Configuration Status #}
   <section class="card" style="margin-bottom: 24px; {% if email_config.enabled %}background: #f0fdf4; border: 1px solid #059669;{% else %}background: #fef3c7; border: 1px solid #f59e0b;{% endif %}">
@@ -124,16 +294,16 @@
   {# Status Summary #}
   {% if status_counts %}
   <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;">
-    {% for status, count in status_counts.items() %}
-      <div class="card" style="text-align: center; min-width: 120px; padding: 16px;">
+    {% for label, count, tone in status_counts %}
+      <div class="card" style="text-align: center; min-width: 140px; padding: 16px;">
         <div style="font-size: 24px; font-weight: 700;
-          {% if 'SENT' in status %}color: #059669;
-          {% elif status == 'FAILED' %}color: #dc2626;
-          {% elif status == 'SUPPRESSED' %}color: #d97706;
-          {% elif status == 'DEBOUNCED' %}color: #6366f1;
+          {% if tone == 'good' %}color: #059669;
+          {% elif tone == 'bad' %}color: #dc2626;
+          {% elif tone == 'warn' %}color: #d97706;
+          {% elif tone == 'info' %}color: #6366f1;
           {% else %}color: #6b7280;{% endif %}
         ">{{ count }}</div>
-        <div class="muted small">{{ status }}</div>
+        <div class="muted small">{{ label }}</div>
       </div>
     {% endfor %}
   </div>
@@ -147,7 +317,7 @@
         <select name="status">
           <option value="">All Statuses</option>
           {% for status in all_statuses %}
-            <option value="{{ status }}" {% if status == status_filter %}selected{% endif %}>{{ status }}</option>
+            <option value="{{ status }}" {% if status == status_filter %}selected{% endif %}>{{ status_label(status) }}</option>
           {% endfor %}
         </select>
       </div>
@@ -218,16 +388,18 @@
                   {% endif %}
                 </td>
                 <td>
+                  {# Phase 1 has no bounce feedback. An EMAIL row that SES accepted
+                     is not known to be delivered, and the label must not say so. #}
                   {% if log.status == 'SENT' %}
-                    <span class="pill pill-approved">SENT</span>
+                    <span class="pill pill-approved">{{ status_label(log.status, log.channel) }}</span>
                   {% elif log.status == 'FAILED' %}
-                    <span class="pill tag-kicked">FAILED</span>
+                    <span class="pill tag-kicked">{{ status_label(log.status, log.channel) }}</span>
                   {% elif log.status == 'SUPPRESSED' %}
-                    <span class="pill pill-needs">SUPPRESSED</span>
+                    <span class="pill pill-needs">{{ status_label(log.status, log.channel) }}</span>
                   {% elif log.status == 'DEBOUNCED' %}
-                    <span class="pill" style="background: #e0e7ff; color: #4338ca;">DEBOUNCED</span>
+                    <span class="pill" style="background: #e0e7ff; color: #4338ca;">{{ status_label(log.status, log.channel) }}</span>
                   {% else %}
-                    <span class="pill pill-draft">{{ log.status }}</span>
+                    <span class="pill pill-draft">{{ status_label(log.status, log.channel) }}</span>
                   {% endif %}
                 </td>
                 <td><code class="small">{{ log.template_key }}</code></td>

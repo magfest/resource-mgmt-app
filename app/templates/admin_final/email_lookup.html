@@ -1,0 +1,87 @@
+{# templates/admin_final/email_lookup.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Email Lookup{% endblock %}
+
+{% block content %}
+
+  <div style="margin-bottom: 24px;">
+    <a class="muted small" href="{{ url_for('admin_final.email_debug') }}">&larr; Back to notifications</a>
+    <h1 style="margin: 4px 0 0 0;">Email Lookup</h1>
+    <div class="muted" style="margin-top:4px;">
+      Every send attempt for one address or one work item.
+    </div>
+  </div>
+
+  <section class="card" style="margin-bottom: 24px;">
+    <form method="get" style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
+      <div>
+        <label class="small muted" style="display: block; margin-bottom: 4px;">Recipient Email</label>
+        <input type="text" name="recipient" value="{{ recipient }}" style="width: 280px;">
+      </div>
+      <div>
+        <label class="small muted" style="display: block; margin-bottom: 4px;">Work Item Public ID</label>
+        <input type="text" name="public_id" value="{{ public_id }}" placeholder="SMF27-TECHOPS-BUD-1" style="width: 240px;">
+      </div>
+      <button type="submit" class="btn btn-primary">Search</button>
+      {% if searched %}
+        <a class="btn" href="{{ url_for('admin_final.email_message_lookup') }}">Clear</a>
+      {% endif %}
+    </form>
+  </section>
+
+  {% if searched %}
+    <section class="card">
+      <h3 style="margin:0 0 16px 0;">
+        Results <span class="muted small">({{ results|length }})</span>
+      </h3>
+      {% if results %}
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Template</th>
+                <th>Recipient</th>
+                <th>Details</th>
+                <th>Body</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in results %}
+                <tr>
+                  <td class="nowrap small">{{ row.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                  <td class="small">{{ status_label(row.status) }}</td>
+                  <td><code class="small">{{ row.template_key }}</code></td>
+                  <td class="small">{{ row.recipient_email }}</td>
+                  <td class="small">
+                    {% if row.error_message %}
+                      <span style="color: #dc2626;">{{ row.error_message[:80] }}</span>
+                    {% elif row.provider_message_id %}
+                      <span class="muted">SES: {{ row.provider_message_id[:20] }}</span>
+                    {% else %}
+                      <span class="muted">-</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">
+                    {% if row.has_body %}
+                      <a href="{{ url_for('admin_final.email_message', log_id=row.id) }}">View</a>
+                    {% else %}
+                      <span class="muted">-</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="muted" style="text-align: center; padding: 32px;">
+          No send attempts recorded for that search.
+        </div>
+      {% endif %}
+    </section>
+  {% endif %}
+
+{% endblock %}
