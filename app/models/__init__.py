@@ -13,6 +13,7 @@ Module organization:
 - supply.py: SupplyCategory, SupplyItem, SupplyOrderLineDetail
 - techops.py: TechOpsServiceType, TechOpsLineDetail, TechOpsRequestDetail
 - telemetry.py: ActivityEvent, NotificationLog, SecurityAuditLog, ConfigAuditEvent
+- email_outbox.py: EmailOutbox, EmailSuppression, EmailMessageBody
 """
 
 # Re-export all constants
@@ -189,6 +190,13 @@ from .telemetry import (
     SiteContent,
 )
 
+# Re-export email outbox models
+from .email_outbox import (
+    EmailOutbox,
+    EmailSuppression,
+    EmailMessageBody,
+)
+
 # Define __all__ for explicit exports
 __all__ = [
     # Constants - Comment visibility
@@ -340,4 +348,8 @@ __all__ = [
     "SecurityAuditLog",
     "EmailTemplate",
     "SiteContent",
+    # Email outbox models
+    "EmailOutbox",
+    "EmailSuppression",
+    "EmailMessageBody",
 ]
