@@ -136,7 +136,8 @@ def email_test_send():
             return redirect(url_for("admin_final.email_debug"))
 
     # Send test email
-    from app.services.email import send_email, is_email_enabled
+    from app.services.email import build_message_parts, send_via_ses, write_notification_log, is_email_enabled
+    from app.models import NOTIF_STATUS_SENT, NOTIF_STATUS_SUPPRESSED
 
     subject = "[MAGFest Budget] Test Email"
     body = f"""This is a test email from the MAGFest Budget system.
@@ -148,20 +149,36 @@ Email enabled: {is_email_enabled()}
 If you received this email, your email configuration is working correctly.
 """
 
-    success = send_email(
-        to=recipient,
-        subject=subject,
-        body_text=body,
+    # The kill switch belongs here, not in the transport: send_via_ses stays a
+    # thin call with no config reads, since the drainer relies on that.
+    if not is_email_enabled():
+        write_notification_log(
+            recipient_email=recipient,
+            template_key="test",
+            status=NOTIF_STATUS_SUPPRESSED,
+            subject=subject,
+            error="Email disabled",
+        )
+        db.session.commit()
+        flash(f"Test email logged (EMAIL_ENABLED=false). Check log below.", "info")
+        return redirect(url_for("admin_final.email_debug"))
+
+    parts = build_message_parts(body)
+    result = send_via_ses(to=recipient, subject=subject, parts=parts)
+    # The transport writes no NotificationLog row, so this route writes its own.
+    write_notification_log(
+        recipient_email=recipient,
         template_key="test",
-        skip_debounce=True,  # Always send test emails
+        status=result.status,
+        subject=subject,
+        provider_message_id=result.provider_message_id,
+        error=result.error,
     )
     db.session.commit()
+    success = result.status == NOTIF_STATUS_SENT
 
     if success:
-        if is_email_enabled():
-            flash(f"Test email sent to {recipient}", "success")
-        else:
-            flash(f"Test email logged (EMAIL_ENABLED=false). Check log below.", "info")
+        flash(f"Test email sent to {recipient}", "success")
     else:
         flash("Failed to send test email. Check the log for details.", "error")
 

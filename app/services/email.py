@@ -9,8 +9,10 @@ Includes safety mechanisms:
 """
 from __future__ import annotations
 
+import re
 import boto3
 from botocore.exceptions import ClientError
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from flask import current_app
 from typing import Optional, Tuple
@@ -178,6 +180,95 @@ def get_rate_limit_status() -> dict:
         ),
         "circuit_breaker_window": window_minutes,
     }
+
+
+@dataclass(frozen=True)
+class MessageParts:
+    text: str
+    html: str | None = None
+
+
+@dataclass(frozen=True)
+class EmailSendResult:
+    status: str                      # SENT or FAILED, nothing else
+    provider_message_id: str | None = None
+    error: str | None = None
+    error_code: str | None = None    # raw botocore code, for classification
+
+
+_FOOTER = (
+    "\n\n---\n"
+    "This is an automated message from the MAGFest Budget System "
+    "— replies here disappear into the void! "
+    "For help, reach out on Slack or email accounting@magfest.org."
+)
+
+
+def build_message_parts(body_text: str) -> MessageParts:
+    """Turn rendered body text into the parts SES will be handed.
+
+    Split out of the SES call so the drainer can store a body for a row it
+    never sends. A suppressed recipient still gets an archived record of what
+    would have gone to them, and that path makes no SES call at all.
+    """
+    body_text = body_text + _FOOTER
+    plain_text = re.sub(r'<[^>]+>', '', body_text)
+    html = None
+    if re.search(r'<(b|strong|u|i|em|a|br|p)[\s>]', body_text, re.IGNORECASE):
+        html_body = body_text.replace('\n', '<br>\n')
+        html = (
+            '<!DOCTYPE html>\n<html>\n<head><meta charset="UTF-8"></head>\n'
+            '<body style="font-family: -apple-system, BlinkMacSystemFont, '
+            "'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.5; "
+            f'color: #333;">\n{html_body}\n</body>\n</html>'
+        )
+    return MessageParts(text=plain_text, html=html)
+
+
+def _ses_client():
+    """Build a boto3 SES client from configured credentials or the default chain."""
+    access_key = current_app.config.get('AWS_SES_ACCESS_KEY')
+    secret_key = current_app.config.get('AWS_SES_SECRET_KEY')
+    region = current_app.config.get('AWS_SES_REGION', 'us-east-1')
+    if access_key and secret_key:
+        return boto3.client(
+            'ses',
+            region_name=region,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+        )
+    # Default credential chain: IAM role, env vars, etc.
+    return boto3.client('ses', region_name=region)
+
+
+def send_via_ses(to: str, subject: str, parts: MessageParts) -> EmailSendResult:
+    """Hand one message to SES. No database reads, no debounce, no rate limit.
+
+    Never raises. A transport that raised would abort the drainer's batch loop
+    on one bad recipient, so every failure comes back as a FAILED result.
+    """
+    body_content = {'Text': {'Data': parts.text, 'Charset': 'UTF-8'}}
+    if parts.html:
+        body_content['Html'] = {'Data': parts.html, 'Charset': 'UTF-8'}
+    try:
+        client = _ses_client()
+        response = client.send_email(
+            Source=get_from_address(),
+            Destination={'ToAddresses': [to]},
+            Message={
+                'Subject': {'Data': subject, 'Charset': 'UTF-8'},
+                'Body': body_content,
+            },
+        )
+        return EmailSendResult(status=NOTIF_STATUS_SENT,
+                               provider_message_id=response.get('MessageId'))
+    except ClientError as e:
+        code = e.response.get('Error', {}).get('Code')
+        current_app.logger.error(f"SES send failed for {to}: {e}")
+        return EmailSendResult(status=NOTIF_STATUS_FAILED, error=str(e), error_code=code)
+    except Exception as e:  # connection errors, credential errors
+        current_app.logger.error(f"SES send errored for {to}: {e}")
+        return EmailSendResult(status=NOTIF_STATUS_FAILED, error=str(e), error_code=None)
 
 
 def send_email(
@@ -370,8 +461,13 @@ def _log_notification(
     subject: Optional[str] = None,
     provider_message_id: Optional[str] = None,
     error: Optional[str] = None,
+    event_cycle_id: Optional[int] = None,
 ):
-    """Record notification in database."""
+    """Record notification in database.
+
+    Returns the log so a caller can attach a stored message body to it by id.
+    Caller handles commit.
+    """
     log = NotificationLog(
         recipient_email=recipient_email,
         recipient_user_id=recipient_user_id,
@@ -381,7 +477,14 @@ def _log_notification(
         subject=subject,
         provider_message_id=provider_message_id,
         error_message=error,
+        event_cycle_id=event_cycle_id,
         sent_at=datetime.utcnow() if status == NOTIF_STATUS_SENT else None,
     )
     db.session.add(log)
-    # Caller handles commit
+    return log
+
+
+# Public alias. `send_email` still calls `_log_notification` directly and
+# survives until Task 6, so this is an alias rather than a rename; Task 6
+# collapses it when `send_email` goes.
+write_notification_log = _log_notification
