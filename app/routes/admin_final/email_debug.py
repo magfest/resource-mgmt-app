@@ -14,6 +14,7 @@ from flask import (
 from app import db
 from app.models import EmailMessageBody, EmailOutbox, EmailSuppression, NotificationLog, User
 from app.models.constants import (
+    OUTBOX_CLAIMABLE_STATUSES,
     NOTIF_STATUS_CANCELLED,
     NOTIF_STATUS_FAILED,
     NOTIF_STATUS_QUEUED,
@@ -24,7 +25,11 @@ from app.models.constants import (
 )
 from app.routes import get_user_ctx
 from app.routes.admin_final.helpers import require_admin
-from app.services.email_health import get_queue_health, lookup_messages
+from app.services.email_health import (
+    get_queue_health,
+    lookup_messages,
+    pending_messages,
+)
 from . import admin_final_bp
 
 
@@ -143,6 +148,18 @@ def email_debug():
 
     health = get_queue_health()
 
+    # Queued rows have no Notification Log entry; that table is written only
+    # when a row terminates. Read them from the outbox so the page answers
+    # "what is waiting" as well as "what happened". Hidden when a status
+    # filter excludes them, since they are all non-terminal.
+    pending = []
+    if not status_filter or status_filter in OUTBOX_CLAIMABLE_STATUSES:
+        if channel_filter in ("", "EMAIL"):
+            pending = pending_messages()
+            if template_filter:
+                pending = [p for p in pending
+                           if p["template_key"] == template_filter]
+
     recent_failures = (
         db.session.query(EmailOutbox)
         .filter(EmailOutbox.status == OUTBOX_STATUS_FAILED)
@@ -193,6 +210,7 @@ def email_debug():
         email_config=email_config,
         slack_config=slack_config,
         health=health,
+        pending=pending,
         recent_failures=recent_failures,
         suppressions=suppressions,
         ses_quota=_ses_quota(),

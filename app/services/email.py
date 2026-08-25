@@ -8,6 +8,8 @@ one message to SES and never raises, so a bad recipient cannot abort a batch.
 from __future__ import annotations
 
 import re
+from html import unescape
+
 import boto3
 from botocore.config import Config as BotocoreConfig
 from botocore.exceptions import ClientError
@@ -74,7 +76,11 @@ def build_message_parts(body_text: str) -> MessageParts:
     would have gone to them, and that path makes no SES call at all.
     """
     body_text = body_text + _FOOTER
-    plain_text = re.sub(r'<[^>]+>', '', body_text)
+    # Undo Jinja's autoescape for the text part. Templates render with
+    # autoescape on, which is right for the HTML part below and wrong here: a
+    # department named "Promo & Misc" reaches the recipient as "Promo &amp;
+    # Misc" in a text/plain message. The HTML part keeps the entities.
+    plain_text = unescape(re.sub(r'<[^>]+>', '', body_text))
     html = None
     if re.search(r'<(b|strong|u|i|em|a|br|p)[\s>]', body_text, re.IGNORECASE):
         html_body = body_text.replace('\n', '<br>\n')

@@ -19,9 +19,15 @@ from app.models.constants import (
 def get_queue_health(now=None):
     """Summarize outbox depth, backlog age, and render failures.
 
-    Returns depth_by_status, oldest_due_minutes, scheduled_count,
-    render_blocked_count, and render_blocked_templates. Statuses with no rows
-    are absent from depth_by_status rather than reported as zero.
+    Returns live_by_status, outcome_by_status, oldest_due_minutes,
+    scheduled_count, render_blocked_count, and render_blocked_templates.
+    Statuses with no rows are absent from the two dicts rather than reported
+    as zero.
+
+    The two dicts are split because one is a queue and the other is history.
+    Live rows are work the drainer still owes; terminal rows are finished and
+    linger only until the 90-day prune, so a single count reads as backlog
+    that does not exist.
     """
     now = now or datetime.utcnow()
 
@@ -30,6 +36,14 @@ def get_queue_health(now=None):
         .group_by(EmailOutbox.status)
         .all()
     )
+    live_by_status = {
+        status: count for status, count in depth_by_status.items()
+        if status not in OUTBOX_TERMINAL_STATUSES
+    }
+    outcome_by_status = {
+        status: count for status, count in depth_by_status.items()
+        if status in OUTBOX_TERMINAL_STATUSES
+    }
 
     # Backlog is work that is late, not work that is planned. Sub-project 2
     # parks rows weeks in the future on purpose, so a row dated 30 days out
@@ -66,7 +80,8 @@ def get_queue_health(now=None):
     ]
 
     return {
-        "depth_by_status": depth_by_status,
+        "live_by_status": live_by_status,
+        "outcome_by_status": outcome_by_status,
         "oldest_due_minutes": oldest_due_minutes,
         "scheduled_count": scheduled_count,
         "render_blocked_count": depth_by_status.get(OUTBOX_STATUS_RENDER_BLOCKED, 0),
@@ -124,6 +139,39 @@ def lookup_messages(recipient_email=None, public_id=None, limit=100):
             "error_message": row.error_message,
             "provider_message_id": row.provider_message_id,
             "has_body": row.id in with_body,
+        }
+        for row in rows
+    ]
+
+
+def pending_messages(limit=100):
+    """Return outbox rows that have not reached an outcome yet.
+
+    The Notification Log is written only when a row terminates, so a queued
+    email does not appear there at all. These rows are shown alongside it so
+    the page answers "what is waiting" as well as "what happened"; they are
+    not log rows and are not stored as any.
+
+    Subject is None on purpose. A queued row has not been rendered, so no
+    subject exists yet. Showing a blank is honest; guessing one would not be.
+    """
+    rows = (
+        db.session.query(EmailOutbox)
+        .filter(EmailOutbox.status.notin_(OUTBOX_TERMINAL_STATUSES))
+        .order_by(EmailOutbox.dispatch_at, EmailOutbox.id)
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "created_at": row.created_at,
+            "dispatch_at": row.dispatch_at,
+            "template_key": row.template_key,
+            "recipient_email": row.recipient_email,
+            "status": row.status,
+            "work_item_id": row.work_item_id,
+            "attempt_count": row.attempt_count or 0,
+            "last_error": row.last_error,
         }
         for row in rows
     ]

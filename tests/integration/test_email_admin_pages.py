@@ -19,6 +19,8 @@ from app.models.constants import (
     NOTIF_STATUS_SENT,
     OUTBOX_STATUS_QUEUED,
     OUTBOX_STATUS_RENDER_BLOCKED,
+    OUTBOX_STATUS_SENT,
+    OUTBOX_STATUS_SUPPRESSED,
 )
 from datetime import datetime, timedelta
 
@@ -249,3 +251,54 @@ def test_a_view_cannot_exempt_itself_from_the_security_headers(app, client):
     resp = client.get("/__policy_probe__")
     assert "frame-ancestors 'none'" in resp.headers["Content-Security-Policy"]
     assert resp.headers["X-Frame-Options"] == "DENY"
+
+
+def test_the_page_lists_mail_that_is_still_waiting(app, client, seed_workflow_data):
+    """A queued row has no Notification Log entry, so without this section the
+    page shows nothing at all for mail that has not drained yet."""
+    db.session.add(EmailOutbox(
+        template_key="submitted", recipient_email="waiting@example.org",
+        dispatch_at=datetime.utcnow(), status=OUTBOX_STATUS_QUEUED,
+        created_at=datetime.utcnow(),
+    ))
+    db.session.commit()
+    _login(client, "test:admin")
+
+    html = client.get("/admin/email/").get_data(as_text=True)
+    assert "Waiting to send" in html
+    assert "waiting@example.org" in html
+
+
+def test_finished_rows_are_not_counted_as_queue_depth(app, client, seed_workflow_data):
+    """SENT and SUPPRESSED rows linger up to 90 days. Listing them under one
+    depth heading tells an operator the queue is backed up when it is empty."""
+    for status in (OUTBOX_STATUS_SENT, OUTBOX_STATUS_SUPPRESSED):
+        db.session.add(EmailOutbox(
+            template_key="submitted", recipient_email="done@example.org",
+            dispatch_at=datetime.utcnow(), status=status,
+            created_at=datetime.utcnow(),
+        ))
+    db.session.commit()
+    _login(client, "test:admin")
+
+    html = client.get("/admin/email/").get_data(as_text=True)
+    live = html.split("Outcomes, last 90 days")[0]
+    assert "In the queue now" in live
+    assert "Nothing waiting." in live
+    assert OUTBOX_STATUS_SENT not in live.split("In the queue now")[1]
+
+
+def test_a_slack_row_is_not_labelled_with_an_ses_id(app, client, seed_workflow_data):
+    """The provider id column carried a hardcoded SES label, so a Slack
+    message timestamp was displayed as though SES had returned it."""
+    db.session.add(NotificationLog(
+        channel="SLACK", template_key="submitted",
+        recipient_email="slack:C06CK56CW5Q", status=NOTIF_STATUS_SENT,
+        provider_message_id="1787623427.862909", created_at=datetime.utcnow(),
+    ))
+    db.session.commit()
+    _login(client, "test:admin")
+
+    html = client.get("/admin/email/").get_data(as_text=True)
+    assert "Slack ts" in html
+    assert "SES: 1787623427" not in html

@@ -28,3 +28,21 @@ def test_send_via_ses_returns_failed_not_raises(app):
             result = send_via_ses("a@example.org", "s", build_message_parts("body"))
     assert result.status == "FAILED"
     assert result.error_code == "MessageRejected"
+
+
+def test_the_text_part_carries_no_html_entities():
+    """Templates render with autoescape on, which is right for the HTML part
+    and wrong for text/plain. A department named "Promo & Misc" reached
+    recipients as "Promo &amp; Misc" until the text part was unescaped."""
+    parts = build_message_parts("Event: FY27 Promo &amp; Misc Events")
+    assert "FY27 Promo & Misc Events" in parts.text
+    assert "&amp;" not in parts.text
+
+
+def test_the_html_part_keeps_its_entities():
+    """Unescaping the HTML part would turn escaped user input back into live
+    markup, which is the injection autoescape exists to stop."""
+    parts = build_message_parts("Hello <b>there</b>, &lt;script&gt; &amp; co")
+    assert "&lt;script&gt;" in parts.html
+    assert "&amp;" in parts.html
+    assert "<script>" not in parts.html

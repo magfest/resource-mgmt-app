@@ -50,10 +50,11 @@
 
     <div style="display: flex; gap: 32px; flex-wrap: wrap;">
       <div>
-        <h4 style="margin: 0 0 8px 0;">Queue depth by status</h4>
-        {% if health.depth_by_status %}
+        <h4 style="margin: 0 0 4px 0;">In the queue now</h4>
+        <div class="muted small" style="margin-bottom: 8px;">Work the drainer still owes.</div>
+        {% if health.live_by_status %}
           <table style="width: auto;">
-            {% for status, count in health.depth_by_status.items() %}
+            {% for status, count in health.live_by_status.items() %}
               <tr>
                 <td class="muted" style="padding-right: 24px;"><code class="small">{{ status }}</code></td>
                 <td>{{ count }}</td>
@@ -61,7 +62,27 @@
             {% endfor %}
           </table>
         {% else %}
-          <div class="muted small">Outbox is empty.</div>
+          <div class="muted small">Nothing waiting.</div>
+        {% endif %}
+
+        <h4 style="margin: 16px 0 4px 0;">Outcomes, last 90 days</h4>
+        {# Finished rows, not backlog. They are deleted 90 days after they
+           terminate, so this is a rolling window and not a lifetime total. #}
+        <div class="muted small" style="margin-bottom: 8px;">
+          Finished rows. Deleted 90 days after they reach an outcome, so this is
+          a rolling window rather than a total.
+        </div>
+        {% if health.outcome_by_status %}
+          <table style="width: auto;">
+            {% for status, count in health.outcome_by_status.items() %}
+              <tr>
+                <td class="muted" style="padding-right: 24px;"><code class="small">{{ status }}</code></td>
+                <td>{{ count }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          <div class="muted small">Nothing yet.</div>
         {% endif %}
       </div>
 
@@ -356,8 +377,60 @@
   </section>
 
   {# Notification Log #}
+  {% if pending %}
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 4px 0;">Waiting to send <span class="muted small">({{ pending|length }})</span></h3>
+    <div class="muted small" style="margin-bottom: 16px;">
+      Outbox rows that have not reached an outcome. These are not Notification
+      Log entries; a log entry is written when the row terminates. No subject
+      is shown because nothing has been rendered yet.
+    </div>
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Queued</th>
+            <th>Sends after</th>
+            <th>Status</th>
+            <th>Template</th>
+            <th>Recipient</th>
+            <th>Attempts</th>
+            <th>Last error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in pending %}
+            <tr>
+              <td class="small">{{ row.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td class="small">{{ row.dispatch_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td><span class="pill pill-draft">{{ row.status }}</span></td>
+              <td><code class="small">{{ row.template_key }}</code></td>
+              <td class="small">{{ row.recipient_email }}</td>
+              <td class="small">{{ row.attempt_count }}</td>
+              <td class="small">
+                {% if row.last_error %}
+                  <span style="color: #dc2626;" title="{{ row.last_error }}">{{ row.last_error[:50] }}</span>
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="card">
-    <h3 style="margin:0 0 16px 0;">Notification Log <span class="muted small">({{ logs|length }} entries)</span></h3>
+    <h3 style="margin:0 0 4px 0;">Notification Log <span class="muted small">({{ logs|length }} entries)</span></h3>
+    {# A log row is written when a message reaches an outcome, so queued mail
+       is absent from this table entirely. The pending rows below come from the
+       outbox and are not log entries. #}
+    <div class="muted small" style="margin-bottom: 16px;">
+      A log entry is written when a message reaches an outcome. Mail still
+      waiting to send is listed separately above.
+    </div>
 
     {% if logs %}
       <div style="overflow-x: auto;">
@@ -426,8 +499,10 @@
                       {{ log.error_message[:50] }}{% if log.error_message|length > 50 %}...{% endif %}
                     </span>
                   {% elif log.provider_message_id %}
+                    {# Slack rows carry a Slack message ts here, not an SES id. #}
                     <span class="muted" title="{{ log.provider_message_id }}">
-                      SES: {{ log.provider_message_id[:20] }}...
+                      {{ 'Slack ts' if log.channel == 'SLACK' else 'SES' }}:
+                      {{ log.provider_message_id[:20] }}...
                     </span>
                   {% else %}
                     <span class="muted">-</span>

@@ -8,10 +8,15 @@ from app.models.constants import (
     OUTBOX_STATUS_QUEUED,
     OUTBOX_STATUS_RENDER_BLOCKED,
     OUTBOX_STATUS_SENT,
+    OUTBOX_STATUS_SUPPRESSED,
     REQUEST_KIND_PRIMARY,
     WORK_ITEM_STATUS_DRAFT,
 )
-from app.services.email_health import get_queue_health, lookup_messages
+from app.services.email_health import (
+    get_queue_health,
+    lookup_messages,
+    pending_messages,
+)
 
 
 def _outbox(status, dispatch_at, template_key="submitted", **kwargs):
@@ -66,8 +71,11 @@ def test_render_blocked_templates_are_named(app):
         assert "supply_submitted" in health["render_blocked_templates"]
 
 
-def test_depth_by_status_counts_every_status(app):
-    """Statuses with no rows are ABSENT from depth_by_status, not zero."""
+def test_live_and_finished_rows_are_counted_separately(app):
+    """One combined count reads as backlog. A finished row lingers up to 90
+    days before the prune, so SENT and SUPPRESSED sitting beside QUEUED under
+    one heading says the queue is deep when it is empty. Statuses with no rows
+    are ABSENT from either dict, not zero."""
     with app.app_context():
         now = datetime.utcnow()
         db.session.add_all([
@@ -78,11 +86,34 @@ def test_depth_by_status_counts_every_status(app):
         ])
         db.session.commit()
 
-        depth = get_queue_health(now=now)["depth_by_status"]
-        assert depth[OUTBOX_STATUS_QUEUED] == 2
-        assert depth[OUTBOX_STATUS_SENT] == 1
-        assert depth[OUTBOX_STATUS_RENDER_BLOCKED] == 1
-        assert OUTBOX_STATUS_FAILED not in depth
+        health = get_queue_health(now=now)
+        live, done = health["live_by_status"], health["outcome_by_status"]
+
+        assert live[OUTBOX_STATUS_QUEUED] == 2
+        assert live[OUTBOX_STATUS_RENDER_BLOCKED] == 1
+        assert OUTBOX_STATUS_SENT not in live
+
+        assert done[OUTBOX_STATUS_SENT] == 1
+        assert OUTBOX_STATUS_QUEUED not in done
+        assert OUTBOX_STATUS_FAILED not in done
+
+
+def test_pending_messages_lists_only_unfinished_rows(app):
+    """A queued row has no Notification Log entry, so the page reads the
+    outbox directly. Subject is absent because nothing has rendered yet."""
+    with app.app_context():
+        now = datetime.utcnow()
+        db.session.add_all([
+            _outbox(OUTBOX_STATUS_QUEUED, now - timedelta(minutes=1)),
+            _outbox(OUTBOX_STATUS_SENT, now - timedelta(minutes=2)),
+            _outbox(OUTBOX_STATUS_SUPPRESSED, now - timedelta(minutes=3)),
+        ])
+        db.session.commit()
+
+        pending = pending_messages()
+        assert len(pending) == 1
+        assert pending[0]["status"] == OUTBOX_STATUS_QUEUED
+        assert "subject" not in pending[0]
 
 
 def test_lookup_by_recipient_is_case_insensitive(app):
