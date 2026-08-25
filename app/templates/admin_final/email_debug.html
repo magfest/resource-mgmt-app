@@ -1,4 +1,3 @@
-{# templates/admin_final/email_debug.html #}
 {% extends "layout/base.html" %}
 
 {% block title %}Notifications Debug{% endblock %}
@@ -16,7 +15,8 @@
     <a class="btn" href="{{ url_for('admin_final.email_message_lookup') }}">Look up a message</a>
   </div>
 
-  {# Outbox Health #}
+  {# Always-visible health. These five answer "is anything wrong right now";
+     everything that needs reading rather than glancing lives in a tab. #}
   <section class="card" style="margin-bottom: 24px;">
     <h3 style="margin:0 0 4px 0;">Outbox Health</h3>
     <div class="muted small" style="margin-bottom: 16px;">
@@ -27,27 +27,39 @@
       half-finished.
     </div>
 
-    <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
-      <div class="card" style="text-align:center; min-width: 140px; padding: 16px;">
-        <div style="font-size: 24px; font-weight: 700;
-          {% if health.oldest_due_minutes > 60 %}color: #dc2626;{% else %}color: #059669;{% endif %}">
-          {{ health.oldest_due_minutes }} min
-        </div>
-        <div class="muted small">Oldest overdue row</div>
+    <div style="display: flex; gap: 14px; flex-wrap: wrap;">
+      <div class="card" style="text-align:center; min-width: 132px; padding: 14px;">
+        <div style="font-size: 24px; font-weight: 700; color: #6b7280;">{{ health.live_by_status.get("QUEUED", 0) }}</div>
+        <div class="muted small">Queued</div>
       </div>
-      <div class="card" style="text-align:center; min-width: 140px; padding: 16px;">
-        <div style="font-size: 24px; font-weight: 700; color: #6b7280;">{{ health.scheduled_count }}</div>
-        <div class="muted small">Scheduled for later</div>
+      <div class="card" style="text-align:center; min-width: 132px; padding: 14px;">
+        <div style="font-size: 24px; font-weight: 700; {% if health.oldest_due_minutes > 60 %}color: #dc2626;{% else %}color: #059669;{% endif %}">{{ health.oldest_due_minutes }} min</div>
+        <div class="muted small">Oldest overdue</div>
       </div>
-      <div class="card" style="text-align:center; min-width: 140px; padding: 16px;">
-        <div style="font-size: 24px; font-weight: 700;
-          {% if health.render_blocked_count %}color: #dc2626;{% else %}color: #6b7280;{% endif %}">
-          {{ health.render_blocked_count }}
-        </div>
+      <div class="card" style="text-align:center; min-width: 132px; padding: 14px;">
+        <div style="font-size: 24px; font-weight: 700; {% if health.render_blocked_count %}color: #dc2626;{% else %}color: #6b7280;{% endif %}">{{ health.render_blocked_count }}</div>
         <div class="muted small">Render blocked</div>
       </div>
+      <div class="card" style="text-align:center; min-width: 132px; padding: 14px;">
+        <div style="font-size: 24px; font-weight: 700; {% if health.outcome_by_status.get("FAILED", 0) %}color: #dc2626;{% else %}color: #6b7280;{% endif %}">{{ health.outcome_by_status.get("FAILED", 0) }}</div>
+        <div class="muted small">Failed, 90 days</div>
+      </div>
+      <div class="card" style="text-align:center; min-width: 132px; padding: 14px;">
+        <div style="font-size: 24px; font-weight: 700; {% if email_config.enabled %}color: #059669;{% else %}color: #d97706;{% endif %}">{% if email_config.enabled %}On{% else %}Off{% endif %}</div>
+        <div class="muted small">Email sending</div>
+      </div>
     </div>
+  </section>
 
+  <div class="tab-row" style="display: flex; flex-wrap: wrap; margin-bottom: -1px;">
+      <button type="button" class="tab-btn active" data-tab="queue" style="padding: 12px 22px; border: 1px solid #ccc; border-bottom: none; background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #111; border-radius: 8px 8px 0 0; margin-right: 4px; position: relative; z-index: 1;">Queue</button>
+      <button type="button" class="tab-btn" data-tab="log" style="padding: 12px 22px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">Log</button>
+      <button type="button" class="tab-btn" data-tab="suppression" style="padding: 12px 22px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">Suppression</button>
+      <button type="button" class="tab-btn" data-tab="config" style="padding: 12px 22px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">Configuration</button>
+  </div>
+
+  <div class="tab-panel active" id="panel-queue">
+  <section class="card" style="margin-bottom: 24px;">
     <div style="display: flex; gap: 32px; flex-wrap: wrap;">
       <div>
         <h4 style="margin: 0 0 4px 0;">In the queue now</h4>
@@ -102,24 +114,52 @@
         {% endif %}
       </div>
 
-      <div>
-        <h4 style="margin: 0 0 8px 0;">SES sending quota</h4>
-        {% if ses_quota %}
-          <table style="width: auto;">
-            <tr><td class="muted" style="padding-right: 24px;">Sent, last 24h</td><td>{{ ses_quota.sent_last_24_hours }}</td></tr>
-            <tr><td class="muted">24-hour maximum</td><td>{{ ses_quota.max_24_hour }}</td></tr>
-            <tr><td class="muted">Max send rate</td><td>{{ ses_quota.max_send_rate }}/sec</td></tr>
-          </table>
-        {% else %}
-          <div class="muted small">
-            Not available. Either EMAIL_ENABLED is false or the SES quota call failed;
-            check the application log.
-          </div>
-        {% endif %}
-      </div>
     </div>
   </section>
-
+  {% if pending %}
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 4px 0;">Waiting to send <span class="muted small">({{ pending|length }})</span></h3>
+    <div class="muted small" style="margin-bottom: 16px;">
+      Outbox rows that have not reached an outcome. These are not Notification
+      Log entries; a log entry is written when the row terminates. No subject
+      is shown because nothing has been rendered yet.
+    </div>
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Queued</th>
+            <th>Sends after</th>
+            <th>Status</th>
+            <th>Template</th>
+            <th>Recipient</th>
+            <th>Attempts</th>
+            <th>Last error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in pending %}
+            <tr>
+              <td class="small">{{ row.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td class="small">{{ row.dispatch_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td><span class="pill pill-draft">{{ row.status }}</span></td>
+              <td><code class="small">{{ row.template_key }}</code></td>
+              <td class="small">{{ row.recipient_email }}</td>
+              <td class="small">{{ row.attempt_count }}</td>
+              <td class="small">
+                {% if row.last_error %}
+                  <span style="color: #dc2626;" title="{{ row.last_error }}">{{ row.last_error[:50] }}</span>
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
   {# Recent Failed Outbox Rows #}
   <section class="card" style="margin-bottom: 24px;">
     <h3 style="margin:0 0 4px 0;">Recent Failed Outbox Rows</h3>
@@ -156,162 +196,9 @@
       <div class="muted small">None.</div>
     {% endif %}
   </section>
+  </div>
 
-  {# Suppression List #}
-  <section class="card" style="margin-bottom: 24px;">
-    <h3 style="margin:0 0 4px 0;">Suppression List</h3>
-    <div class="muted small" style="margin-bottom: 12px;">
-      The drainer marks a queued row SUPPRESSED instead of sending when the
-      recipient is listed here. Matching is case-insensitive.
-    </div>
-
-    <form method="post" action="{{ url_for('admin_final.email_suppression_add') }}"
-          style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div>
-        <label class="small muted" style="display: block; margin-bottom: 4px;">Email</label>
-        <input type="email" name="email" required style="width: 280px;">
-      </div>
-      <div>
-        <label class="small muted" style="display: block; margin-bottom: 4px;">Reason</label>
-        <input type="text" name="reason" maxlength="256" style="width: 280px;">
-      </div>
-      <button type="submit" class="btn">Suppress</button>
-    </form>
-
-    {% if suppressions %}
-      <table>
-        <thead>
-          <tr><th>Email</th><th>Reason</th><th>Added</th><th></th></tr>
-        </thead>
-        <tbody>
-          {% for s in suppressions %}
-            <tr>
-              <td class="small">{{ s.email }}</td>
-              <td class="small">{{ s.reason or '-' }}</td>
-              <td class="nowrap small">{{ s.created_at.strftime("%Y-%m-%d") }}</td>
-              <td>
-                <form method="post" action="{{ url_for('admin_final.email_suppression_remove') }}">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <input type="hidden" name="email" value="{{ s.email }}">
-                  <button type="submit" class="btn">Remove</button>
-                </form>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <div class="muted small">No addresses suppressed.</div>
-    {% endif %}
-  </section>
-
-  {# Configuration Status #}
-  <section class="card" style="margin-bottom: 24px; {% if email_config.enabled %}background: #f0fdf4; border: 1px solid #059669;{% else %}background: #fef3c7; border: 1px solid #f59e0b;{% endif %}">
-    <h3 style="margin:0 0 16px 0;">
-      {% if email_config.enabled %}
-        Email Sending: Enabled
-      {% else %}
-        Email Sending: Disabled
-      {% endif %}
-    </h3>
-
-    <table style="width: auto;">
-      <tr>
-        <td class="muted" style="padding-right: 24px;">EMAIL_ENABLED</td>
-        <td>
-          {% if email_config.enabled %}
-            <span style="color: #059669; font-weight: 600;">true</span>
-          {% else %}
-            <span style="color: #d97706; font-weight: 600;">false</span>
-            <span class="muted small"> (emails logged as SUPPRESSED)</span>
-          {% endif %}
-        </td>
-      </tr>
-      <tr>
-        <td class="muted">EMAIL_FROM_ADDRESS</td>
-        <td><code>{{ email_config.from_address }}</code></td>
-      </tr>
-      <tr>
-        <td class="muted">BASE_URL</td>
-        <td><code>{{ email_config.base_url }}</code></td>
-      </tr>
-      <tr>
-        <td class="muted">AWS_SES_REGION</td>
-        <td><code>{{ email_config.ses_region }}</code></td>
-      </tr>
-      <tr>
-        <td class="muted">AWS Credentials</td>
-        <td>
-          {% if email_config.has_credentials %}
-            <span style="color: #059669;">Configured</span>
-          {% else %}
-            <span class="muted">Not set (will use IAM role)</span>
-          {% endif %}
-        </td>
-      </tr>
-    </table>
-  </section>
-
-  {# Slack Configuration Status #}
-  <section class="card" style="margin-bottom: 24px; {% if slack_config.enabled %}background: #f0fdf4; border: 1px solid #059669;{% else %}background: #fef3c7; border: 1px solid #f59e0b;{% endif %}">
-    <h3 style="margin:0 0 16px 0;">
-      {% if slack_config.enabled %}
-        Slack Notifications: Enabled
-      {% else %}
-        Slack Notifications: Disabled
-      {% endif %}
-    </h3>
-
-    <table style="width: auto;">
-      <tr>
-        <td class="muted" style="padding-right: 24px;">SLACK_ENABLED</td>
-        <td>
-          {% if slack_config.enabled %}
-            <span style="color: #059669; font-weight: 600;">true</span>
-          {% else %}
-            <span style="color: #d97706; font-weight: 600;">false</span>
-            <span class="muted small"> (messages logged as SUPPRESSED)</span>
-          {% endif %}
-        </td>
-      </tr>
-      <tr>
-        <td class="muted">SLACK_BOT_TOKEN</td>
-        <td>
-          {% if slack_config.has_token %}
-            <span style="color: #059669;">Configured</span>
-          {% else %}
-            <span class="muted">Not set</span>
-          {% endif %}
-        </td>
-      </tr>
-      <tr>
-        <td class="muted">SLACK_CHANNEL_ID</td>
-        <td><code>{{ slack_config.channel_id }}</code></td>
-      </tr>
-    </table>
-  </section>
-
-  {# Send Test Notifications #}
-  <section class="card" style="margin-bottom: 24px;">
-    <h3 style="margin:0 0 16px 0;">Send Test Notifications</h3>
-    <div style="display: flex; gap: 24px; flex-wrap: wrap;">
-      <form method="post" action="{{ url_for('admin_final.email_test_send') }}" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div>
-          <label class="small muted" style="display: block; margin-bottom: 4px;">Recipient Email</label>
-          <input type="email" name="recipient" placeholder="{{ user_ctx.user.email if user_ctx.user else 'your@email.com' }}" style="width: 300px;">
-        </div>
-        <button type="submit" class="btn btn-primary">Send Test Email</button>
-        <span class="muted small">Leave blank to send to yourself</span>
-      </form>
-      <form method="post" action="{{ url_for('admin_final.slack_test_send') }}" style="display: flex; gap: 12px; align-items: flex-end;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn" style="background: #4A154B; color: white; border-color: #4A154B;">Send Test Slack Message</button>
-      </form>
-    </div>
-  </section>
-
+  <div class="tab-panel" id="panel-log" style="display: none;">
   {# Status Summary #}
   {% if status_counts %}
   <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;">
@@ -329,7 +216,6 @@
     {% endfor %}
   </div>
   {% endif %}
-
   {# Filters #}
   <section class="card" style="margin-bottom: 24px;">
     <form method="get" style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
@@ -375,52 +261,6 @@
       {% endif %}
     </form>
   </section>
-
-  {# Notification Log #}
-  {% if pending %}
-  <section class="card" style="margin-bottom: 24px;">
-    <h3 style="margin:0 0 4px 0;">Waiting to send <span class="muted small">({{ pending|length }})</span></h3>
-    <div class="muted small" style="margin-bottom: 16px;">
-      Outbox rows that have not reached an outcome. These are not Notification
-      Log entries; a log entry is written when the row terminates. No subject
-      is shown because nothing has been rendered yet.
-    </div>
-    <div style="overflow-x: auto;">
-      <table>
-        <thead>
-          <tr>
-            <th>Queued</th>
-            <th>Sends after</th>
-            <th>Status</th>
-            <th>Template</th>
-            <th>Recipient</th>
-            <th>Attempts</th>
-            <th>Last error</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in pending %}
-            <tr>
-              <td class="small">{{ row.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-              <td class="small">{{ row.dispatch_at.strftime('%Y-%m-%d %H:%M') }}</td>
-              <td><span class="pill pill-draft">{{ row.status }}</span></td>
-              <td><code class="small">{{ row.template_key }}</code></td>
-              <td class="small">{{ row.recipient_email }}</td>
-              <td class="small">{{ row.attempt_count }}</td>
-              <td class="small">
-                {% if row.last_error %}
-                  <span style="color: #dc2626;" title="{{ row.last_error }}">{{ row.last_error[:50] }}</span>
-                {% else %}
-                  <span class="muted">-</span>
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-  {% endif %}
 
   <section class="card">
     <h3 style="margin:0 0 4px 0;">Notification Log <span class="muted small">({{ logs|length }} entries)</span></h3>
@@ -519,5 +359,225 @@
       </div>
     {% endif %}
   </section>
+  </div>
+
+  <div class="tab-panel" id="panel-suppression" style="display: none;">
+  {# Suppression List #}
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 4px 0;">Suppression List</h3>
+    <div class="muted small" style="margin-bottom: 12px;">
+      The drainer marks a queued row SUPPRESSED instead of sending when the
+      recipient is listed here. Matching is case-insensitive.
+    </div>
+
+    <form method="post" action="{{ url_for('admin_final.email_suppression_add') }}"
+          style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="small muted" style="display: block; margin-bottom: 4px;">Email</label>
+        <input type="email" name="email" required style="width: 280px;">
+      </div>
+      <div>
+        <label class="small muted" style="display: block; margin-bottom: 4px;">Reason</label>
+        <input type="text" name="reason" maxlength="256" style="width: 280px;">
+      </div>
+      <button type="submit" class="btn">Suppress</button>
+    </form>
+
+    {% if suppressions %}
+      <table>
+        <thead>
+          <tr><th>Email</th><th>Reason</th><th>Added</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for s in suppressions %}
+            <tr>
+              <td class="small">{{ s.email }}</td>
+              <td class="small">{{ s.reason or '-' }}</td>
+              <td class="nowrap small">{{ s.created_at.strftime("%Y-%m-%d") }}</td>
+              <td>
+                <form method="post" action="{{ url_for('admin_final.email_suppression_remove') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="email" value="{{ s.email }}">
+                  <button type="submit" class="btn">Remove</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="muted small">No addresses suppressed.</div>
+    {% endif %}
+  </section>
+  </div>
+
+  <div class="tab-panel" id="panel-config" style="display: none;">
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 4px 0;">SES sending quota</h3>
+    <div class="muted small" style="margin-bottom: 16px;">
+      Reported by SES for the whole AWS account, not for this app alone. Other
+      senders on the same account count against the same 24-hour figure.
+    </div>
+    {% if ses_quota %}
+      <table style="width: auto;">
+        <tr><td class="muted" style="padding-right: 24px;">Sent, last 24h</td><td>{{ ses_quota.sent_last_24_hours }}</td></tr>
+        <tr><td class="muted">24-hour maximum</td><td>{{ ses_quota.max_24_hour }}</td></tr>
+        <tr><td class="muted">Max send rate</td><td>{{ ses_quota.max_send_rate }}/sec</td></tr>
+      </table>
+    {% else %}
+      <div class="muted small">
+        Not available. Either EMAIL_ENABLED is false, or the credentials lack
+        ses:GetSendQuota, which is a separate permission from ses:SendEmail;
+        check the application log.
+      </div>
+    {% endif %}
+  </section>
+
+  {# Configuration Status #}
+  <section class="card" style="margin-bottom: 24px; {% if email_config.enabled %}background: #f0fdf4; border: 1px solid #059669;{% else %}background: #fef3c7; border: 1px solid #f59e0b;{% endif %}">
+    <h3 style="margin:0 0 16px 0;">
+      {% if email_config.enabled %}
+        Email Sending: Enabled
+      {% else %}
+        Email Sending: Disabled
+      {% endif %}
+    </h3>
+
+    <table style="width: auto;">
+      <tr>
+        <td class="muted" style="padding-right: 24px;">EMAIL_ENABLED</td>
+        <td>
+          {% if email_config.enabled %}
+            <span style="color: #059669; font-weight: 600;">true</span>
+          {% else %}
+            <span style="color: #d97706; font-weight: 600;">false</span>
+            <span class="muted small"> (emails logged as SUPPRESSED)</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td class="muted">EMAIL_FROM_ADDRESS</td>
+        <td><code>{{ email_config.from_address }}</code></td>
+      </tr>
+      <tr>
+        <td class="muted">BASE_URL</td>
+        <td><code>{{ email_config.base_url }}</code></td>
+      </tr>
+      <tr>
+        <td class="muted">AWS_SES_REGION</td>
+        <td><code>{{ email_config.ses_region }}</code></td>
+      </tr>
+      <tr>
+        <td class="muted">AWS Credentials</td>
+        <td>
+          {% if email_config.has_credentials %}
+            <span style="color: #059669;">Configured</span>
+          {% else %}
+            <span class="muted">Not set (will use IAM role)</span>
+          {% endif %}
+        </td>
+      </tr>
+    </table>
+  </section>
+  {# Slack Configuration Status #}
+  <section class="card" style="margin-bottom: 24px; {% if slack_config.enabled %}background: #f0fdf4; border: 1px solid #059669;{% else %}background: #fef3c7; border: 1px solid #f59e0b;{% endif %}">
+    <h3 style="margin:0 0 16px 0;">
+      {% if slack_config.enabled %}
+        Slack Notifications: Enabled
+      {% else %}
+        Slack Notifications: Disabled
+      {% endif %}
+    </h3>
+
+    <table style="width: auto;">
+      <tr>
+        <td class="muted" style="padding-right: 24px;">SLACK_ENABLED</td>
+        <td>
+          {% if slack_config.enabled %}
+            <span style="color: #059669; font-weight: 600;">true</span>
+          {% else %}
+            <span style="color: #d97706; font-weight: 600;">false</span>
+            <span class="muted small"> (messages logged as SUPPRESSED)</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td class="muted">SLACK_BOT_TOKEN</td>
+        <td>
+          {% if slack_config.has_token %}
+            <span style="color: #059669;">Configured</span>
+          {% else %}
+            <span class="muted">Not set</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td class="muted">SLACK_CHANNEL_ID</td>
+        <td><code>{{ slack_config.channel_id }}</code></td>
+      </tr>
+    </table>
+  </section>
+  {# Send Test Notifications #}
+  <section class="card" style="margin-bottom: 24px;">
+    <h3 style="margin:0 0 16px 0;">Send Test Notifications</h3>
+    <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+      <form method="post" action="{{ url_for('admin_final.email_test_send') }}" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div>
+          <label class="small muted" style="display: block; margin-bottom: 4px;">Recipient Email</label>
+          <input type="email" name="recipient" placeholder="{{ user_ctx.user.email if user_ctx.user else 'your@email.com' }}" style="width: 300px;">
+        </div>
+        <button type="submit" class="btn btn-primary">Send Test Email</button>
+        <span class="muted small">Leave blank to send to yourself</span>
+      </form>
+      <form method="post" action="{{ url_for('admin_final.slack_test_send') }}" style="display: flex; gap: 12px; align-items: flex-end;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn" style="background: #4A154B; color: white; border-color: #4A154B;">Send Test Slack Message</button>
+      </form>
+    </div>
+  </section>
+  </div>
+
+
+<script nonce="{{ csp_nonce }}">
+(function() {
+  var ACTIVE = "padding: 12px 22px; border: 1px solid #ccc; border-bottom: none; background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #111; border-radius: 8px 8px 0 0; margin-right: 4px; position: relative; z-index: 1;";
+  var IDLE = "padding: 12px 22px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;";
+
+  function show(key) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) {
+      var on = b.dataset.tab === key;
+      b.classList.toggle('active', on);
+      b.setAttribute('style', on ? ACTIVE : IDLE);
+    });
+    document.querySelectorAll('.tab-panel').forEach(function(p) {
+      var on = p.id === 'panel-' + key;
+      p.style.display = on ? 'block' : 'none';
+      p.classList.toggle('active', on);
+    });
+    // Survive the filter form's GET round trip, which reloads the page and
+    // would otherwise drop the operator back on Queue mid-search.
+    try { sessionStorage.setItem('emailDebugTab', key); } catch (e) {}
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { show(this.dataset.tab); });
+  });
+
+  var wanted = null;
+  try { wanted = sessionStorage.getItem('emailDebugTab'); } catch (e) {}
+  // A filtered request is always a Log action, whatever tab was stored.
+  if (window.location.search.indexOf('status=') !== -1
+      || window.location.search.indexOf('template=') !== -1
+      || window.location.search.indexOf('channel=') !== -1
+      || window.location.search.indexOf('days=') !== -1) {
+    wanted = 'log';
+  }
+  if (wanted && document.getElementById('panel-' + wanted)) {
+    show(wanted);
+  }
+})();
+</script>
 
 {% endblock %}

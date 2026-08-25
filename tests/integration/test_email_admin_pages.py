@@ -302,3 +302,62 @@ def test_a_slack_row_is_not_labelled_with_an_ses_id(app, client, seed_workflow_d
     html = client.get("/admin/email/").get_data(as_text=True)
     assert "Slack ts" in html
     assert "SES: 1787623427" not in html
+
+
+def _panel(html, key):
+    """Return the markup inside one tab panel."""
+    start = html.index(f'id="panel-{key}"')
+    rest = html[start:]
+    nxt = rest.find('class="tab-panel')
+    return rest if nxt == -1 else rest[:nxt]
+
+
+def test_every_section_lands_in_exactly_one_tab(app, client, seed_workflow_data):
+    """The page is assembled by moving whole blocks between panels, so the
+    failure mode is a section landing in two tabs or none rather than a
+    rendering error. Neither raises."""
+    _login(client, "test:admin")
+    html = client.get("/admin/email/").get_data(as_text=True)
+
+    homes = {
+        "queue": ["In the queue now", "Outcomes, last 90 days",
+                  "Recent Failed Outbox Rows"],
+        "log": ["Notification Log"],
+        "suppression": ["Suppression List"],
+        "config": ["SES sending quota", "Send Test Notifications"],
+    }
+    for tab, headings in homes.items():
+        panel = _panel(html, tab)
+        for heading in headings:
+            assert f">{heading}" in panel or f"{heading}</h3>" in panel, \
+                f"{heading!r} is not in the {tab} panel"
+        for other, other_headings in homes.items():
+            if other == tab:
+                continue
+            for heading in other_headings:
+                assert f"{heading}</h3>" not in panel, \
+                    f"{heading!r} also appears in the {tab} panel"
+
+
+def test_the_health_tiles_sit_outside_every_tab(app, client, seed_workflow_data):
+    """The five health numbers are the reason the page gets opened. Putting
+    them in a panel would hide four of them behind a click."""
+    _login(client, "test:admin")
+    html = client.get("/admin/email/").get_data(as_text=True)
+
+    before_tabs = html.split('class="tab-row"')[0]
+    for label in ["Queued", "Oldest overdue", "Render blocked",
+                  "Failed, 90 days", "Email sending"]:
+        assert label in before_tabs, f"{label!r} is not in the always-visible header"
+
+
+def test_exactly_one_tab_starts_open(app, client, seed_workflow_data):
+    """Two active panels render stacked; zero renders a blank page under the
+    tab row. Both look like a broken page rather than a broken template."""
+    _login(client, "test:admin")
+    html = client.get("/admin/email/").get_data(as_text=True)
+
+    assert html.count('class="tab-panel active"') == 1
+    assert html.count('class="tab-btn active"') == 1
+    assert html.count('class="tab-panel') == 4
+    assert html.count('class="tab-btn') == 4
