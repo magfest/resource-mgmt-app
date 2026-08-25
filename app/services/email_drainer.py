@@ -183,6 +183,12 @@ def claim_due_rows(run_id: str, batch_size: int, now=None) -> list:
     )
 
 
+def _plural(count, noun):
+    """Return "1 row" or "2 rows". These strings go to Slack, where an
+    operator reads them during an incident."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def _config(key: str, default):
     return current_app.config.get(key, default)
 
@@ -646,10 +652,11 @@ def drain_outbox(now=None) -> DrainSummary:
             _alert(
                 f"Email templates failed to render: "
                 f"{', '.join(sorted(render_keys))}. "
-                f"{summary.render_blocked} row(s) blocked; each retries in "
-                f"{_config('EMAIL_RENDER_RETRY_MINUTES', _DEFAULT_RENDER_RETRY_MINUTES)} "
-                f"minutes and fails for good after "
-                f"{_config('EMAIL_RENDER_MAX_AGE_DAYS', _DEFAULT_RENDER_MAX_AGE_DAYS)} days.",
+                f"{_plural(summary.render_blocked, 'row')} blocked; each "
+                f"retries in "
+                f"{_plural(_config('EMAIL_RENDER_RETRY_MINUTES', _DEFAULT_RENDER_RETRY_MINUTES), 'minute')} "
+                f"and fails for good after "
+                f"{_plural(_config('EMAIL_RENDER_MAX_AGE_DAYS', _DEFAULT_RENDER_MAX_AGE_DAYS), 'day')}.",
                 "email_render_blocked",
             )
     finally:

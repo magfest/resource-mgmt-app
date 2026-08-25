@@ -243,3 +243,35 @@ def test_blocked_rows_do_not_spend_the_send_rate(app):
             summary = drain_outbox()
         assert summary.render_blocked == 4
         assert time.monotonic() - started < 0.5
+
+
+def test_the_render_alert_reads_as_a_sentence(app):
+    """These strings go to Slack and are read during an incident. The counts
+    are configurable, so the singular case is reached in normal operation."""
+    with app.app_context():
+        app.config["EMAIL_RENDER_RETRY_MINUTES"] = 1
+        app.config["EMAIL_RENDER_MAX_AGE_DAYS"] = 1
+        dept, cycle = _setup(app, body="{{ 1 / 0 }}")
+        _queued(dept, cycle)
+        with patch("app.services.email_drainer.send_slack_message") as slack:
+            drain_outbox()
+        text = slack.call_args[0][0]
+        assert "1 row blocked" in text
+        assert "retries in 1 minute and" in text
+        assert "after 1 day." in text
+        assert "(s)" not in text
+
+
+def test_the_render_alert_pluralises_above_one(app):
+    with app.app_context():
+        app.config["EMAIL_RENDER_RETRY_MINUTES"] = 60
+        app.config["EMAIL_RENDER_MAX_AGE_DAYS"] = 7
+        dept, cycle = _setup(app, body="{{ 1 / 0 }}")
+        for _ in range(2):
+            _queued(dept, cycle)
+        with patch("app.services.email_drainer.send_slack_message") as slack:
+            drain_outbox()
+        text = slack.call_args[0][0]
+        assert "2 rows blocked" in text
+        assert "retries in 60 minutes and" in text
+        assert "after 7 days." in text

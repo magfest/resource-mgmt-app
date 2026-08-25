@@ -361,3 +361,29 @@ def test_exactly_one_tab_starts_open(app, client, seed_workflow_data):
     assert html.count('class="tab-btn active"') == 1
     assert html.count('class="tab-panel') == 4
     assert html.count('class="tab-btn') == 4
+
+
+def test_every_written_status_gets_a_count_tile(app, client, seed_workflow_data):
+    """The tiles summed to less than the log beneath them, because
+    RENDER_BLOCKED and CANCELLED had no entry in the tone map. Those are the
+    two an operator is most likely to be hunting for."""
+    from app.models.constants import (
+        NOTIF_STATUS_CANCELLED,
+        NOTIF_STATUS_RENDER_BLOCKED,
+    )
+    for status in (NOTIF_STATUS_RENDER_BLOCKED, NOTIF_STATUS_CANCELLED,
+                   NOTIF_STATUS_FAILED, NOTIF_STATUS_SENT):
+        db.session.add(NotificationLog(
+            channel="EMAIL", template_key="submitted",
+            recipient_email="a@example.org", status=status,
+            created_at=datetime.utcnow(),
+        ))
+    db.session.commit()
+    _login(client, "test:admin")
+
+    log_panel = _panel(client.get("/admin/email/").get_data(as_text=True), "log")
+    tiles = log_panel.split('class="card"')
+    tiled = sum(1 for t in tiles if "muted small" in t)
+    assert tiled >= 4, "one of the four written statuses has no count tile"
+    for label in ["Render blocked", "Cancelled", "Failed", "Accepted by SES"]:
+        assert label in log_panel, f"no tile for {label!r}"

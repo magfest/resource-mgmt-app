@@ -116,10 +116,15 @@ def email_debug():
     # tone) rather than a dict keyed on the raw status: the tile label is
     # channel-aware, and "SENT" is never a label an operator reads.
     status_counts = []
+    # Every status the drainer writes needs a tile. RENDER_BLOCKED and
+    # CANCELLED were missing, so the tiles summed to less than the log below
+    # them and the one status an operator most needs to see was the one absent.
     tones = {
         NOTIF_STATUS_SUPPRESSED: "warn",
         "DEBOUNCED": "info",
         NOTIF_STATUS_FAILED: "bad",
+        NOTIF_STATUS_RENDER_BLOCKED: "bad",
+        NOTIF_STATUS_CANCELLED: "neutral",
         NOTIF_STATUS_QUEUED: "neutral",
     }
     for status, tone in tones.items():
