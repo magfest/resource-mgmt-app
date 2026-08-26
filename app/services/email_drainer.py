@@ -551,7 +551,18 @@ def drain_outbox(now=None) -> DrainSummary:
     # uuid4, not a timestamp. Heroku Scheduler runs can overlap, and two runs
     # sharing a second-resolution id would each sweep up the other's claims.
     run_id = uuid4().hex
-    rows = claim_due_rows(run_id, batch_size, now=now)
+
+    # Test the limit before claiming, not after. Claiming first makes an
+    # over-limit run write SENDING across a full batch and release it again
+    # every ten minutes, sending nothing. Skip the claim rather than returning
+    # early; the outbox prune at the end of this function still has to run.
+    if _sent_in_last_24h(now) >= daily_limit:
+        summary.stopped_reason = (
+            f"EMAIL_DAILY_LIMIT of {daily_limit} sends in 24 hours reached"
+        )
+        rows = []
+    else:
+        rows = claim_due_rows(run_id, batch_size, now=now)
     summary.claimed = len(rows)
 
     started = time.monotonic()
@@ -560,12 +571,6 @@ def drain_outbox(now=None) -> DrainSummary:
 
     try:
         with _sigterm_watch() as flag:
-            if _sent_in_last_24h(now) >= daily_limit:
-                summary.stopped_reason = (
-                    f"EMAIL_DAILY_LIMIT of {daily_limit} sends in 24 hours reached"
-                )
-                rows = []
-
             for index, row in enumerate(rows):
                 if flag["stopped"]:
                     summary.stopped_reason = "SIGTERM received"

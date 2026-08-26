@@ -16,6 +16,7 @@ from app.models import (
     NotificationLog,
 )
 from app.models.constants import (
+    NOTIF_STATUS_SENT,
     OUTBOX_STATUS_QUEUED,
     OUTBOX_STATUS_SENDING,
     OUTBOX_STATUS_SENT,
@@ -275,3 +276,77 @@ def test_the_render_alert_pluralises_above_one(app):
         assert "2 rows blocked" in text
         assert "retries in 60 minutes and" in text
         assert "after 7 days." in text
+
+
+def _logged_sends(count):
+    """Seed the NotificationLog rows that _sent_in_last_24h counts."""
+    for _ in range(count):
+        db.session.add(NotificationLog(
+            channel="EMAIL",
+            template_key="submission_reminder",
+            recipient_email="a@example.org",
+            status=NOTIF_STATUS_SENT,
+            created_at=datetime.utcnow(),
+        ))
+    db.session.commit()
+
+
+def test_an_over_limit_run_claims_nothing(app):
+    """Over the daily limit the run must skip the claim, not undo it.
+
+    summary.claimed is the discriminator. Claiming first and emptying the list
+    afterwards reports the batch as claimed and writes SENDING across every row
+    in it, ten minutes apart, forever.
+    """
+    with app.app_context():
+        dept, cycle = _setup(app)
+        app.config["EMAIL_DAILY_LIMIT"] = 2
+        _logged_sends(2)
+        row_id = _queued(dept, cycle).id
+
+        with patch("app.services.email_drainer.send_via_ses") as ses:
+            summary = drain_outbox()
+
+        assert ses.call_count == 0
+        assert summary.claimed == 0
+        assert "EMAIL_DAILY_LIMIT" in summary.stopped_reason
+        assert db.session.get(EmailOutbox, row_id).status == OUTBOX_STATUS_QUEUED
+
+
+def test_the_prune_still_runs_over_the_daily_limit(app):
+    """Skipping the claim must not skip the prune.
+
+    _prune_outbox runs after the try/finally, so returning early on the limit
+    would stop outbox retention for as long as the limit held, with nothing
+    reporting it.
+    """
+    with app.app_context():
+        dept, cycle = _setup(app)
+        app.config["EMAIL_DAILY_LIMIT"] = 1
+        _logged_sends(1)
+        old = datetime.utcnow() - timedelta(days=200)
+        stale_id = _queued(dept, cycle, status=OUTBOX_STATUS_SENT,
+                           created_at=old, dispatch_at=old, sent_at=old).id
+
+        with patch("app.services.email_drainer.send_via_ses") as ses:
+            summary = drain_outbox()
+
+        assert ses.call_count == 0
+        assert summary.pruned == 1
+        assert db.session.get(EmailOutbox, stale_id) is None
+
+
+def test_a_run_under_the_daily_limit_still_claims(app):
+    """The gate must not be always-on; a normal run is unaffected."""
+    with app.app_context():
+        dept, cycle = _setup(app)
+        app.config["EMAIL_DAILY_LIMIT"] = 5
+        _logged_sends(2)
+        _queued(dept, cycle)
+
+        with patch("app.services.email_drainer.send_via_ses", return_value=_sent()):
+            summary = drain_outbox()
+
+        assert summary.claimed == 1
+        assert summary.sent == 1
+        assert summary.stopped_reason is None
