@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from app.models import EmailMessageBody, EmailOutbox, EmailSuppression, NotificationLog
-from app.models.constants import OUTBOX_STATUS_QUEUED
+from app.models.constants import OUTBOX_CLAIMABLE_STATUSES, OUTBOX_STATUS_QUEUED
 from app import db
 
 
@@ -58,3 +58,13 @@ def test_message_body_links_to_its_log_row(app):
         db.session.commit()
         body = db.session.query(EmailMessageBody).one()
         assert body.notification_log_id == log.id
+
+
+def test_the_status_default_is_a_claimable_status():
+    """A new row must land in a status the drainer will pick up.
+
+    OUTBOX_CLAIMABLE_STATUSES is derived from the constant names, so a default
+    written as a literal can drift from them. Nothing raises when it does: the
+    row inserts, looks queued in the admin log, and is never claimed.
+    """
+    assert EmailOutbox.__table__.c.status.default.arg in OUTBOX_CLAIMABLE_STATUSES

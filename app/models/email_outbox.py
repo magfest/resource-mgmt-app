@@ -9,6 +9,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, Integer
 
 from app import db
+from .constants import OUTBOX_STATUS_QUEUED
 
 
 class EmailOutbox(db.Model):
@@ -23,7 +24,11 @@ class EmailOutbox(db.Model):
     recipient_user_id = db.Column(db.String(64), nullable=True)
 
     dispatch_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
-    status = db.Column(db.String(16), nullable=False, default="QUEUED", index=True)
+    # Not a literal. OUTBOX_CLAIMABLE_STATUSES is derived from these constant
+    # names, so a default that drifts from them produces a row the drainer
+    # never claims, with nothing raising and no test failing.
+    status = db.Column(db.String(16), nullable=False,
+                       default=OUTBOX_STATUS_QUEUED, index=True)
 
     work_item_id = db.Column(
         db.Integer,

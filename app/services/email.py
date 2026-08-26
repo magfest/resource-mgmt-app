@@ -22,12 +22,6 @@ from app import db
 from app.models import NotificationLog, NOTIF_STATUS_SENT, NOTIF_STATUS_FAILED
 
 
-# Statuses no code writes any more. Historical NotificationLog rows still
-# carry these strings and the admin email log renders them, so the names stay.
-NOTIF_STATUS_DEBOUNCED = "DEBOUNCED"
-NOTIF_STATUS_RATE_LIMITED = "RATE_LIMITED"
-NOTIF_STATUS_CIRCUIT_OPEN = "CIRCUIT_OPEN"
-
 DEFAULT_DAILY_LIMIT = 200
 
 
