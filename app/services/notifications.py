@@ -242,8 +242,9 @@ def notify_work_item_finalized(work_item: WorkItem) -> int:
     """
     Queue the finalized notification for department members.
 
-    Called after: the board releases the budget (see
-    `flask send-board-release-emails`), not at finalize time itself.
+    Called by release_event_budgets for a bulk board release, and by
+    finalize_work_item when the board has already approved the event. Both
+    queue inside a transaction they do not own; their route caller commits.
     Returns: Number of outbox rows queued.
 
     The sent/attempted pair this used to return is gone. Nothing at enqueue

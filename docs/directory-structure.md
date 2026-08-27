@@ -9,7 +9,7 @@ magfest-budget/
 ├── app/                    # Main application code
 │   ├── models/             # Database models (package)
 │   ├── services/           # Business logic services (email, notifications, slack)
-│   ├── cli.py              # Flask CLI commands (seed, send-submission-reminders, send-board-release-emails)
+│   ├── cli.py              # Flask CLI commands (seed, send-submission-reminders, drain-email-outbox, prune-email-audit)
 │   ├── line_details.py     # Generic line detail helpers (see note below)
 │   ├── secrets.py          # Env-var + optional AWS Secrets Manager loading
 │   ├── wsgi.py             # WSGI entry point (gunicorn: app.wsgi:app)

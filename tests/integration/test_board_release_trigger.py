@@ -191,3 +191,24 @@ def test_a_held_finalize_announces_nothing(app, client, seed_draft_work_item):
         _finalize(client, data)
 
     assert announce.call_count == 0
+
+
+def test_finalize_survives_a_failing_enqueue(app, client, seed_draft_work_item):
+    """A finalize must not be lost because its email could not be queued.
+
+    test_notification_resilience.py dropped this when finalize stopped
+    notifying inline and deferred to the sweeper's coverage. Finalize notifies
+    inline again and the sweeper is gone, so the test comes back here.
+    """
+    data = seed_draft_work_item
+    _add_department_member(data)
+    _approve_the_board_topline(data)
+
+    with patch("app.services.notifications.notify_work_item_finalized",
+               side_effect=RuntimeError("recipient lookup failed")):
+        item, resp = _finalize(client, data)
+
+    assert resp.status_code == 200
+    db.session.refresh(item)
+    assert item.status == WORK_ITEM_STATUS_FINALIZED
+    assert item.board_released_at is not None

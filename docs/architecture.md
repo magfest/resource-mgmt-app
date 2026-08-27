@@ -245,4 +245,4 @@ Declared in `app/models/constants.py:18-25` but never persisted:
 | `app/routes/work/techops/` | TECHOPS work type (reference pattern for new types) |
 | `app/routes/home.py` | Main dashboard |
 | `app/seeds/bootstrap.py` | Database seeding (`config_seed.py` is a wrapper) |
-| `app/cli.py` | Flask CLI commands (`flask seed`, `flask send-submission-reminders`, `flask send-board-release-emails`) |
+| `app/cli.py` | Flask CLI commands (`flask seed`, `flask send-submission-reminders`, `flask drain-email-outbox`, `flask prune-email-audit`) |

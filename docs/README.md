@@ -45,9 +45,6 @@ step wires these up.
 - Run `flask send-submission-reminders <EVENT_CODE> --send` for each active
   event. It emails departments that have not yet submitted a budget. Without
   `--send` it lists who would receive a reminder and exits.
-- Run `flask send-board-release-emails --send`. It emails departments whose
-  budgets the board has released and stamps `work_items.finalized_notified_at`.
-  Without `--send` it lists what it would send and exits.
 
 ## Getting Started
 
