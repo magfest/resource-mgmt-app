@@ -1,10 +1,17 @@
 """The release request queues its own email. There is no sweeper any more."""
+from datetime import datetime
 from unittest.mock import patch
 
 from app import db
-from app.models import DepartmentMembership, EmailOutbox, User, WORK_ITEM_STATUS_FINALIZED
+from app.models import (
+    DepartmentMembership, EmailOutbox, User, WorkLineReview,
+    REVIEW_STAGE_APPROVAL_GROUP, REVIEW_STATUS_APPROVED,
+    WORK_ITEM_STATUS_FINALIZED, WORK_ITEM_STATUS_SUBMITTED,
+    WORK_LINE_STATUS_APPROVED,
+)
 
 BOARD_RELEASE_URL = "/admin/final-review/board-release/"
+FINALIZE_URL = "/admin/final-review/finalize/{}"
 
 
 def _login(client, user_id):
@@ -107,3 +114,80 @@ def test_one_bad_department_does_not_cost_the_release(app, client, seed_draft_wo
     assert resp.status_code == 200
     db.session.refresh(item)
     assert item.board_released_at is not None
+
+
+def _ready_to_finalize(data):
+    """Put the fixture item in a state can_finalize_work_item accepts.
+
+    Copied from test_board_approval_hold.py, which is the pattern for
+    finalize tests in this repo.
+    """
+    item, line = data["work_item"], data["line"]
+    item.status = WORK_ITEM_STATUS_SUBMITTED
+    line.status = WORK_LINE_STATUS_APPROVED
+    line.current_review_stage = REVIEW_STAGE_APPROVAL_GROUP
+    db.session.add(WorkLineReview(
+        work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP,
+        approval_group_id=data["approval_group"].id,
+        status=REVIEW_STATUS_APPROVED, approved_amount_cents=5000,
+        created_by_user_id=data["admin"].id))
+    db.session.commit()
+    return item
+
+
+def _approve_the_board_topline(data):
+    """Set the event latch so a later finalize releases immediately."""
+    data["cycle"].board_approved_at = datetime.utcnow()
+    db.session.commit()
+
+
+def _finalize(client, data, note="ok"):
+    item = _ready_to_finalize(data)
+    _login(client, "test:admin")
+    resp = client.post(FINALIZE_URL.format(item.id), data={"note": note},
+                       follow_redirects=True)
+    return item, resp
+
+
+def test_finalize_after_board_approval_queues_immediately(app, client, seed_draft_work_item):
+    """The board already approved, so this budget releases on finalize.
+
+    Before this task nothing queued here; the sweeper caught it later.
+    """
+    data = seed_draft_work_item
+    _add_department_member(data)
+    _approve_the_board_topline(data)
+
+    item, resp = _finalize(client, data)
+
+    assert resp.status_code == 200
+    db.session.refresh(item)
+    assert item.board_released_at is not None
+    assert db.session.query(EmailOutbox).count() > 0
+
+
+def test_finalize_before_board_approval_queues_nothing(app, client, seed_draft_work_item):
+    """Held budgets tell nobody. The department waits for the board."""
+    data = seed_draft_work_item
+    _add_department_member(data)
+
+    item, resp = _finalize(client, data)
+
+    assert resp.status_code == 200
+    db.session.refresh(item)
+    assert item.board_released_at is None
+    assert db.session.query(EmailOutbox).count() == 0
+
+
+def test_a_held_finalize_announces_nothing(app, client, seed_draft_work_item):
+    """Only a released budget is channel news.
+
+    Patch target is the notifications module, not the dashboard namespace: the
+    view imports the name inside its own body.
+    """
+    data = seed_draft_work_item
+
+    with patch("app.services.notifications.announce_work_item_event") as announce:
+        _finalize(client, data)
+
+    assert announce.call_count == 0

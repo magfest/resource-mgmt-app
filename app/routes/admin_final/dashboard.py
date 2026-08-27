@@ -152,7 +152,8 @@ def finalize(work_item_id: int):
         if work_item.board_released_at is not None:
             flash(
                 f"Work item {work_item.public_id} finished. The budget is "
-                "released; a scheduled process will notify the department.",
+                "released; the department is emailed on the next drain, "
+                "within ten minutes.",
                 "success",
             )
         else:
@@ -163,9 +164,13 @@ def finalize(work_item_id: int):
             )
         db.session.commit()
 
-        # Finalized email is sent by `flask send-board-release-emails`, not here.
-        # A bulk board release fans out one SES call per department, which does
-        # not fit inside Heroku's 30-second request limit.
+        # After the commit: the Slack webhook has a 10 second timeout and
+        # would hold this item's row locks for that long inside the
+        # transaction. Only released items are announced; a held budget is
+        # not news until the board acts.
+        if work_item.board_released_at is not None:
+            from app.services.notifications import announce_work_item_event
+            announce_work_item_event(work_item, 'finalized')
 
     # Redirect back to referrer or dashboard
     from app.routes.admin.helpers import safe_redirect_url

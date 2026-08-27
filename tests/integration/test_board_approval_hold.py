@@ -71,7 +71,7 @@ def test_finalize_releases_when_board_already_approved(app, client, seed_draft_w
     # The flash must say the budget released, not the held copy.
     body = resp.get_data(as_text=True)
     assert "The budget is released" in body
-    assert "a scheduled process will notify the department" in body
+    assert "the department is emailed on the next drain" in body
     assert "is not notified until the FY budget is approved" not in body
 
     # This release path is automatic (the latch was already set), unlike

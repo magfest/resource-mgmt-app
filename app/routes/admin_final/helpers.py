@@ -564,6 +564,18 @@ def finalize_work_item(
             created_by_user_id=user_ctx.user_id,
         ))
 
+        # This item released on finalize, so it queues here. The bulk path in
+        # release_event_budgets does the same for budgets the board releases
+        # later. Neither goes through a scheduled sweep any more.
+        from app.services.notifications import notify_work_item_finalized
+        try:
+            notify_work_item_finalized(work_item)
+        except Exception:
+            current_app.logger.exception(
+                f"Could not queue the release email for {work_item.public_id}; "
+                f"the finalize stands and the email must be re-sent by hand."
+            )
+
     # Create audit event
     audit = WorkItemAuditEvent(
         work_item_id=work_item.id,
