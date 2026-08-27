@@ -543,9 +543,15 @@ def board_release():
         return redirect(url_for("admin_final.board_release_form", event=event_code))
 
     db.session.commit()
+
+    # After the commit: a webhook with a 10 second timeout has no business
+    # inside a transaction holding every released item's row locks.
+    from app.services.notifications import announce_board_release
+    announce_board_release(cycle, count)
+
     flash(
         f"FY budget approval recorded for {cycle.code}. {count} budget(s) released. "
-        f"Departments are emailed by the next scheduled run.",
+        f"Departments are emailed on the next drain, within ten minutes.",
         "success",
     )
     return redirect(url_for("admin_final.board_release_form", event=event_code))

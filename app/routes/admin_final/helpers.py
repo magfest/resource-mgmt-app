@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
-from flask import abort
+from flask import abort, current_app
 from sqlalchemy.orm import joinedload, selectinload
 
 from app import db
@@ -1325,14 +1325,18 @@ def release_event_budgets(
 ) -> Tuple[int, Optional[str]]:
     """Record the board's approval of an event topline and release held budgets.
 
-    Sets the event latch, then stamps every held budget. Emails are sent later by
-    `flask send-board-release-emails`; a bulk fan-out of SES calls does not fit
-    inside Heroku's 30-second request limit.
+    Sets the event latch, stamps every held budget, and queues each
+    department's email in the same transaction. The caller commits.
+
+    Queueing is N INSERTs into email_outbox, not N SES calls, so it fits in a
+    request. The Slack summary does not; the caller posts it after the commit.
 
     Idempotent. A second run finds nothing held and returns 0.
 
     Returns (released_count, error_message).
     """
+    from app.services.notifications import notify_work_item_finalized
+
     require_budget_admin(user_ctx)
 
     if not (note or "").strip():
@@ -1359,5 +1363,20 @@ def release_event_budgets(
             reason=note.strip(),
             created_by_user_id=user_ctx.user_id,
         ))
+
+        # Queue inside the caller's transaction. dashboard.py commits the
+        # stamps, the audit rows and the outbox rows together, so the email
+        # cannot exist without the release and the release cannot commit
+        # without the email.
+        try:
+            notify_work_item_finalized(item)
+        except Exception:
+            # One unreachable department must not cost the others their
+            # release. _enqueue_emails already isolates per recipient; this
+            # catches a failure resolving the department itself.
+            current_app.logger.exception(
+                f"Could not queue the release email for {item.public_id}; "
+                f"the release stands and the email must be re-sent by hand."
+            )
 
     return len(held), None
