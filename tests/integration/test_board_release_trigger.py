@@ -5,6 +5,7 @@ from unittest.mock import patch
 from app import db
 from app.models import (
     DepartmentMembership, EmailOutbox, User, WorkLineReview,
+    OUTBOX_STATUS_CANCELLED, OUTBOX_STATUS_QUEUED,
     REVIEW_STAGE_APPROVAL_GROUP, REVIEW_STATUS_APPROVED,
     WORK_ITEM_STATUS_FINALIZED, WORK_ITEM_STATUS_SUBMITTED,
     WORK_LINE_STATUS_APPROVED,
@@ -246,3 +247,94 @@ def test_refinalize_after_unfinalize_queues_again(app, client, seed_draft_work_i
                 follow_redirects=True)
 
     assert db.session.query(EmailOutbox).count() == first * 2
+
+
+def _unfinalize(client, item, reason="numbers changed"):
+    _login(client, "test:admin")
+    return client.post(f"/admin/final-review/unfinalize/{item.id}",
+                       data={"reason": reason}, follow_redirects=True)
+
+
+def _release_rows():
+    return db.session.query(EmailOutbox).filter_by(template_key="finalized").all()
+
+
+def test_a_dark_finalized_template_stops_the_release(app, client, seed_draft_work_item):
+    """The drainer cancels a row whose template is off, and nothing re-sends it.
+
+    Releasing anyway would stamp the budgets, lose every email for good, and
+    drop the budgets out of get_held_budgets. The release refuses instead.
+    """
+    data = seed_draft_work_item
+    _add_department_member(data)
+    item = _hold_a_finalized_budget(data)
+    data["finalized_template"].is_active = False
+    db.session.commit()
+
+    resp = _release(client, data)
+
+    assert resp.status_code == 200
+    assert "missing or inactive" in resp.get_data(as_text=True)
+    db.session.refresh(item)
+    db.session.refresh(data["cycle"])
+    assert item.board_released_at is None
+    assert data["cycle"].board_approved_at is None
+    assert db.session.query(EmailOutbox).count() == 0
+
+    # Mutation check: the only thing holding the release back is the checkbox.
+    data["finalized_template"].is_active = True
+    db.session.commit()
+
+    _release(client, data)
+
+    db.session.refresh(item)
+    assert item.board_released_at is not None
+    assert db.session.query(EmailOutbox).count() > 0
+
+
+def test_unfinalize_cancels_the_queued_release_email(app, client, seed_draft_work_item):
+    """A queued release email claims a final budget. Unfinalize makes that false."""
+    data = seed_draft_work_item
+    _add_department_member(data)
+    item = _hold_a_finalized_budget(data)
+    _release(client, data)
+    assert [r.status for r in _release_rows()] == [OUTBOX_STATUS_QUEUED]
+
+    # A different kind for the same item. The cancel is scoped to one template
+    # key, so this row must survive untouched.
+    decoy = EmailOutbox(
+        template_key="needs_attention", recipient_email="deptmember@test.local",
+        work_item_id=item.id, status=OUTBOX_STATUS_QUEUED,
+    )
+    db.session.add(decoy)
+    db.session.commit()
+
+    resp = _unfinalize(client, item)
+
+    assert resp.status_code == 200
+    rows = _release_rows()
+    assert [r.status for r in rows] == [OUTBOX_STATUS_CANCELLED]
+    assert "Unfinalize" in rows[0].last_error
+    db.session.refresh(decoy)
+    assert decoy.status == OUTBOX_STATUS_QUEUED
+
+
+def test_refinalize_after_a_cancel_queues_a_fresh_row(app, client, seed_draft_work_item):
+    """Cancelling the old row must not poison the dedup key.
+
+    The cancelled row keeps the key built from the old board_released_at. A
+    re-finalize writes a new stamp, so the new key differs and a row is created.
+    """
+    data = seed_draft_work_item
+    _add_department_member(data)
+    item = _hold_a_finalized_budget(data)
+    _release(client, data)
+    _unfinalize(client, item)
+    assert [r.status for r in _release_rows()] == [OUTBOX_STATUS_CANCELLED]
+
+    _finalize(client, data)
+
+    db.session.refresh(item)
+    assert item.board_released_at is not None
+    statuses = sorted(r.status for r in _release_rows())
+    assert statuses == [OUTBOX_STATUS_CANCELLED, OUTBOX_STATUS_QUEUED]

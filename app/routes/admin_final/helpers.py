@@ -27,6 +27,10 @@ from app.models import (
     ExpenseAccount,
     SpendType,
     ApprovalGroup,
+    EmailOutbox,
+    EmailTemplate,
+    OUTBOX_CLAIMABLE_STATUSES,
+    OUTBOX_STATUS_CANCELLED,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING,
@@ -646,6 +650,55 @@ def finalize_work_item(
     return True, None
 
 
+# ============================================================
+# Release email guards
+# ============================================================
+
+def _resolved_finalized_key(work_item: WorkItem) -> str:
+    """Return the finalized template key this item's email will actually use.
+
+    resolve_template_key checks that a work-type row exists, not that it is
+    active, so an existing but inactive budget_finalized resolves to itself
+    instead of falling back to the generic finalized.
+    """
+    from app.services.email_enqueue import resolve_template_key
+
+    work_type = work_item.portfolio.work_type if work_item.portfolio else None
+    return resolve_template_key("finalized", work_type.code if work_type else None)
+
+
+def finalized_template_is_live(work_item: WorkItem) -> Tuple[bool, str]:
+    """Report whether this item's finalized email can send, and name its template.
+
+    The drainer terminates a row whose template is missing or inactive as
+    CANCELLED (email_drainer.py:365-369). CANCELLED is terminal and no route
+    re-sends it, so callers must decide before they queue.
+    """
+    key = _resolved_finalized_key(work_item)
+    template = EmailTemplate.query.filter_by(template_key=key).first()
+    return bool(template is not None and template.is_active), key
+
+
+def _cancel_pending_release_emails(work_item: WorkItem) -> int:
+    """Cancel this item's unsent release emails. Does not commit.
+
+    Scoped to the finalized template key and to claimable rows. A queued
+    needs_attention row is unrelated, and a terminal row is already history.
+    """
+    key = _resolved_finalized_key(work_item)
+    rows = (
+        EmailOutbox.query
+        .filter(EmailOutbox.work_item_id == work_item.id)
+        .filter(EmailOutbox.template_key == key)
+        .filter(EmailOutbox.status.in_(OUTBOX_CLAIMABLE_STATUSES))
+        .all()
+    )
+    for row in rows:
+        row.status = OUTBOX_STATUS_CANCELLED
+        row.last_error = "Unfinalize withdrew this release email before it sent."
+    return len(rows)
+
+
 def unfinalize_work_item(
     work_item: WorkItem,
     reason: str,
@@ -695,6 +748,11 @@ def unfinalize_work_item(
     # board_released_at is what makes the second notification a different
     # dedup key rather than a swallowed duplicate.
     work_item.board_released_at = None
+
+    # The queued release email asserts a final budget, and the drainer renders
+    # from the live work item. Unfinalize makes that assertion false, so this
+    # withdraws the unsent rows rather than mailing a budget back in review.
+    _cancel_pending_release_emails(work_item)
 
     # Optionally reset line reviews
     if reset_lines:
@@ -1355,6 +1413,11 @@ def release_event_budgets(
     if not (note or "").strip():
         return 0, "A note is required to record FY budget approval."
 
+    # Serialise overlapping releases. Each request stamps its own board_released_at
+    # and the dedup key embeds that stamp, so two concurrent runs build different
+    # keys and ON CONFLICT never fires. The loser must find nothing held.
+    db.session.query(EventCycle).with_for_update().get(event_cycle.id)
+
     now = datetime.utcnow()
 
     # The latch is set once. Re-running release for stragglers must not rewrite
@@ -1364,6 +1427,22 @@ def release_event_budgets(
         event_cycle.board_approved_by_user_id = user_ctx.user_id
 
     held = get_held_budgets(event_cycle.id)
+
+    # Refuse the whole release when the template is dark. Queueing against it
+    # stamps every budget, then the drainer cancels each row for good, and
+    # get_held_budgets never offers those budgets again.
+    dark = set()
+    for item in held:
+        live, key = finalized_template_is_live(item)
+        if not live:
+            dark.add(key)
+    if dark:
+        return 0, (
+            f"Email template {', '.join(sorted(dark))} is missing or inactive, so no "
+            "department would be emailed. Nothing was released. Activate the "
+            "template under Admin then record the approval again."
+        )
+
     for item in held:
         item.board_released_at = now
         # Status doesn't change here (it's already FINALIZED), so old/new

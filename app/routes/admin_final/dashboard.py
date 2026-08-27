@@ -31,6 +31,7 @@ from .helpers import (
     get_active_departments,
     get_finalization_summary,
     finalize_work_item,
+    finalized_template_is_live,
     unfinalize_work_item,
     get_budget_admin_stats,
     get_budget_approval_groups,
@@ -150,12 +151,23 @@ def finalize(work_item_id: int):
         flash(error, "error")
     else:
         if work_item.board_released_at is not None:
-            flash(
-                f"Work item {work_item.public_id} finished. The budget is "
-                "released; the department is emailed on the next drain, "
-                "within ten minutes.",
-                "success",
-            )
+            # The finalize stands either way; the email is a consequence, not a
+            # precondition. A dark template only changes what we promise here.
+            live, template_key = finalized_template_is_live(work_item)
+            if live:
+                flash(
+                    f"Work item {work_item.public_id} finished. The budget is "
+                    "released; the department is emailed on the next drain, "
+                    "within ten minutes.",
+                    "success",
+                )
+            else:
+                flash(
+                    f"Work item {work_item.public_id} finished and the budget is "
+                    f"released, but email template {template_key} is missing or "
+                    "inactive, so the department was NOT emailed.",
+                    "warning",
+                )
         else:
             flash(
                 f"Work item {work_item.public_id} finished. The department "

@@ -23,6 +23,7 @@ os.environ.setdefault("APP_ENV", "testing")
 import pytest
 from app import create_app, db
 from app.models import (
+    EmailTemplate,
     User,
     UserRole,
     Department,
@@ -132,6 +133,16 @@ def seed_workflow_data(app):
 
     db.session.add(UserRole(user_id=admin.id, role_code=ROLE_SUPER_ADMIN))
 
+    # Migration k1l2m3n4o5p6 ships this row to every real database. create_all
+    # runs no data migrations, so tests seed it themselves; release_event_budgets
+    # refuses to release when the finalized template is missing or inactive.
+    db.session.add(EmailTemplate(
+        template_key="finalized", name="Budget Finalized",
+        subject="Your budget is finalized",
+        body_text="Your budget request has been finalized.",
+        is_active=True,
+    ))
+
     cycle = EventCycle(
         code="TST2026", name="Test Event 2026",
         is_active=True, is_default=True, sort_order=1,
@@ -205,6 +216,8 @@ def seed_workflow_data(app):
         "expense_account": ea,
         "spend_type": st,
         "portfolio": portfolio,
+        "finalized_template": EmailTemplate.query.filter_by(
+            template_key="finalized").one(),
     }
 
 
