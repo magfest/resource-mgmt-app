@@ -44,7 +44,7 @@ from .email_enqueue import build_dedup_key, enqueue_email, resolve_template_key
 from .slack import send_slack_message, is_slack_enabled
 from .slack_messages import (
     format_submitted, format_dispatched, format_needs_attention,
-    format_response_received, format_finalized,
+    format_response_received, format_finalized, format_board_release,
 )
 
 logger = logging.getLogger(__name__)
@@ -426,6 +426,43 @@ def announce_work_item_event(work_item: WorkItem, kind: str) -> None:
         logger.exception(
             f"Slack announcement failed for {kind} on {work_item.public_id}; "
             f"the workflow change is already committed and stands."
+        )
+        db.session.rollback()
+
+
+def announce_board_release(event_cycle, released_count: int) -> None:
+    """Post the one channel summary for a board release. Commits its log row.
+
+    Call this AFTER the caller's commit. It is a webhook with a 10 second
+    timeout (slack.py:193); inside the release transaction it would hold every
+    released work item's row locks for that long.
+
+    Not in _ANNOUNCEMENT_FORMATTERS. That registry is keyed to work-item
+    events and announce_work_item_event takes a WorkItem; a release summary
+    has no work item.
+
+    Never raises. The release is already committed by the time this runs, so
+    an exception here would 500 a request whose real work already landed.
+    """
+    if released_count <= 0:
+        return
+
+    if not is_slack_enabled():
+        return
+
+    try:
+        text, blocks = format_board_release(event_cycle, released_count)
+        send_slack_message(
+            text=text,
+            blocks=blocks,
+            template_key="board_release",
+            work_item_id=None,
+        )
+        db.session.commit()
+    except Exception:
+        logger.exception(
+            f"Board release announcement failed for {event_cycle.code}; "
+            f"the release is already committed and stands."
         )
         db.session.rollback()
 
