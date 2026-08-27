@@ -691,9 +691,10 @@ def unfinalize_work_item(
     work_item.finalized_by_user_id = None
 
     # Sending a budget back undoes its release. A later re-finalize notifies the
-    # department again, which is correct; the numbers changed.
+    # department again, which is correct; the numbers changed. Clearing
+    # board_released_at is what makes the second notification a different
+    # dedup key rather than a swallowed duplicate.
     work_item.board_released_at = None
-    work_item.finalized_notified_at = None
 
     # Optionally reset line reviews
     if reset_lines:

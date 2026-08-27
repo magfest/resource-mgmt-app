@@ -41,7 +41,6 @@ def test_finalize_holds_when_board_has_not_approved(app, client, seed_draft_work
     db.session.refresh(item)
     assert item.status == WORK_ITEM_STATUS_FINALIZED
     assert item.board_released_at is None
-    assert item.finalized_notified_at is None
 
     # The flash must say the department was NOT told, not the release copy.
     body = resp.get_data(as_text=True)
@@ -65,8 +64,6 @@ def test_finalize_releases_when_board_already_approved(app, client, seed_draft_w
     db.session.refresh(item)
     assert item.status == WORK_ITEM_STATUS_FINALIZED
     assert item.board_released_at is not None
-    # The scheduled command sends, not this request.
-    assert item.finalized_notified_at is None
 
     # The flash must say the budget released, not the held copy.
     body = resp.get_data(as_text=True)
@@ -390,7 +387,6 @@ def test_unfinalize_clears_release_stamps(app, seed_draft_work_item):
     item = data["work_item"]
     item.status = WORK_ITEM_STATUS_FINALIZED
     item.board_released_at = _dt(2026, 8, 1, 9, 0)
-    item.finalized_notified_at = _dt(2026, 8, 1, 9, 5)
     db.session.commit()
 
     ctx = UserContext(user_id="test:admin", user=None, roles=("SUPER_ADMIN",),
@@ -401,7 +397,6 @@ def test_unfinalize_clears_release_stamps(app, seed_draft_work_item):
     assert ok, err
     db.session.refresh(item)
     assert item.board_released_at is None
-    assert item.finalized_notified_at is None
 
 
 def test_finish_button_confirm_copy_when_board_has_not_approved(app, client, seed_draft_work_item):

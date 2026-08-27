@@ -212,3 +212,37 @@ def test_finalize_survives_a_failing_enqueue(app, client, seed_draft_work_item):
     db.session.refresh(item)
     assert item.status == WORK_ITEM_STATUS_FINALIZED
     assert item.board_released_at is not None
+
+
+def test_refinalize_after_unfinalize_queues_again(app, client, seed_draft_work_item):
+    """Unfinalize clears board_released_at, so the dedup key changes.
+
+    The dropped finalized_notified_at column is not what made this work.
+    _event_stamp('finalized', item) returns board_released_at
+    (notifications.py:301-302), so a re-release is a different key and enqueues
+    a second row rather than being swallowed as a duplicate.
+    """
+    data = seed_draft_work_item
+    _add_department_member(data)
+    _approve_the_board_topline(data)
+    item = _ready_to_finalize(data)
+    _login(client, "test:admin")
+
+    client.post(FINALIZE_URL.format(item.id), data={"note": "first pass"},
+                follow_redirects=True)
+    first = db.session.query(EmailOutbox).count()
+    assert first > 0
+
+    client.post(f"/admin/final-review/unfinalize/{item.id}",
+                data={"reason": "numbers changed"}, follow_redirects=True)
+    db.session.refresh(item)
+    assert item.board_released_at is None
+
+    # Unfinalize already puts status back to SUBMITTED and leaves the line
+    # review intact (reset_lines was not "yes"), so a second
+    # _ready_to_finalize call would insert a duplicate WorkLineReview and
+    # violate its (work_line_id, stage, approval_group_id) unique constraint.
+    client.post(FINALIZE_URL.format(item.id), data={"note": "second pass"},
+                follow_redirects=True)
+
+    assert db.session.query(EmailOutbox).count() == first * 2
