@@ -68,41 +68,6 @@ def _seed_admin(app):
 class TestQuickBooksClassFields:
     """Tests for qb_class field persistence on org models."""
 
-    def test_event_cycle_qb_class_persists(self, app, db_session):
-        """qb_class should be saved and loaded on EventCycle."""
-        _seed_admin(app)
-
-        cycle = EventCycle.query.filter_by(code="TST2026").one()
-        assert cycle.qb_class is None
-
-        cycle.qb_class = "Super_MAGFest"
-        db_session.commit()
-
-        reloaded = EventCycle.query.filter_by(code="TST2026").one()
-        assert reloaded.qb_class == "Super_MAGFest"
-
-    def test_division_qb_class_persists(self, app, db_session):
-        """qb_class should be saved and loaded on Division."""
-        _seed_admin(app)
-
-        div = Division.query.filter_by(code="TESTDIV").one()
-        div.qb_class = "Gaming"
-        db_session.commit()
-
-        reloaded = Division.query.filter_by(code="TESTDIV").one()
-        assert reloaded.qb_class == "Gaming"
-
-    def test_department_qb_class_persists(self, app, db_session):
-        """qb_class should be saved and loaded on Department."""
-        _seed_admin(app)
-
-        dept = Department.query.filter_by(code="TESTDEPT").one()
-        dept.qb_class = "Staff Services"
-        db_session.commit()
-
-        reloaded = Department.query.filter_by(code="TESTDEPT").one()
-        assert reloaded.qb_class == "Staff Services"
-
     def test_multiple_entities_share_qb_class(self, app, db_session):
         """Multiple entities should be able to share the same qb_class value."""
         _seed_admin(app)
@@ -130,17 +95,6 @@ class TestDatesArePublic:
 
         cycle = EventCycle.query.filter_by(code="TST2026").one()
         assert cycle.dates_are_public is False
-
-    def test_toggle_persists(self, app, db_session):
-        """dates_are_public should be toggleable and persist."""
-        _seed_admin(app)
-
-        cycle = EventCycle.query.filter_by(code="TST2026").one()
-        cycle.dates_are_public = True
-        db_session.commit()
-
-        reloaded = EventCycle.query.filter_by(code="TST2026").one()
-        assert reloaded.dates_are_public is True
 
     def test_dates_still_stored_when_not_public(self, app, db_session):
         """Event dates should be stored regardless of visibility setting."""

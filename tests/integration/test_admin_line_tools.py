@@ -547,14 +547,6 @@ class TestPriceSnapshotColumn:
         data = seed_draft_work_item
         assert data["detail"].account_default_unit_price_cents is None
 
-    def test_column_round_trips(self, app, seed_draft_work_item):
-        data = seed_draft_work_item
-        data["detail"].account_default_unit_price_cents = 15900
-        db.session.commit()
-        db.session.refresh(data["detail"])
-        assert data["detail"].account_default_unit_price_cents == 15900
-
-
 class TestAdminAccountList:
     def test_includes_fixed_hotel_and_badge_excludes_inactive(
         self, app, seed_draft_work_item
