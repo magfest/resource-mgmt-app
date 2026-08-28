@@ -1420,12 +1420,6 @@ def release_event_budgets(
 
     now = datetime.utcnow()
 
-    # The latch is set once. Re-running release for stragglers must not rewrite
-    # the date the board actually approved.
-    if event_cycle.board_approved_at is None:
-        event_cycle.board_approved_at = now
-        event_cycle.board_approved_by_user_id = user_ctx.user_id
-
     held = get_held_budgets(event_cycle.id)
 
     # Refuse the whole release when the template is dark. Queueing against it
@@ -1442,6 +1436,14 @@ def release_event_budgets(
             "department would be emailed. Nothing was released. Activate the "
             "template under Admin then record the approval again."
         )
+
+    # The latch is set once. Re-running release for stragglers must not rewrite
+    # the date the board actually approved. It is set after the template guard,
+    # so a refusal leaves the event untouched without depending on the caller
+    # to roll back.
+    if event_cycle.board_approved_at is None:
+        event_cycle.board_approved_at = now
+        event_cycle.board_approved_by_user_id = user_ctx.user_id
 
     for item in held:
         item.board_released_at = now
