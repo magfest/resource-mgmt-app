@@ -13,6 +13,7 @@ Module organization:
 - supply.py: SupplyCategory, SupplyItem, SupplyOrderLineDetail
 - techops.py: TechOpsServiceType, TechOpsLineDetail, TechOpsRequestDetail
 - telemetry.py: ActivityEvent, NotificationLog, SecurityAuditLog, ConfigAuditEvent
+- email_outbox.py: EmailOutbox, EmailSuppression, EmailMessageBody
 """
 
 # Re-export all constants
@@ -72,6 +73,18 @@ from .constants import (
     NOTIF_STATUS_SENT,
     NOTIF_STATUS_FAILED,
     NOTIF_STATUS_SUPPRESSED,
+    NOTIF_STATUS_CANCELLED,
+    NOTIF_STATUS_RENDER_BLOCKED,
+    # Outbox statuses
+    OUTBOX_STATUS_QUEUED,
+    OUTBOX_STATUS_SENDING,
+    OUTBOX_STATUS_RENDER_BLOCKED,
+    OUTBOX_STATUS_SENT,
+    OUTBOX_STATUS_FAILED,
+    OUTBOX_STATUS_CANCELLED,
+    OUTBOX_STATUS_SUPPRESSED,
+    OUTBOX_TERMINAL_STATUSES,
+    OUTBOX_CLAIMABLE_STATUSES,
     # Config audit actions
     CONFIG_AUDIT_CREATE,
     CONFIG_AUDIT_UPDATE,
@@ -189,6 +202,13 @@ from .telemetry import (
     SiteContent,
 )
 
+# Re-export email outbox models
+from .email_outbox import (
+    EmailOutbox,
+    EmailSuppression,
+    EmailMessageBody,
+)
+
 # Define __all__ for explicit exports
 __all__ = [
     # Constants - Comment visibility
@@ -246,6 +266,18 @@ __all__ = [
     "NOTIF_STATUS_SENT",
     "NOTIF_STATUS_FAILED",
     "NOTIF_STATUS_SUPPRESSED",
+    "NOTIF_STATUS_CANCELLED",
+    "NOTIF_STATUS_RENDER_BLOCKED",
+    # Constants - Outbox statuses
+    "OUTBOX_STATUS_QUEUED",
+    "OUTBOX_STATUS_SENDING",
+    "OUTBOX_STATUS_RENDER_BLOCKED",
+    "OUTBOX_STATUS_SENT",
+    "OUTBOX_STATUS_FAILED",
+    "OUTBOX_STATUS_CANCELLED",
+    "OUTBOX_STATUS_SUPPRESSED",
+    "OUTBOX_TERMINAL_STATUSES",
+    "OUTBOX_CLAIMABLE_STATUSES",
     # Constants - Config audit actions
     "CONFIG_AUDIT_CREATE",
     "CONFIG_AUDIT_UPDATE",
@@ -340,4 +372,8 @@ __all__ = [
     "SecurityAuditLog",
     "EmailTemplate",
     "SiteContent",
+    # Email outbox models
+    "EmailOutbox",
+    "EmailSuppression",
+    "EmailMessageBody",
 ]

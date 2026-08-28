@@ -104,6 +104,20 @@ class NotificationLog(db.Model):
     correlation_id = db.Column(db.String(64), nullable=True, index=True)
     metadata_json = db.Column(db.Text, nullable=True)
 
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", name="fk_notification_logs_event_cycle_id"),
+        nullable=True, index=True,
+    )
+
+    # Written by a future SES event-notification handler, never in phase 1.
+    # NULL means "not known", never "not delivered". Shipped empty because
+    # adding a column to a four-year audit table later is a migration against
+    # a large table; adding it now is a migration against an empty one.
+    delivery_status = db.Column(db.String(16), nullable=True, index=True)
+    delivery_updated_at = db.Column(db.DateTime, nullable=True)
+    delivery_detail = db.Column(db.Text, nullable=True)
+
     work_item = db.relationship("WorkItem")
 
     __table_args__ = (

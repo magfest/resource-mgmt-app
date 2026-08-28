@@ -78,18 +78,19 @@ def supply_order_submit(event: str, dept: str, public_id: str):
     from app.routes.work.helpers.lifecycle import submit_work_item
 
     submit_work_item(work_item, user_ctx)
+
+    # Queue before the commit. notify only INSERTs into email_outbox, so one
+    # commit covers the status change and its emails.
+    from app.services.notifications import (
+        announce_work_item_event,
+        notify_work_item_submitted,
+    )
+    notify_work_item_submitted(work_item)
+
     db.session.commit()
 
-    try:
-        from app.services.notifications import notify_work_item_submitted
-        notify_work_item_submitted(work_item)
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        import logging
-        logging.getLogger(__name__).exception(
-            "Failed to send submission notification for %s", work_item.public_id
-        )
+    # Slack after the commit; it is a webhook call, not a local INSERT.
+    announce_work_item_event(work_item, 'submitted')
 
     flash("Supply order submitted! It's now with reviewers.", "success")
     return redirect(detail_url)

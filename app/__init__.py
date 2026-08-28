@@ -181,11 +181,19 @@ def create_app() -> Flask:
     app.config["AWS_SES_ACCESS_KEY"] = os.environ.get("AWS_SES_ACCESS_KEY")
     app.config["AWS_SES_SECRET_KEY"] = os.environ.get("AWS_SES_SECRET_KEY")
 
-    # Email rate limits (safety mechanisms)
-    app.config["EMAIL_HOURLY_LIMIT"] = int(os.environ.get("EMAIL_HOURLY_LIMIT", "50"))
-    app.config["EMAIL_DAILY_LIMIT"] = int(os.environ.get("EMAIL_DAILY_LIMIT", "200"))
-    app.config["EMAIL_CIRCUIT_BREAKER_THRESHOLD"] = int(os.environ.get("EMAIL_CIRCUIT_BREAKER_THRESHOLD", "5"))
-    app.config["EMAIL_CIRCUIT_BREAKER_WINDOW"] = int(os.environ.get("EMAIL_CIRCUIT_BREAKER_WINDOW", "10"))
+    # Outbox drainer limits. The daily limit is a cap on SES sends per 24
+    # hours, not the old per-process throttle; nothing enforced the previous
+    # 200 default, so raising it to 5000 loosens nothing.
+    app.config["EMAIL_DAILY_LIMIT"] = int(os.environ.get("EMAIL_DAILY_LIMIT", "5000"))
+    app.config["EMAIL_SEND_RATE_PER_SEC"] = int(os.environ.get("EMAIL_SEND_RATE_PER_SEC", "2"))
+    app.config["EMAIL_DRAIN_BATCH_SIZE"] = int(os.environ.get("EMAIL_DRAIN_BATCH_SIZE", "500"))
+    app.config["EMAIL_DRAIN_MAX_SECONDS"] = int(os.environ.get("EMAIL_DRAIN_MAX_SECONDS", "420"))
+    app.config["EMAIL_MAX_ATTEMPTS"] = int(os.environ.get("EMAIL_MAX_ATTEMPTS", "7"))
+    app.config["EMAIL_RENDER_RETRY_MINUTES"] = int(os.environ.get("EMAIL_RENDER_RETRY_MINUTES", "60"))
+    app.config["EMAIL_RENDER_MAX_AGE_DAYS"] = int(os.environ.get("EMAIL_RENDER_MAX_AGE_DAYS", "7"))
+    app.config["EMAIL_BODY_RETENTION_MONTHS"] = int(os.environ.get("EMAIL_BODY_RETENTION_MONTHS", "24"))
+    app.config["EMAIL_OUTBOX_RETENTION_DAYS"] = int(os.environ.get("EMAIL_OUTBOX_RETENTION_DAYS", "90"))
+    app.config["EMAIL_LOG_RETENTION_DAYS"] = int(os.environ.get("EMAIL_LOG_RETENTION_DAYS", str(4 * 365)))
 
     # --- Slack Notifications ---
     app.config["SLACK_ENABLED"] = os.environ.get("SLACK_ENABLED", "").lower() == "true"
@@ -286,8 +294,20 @@ def create_app() -> Flask:
     @app.after_request
     def add_security_headers(response):
         """Add security headers to all responses."""
+        # Endpoints that set their own X-Frame-Options and CSP. This list is
+        # the only way to opt out; a view cannot exempt itself by setting the
+        # header, because both are assigned unconditionally below.
+        #
+        # admin_final.email_message_body serves stored email HTML, the one
+        # document this app returns that it did not write. It needs a stricter
+        # policy than the default and must stay framable by its own admin page,
+        # which frame-ancestors 'none' and X-Frame-Options DENY both prevent.
+        # Adding an entry here widens a security boundary.
+        self_policing = request.endpoint in {"admin_final.email_message_body"}
+
         # Prevent clickjacking - don't allow embedding in iframes
-        response.headers["X-Frame-Options"] = "DENY"
+        if not self_policing:
+            response.headers["X-Frame-Options"] = "DENY"
 
         # Prevent MIME type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -328,7 +348,8 @@ def create_app() -> Flask:
             "base-uri 'self'",
             "object-src 'none'",
         ]
-        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+        if not self_policing:
+            response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
 
         # HSTS - force HTTPS (only in production)
         if is_production:

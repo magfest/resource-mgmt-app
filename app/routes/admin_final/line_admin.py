@@ -123,18 +123,26 @@ def _parse_note(form):
     return raw.strip(), errors
 
 
-def _notify_group_nonblocking(work_item, group_id):
-    """Post-commit notification, mirroring dispatch_to_queue's pattern."""
-    try:
-        from app.services.notifications import notify_work_item_dispatched
-        notify_work_item_dispatched(work_item, [group_id])
-        db.session.commit()  # persist NotificationLog rows
-    except Exception:
-        db.session.rollback()
-        import logging
-        logging.getLogger(__name__).exception(
-            "Failed to send admin-line-tool notification for %s", work_item.public_id
-        )
+def _queue_group_notification(work_item, group_id):
+    """Queue the reviewer notification, mirroring dispatch_to_queue's pattern.
+
+    Call this BEFORE the caller's commit. It only INSERTs into email_outbox,
+    so the notification and the line change land in one transaction. The Slack
+    announcement is _announce_group_notification, after the commit.
+    """
+    from app.services.notifications import notify_work_item_dispatched
+    notify_work_item_dispatched(work_item, [group_id])
+
+
+def _announce_group_notification(work_item):
+    """Post the Slack announcement. Call this AFTER the caller's commit.
+
+    Split from _queue_group_notification because this is a webhook call;
+    inside the transaction it would hold the line's row locks for an HTTP
+    round trip.
+    """
+    from app.services.notifications import announce_work_item_event
+    announce_work_item_event(work_item, 'dispatched')
 
 
 # ============================================================
@@ -263,8 +271,9 @@ def line_change_account_submit(event: str, dept: str, public_id: str, line_num: 
             event=event, dept=dept, public_id=public_id, line_num=line_num,
         ))
 
+    _queue_group_notification(work_item, group.id)
     db.session.commit()
-    _notify_group_nonblocking(work_item, group.id)
+    _announce_group_notification(work_item)
 
     flash(
         f"Line {line_num} moved to {account.name} and sent back to {group.name} for review.",
@@ -395,8 +404,9 @@ def line_add_submit(event: str, dept: str, public_id: str, work_type_slug: str =
             event=event, dept=dept, public_id=public_id,
         ))
 
+    _queue_group_notification(work_item, group.id)
     db.session.commit()
-    _notify_group_nonblocking(work_item, group.id)
+    _announce_group_notification(work_item)
 
     flash(
         f"Line {line.line_number} added and routed to {group.name} for review.",

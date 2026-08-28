@@ -1,15 +1,79 @@
 """
 Email debug and testing routes for system admins.
+
+Also the operator health page for the email outbox: queue depth, backlog age,
+render failures, the suppression list, and the stored copy of any message that
+went out. Every read of outbox state comes from app.services.email_health.
 """
 from datetime import datetime, timedelta
 
-from flask import render_template, redirect, url_for, request, flash
+from flask import (
+    Response, abort, current_app, flash, redirect, render_template, request, url_for,
+)
 
 from app import db
-from app.models import NotificationLog, User
+from app.models import EmailMessageBody, EmailOutbox, EmailSuppression, NotificationLog, User
+from app.models.constants import (
+    OUTBOX_CLAIMABLE_STATUSES,
+    NOTIF_STATUS_CANCELLED,
+    NOTIF_STATUS_FAILED,
+    NOTIF_STATUS_QUEUED,
+    NOTIF_STATUS_RENDER_BLOCKED,
+    NOTIF_STATUS_SENT,
+    NOTIF_STATUS_SUPPRESSED,
+    OUTBOX_STATUS_FAILED,
+)
 from app.routes import get_user_ctx
 from app.routes.admin_final.helpers import require_admin
+from app.services.email_health import (
+    get_queue_health,
+    lookup_messages,
+    pending_messages,
+)
 from . import admin_final_bp
+
+
+# Phase 1 has no bounce or complaint feedback, so SES accepting the message is
+# the furthest the record goes. "Sent" and "Delivered" both claim knowledge
+# nobody here has, and an operator reading "Delivered" stops looking.
+NOTIF_STATUS_LABELS = {
+    NOTIF_STATUS_QUEUED: "Queued",
+    NOTIF_STATUS_FAILED: "Failed",
+    NOTIF_STATUS_SUPPRESSED: "Suppressed",
+    NOTIF_STATUS_CANCELLED: "Cancelled",
+    NOTIF_STATUS_RENDER_BLOCKED: "Render blocked",
+    "DEBOUNCED": "Debounced",
+    "RATE_LIMITED": "Rate limited",
+}
+
+
+def notif_status_label(status, channel="EMAIL"):
+    """Human label for a notification status. Slack confirms a post; SES does not."""
+    if status == NOTIF_STATUS_SENT:
+        return "Posted to Slack" if channel == "SLACK" else "Accepted by SES"
+    return NOTIF_STATUS_LABELS.get(status, status)
+
+
+def _ses_quota():
+    """Return the SES 24-hour quota, or None if it cannot be read.
+
+    An operator opens this page when email is already broken. A quota call that
+    raises must cost the panel, not the page.
+    """
+    if not current_app.config.get("EMAIL_ENABLED", False):
+        return None
+    try:
+        from app.services.email import _ses_client
+
+        quota = _ses_client().get_send_quota()
+        return {
+            "max_24_hour": quota.get("Max24HourSend"),
+            "sent_last_24_hours": quota.get("SentLast24Hours"),
+            "max_send_rate": quota.get("MaxSendRate"),
+        }
+    except Exception as exc:
+        current_app.logger.warning("SES quota unavailable: %s", exc)
+        return None
 
 
 @admin_final_bp.get("/admin/email/")
@@ -48,34 +112,74 @@ def email_debug():
     all_templates = db.session.query(NotificationLog.template_key).distinct().all()
     all_channels = db.session.query(NotificationLog.channel).distinct().all()
 
-    # Get counts by status, with SENT split by channel
-    status_counts = {}
-    for status in ["SUPPRESSED", "DEBOUNCED", "FAILED", "QUEUED"]:
+    # Counts by status, with SENT split by channel. A list of (label, count,
+    # tone) rather than a dict keyed on the raw status: the tile label is
+    # channel-aware, and "SENT" is never a label an operator reads.
+    status_counts = []
+    # Every status the drainer writes needs a tile. RENDER_BLOCKED and
+    # CANCELLED were missing, so the tiles summed to less than the log below
+    # them and the one status an operator most needs to see was the one absent.
+    tones = {
+        NOTIF_STATUS_SUPPRESSED: "warn",
+        "DEBOUNCED": "info",
+        NOTIF_STATUS_FAILED: "bad",
+        NOTIF_STATUS_RENDER_BLOCKED: "bad",
+        NOTIF_STATUS_CANCELLED: "neutral",
+        NOTIF_STATUS_QUEUED: "neutral",
+    }
+    for status, tone in tones.items():
         count = db.session.query(NotificationLog).filter(
             NotificationLog.status == status,
             NotificationLog.created_at >= cutoff,
         ).count()
         if count > 0:
-            status_counts[status] = count
+            status_counts.append((notif_status_label(status), count, tone))
 
     # Split SENT by channel
     email_sent = db.session.query(NotificationLog).filter(
-        NotificationLog.status == "SENT",
+        NotificationLog.status == NOTIF_STATUS_SENT,
         NotificationLog.channel == "EMAIL",
         NotificationLog.created_at >= cutoff,
     ).count()
     slack_sent = db.session.query(NotificationLog).filter(
-        NotificationLog.status == "SENT",
+        NotificationLog.status == NOTIF_STATUS_SENT,
         NotificationLog.channel == "SLACK",
         NotificationLog.created_at >= cutoff,
     ).count()
     if email_sent > 0:
-        status_counts["SENT (Email)"] = email_sent
+        status_counts.append((notif_status_label(NOTIF_STATUS_SENT, "EMAIL"), email_sent, "good"))
     if slack_sent > 0:
-        status_counts["SENT (Slack)"] = slack_sent
+        status_counts.append((notif_status_label(NOTIF_STATUS_SENT, "SLACK"), slack_sent, "good"))
+
+    health = get_queue_health()
+
+    # Queued rows have no Notification Log entry; that table is written only
+    # when a row terminates. Read them from the outbox so the page answers
+    # "what is waiting" as well as "what happened". Hidden when a status
+    # filter excludes them, since they are all non-terminal.
+    pending = []
+    if not status_filter or status_filter in OUTBOX_CLAIMABLE_STATUSES:
+        if channel_filter in ("", "EMAIL"):
+            pending = pending_messages()
+            if template_filter:
+                pending = [p for p in pending
+                           if p["template_key"] == template_filter]
+
+    recent_failures = (
+        db.session.query(EmailOutbox)
+        .filter(EmailOutbox.status == OUTBOX_STATUS_FAILED)
+        .order_by(EmailOutbox.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    suppressions = (
+        db.session.query(EmailSuppression)
+        .order_by(EmailSuppression.email)
+        .all()
+    )
 
     # Check email config
-    from flask import current_app
     email_config = {
         "enabled": current_app.config.get("EMAIL_ENABLED", False),
         "from_address": current_app.config.get("EMAIL_FROM_ADDRESS", "not set"),
@@ -94,10 +198,8 @@ def email_debug():
         "channel_id": current_app.config.get("SLACK_CHANNEL_ID") or "not set",
     }
 
-    # Get rate limit status
-    from app.services.email import get_rate_limit_status
-    rate_limits = get_rate_limit_status()
-
+    # No rate-limit panel: the limiter went with the outbox rebuild. Task 12
+    # puts queue health here instead.
     return render_template(
         "admin_final/email_debug.html",
         user_ctx=user_ctx,
@@ -112,7 +214,12 @@ def email_debug():
         status_counts=status_counts,
         email_config=email_config,
         slack_config=slack_config,
-        rate_limits=rate_limits,
+        health=health,
+        pending=pending,
+        recent_failures=recent_failures,
+        suppressions=suppressions,
+        ses_quota=_ses_quota(),
+        status_label=notif_status_label,
     )
 
 
@@ -136,7 +243,8 @@ def email_test_send():
             return redirect(url_for("admin_final.email_debug"))
 
     # Send test email
-    from app.services.email import send_email, is_email_enabled
+    from app.services.email import build_message_parts, send_via_ses, write_notification_log, is_email_enabled
+    from app.models import NOTIF_STATUS_SENT, NOTIF_STATUS_SUPPRESSED
 
     subject = "[MAGFest Budget] Test Email"
     body = f"""This is a test email from the MAGFest Budget system.
@@ -148,20 +256,36 @@ Email enabled: {is_email_enabled()}
 If you received this email, your email configuration is working correctly.
 """
 
-    success = send_email(
-        to=recipient,
-        subject=subject,
-        body_text=body,
+    # The kill switch belongs here, not in the transport: send_via_ses stays a
+    # thin call with no config reads, since the drainer relies on that.
+    if not is_email_enabled():
+        write_notification_log(
+            recipient_email=recipient,
+            template_key="test",
+            status=NOTIF_STATUS_SUPPRESSED,
+            subject=subject,
+            error="Email disabled",
+        )
+        db.session.commit()
+        flash(f"Test email logged (EMAIL_ENABLED=false). Check log below.", "info")
+        return redirect(url_for("admin_final.email_debug"))
+
+    parts = build_message_parts(body)
+    result = send_via_ses(to=recipient, subject=subject, parts=parts)
+    # The transport writes no NotificationLog row, so this route writes its own.
+    write_notification_log(
+        recipient_email=recipient,
         template_key="test",
-        skip_debounce=True,  # Always send test emails
+        status=result.status,
+        subject=subject,
+        provider_message_id=result.provider_message_id,
+        error=result.error,
     )
     db.session.commit()
+    success = result.status == NOTIF_STATUS_SENT
 
     if success:
-        if is_email_enabled():
-            flash(f"Test email sent to {recipient}", "success")
-        else:
-            flash(f"Test email logged (EMAIL_ENABLED=false). Check log below.", "info")
+        flash(f"Test email sent to {recipient}", "success")
     else:
         flash("Failed to send test email. Check the log for details.", "error")
 
@@ -208,4 +332,143 @@ def slack_test_send():
     else:
         flash("Failed to send test Slack message. Check the log for details.", "error")
 
+    return redirect(url_for("admin_final.email_debug"))
+
+
+@admin_final_bp.get("/admin/email/lookup")
+def email_message_lookup():
+    """Answer "did this person get the email" from the notification log.
+
+    Reads NotificationLog through email_health, not the outbox: the outbox is
+    pruned at 90 days and would go blind on day 91 without saying so.
+    """
+    user_ctx = get_user_ctx()
+    require_admin(user_ctx)
+
+    recipient = (request.args.get("recipient") or "").strip()
+    public_id = (request.args.get("public_id") or "").strip()
+
+    searched = bool(recipient or public_id)
+    results = []
+    if searched:
+        results = lookup_messages(
+            recipient_email=recipient or None,
+            public_id=public_id or None,
+        )
+
+    return render_template(
+        "admin_final/email_lookup.html",
+        user_ctx=user_ctx,
+        recipient=recipient,
+        public_id=public_id,
+        searched=searched,
+        results=results,
+        status_label=notif_status_label,
+    )
+
+
+@admin_final_bp.get("/admin/email/message/<int:log_id>")
+def email_message(log_id):
+    """Show one message's metadata and its stored body in an isolated frame."""
+    user_ctx = get_user_ctx()
+    require_admin(user_ctx)
+
+    log = db.session.get(NotificationLog, log_id)
+    if log is None:
+        abort(404)
+
+    body = (
+        db.session.query(EmailMessageBody)
+        .filter(EmailMessageBody.notification_log_id == log_id)
+        .first()
+    )
+
+    return render_template(
+        "admin_final/email_message.html",
+        user_ctx=user_ctx,
+        log=log,
+        body=body,
+        status_label=notif_status_label,
+    )
+
+
+@admin_final_bp.get("/admin/email/message/<int:log_id>/body")
+def email_message_body(log_id):
+    """Serve one stored HTML body as its own isolated document.
+
+    The body is attacker-influenced text; a requester controls line
+    descriptions that end up in it. It never passes through the admin page's
+    own template, so the page cannot be scripted by its own content. The
+    response overrides the app-wide policy set in add_security_headers: that
+    policy allows 'self' scripts and sets frame-ancestors 'none', which would
+    both permit script here and blank the iframe that embeds it.
+    """
+    user_ctx = get_user_ctx()
+    require_admin(user_ctx)
+
+    body = (
+        db.session.query(EmailMessageBody)
+        .filter(EmailMessageBody.notification_log_id == log_id)
+        .first()
+    )
+    if body is None or not body.body_html:
+        abort(404)
+
+    response = Response(body.body_html, mimetype="text/html")
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'"
+    )
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@admin_final_bp.post("/admin/email/suppression/add")
+def email_suppression_add():
+    """Add one address to the suppression list."""
+    user_ctx = get_user_ctx()
+    require_admin(user_ctx)
+
+    email = (request.form.get("email") or "").strip().lower()
+    reason = (request.form.get("reason") or "").strip() or None
+
+    if not email:
+        flash("Enter an email address to suppress.", "error")
+        return redirect(url_for("admin_final.email_debug"))
+
+    # The drainer matches on lower(email), so the stored value is lowercased
+    # here. A mixed-case row would suppress nothing and look like it worked.
+    existing = db.session.query(EmailSuppression).filter(
+        db.func.lower(EmailSuppression.email) == email
+    ).first()
+    if existing:
+        flash(f"{email} is already suppressed.", "info")
+        return redirect(url_for("admin_final.email_debug"))
+
+    db.session.add(EmailSuppression(
+        email=email, reason=reason, created_by_user_id=user_ctx.user_id,
+    ))
+    db.session.commit()
+    flash(f"Suppressed {email}.", "success")
+    return redirect(url_for("admin_final.email_debug"))
+
+
+@admin_final_bp.post("/admin/email/suppression/remove")
+def email_suppression_remove():
+    """Remove one address from the suppression list."""
+    user_ctx = get_user_ctx()
+    require_admin(user_ctx)
+
+    email = (request.form.get("email") or "").strip().lower()
+    row = db.session.query(EmailSuppression).filter(
+        db.func.lower(EmailSuppression.email) == email
+    ).first()
+
+    if row is None:
+        flash(f"{email or 'That address'} is not suppressed.", "info")
+        return redirect(url_for("admin_final.email_debug"))
+
+    db.session.delete(row)
+    db.session.commit()
+    flash(f"Removed {email} from the suppression list.", "success")
     return redirect(url_for("admin_final.email_debug"))

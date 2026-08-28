@@ -111,6 +111,10 @@ NOTIF_STATUS_QUEUED = "QUEUED"
 NOTIF_STATUS_SENT = "SENT"
 NOTIF_STATUS_FAILED = "FAILED"
 NOTIF_STATUS_SUPPRESSED = "SUPPRESSED"
+# Outbox outcomes that predate any send attempt. The email debug page
+# builds its status filter from distinct values, so these need no UI change.
+NOTIF_STATUS_CANCELLED = "CANCELLED"
+NOTIF_STATUS_RENDER_BLOCKED = "RENDER_BLOCKED"
 
 # ============================================================
 # Config audit actions
@@ -172,3 +176,31 @@ ROUTING_STRATEGY_EXPENSE_ACCOUNT = "expense_account"
 ROUTING_STRATEGY_CONTRACT_TYPE = "contract_type"
 ROUTING_STRATEGY_CATEGORY = "category"
 ROUTING_STRATEGY_DIRECT = "direct"
+
+# ============================================================
+# Email outbox statuses
+# ============================================================
+
+OUTBOX_STATUS_QUEUED = "QUEUED"
+OUTBOX_STATUS_SENDING = "SENDING"
+OUTBOX_STATUS_RENDER_BLOCKED = "RENDER_BLOCKED"
+OUTBOX_STATUS_SENT = "SENT"
+OUTBOX_STATUS_FAILED = "FAILED"
+OUTBOX_STATUS_CANCELLED = "CANCELLED"
+OUTBOX_STATUS_SUPPRESSED = "SUPPRESSED"
+
+OUTBOX_TERMINAL_STATUSES = (
+    OUTBOX_STATUS_SENT,
+    OUTBOX_STATUS_FAILED,
+    OUTBOX_STATUS_CANCELLED,
+    OUTBOX_STATUS_SUPPRESSED,
+)
+OUTBOX_CLAIMABLE_STATUSES = (OUTBOX_STATUS_QUEUED, OUTBOX_STATUS_RENDER_BLOCKED)
+
+ENQUEUE_OUTCOME_CREATED = "CREATED"
+ENQUEUE_OUTCOME_DUPLICATE = "DUPLICATE"
+
+NOTIFICATION_KINDS = (
+    "submitted", "dispatched", "needs_attention", "response_received",
+    "submission_confirmation", "finalized", "submission_reminder",
+)

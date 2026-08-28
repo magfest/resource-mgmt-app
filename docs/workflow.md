@@ -56,11 +56,13 @@ admin-final (it auto-finalizes when the last line is decided).
 For BUDGET, `FINALIZED` does not mean the department was told. A finished
 budget waits for the board to approve the event topline before it releases.
 `EventCycle.board_approved_at` is the gate; `WorkItem.board_released_at` records
-the release, and `finalized_notified_at` records the email. The detail page
-shows a held item as `PENDING_BOARD_APPROVAL`, a display-only status like
-`UNDER_REVIEW` below. It is not a constant in `constants.py`, and it is scoped
-to work types where `WorkTypeConfig.uses_board_release` is true, which as of
-August 2026 is BUDGET only.
+the release, and `finalized_notified_at` records that the email was queued, not
+that it was delivered. See `docs/email-outbox.md` for what became of it after
+that. The detail page shows a held item as `PENDING_BOARD_APPROVAL`, a
+display-only status like `UNDER_REVIEW` below. It is not a constant in
+`constants.py`, and it is scoped to work types where
+`WorkTypeConfig.uses_board_release` is true, which as of August 2026 is
+BUDGET only.
 
 Two further statuses are declared in `app/models/constants.py:18-25` but are never
 written to `work_item.status`:

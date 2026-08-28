@@ -8,7 +8,7 @@ from __future__ import annotations
 from flask import Blueprint, redirect, url_for, request, abort, flash
 
 from app import db
-from app.models import EmailTemplate
+from app.models import EmailTemplate, NOTIF_STATUS_SENT
 from app.routes import h
 from app.services.email_templates import (
     get_all_templates,
@@ -17,7 +17,7 @@ from app.services.email_templates import (
     preview_template,
     EMAIL_TEMPLATE_VARIABLES,
 )
-from app.services.email import send_email
+from app.services.email import build_message_parts, send_via_ses, write_notification_log
 from .helpers import (
     require_budget_admin,
     render_budget_admin_page,
@@ -241,15 +241,20 @@ def test_email_template(template_id: int):
     # Add test prefix to subject
     test_subject = f"[TEST] {rendered_subject}"
 
-    # Send test email (skip rate limits for test emails)
-    success = send_email(
-        to=user.email,
-        subject=test_subject,
-        body_text=rendered_body,
+    # Send test email
+    parts = build_message_parts(rendered_body)
+    result = send_via_ses(to=user.email, subject=test_subject, parts=parts)
+    # The transport writes no NotificationLog row, so this route writes its own.
+    write_notification_log(
+        recipient_email=user.email,
         template_key=f"test_{email_template.template_key}",
-        skip_rate_limit=True,
+        status=result.status,
+        subject=test_subject,
+        provider_message_id=result.provider_message_id,
+        error=result.error,
     )
-    db.session.commit()  # Commit the notification log
+    db.session.commit()
+    success = result.status == NOTIF_STATUS_SENT
 
     if success:
         flash(f"Test email sent to {user.email}", "success")

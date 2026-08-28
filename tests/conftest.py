@@ -112,9 +112,9 @@ def seed_workflow_data(app):
     Seed the standard org structure, work type config, and users needed
     for workflow tests.
 
-    Creates: admin user (SUPER_ADMIN), reviewer user, event cycle, division,
-    department, BUDGET work type + config, approval group, expense account,
-    spend type, and an empty portfolio.
+    Creates: admin user (SUPER_ADMIN), reviewer user, two event cycles,
+    division, department, BUDGET work type + config, approval group, expense
+    account, spend type, and an empty portfolio for the first cycle.
 
     Note: Does not use a nested app.app_context() — the `app` fixture
     already provides one. This keeps ORM objects attached to the session.
@@ -137,6 +137,15 @@ def seed_workflow_data(app):
         is_active=True, is_default=True, sort_order=1,
     )
     db.session.add(cycle)
+
+    # A second event sharing the same department. Department rows are global,
+    # so any per-department key that omits the event cycle collides across
+    # these two.
+    second_cycle = EventCycle(
+        code="TSTALT", name="Test Event Alt",
+        is_active=True, is_default=False, sort_order=2,
+    )
+    db.session.add(second_cycle)
 
     div = Division(
         code="TESTDIV", name="Test Division", is_active=True,
@@ -187,6 +196,7 @@ def seed_workflow_data(app):
         "admin": admin,
         "reviewer": reviewer,
         "cycle": cycle,
+        "second_event_cycle": second_cycle,
         "division": div,
         "department": dept,
         "work_type": wt,

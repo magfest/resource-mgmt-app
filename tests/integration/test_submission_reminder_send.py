@@ -1,13 +1,9 @@
-"""
-Tests for send_submission_reminders.
+"""Tests for send_submission_reminders and the CLI command that drives it.
 
-Covers:
-- Dry-run sends no emails but returns a populated summary.
-- Live-run calls send_email() once per (dept, recipient) with right args.
-- send_email() exceptions are contained — run completes, exception
-  counted as a miss.
-- Live-run commits NotificationLog rows per-recipient (regression: CLI
-  commands don't get the implicit request-end commit HTTP routes do).
+The orchestrator queues outbox rows; it renders nothing and sends nothing.
+Covers the dry-run summary, one row per recipient, per-recipient failure
+isolation, the commit that keeps the rows alive past CLI exit, and the
+command's own exit codes and output.
 """
 from __future__ import annotations
 
@@ -19,6 +15,7 @@ from app import db
 from app.models import (
     Department,
     EventCycle,
+    EmailOutbox,
     EmailTemplate,
     WorkType,
     WorkTypeConfig,
@@ -26,6 +23,8 @@ from app.models import (
     DepartmentMembership,
     ROUTING_STRATEGY_DIRECT,
 )
+from app.models.constants import OUTBOX_STATUS_QUEUED
+from app.services import notifications
 from app.services.notifications import send_submission_reminders
 
 
@@ -35,7 +34,9 @@ def seeded(app):
     Seed an event cycle, BUDGET work type, two departments with two members
     each, and the submission_reminder template row.
 
-    Neither department has a portfolio, so both will be audience targets.
+    Neither department has a portfolio, so both will be audience targets. The
+    template row is seeded for the CLI's preflight; the orchestrator itself
+    never reads it, because rendering moved to the drainer.
     """
     cycle = EventCycle(
         code="REM2026", name="Reminder Test Event",
@@ -101,96 +102,148 @@ def seeded(app):
     }
 
 
-def test_dry_run_sends_no_emails_but_reports_targets(seeded):
-    with patch("app.services.notifications.send_email") as mock_send:
-        summary = send_submission_reminders(seeded["cycle"], dry_run=True)
+def test_dry_run_queues_nothing_but_reports_targets(seeded):
+    summary = send_submission_reminders(seeded["cycle"], dry_run=True)
 
-    assert mock_send.call_count == 0, (
-        f"Dry-run must not call send_email; got {mock_send.call_count} calls"
-    )
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 0
     assert summary.dry_run is True
     assert summary.targets_total == 2
     assert summary.targets_with_recipients == 2
-    assert summary.emails_sent == 0
-    assert summary.emails_attempted == 0
+    assert summary.rows_queued == 0
+    assert summary.recipients_total == 0
 
 
-def test_live_run_calls_send_email_per_recipient(seeded):
-    with patch(
-        "app.services.notifications.send_email",
-        return_value=True,
-    ) as mock_send:
+def test_live_run_queues_one_row_per_recipient(seeded):
+    with patch("app.services.email.send_via_ses") as ses:
         summary = send_submission_reminders(seeded["cycle"], dry_run=False)
 
-    # Two depts * two recipients each = 4 calls.
-    assert mock_send.call_count == 4
-    assert summary.emails_sent == 4
-    assert summary.emails_attempted == 4
+    assert ses.call_count == 0, "the orchestrator must queue, never send"
+    # Two depts * two recipients each = 4 rows.
+    assert summary.rows_queued == 4
+    assert summary.recipients_total == 4
     assert summary.dry_run is False
 
-    # Spot-check the kwargs of the first call. All calls share subject/body
-    # since render-per-department uses the same template, but recipient
-    # differs per call.
-    recipients_called = {c.kwargs["to"] for c in mock_send.call_args_list}
-    assert recipients_called == {
+    db.session.rollback()
+    rows = db.session.query(EmailOutbox).all()
+    assert len(rows) == 4
+    assert {r.status for r in rows} == {OUTBOX_STATUS_QUEUED}
+    assert {r.template_key for r in rows} == {"submission_reminder"}
+    assert {r.recipient_email for r in rows} == {
         "a1@test.local", "a2@test.local",
         "b1@test.local", "b2@test.local",
     }
-    # All calls use the right template_key.
-    template_keys = {c.kwargs["template_key"] for c in mock_send.call_args_list}
-    assert template_keys == {"submission_reminder"}
-    # Subject should contain the event name.
-    subjects = {c.kwargs["subject"] for c in mock_send.call_args_list}
-    assert all("Reminder Test Event" in s for s in subjects)
+    assert {r.event_cycle_id for r in rows} == {seeded["cycle"].id}
+    assert {r.department_id for r in rows} == {
+        seeded["dept_a"].id, seeded["dept_b"].id,
+    }
+    # A reminder belongs to a department, not to any one request.
+    assert {r.work_item_id for r in rows} == {None}
 
 
-def test_send_email_exception_is_contained(seeded):
-    """
-    If send_email raises for one recipient, the run continues for others
-    and that one recipient is counted as a miss.
-    """
-    def fake_send(**kwargs):
-        if kwargs["to"] == "a1@test.local":
-            raise RuntimeError("simulated SES outage for one recipient")
-        return True
+def test_enqueue_exception_is_contained(seeded):
+    """One recipient's failed INSERT costs that recipient only."""
+    real_enqueue = notifications.enqueue_email
 
-    with patch(
-        "app.services.notifications.send_email",
-        side_effect=fake_send,
-    ) as mock_send:
+    def fail_one(*args, **kwargs):
+        if args[1] == "a1@test.local":
+            raise RuntimeError("simulated INSERT failure for one recipient")
+        return real_enqueue(*args, **kwargs)
+
+    with patch("app.services.notifications.enqueue_email", side_effect=fail_one):
         summary = send_submission_reminders(seeded["cycle"], dry_run=False)
 
-    # All 4 calls were attempted; 3 succeeded, 1 raised.
-    assert mock_send.call_count == 4
-    assert summary.emails_attempted == 4
-    assert summary.emails_sent == 3
+    assert summary.recipients_total == 4
+    assert summary.rows_queued == 3
+
+    db.session.rollback()
+    queued = {r.recipient_email for r in db.session.query(EmailOutbox).all()}
+    assert queued == {"a2@test.local", "b1@test.local", "b2@test.local"}
 
 
-def test_live_run_commits_per_recipient(seeded):
+def test_live_run_commits_the_rows(seeded):
+    """The orchestrator must commit. CLI commands get no implicit commit at
+    request teardown the way HTTP routes do; without it the queued rows are
+    discarded on process exit and nothing is ever sent.
     """
-    Regression test: the orchestrator must commit per-recipient so the
-    NotificationLog rows that send_email() adds actually persist. CLI
-    commands don't get an implicit commit at request-end like HTTP routes
-    do; without the explicit commit, the rows are discarded on process
-    exit and the audit trail is lost.
+    send_submission_reminders(seeded["cycle"], dry_run=False)
 
-    A deeper test that asserts NotificationLog rows are actually written
-    is blocked by a pre-existing schema quirk (NotificationLog.id is a
-    bare BigInteger PK without a SQLite Integer variant per
-    feedback_sqlite_bigint_pk; SQLite won't autoincrement it). Spying on
-    db.session.commit instead is enough to catch "someone removed the
-    commit call" — the regression we're guarding against.
-    """
-    with patch("app.services.notifications.send_email", return_value=True):
-        with patch.object(db.session, "commit") as mock_commit:
-            summary = send_submission_reminders(seeded["cycle"], dry_run=False)
+    # Anything still uncommitted disappears here, which is exactly what
+    # happens when a CLI process exits.
+    db.session.rollback()
 
-    # 2 departments * 2 recipients each = 4 recipients. The orchestrator
-    # should commit exactly once per recipient (not end-of-run, so a
-    # mid-run crash still leaves a clear audit trail).
-    assert mock_commit.call_count == 4, (
-        f"Expected commit per recipient (4 total). Got {mock_commit.call_count}. "
-        f"If this drops to 0, the orchestrator lost its per-recipient commit — "
-        f"NotificationLog rows would be discarded on CLI exit."
+    assert db.session.query(EmailOutbox).count() == 4
+
+
+# ============================================================
+# CLI: flask send-submission-reminders
+# ============================================================
+#
+# This runs unattended under Heroku Scheduler. An untested branch here fails
+# at 03:00 with nobody reading the output, so the command gets its own
+# coverage rather than relying on the orchestrator tests above.
+
+
+def test_cli_dry_run_queues_nothing(app, seeded):
+    result = app.test_cli_runner().invoke(
+        args=["send-submission-reminders", "REM2026"]
     )
-    assert summary.emails_sent == 4
+
+    assert result.exit_code == 0
+    assert "DRY RUN" in result.output
+    assert "Would queue: 4 emails" in result.output
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 0
+
+
+def test_cli_send_queues_a_row_per_recipient(app, seeded):
+    with patch("app.services.email.send_via_ses") as ses:
+        result = app.test_cli_runner().invoke(
+            args=["send-submission-reminders", "REM2026", "--send"]
+        )
+
+    assert result.exit_code == 0
+    assert ses.call_count == 0
+    assert "Queued: 4 / 4 rows" in result.output
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 4
+
+
+def test_cli_second_run_same_day_queues_nothing_and_still_exits_zero(app, seeded):
+    """The removed exit code 3 lived here.
+
+    The dedup key is scoped to the calendar day, so the Scheduler's second run
+    legitimately queues nothing. Under the old contract that was a partial-send
+    failure and exited 3, which would have reported a healthy run as broken.
+    """
+    runner = app.test_cli_runner()
+    runner.invoke(args=["send-submission-reminders", "REM2026", "--send"])
+
+    result = runner.invoke(args=["send-submission-reminders", "REM2026", "--send"])
+
+    assert result.exit_code == 0
+    assert "Queued: 0 / 4 rows" in result.output
+    assert "Already queued today: 4" in result.output
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 4
+
+
+def test_cli_missing_template_exits_2(app, seeded):
+    """The preflight refuses before queueing anything.
+
+    An operator can silence reminders by deactivating the template row; the
+    command must exit loudly rather than queue rows the drainer cannot render.
+    """
+    template = EmailTemplate.query.filter_by(
+        template_key='submission_reminder'
+    ).one()
+    template.is_active = False
+    db.session.commit()
+
+    result = app.test_cli_runner().invoke(
+        args=["send-submission-reminders", "REM2026", "--send"]
+    )
+
+    assert result.exit_code == 2
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 0
