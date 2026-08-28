@@ -40,14 +40,18 @@ This application manages work requests for MAGFest events through a shared workf
 ### Scheduled Jobs (Heroku Scheduler)
 
 Each job below is configured manually in the Heroku Scheduler add-on. No deploy
-step wires these up.
+step wires these up, so a rebuilt app has none of them until someone adds them.
 
-- Run `flask send-submission-reminders <EVENT_CODE> --send` for each active
-  event. It emails departments that have not yet submitted a budget. Without
-  `--send` it lists who would receive a reminder and exits.
-- Run `flask send-board-release-emails --send`. It emails departments whose
-  budgets the board has released and stamps `work_items.finalized_notified_at`.
-  Without `--send` it lists what it would send and exits.
+| Command | Frequency | Does |
+| --- | --- | --- |
+| `flask drain-email-outbox` | Every 10 minutes | Sends queued email, then prunes terminal outbox rows past 90 days. The only code path that calls SES |
+| `flask prune-email-audit` | Daily | Deletes expired message bodies and notification log rows |
+| `flask send-submission-reminders <EVENT_CODE> --send` | Not recorded | Emails departments that have not yet submitted a budget, one run per active event |
+
+Without `--send`, `send-submission-reminders` lists who would receive a reminder
+and exits. Its cadence was never written down; the Scheduler add-on is the only
+record. See [Email outbox](./email-outbox.md) for what the two email jobs queue
+and how to trace a message that did not arrive.
 
 ## Getting Started
 

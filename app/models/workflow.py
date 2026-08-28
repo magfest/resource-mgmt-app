@@ -302,10 +302,6 @@ class WorkItem(db.Model):
     # waits here until the board approves the event topline.
     board_released_at = db.Column(db.DateTime, nullable=True, index=True)
 
-    # When the finalized email actually left. Separate from board_released_at
-    # because a scheduled command sends, not the request that releases.
-    finalized_notified_at = db.Column(db.DateTime, nullable=True, index=True)
-
     # Soft archive (rare; normally archive portfolios instead)
     is_archived = db.Column(db.Boolean, nullable=False, default=False, index=True)
     archived_at = db.Column(db.DateTime, nullable=True, index=True)

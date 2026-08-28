@@ -22,9 +22,6 @@ from app import db
 from app.models import NotificationLog, NOTIF_STATUS_SENT, NOTIF_STATUS_FAILED
 
 
-DEFAULT_DAILY_LIMIT = 200
-
-
 def is_email_enabled() -> bool:
     """Check if email sending is enabled."""
     return current_app.config.get('EMAIL_ENABLED', False)
@@ -33,11 +30,6 @@ def is_email_enabled() -> bool:
 def get_from_address() -> str:
     """Get the from address."""
     return current_app.config.get('EMAIL_FROM_ADDRESS', 'noreply@magfest.org')
-
-
-def get_daily_limit() -> int:
-    """Get max emails per day."""
-    return current_app.config.get('EMAIL_DAILY_LIMIT', DEFAULT_DAILY_LIMIT)
 
 
 @dataclass(frozen=True)

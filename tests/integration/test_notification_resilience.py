@@ -10,8 +10,9 @@ not undo the submit. They are now queued inside the submit transaction, so
 the guard is the per-recipient try/except in _enqueue_emails. A broken
 enqueue costs the email, not the submit.
 
-Finalize no longer notifies inline; `flask send-board-release-emails` owns
-that send. Its resilience is that command's test coverage, not this file's.
+Finalize notifies inline again, inside the release branch of
+finalize_work_item. Its resilience is the try/except around that call, covered
+in test_board_release_trigger.py.
 """
 from unittest.mock import patch
 
@@ -79,7 +80,3 @@ class TestNotificationResilience:
         ).one()
         assert work_item.status == WORK_ITEM_STATUS_AWAITING_DISPATCH
         assert db.session.query(EmailOutbox).count() > 0
-
-    # test_finalize_succeeds_when_notification_raises removed: finalize no
-    # longer calls notify_work_item_finalized, so the mocked exception can't
-    # fire. Coverage moves to the send-board-release-emails command.

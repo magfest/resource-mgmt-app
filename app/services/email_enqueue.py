@@ -20,10 +20,10 @@ from app.models.constants import (
 # "Once ever" is per SUBMISSION and per RELEASE, not per work item for all
 # time. Both of these events legitimately recur on the same row: recall then
 # resubmit re-sets work_item.submitted_at (lifecycle.py:113 nulls it, :59
-# re-sets it), and unfinalize clears board_released_at and
-# finalized_notified_at (admin_final/helpers.py:683-684) precisely so a
-# re-finalize notifies again. Keying on item id alone silently drops the
-# second one, because the first row still owns the key.
+# re-sets it), and unfinalize clears board_released_at
+# (admin_final/helpers.py:697) precisely so a re-finalize notifies again.
+# Keying on item id alone silently drops the second one, because the first
+# row still owns the key.
 _ONCE_PER_EVENT_KINDS = ("submission_confirmation", "finalized")
 
 

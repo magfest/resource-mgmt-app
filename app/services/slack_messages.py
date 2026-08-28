@@ -86,3 +86,35 @@ def format_finalized(work_item: WorkItem) -> tuple:
     return _format_message(
         ":white_check_mark:", "Finalized", work_item,
     )
+
+
+def format_board_release(event_cycle, released_count: int) -> tuple:
+    """The board approved an event topline and released its held budgets.
+
+    Event-level, not work-item-level. One board action releases every held
+    budget in the event, and one post per budget buries the channel.
+    """
+    url = f"{_get_base_url()}/admin/final/"
+    noun = "budget" if released_count == 1 else "budgets"
+
+    text = (f":unlock: FY budget approval recorded for {event_cycle.name}: "
+            f"{released_count} {noun} released")
+
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f":unlock: *FY budget approval recorded for {event_cycle.name}*",
+            },
+        },
+        {
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn",
+                "text": f"{released_count} {noun} released  |  <{url}|Open admin final>",
+            }],
+        },
+    ]
+
+    return text, blocks

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
-from flask import abort
+from flask import abort, current_app
 from sqlalchemy.orm import joinedload, selectinload
 
 from app import db
@@ -27,6 +27,10 @@ from app.models import (
     ExpenseAccount,
     SpendType,
     ApprovalGroup,
+    EmailOutbox,
+    EmailTemplate,
+    OUTBOX_CLAIMABLE_STATUSES,
+    OUTBOX_STATUS_CANCELLED,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING,
@@ -564,6 +568,18 @@ def finalize_work_item(
             created_by_user_id=user_ctx.user_id,
         ))
 
+        # This item released on finalize, so it queues here. The bulk path in
+        # release_event_budgets does the same for budgets the board releases
+        # later. Neither goes through a scheduled sweep any more.
+        from app.services.notifications import notify_work_item_finalized
+        try:
+            notify_work_item_finalized(work_item)
+        except Exception:
+            current_app.logger.exception(
+                f"Could not queue the release email for {work_item.public_id}; "
+                f"the finalize stands and the email must be re-sent by hand."
+            )
+
     # Create audit event
     audit = WorkItemAuditEvent(
         work_item_id=work_item.id,
@@ -634,6 +650,55 @@ def finalize_work_item(
     return True, None
 
 
+# ============================================================
+# Release email guards
+# ============================================================
+
+def _resolved_finalized_key(work_item: WorkItem) -> str:
+    """Return the finalized template key this item's email will actually use.
+
+    resolve_template_key checks that a work-type row exists, not that it is
+    active, so an existing but inactive budget_finalized resolves to itself
+    instead of falling back to the generic finalized.
+    """
+    from app.services.email_enqueue import resolve_template_key
+
+    work_type = work_item.portfolio.work_type if work_item.portfolio else None
+    return resolve_template_key("finalized", work_type.code if work_type else None)
+
+
+def finalized_template_is_live(work_item: WorkItem) -> Tuple[bool, str]:
+    """Report whether this item's finalized email can send, and name its template.
+
+    The drainer terminates a row whose template is missing or inactive as
+    CANCELLED (email_drainer.py:365-369). CANCELLED is terminal and no route
+    re-sends it, so callers must decide before they queue.
+    """
+    key = _resolved_finalized_key(work_item)
+    template = EmailTemplate.query.filter_by(template_key=key).first()
+    return bool(template is not None and template.is_active), key
+
+
+def _cancel_pending_release_emails(work_item: WorkItem) -> int:
+    """Cancel this item's unsent release emails. Does not commit.
+
+    Scoped to the finalized template key and to claimable rows. A queued
+    needs_attention row is unrelated, and a terminal row is already history.
+    """
+    key = _resolved_finalized_key(work_item)
+    rows = (
+        EmailOutbox.query
+        .filter(EmailOutbox.work_item_id == work_item.id)
+        .filter(EmailOutbox.template_key == key)
+        .filter(EmailOutbox.status.in_(OUTBOX_CLAIMABLE_STATUSES))
+        .all()
+    )
+    for row in rows:
+        row.status = OUTBOX_STATUS_CANCELLED
+        row.last_error = "Unfinalize withdrew this release email before it sent."
+    return len(rows)
+
+
 def unfinalize_work_item(
     work_item: WorkItem,
     reason: str,
@@ -679,9 +744,15 @@ def unfinalize_work_item(
     work_item.finalized_by_user_id = None
 
     # Sending a budget back undoes its release. A later re-finalize notifies the
-    # department again, which is correct; the numbers changed.
+    # department again, which is correct; the numbers changed. Clearing
+    # board_released_at is what makes the second notification a different
+    # dedup key rather than a swallowed duplicate.
     work_item.board_released_at = None
-    work_item.finalized_notified_at = None
+
+    # The queued release email asserts a final budget, and the drainer renders
+    # from the live work item. Unfinalize makes that assertion false, so this
+    # withdraws the unsent rows rather than mailing a budget back in review.
+    _cancel_pending_release_emails(work_item)
 
     # Optionally reset line reviews
     if reset_lines:
@@ -1325,28 +1396,55 @@ def release_event_budgets(
 ) -> Tuple[int, Optional[str]]:
     """Record the board's approval of an event topline and release held budgets.
 
-    Sets the event latch, then stamps every held budget. Emails are sent later by
-    `flask send-board-release-emails`; a bulk fan-out of SES calls does not fit
-    inside Heroku's 30-second request limit.
+    Sets the event latch, stamps every held budget, and queues each
+    department's email in the same transaction. The caller commits.
+
+    Queueing is N INSERTs into email_outbox, not N SES calls, so it fits in a
+    request. The Slack summary does not; the caller posts it after the commit.
 
     Idempotent. A second run finds nothing held and returns 0.
 
     Returns (released_count, error_message).
     """
+    from app.services.notifications import notify_work_item_finalized
+
     require_budget_admin(user_ctx)
 
     if not (note or "").strip():
         return 0, "A note is required to record FY budget approval."
 
+    # Serialise overlapping releases. Each request stamps its own board_released_at
+    # and the dedup key embeds that stamp, so two concurrent runs build different
+    # keys and ON CONFLICT never fires. The loser must find nothing held.
+    db.session.query(EventCycle).with_for_update().get(event_cycle.id)
+
     now = datetime.utcnow()
 
+    held = get_held_budgets(event_cycle.id)
+
+    # Refuse the whole release when the template is dark. Queueing against it
+    # stamps every budget, then the drainer cancels each row for good, and
+    # get_held_budgets never offers those budgets again.
+    dark = set()
+    for item in held:
+        live, key = finalized_template_is_live(item)
+        if not live:
+            dark.add(key)
+    if dark:
+        return 0, (
+            f"Email template {', '.join(sorted(dark))} is missing or inactive, so no "
+            "department would be emailed. Nothing was released. Activate the "
+            "template under Admin then record the approval again."
+        )
+
     # The latch is set once. Re-running release for stragglers must not rewrite
-    # the date the board actually approved.
+    # the date the board actually approved. It is set after the template guard,
+    # so a refusal leaves the event untouched without depending on the caller
+    # to roll back.
     if event_cycle.board_approved_at is None:
         event_cycle.board_approved_at = now
         event_cycle.board_approved_by_user_id = user_ctx.user_id
 
-    held = get_held_budgets(event_cycle.id)
     for item in held:
         item.board_released_at = now
         # Status doesn't change here (it's already FINALIZED), so old/new
@@ -1359,5 +1457,19 @@ def release_event_budgets(
             reason=note.strip(),
             created_by_user_id=user_ctx.user_id,
         ))
+
+        # Queue inside the caller's transaction. dashboard.py commits the
+        # stamps, the audit rows and the outbox rows together. Neither the
+        # email nor the release can exist without the other.
+        try:
+            notify_work_item_finalized(item)
+        except Exception:
+            # One unreachable department must not cost the others their
+            # release. _enqueue_emails already isolates per recipient; this
+            # catches a failure resolving the department itself.
+            current_app.logger.exception(
+                f"Could not queue the release email for {item.public_id}; "
+                f"the release stands and the email must be re-sent by hand."
+            )
 
     return len(held), None

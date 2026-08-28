@@ -31,6 +31,7 @@ from .helpers import (
     get_active_departments,
     get_finalization_summary,
     finalize_work_item,
+    finalized_template_is_live,
     unfinalize_work_item,
     get_budget_admin_stats,
     get_budget_approval_groups,
@@ -150,11 +151,23 @@ def finalize(work_item_id: int):
         flash(error, "error")
     else:
         if work_item.board_released_at is not None:
-            flash(
-                f"Work item {work_item.public_id} finished. The budget is "
-                "released; a scheduled process will notify the department.",
-                "success",
-            )
+            # The finalize stands either way; the email is a consequence, not a
+            # precondition. A dark template only changes what we promise here.
+            live, template_key = finalized_template_is_live(work_item)
+            if live:
+                flash(
+                    f"Work item {work_item.public_id} finished. The budget is "
+                    "released; the department is emailed on the next drain, "
+                    "within ten minutes.",
+                    "success",
+                )
+            else:
+                flash(
+                    f"Work item {work_item.public_id} finished and the budget is "
+                    f"released, but email template {template_key} is missing or "
+                    "inactive, so the department was NOT emailed.",
+                    "warning",
+                )
         else:
             flash(
                 f"Work item {work_item.public_id} finished. The department "
@@ -163,9 +176,13 @@ def finalize(work_item_id: int):
             )
         db.session.commit()
 
-        # Finalized email is sent by `flask send-board-release-emails`, not here.
-        # A bulk board release fans out one SES call per department, which does
-        # not fit inside Heroku's 30-second request limit.
+        # After the commit: the Slack webhook has a 10 second timeout and
+        # would hold this item's row locks for that long inside the
+        # transaction. Only released items are announced; a held budget is
+        # not news until the board acts.
+        if work_item.board_released_at is not None:
+            from app.services.notifications import announce_work_item_event
+            announce_work_item_event(work_item, 'finalized')
 
     # Redirect back to referrer or dashboard
     from app.routes.admin.helpers import safe_redirect_url
@@ -543,9 +560,15 @@ def board_release():
         return redirect(url_for("admin_final.board_release_form", event=event_code))
 
     db.session.commit()
+
+    # After the commit: a webhook with a 10 second timeout has no business
+    # inside a transaction holding every released item's row locks.
+    from app.services.notifications import announce_board_release
+    announce_board_release(cycle, count)
+
     flash(
         f"FY budget approval recorded for {cycle.code}. {count} budget(s) released. "
-        f"Departments are emailed by the next scheduled run.",
+        f"Departments are emailed on the next drain, within ten minutes.",
         "success",
     )
     return redirect(url_for("admin_final.board_release_form", event=event_code))
