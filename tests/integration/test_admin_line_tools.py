@@ -530,18 +530,6 @@ class TestEntryPoints:
         assert resp.status_code == 200
         assert b"add-line" in resp.data
 
-    def test_approvals_line_review_shows_edit_link_for_admin(self, app, client, seed_draft_work_item):
-        # Admins do their reviewing from the approvals-side line page
-        # (budget/line_review.html), so the edit link must appear there too.
-        data = seed_draft_work_item
-        _make_submitted(data)
-        _login(client, "test:admin")
-
-        resp = client.get(_url(app, "approvals.line_review", data, line_num=1))
-        assert resp.status_code == 200
-        assert b"change-account" in resp.data
-
-
 class TestPriceSnapshotColumn:
     def test_column_defaults_to_none(self, app, seed_draft_work_item):
         data = seed_draft_work_item

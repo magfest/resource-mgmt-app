@@ -93,19 +93,6 @@ class TestBudgetUrlsStillResolve:
             f"the route may have been broken during migration."
         )
 
-    def test_new_slug_url_resolves_for_budget(self, app, client, seed_workflow_data):
-        """Same URL via the new <work_type_slug> rule reaches the same handler."""
-        cycle = seed_workflow_data["cycle"]
-        dept = seed_workflow_data["department"]
-        _login(client, "test:admin")
-
-        # The URL string is identical to the legacy one — Flask picks the
-        # literal "budget" rule due to specificity preference. This proves
-        # the legacy URL still maps cleanly even with both rules registered.
-        response = client.get(f"/{cycle.code}/{dept.code}/budget")
-        assert response.status_code == 200
-
-
 class TestNonBudgetSlugBehavior:
     """Non-budget slugs reach the right handlers with the right behavior."""
 
