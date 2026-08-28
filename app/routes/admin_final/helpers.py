@@ -1459,9 +1459,8 @@ def release_event_budgets(
         ))
 
         # Queue inside the caller's transaction. dashboard.py commits the
-        # stamps, the audit rows and the outbox rows together, so the email
-        # cannot exist without the release and the release cannot commit
-        # without the email.
+        # stamps, the audit rows and the outbox rows together. Neither the
+        # email nor the release can exist without the other.
         try:
             notify_work_item_finalized(item)
         except Exception:

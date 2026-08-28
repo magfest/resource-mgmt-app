@@ -1,7 +1,6 @@
 """The board release posts one event-level Slack summary, not one post per item."""
 from unittest.mock import patch
 
-from app.models import EventCycle
 from app.services.notifications import announce_board_release
 from app.services.slack_messages import format_board_release
 

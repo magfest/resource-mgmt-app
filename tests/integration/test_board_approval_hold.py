@@ -377,7 +377,7 @@ def test_board_release_post_releases_and_redirects(app, client, seed_draft_work_
     assert item.board_released_at is not None
 
 
-def test_unfinalize_clears_release_stamps(app, seed_draft_work_item):
+def test_unfinalize_clears_the_release_stamp(app, seed_draft_work_item):
     """Sending a budget back undoes its release, so a re-finalize notifies again."""
     from datetime import datetime as _dt
     from app.routes import UserContext
