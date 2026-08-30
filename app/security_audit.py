@@ -9,10 +9,14 @@ compliance reporting. Designed for PII compliance with 6-month retention.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from flask import request, session, has_request_context
 from app import db
 from app.models import SecurityAuditLog
+from app.services.slack import send_slack_message
+
+logger = logging.getLogger(__name__)
 
 # Event categories
 CATEGORY_AUTH = "AUTH"
@@ -36,6 +40,23 @@ EVENT_ACCESS_DENIED = "ACCESS_DENIED"
 SEVERITY_INFO = "INFO"
 SEVERITY_WARNING = "WARNING"
 SEVERITY_ALERT = "ALERT"
+
+
+def _format_security_alert(event_type: str, user_id: str | None, details: dict | None) -> str:
+    """One line of Slack text for an ALERT-severity security event."""
+    actor = user_id or "unknown user"
+    parts = [f"Security alert: {event_type} by {actor}"]
+    if details:
+        target = details.get("target_email") or details.get("target_user_id")
+        if target:
+            parts.append(f"target {target}")
+        granted = details.get("granted")
+        if granted:
+            parts.append(f"granted {', '.join(granted)}")
+        revoked = details.get("revoked")
+        if revoked:
+            parts.append(f"revoked {', '.join(revoked)}")
+    return ". ".join(parts)
 
 
 def log_security_event(
@@ -83,6 +104,30 @@ def log_security_event(
         details=json.dumps(details) if details else None,
     )
     db.session.add(event)
+
+    # ALERT posts to Slack synchronously, with a 10 second timeout on the
+    # request path. Keep ALERT for rare, deliberate events. Raising a
+    # high-frequency event such as ACCESS_DENIED to ALERT would attempt a post
+    # on every occurrence. send_slack_message never raises and returns False
+    # when Slack is disabled, unconfigured, or circuit-broken, so a Slack
+    # problem cannot lose the audit row or fail the request.
+    #
+    # A caller that logs ALERT events inside a per-row loop before a single
+    # commit multiplies this cost. Twenty rows with Slack unreachable is
+    # twenty sequential ten-second waits, holding the transaction open.
+    if severity == SEVERITY_ALERT:
+        try:
+            send_slack_message(
+                text=_format_security_alert(event_type, user_id, details),
+                template_key=f"security_{event_type}",
+                work_item_id=None,
+            )
+        except Exception:
+            # send_slack_message documents that it never raises. This guard is
+            # here so that if that ever stops being true, a Slack problem
+            # cannot swallow the audit row, which is the actual control.
+            logger.exception("Slack post failed for %s security alert", event_type)
+
     return event
 
 
