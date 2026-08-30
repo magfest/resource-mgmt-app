@@ -1,72 +1,74 @@
 # Contributing to the MAGFest Budget System
 
-Thanks for your interest in contributing! MAGFest is volunteer-run, and this project is no different — every contribution helps.
+MAGFest is volunteer-run, and so is this application. Contributions are welcome.
 
-## Getting Started
+This page answers three questions in order: how do I run it, what should I work on, and what gets my change accepted.
 
-1. Fork the repo and clone it locally
-2. Create a virtual environment and install dev dependencies:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-   pip install -r requirements-dev.txt
-   ```
-3. Install pre-commit hooks:
-   ```bash
-   pre-commit install
-   ```
-4. Copy the environment file:
-   ```bash
-   cp .env.example .env
-   ```
-5. Set up the database and (optionally) seed demo data:
-   ```bash
-   flask db upgrade
-   python -c "from app import create_app; from app.seeds.config_seed import run_all_seeds; app = create_app(); app.app_context().push(); run_all_seeds()"
-   ```
-6. Run the app:
-   ```bash
-   flask run
-   ```
-   Dev login is enabled by default — no OAuth setup needed.
+## Run it locally
 
-## Making Changes
+Production and the Docker image pin Python 3.13 (`.python-version`, `Dockerfile`). Python 3.12.13 also runs the application and the full test suite; verified August 2026.
 
-### Branch and PR workflow
+```bash
+git clone https://github.com/magfest/Resource-mgmt-app.git
+cd Resource-mgmt-app
 
-- Create a feature branch from `master` (e.g., `add-csv-export`, `fix-dispatch-redirect`)
-- Keep PRs focused — one logical change per PR
-- Write a clear PR description explaining **what** you changed and **why**
+python3 -m venv .venv
+source .venv/bin/activate
+# Windows instead: .venv\Scripts\activate
+
+pip install -r requirements-dev.txt
+pre-commit install
+
+cp .env.example .env
+
+flask db upgrade
+flask seed
+flask run
+```
+
+Visit `http://localhost:5000`. Dev login is enabled by `.env.example`, so no OAuth setup is needed. The local user switcher lets you act as a requester, a reviewer, or an admin.
+
+`flask seed` takes a target: `bootstrap` for schema-required rows, `demo` for replaceable `[Demo]` departments and event cycle, `all` for both. `all` is the default. Seeding is insert-only and safe to re-run.
+
+Seed through the `flask` CLI, not through `python -c`. `create_app()` refuses to start without `APP_ENV`, and only the `flask` CLI loads `.env`.
+
+## What to work on
+
+- [ROADMAP.md](ROADMAP.md) lists planned features and known issues
+- [docs/backlog.md](docs/backlog.md) lists open and deferred items
+- For anything larger than a bug fix, open an issue first and agree on the approach
+
+Before you change code, read [docs/architecture.md](docs/architecture.md) for how the workflow engine fits together and [docs/directory-structure.md](docs/directory-structure.md) for where things live. BUDGET is the complete work type and the reference implementation; TECHOPS and SUPPLY are partial, and the tables in [docs/work-types.md](docs/work-types.md) say what each one has.
+
+## What gets a change accepted
+
+### Branch and PR
+
+- Branch from `master`, named for the change (`add-csv-export`, `fix-dispatch-redirect`)
+- One logical change per pull request
+- Say what changed and why in the description
+
+A good PR solves one problem and carries no unrelated cleanup. It works on both SQLite and PostgreSQL, and leaves the approval workflow (draft, submit, review, finalize) working.
 
 ### Code style
 
-- No strict linter enforced yet, but try to match the style of surrounding code
-- Use meaningful variable names — this is a workflow app, clarity matters more than brevity
-- Follow existing patterns for routes, templates, and models (see `CLAUDE.md` for architecture reference)
+- No linter is enforced. Match the surrounding code
+- Name variables for what they hold. This is a workflow application; clarity beats brevity
+- Follow the existing route, template, and model patterns
 
 ### Templates and frontend
 
-- No inline event handlers (`onclick`, `onchange`, etc.) — we use Content Security Policy with nonces
-- Use `nonce="{{ csp_nonce }}"` on all `<script>` blocks
-- Keep JavaScript in `<script>` blocks at the bottom of templates, not in separate files (current convention)
+- No inline event handlers (`onclick`, `onchange`). The application sends a Content Security Policy with nonces, and inline handlers are blocked
+- Put `nonce="{{ csp_nonce }}"` on every `<script>` block
+- Keep JavaScript in `<script>` blocks at the bottom of the template rather than in separate files. That is the current convention
 
-### Testing
+### Tests
 
-- Run tests before submitting: `pytest`
-- If you're adding a new route or changing business logic, adding tests is appreciated but not required for every PR
-- The test suite uses SQLite in-memory — no database setup needed
+Run `pytest`. The suite uses in-memory SQLite, so no database setup is needed.
 
-### What makes a good PR
+`git push` runs the full suite through a pre-push hook that `pre-commit install` set up. Budget about a minute; 612 tests took 57 seconds in August 2026. Activate the virtualenv before you push. Without it the hook fails with `Executable pytest not found` and the push is blocked.
 
-- Solves one problem or adds one feature
-- Doesn't introduce unrelated cleanup or refactoring
-- Works with both SQLite (dev) and PostgreSQL (prod)
-- Doesn't break the existing approval workflow (draft -> submit -> review -> finalize)
-
-## What to Work On
-
-- Check the [Roadmap](ROADMAP.md) for planned features and known issues
-- If you want to take on something larger, open an issue first to discuss the approach
+New tests are appreciated for a new route or a change in business logic. They are not required on every PR.
 
 ## AI Tools
 
