@@ -116,7 +116,7 @@ pip-compile --generate-hashes requirements-dev.in -o requirements-dev.txt --upgr
 | pip-audit against `requirements.txt` | pre-commit hook, and GitHub Actions on push and PR to `master` |
 | bandit against `app/` | GitHub Actions on push and PR to `master` |
 | pytest, full suite | pre-push hook, and GitHub Actions on push and PR to `master` |
-| Dependabot alerts and security PRs | GitHub, `.github/dependabot.yml` |
+| Dependabot weekly pip version updates | `.github/dependabot.yml` |
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 

@@ -45,7 +45,7 @@ step wires these up, so a rebuilt app has none of them until someone adds them.
 
 | Command | Frequency | Does |
 | --- | --- | --- |
-| `flask drain-email-outbox` | Every 10 minutes | Sends queued email, then prunes terminal outbox rows past 90 days. The only code path that calls SES |
+| `flask drain-email-outbox` | Every 10 minutes | Sends queued email, then prunes terminal outbox rows past 90 days. The only path that sends queued mail; two admin test-send routes call SES directly |
 | `flask prune-email-audit` | Daily | Deletes expired message bodies and notification log rows |
 | `flask send-submission-reminders <EVENT_CODE> --send` | Not recorded | Emails departments that have not yet submitted a budget, one run per active event |
 

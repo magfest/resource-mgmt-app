@@ -1,8 +1,13 @@
 # Security Documentation
 
+This document covers the Content Security Policy rules template authors follow,
+and the security audit log. The vulnerability reporting policy is the root
+`SECURITY.md`.
+
 ## Content Security Policy (CSP)
 
-This application uses Content Security Policy headers to prevent XSS attacks by controlling what resources can be loaded and executed.
+The app sends a CSP header on every response so an injected `<script>` tag
+cannot execute. `add_security_headers` in `app/__init__.py` builds it.
 
 ### Current Policy
 
@@ -10,13 +15,33 @@ This application uses Content Security Policy headers to prevent XSS attacks by 
 default-src 'self';
 script-src 'self' 'nonce-{random}';
 style-src 'self' 'unsafe-inline';
-img-src 'self' data:;
+img-src 'self' data: https://{SUPPLY_IMAGE_BUCKET}.s3.amazonaws.com;
 font-src 'self';
 form-action 'self';
 frame-ancestors 'none';
 base-uri 'self';
 object-src 'none'
 ```
+
+The S3 origin on `img-src` appears only when `SUPPLY_IMAGE_BUCKET` is set; it
+carries supply catalog photos, the one non-`self` resource origin. It names the
+exact bucket host and never `*.s3.amazonaws.com`, so no other account's bucket
+is embeddable.
+
+### The one exempt endpoint
+
+`admin_final.email_message_body` serves stored email HTML, the only document
+this app returns that it did not write. It skips both the app-wide CSP header
+and `X-Frame-Options: DENY`, and sets its own stricter policy instead:
+
+```
+default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'
+```
+
+The app-wide policy would permit `'self'` scripts inside that document and
+`frame-ancestors 'none'` would blank the admin iframe that embeds it. The
+exempt set is the `self_policing` check in `add_security_headers`. Adding an
+endpoint to it widens a security boundary.
 
 ### Key Points
 
@@ -63,7 +88,7 @@ The `csp_nonce` variable is automatically available in all templates.
 
 ### Rule 2: No Inline Event Handlers
 
-Inline handlers like `onclick="..."` won't work because they're blocked by our CSP policy (no `'unsafe-inline'` in script-src). The browser simply ignores them.
+Inline handlers like `onclick="..."` won't work because they're blocked by our CSP policy (no `'unsafe-inline'` in script-src). The browser ignores them.
 
 ```html
 <!-- WON'T WORK - browser ignores onclick due to CSP -->
@@ -203,21 +228,33 @@ document.addEventListener('click', function(e) {
 
 ## Security Audit Logging
 
-Security-relevant events are logged to the `security_audit_logs` table:
+`app/security_audit.py` writes security-relevant events to the
+`security_audit_logs` table. Each row carries a category of AUTH, ADMIN,
+ACCESS, or SECURITY.
 
-- Login success/failure
-- Logout
-- Access denied (403)
-- Impersonation start/end
-- Admin actions
+| Event type | Written when | Written from |
+| --- | --- | --- |
+| `LOGIN_SUCCESS` | A Google, Keycloak, or dev login resolves to an active user | `app/routes/auth.py` |
+| `LOGIN_FAILURE` | A login fails on stale session, OAuth error, missing email, restricted domain, or inactive user | `app/routes/auth.py` |
+| `LOGOUT` | A session ends | `app/routes/auth.py` |
+| `ACCESS_DENIED` | The 403 handler fires | `app/__init__.py` |
+| `IMPERSONATE_START` / `IMPERSONATE_END` | An admin views the app as another user | `app/routes/dev.py` |
 
-View logs at `/admin/security-logs` (super-admin only).
+`security_audit.py` also declares `USER_VIEW`, `USER_MODIFY`, `CONFIG_MODIFY`,
+and `SENSITIVE_VIEW`. As of August 2026 no code writes any of them, so this
+table is not a log of admin actions. Configuration changes land in the separate
+`config_audit_events` table.
 
-Logs are retained for 180 days by default. Clean up with:
+View the logs at `/admin/security-logs`, which `@require_super_admin` guards.
+
+Nothing deletes these rows on a schedule. The cleanup command is manual and no
+Heroku Scheduler entry runs it, so the table grows until someone runs:
 
 ```bash
 flask cleanup-audit-logs --days 180
 ```
+
+The `--days` default is 180. Pass `--dry-run` to see the count first.
 
 ---
 
