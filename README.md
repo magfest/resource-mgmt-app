@@ -27,7 +27,7 @@ One workflow engine (portfolios, work items, lines, staged reviews) carries ever
 | CONTRACT | Model only | Data model and an admin configuration page. No route package, no templates |
 | AV | Not built | Not present on this branch |
 
-BUDGET is the only work type in general production use. [Work Types](docs/work-types.md) covers how a new one is added.
+BUDGET is the only work type in general production use. [Work Types](docs/work-types.md) holds the registry, the per-work-type configuration, and what differs between them.
 
 ## Tech stack
 

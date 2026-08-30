@@ -22,8 +22,8 @@ Seeded values as of August 2026 (`app/seeds/bootstrap.py:168-262`):
 
 CONTRACT carries the dispatch flag but has no route package and no template
 tree. No CONTRACT request can reach dispatch, so BUDGET is the only work type
-with a UI for that stage. SUPPLY is the combination the other documents do not
-cover: no dispatch, admin final yes.
+with a UI for that stage. SUPPLY has no dispatch stage and does use admin
+final.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐

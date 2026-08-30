@@ -10,14 +10,15 @@ All request types share the same workflow engine:
 DRAFT → [AWAITING_DISPATCH →] SUBMITTED (lines under review) → FINALIZED
 ```
 
-(The dispatch stage is per-work-type: BUDGET uses it, TECHOPS doesn't — controlled
-by `WorkTypeConfig.uses_dispatch`.)
+The dispatch stage is per work type, controlled by `WorkTypeConfig.uses_dispatch`.
+[Workflow: Stages by work type](./workflow.md#stages-by-work-type) lists the seeded
+values.
 
 The architecture is **shared chassis, per-type cabs**: the workflow engine (models,
 lifecycle, routing, checkout, audit) is shared, and each work type has its own route
 package (`app/routes/work/<type>/`) and template tree (`app/templates/<type>/`).
 The original budget routes are BUDGET's cab; TECHOPS is the reference pattern for
-new work types. See `docs/adding-a-work-type.md`.
+new work types.
 
 ---
 
@@ -26,20 +27,24 @@ new work types. See `docs/adding-a-work-type.md`.
 ### Work Type
 
 A **Work Type** defines a category of request. Each has its own:
-- URL slug (`/budget/`, `/contracts/`, `/supply/`)
+- URL slug (`budget`, `contracts`, `supply`)
 - Line detail model (what fields each line has)
 - Routing strategy (how lines get assigned to approvers)
 - Display labels ("Budget Lines" vs "Contract Items")
 
-Current work types:
+Current work types as of August 2026. [Work Types](./work-types.md) holds the
+registry, the URL slugs, and the configuration flags.
 
-| Code | Name | Status |
-|------|------|--------|
-| BUDGET | Budget Requests | **Live** |
-| TECHOPS | TechOps Requests | **Live** |
-| SUPPLY | Supply Orders | In development (models + admin pages in master) |
-| AV | AV Requests | In development (feature branch) |
-| CONTRACT | Contracts | Future (data model exists, no UI) |
+| Work type | State | What exists |
+| --- | --- | --- |
+| BUDGET | Complete | The full pipeline: dispatch, admin final, reports, comments, supplementary requests. The reference implementation |
+| SUPPLY | Partial | Ordering, catalog, and admin final. No warehouse, fulfillment, or returns |
+| TECHOPS | Partial | Request entry and line review. No dispatch stage, no admin final. Deployed to production so the team can do test runs and give feedback, not for general use |
+| CONTRACT | Model only | Data model and an admin configuration page. No route package, no templates |
+| AV | Not built | Not present on this branch |
+
+BUDGET is the only work type in general production use. The presence of a route
+package does not mean a work type is in service.
 
 ### Portfolio
 
@@ -139,73 +144,28 @@ The `WorkTypeConfig.routing_strategy` field determines which strategy to use.
 
 ## Permission Model
 
-Access is controlled at multiple levels:
+Access comes from three layers: system roles on `UserRole`, department and division
+memberships, and per-work-type access flags on each membership. A user with TechOps
+budget access does not automatically see TechOps contracts.
 
-### 1. System Roles (UserRole)
-
-| Role | Scope | Access |
-|------|-------|--------|
-| SUPER_ADMIN | Global | Everything |
-| WORKTYPE_ADMIN | Per work type | Admin for one work type (e.g., Budget Admin) |
-| APPROVER | Per approval group | Can review lines routed to their group |
-
-### 2. Memberships
-
-| Membership | Grants Access To |
-|------------|------------------|
-| DepartmentMembership | One department |
-| DivisionMembership | All departments in a division |
-
-### 3. Work Type Access
-
-Memberships are scoped by work type. A user with "TechOps Budget access" doesn't automatically see "TechOps Contracts."
-
-```
-DepartmentMembership
-    └── DepartmentMembershipWorkTypeAccess (per work type: can_view, can_edit)
-```
+[Permissions and Access Control](./permissions.md) is the authoritative copy of the
+roles, the membership scoping, and the guard helpers.
 
 ---
 
 ## Request Lifecycle
 
-Work item statuses (actual constants in `app/models/constants.py`):
+A work item moves DRAFT, optionally AWAITING_DISPATCH, SUBMITTED, then FINALIZED,
+with PAUSED for a supplementary blocked by a pending PRIMARY.
 
-```
-           [submit]              [dispatch]                [finalize]
-┌─────────┐      ┌──────────────────┐      ┌───────────┐      ┌───────────┐
-│  DRAFT  │─────▶│ AWAITING_DISPATCH│─────▶│ SUBMITTED │─────▶│ FINALIZED │
-└─────────┘      └──────────────────┘      └───────────┘      └───────────┘
-                  (only if the work         (lines under
-                   type uses_dispatch;       approval group /
-                   otherwise submit          admin final review)
-                   goes straight to
-                   SUBMITTED)
-```
+[Workflow: Work item transitions](./workflow.md#work-item-transitions) is the state
+table, including who may make each move.
+[Workflow: Statuses declared but never written](./workflow.md#statuses-declared-but-never-written)
+covers `UNDER_REVIEW`, `UNAPPROVED`, and item-level `NEEDS_INFO`, none of which the
+database holds today.
 
-- **DRAFT**: Requester is building the request
-- **AWAITING_DISPATCH**: Submitted; admin assigns approval groups (BUDGET only)
-- **SUBMITTED**: Lines under review by approval groups (and admin final, if the
-  work type has that stage)
-- **FINALIZED**: Locked; amounts confirmed. Work types without an admin-final
-  stage auto-finalize when the last line is decided.
-- **NEEDS_INFO**: Awaiting requester response (item-level; see below)
-- **PAUSED**: Supplementary blocked by a pending PRIMARY
-
-`FINALIZED` does not mean the department was told. BUDGET holds release until
-the board approves the event topline; see [Workflow: Board release](./workflow.md#board-release)
-for `board_released_at` and the derived `PENDING_BOARD_APPROVAL` status.
-
-Declared in `app/models/constants.py:18-25` but never persisted:
-
-- **UNDER_REVIEW**: display-only, derived in `compute_line_status_summary()`
-  (`app/routes/work/helpers/computations.py`)
-- **UNAPPROVED**: vestigial — nothing reads or writes it. Unfinalize resets to
-  SUBMITTED (`app/routes/admin_final/helpers.py:634`), not UNAPPROVED.
-
-`NEEDS_ADJUSTMENT` is **line-level only**. `NEEDS_INFO` exists at **both** levels —
-`app/routes/work/work_items/actions.py:321` sets it on the work item — see
-`docs/workflow.md`.
+`FINALIZED` does not mean the department was told. BUDGET holds release until the
+board approves the event topline; see [Workflow: Board release](./workflow.md#board-release).
 
 ---
 
@@ -216,9 +176,9 @@ Declared in `app/models/constants.py:18-25` but never persisted:
 /<event>/<dept>/                     # Department landing (all work types)
 /<event>/<dept>/budget/              # Budget portfolio
 /<event>/<dept>/budget/item/<id>     # Budget work item detail
-/<event>/<dept>/techops/             # TechOps portfolio (live)
-/<event>/<dept>/supply               # Supply orders (live — app/routes/work/supply/portfolio.py:22)
-/<event>/<dept>/contracts            # Contracts (still a placeholder — app/routes/work/portfolio.py:176)
+/<event>/<dept>/techops              # TechOps portfolio (app/routes/work/techops/portfolio.py:25)
+/<event>/<dept>/supply               # Supply orders (app/routes/work/supply/portfolio.py:22)
+/<event>/<dept>/contracts            # Contracts placeholder page (app/routes/work/portfolio.py:176)
 
 /approvals/                          # Approver dashboard
 /approvals/<group_code>              # Approval group queue (no trailing slash)
