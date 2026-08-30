@@ -16,7 +16,6 @@ This application manages work requests for MAGFest events through a shared workf
 | [Security](./security.md) | CSP, inline scripts, audit logging |
 | [Email outbox](./email-outbox.md) | How email is queued and sent, and what `SENT` does not mean |
 | [Design Language](./design-language.md) | UI patterns, buttons, pills, spacing |
-| [Backlog](./backlog.md) | Open and deferred items; not a commitment list |
 
 Design proposals and working notes live in [`docs/proposals/`](./proposals/README.md). They record intent at a point in time, not current behavior.
 

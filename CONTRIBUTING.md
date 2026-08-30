@@ -35,7 +35,6 @@ Seed through the `flask` CLI, not through `python -c`. `create_app()` refuses to
 ## What to work on
 
 - [ROADMAP.md](ROADMAP.md) lists planned features and known issues
-- [docs/backlog.md](docs/backlog.md) lists open and deferred items
 - For anything larger than a bug fix, open an issue first and agree on the approach
 
 Before you change code, read [docs/architecture.md](docs/architecture.md) for how the workflow engine fits together and [docs/directory-structure.md](docs/directory-structure.md) for where things live. BUDGET is the complete work type and the reference implementation; TECHOPS and SUPPLY are partial, and the tables in [docs/work-types.md](docs/work-types.md) say what each one has.

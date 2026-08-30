@@ -434,7 +434,7 @@ When creating new templates, verify:
 
 ## Open Items
 
-Checked August 2026. The wider backlog is [docs/backlog.md](./backlog.md); the
+Checked August 2026. The wider backlog is [ROADMAP.md](../ROADMAP.md); the
 items below are UI-only.
 
 | Item | State |
