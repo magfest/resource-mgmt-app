@@ -403,6 +403,7 @@ def _update_user_roles(user: User, form_data) -> None:
             else SEVERITY_INFO
         ),
         details={
+            "source": "admin_form",
             "target_user_id": user.id,
             "target_email": user.email,
             "granted": granted,

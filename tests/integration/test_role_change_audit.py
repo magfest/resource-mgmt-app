@@ -229,6 +229,42 @@ def test_super_admin_grant_is_alert(app, client, seed_workflow_data, monkeypatch
     assert ROLE_SUPER_ADMIN in json.loads(rows[0].details)["granted"]
 
 
+def test_super_admin_revoke_is_alert(app, client, seed_workflow_data, monkeypatch):
+    """Removing SUPER_ADMIN raises severity the same way granting it does.
+
+    The design spec's section 10 names this exact risk: severity applied to
+    the grant list only. A check of `granted` alone would still pass the
+    grant test above, so this exercises the revoke branch directly.
+    """
+    monkeypatch.setattr(
+        "app.security_audit.send_slack_message",
+        lambda text, template_key, work_item_id=None, blocks=None: True,
+    )
+
+    target = User(id="u:target6", email="t6@magfest.org", display_name="T6")
+    db.session.add(target)
+    db.session.flush()
+    db.session.add(UserRole(user_id="u:target6", role_code=ROLE_SUPER_ADMIN))
+    db.session.commit()
+
+    with app.test_request_context():
+        url = url_for("admin_config.users.update_user", user_id="u:target6")
+
+    _login(client, "test:admin")
+    client.post(url, data={
+        "email": "t6@magfest.org",
+        "display_name": "T6",
+        "is_active": "1",
+    }, follow_redirects=True)
+
+    rows = _audit_rows()
+    assert len(rows) == 1
+    assert rows[0].severity == SEVERITY_ALERT
+    details = json.loads(rows[0].details)
+    assert ROLE_SUPER_ADMIN in details["revoked"]
+    assert details["granted"] == []
+
+
 def test_edit_that_changes_no_role_writes_nothing(app, client, seed_workflow_data):
     """A display-name edit must not produce role-change noise."""
     db.session.add(User(id="u:target4", email="t4@magfest.org", display_name="Old"))

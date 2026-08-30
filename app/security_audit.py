@@ -111,6 +111,10 @@ def log_security_event(
     # on every occurrence. send_slack_message never raises and returns False
     # when Slack is disabled, unconfigured, or circuit-broken, so a Slack
     # problem cannot lose the audit row or fail the request.
+    #
+    # A caller that logs ALERT events inside a per-row loop before a single
+    # commit multiplies this cost. Twenty rows with Slack unreachable is
+    # twenty sequential ten-second waits, holding the transaction open.
     if severity == SEVERITY_ALERT:
         try:
             send_slack_message(
