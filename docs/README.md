@@ -2,7 +2,7 @@
 
 ## Overview
 
-This application manages work requests for MAGFest events through a shared workflow engine with per-work-type modules. **Budget Requests and TechOps Requests are live**; Supply Orders and AV Requests are in development, Contracts planned.
+This application manages work requests for MAGFest events through a shared workflow engine with per-work-type modules. BUDGET is complete and the only work type in general production use. SUPPLY covers ordering, catalog, and admin final, with no warehouse, fulfillment, or returns yet. TECHOPS covers request entry and line review, deployed to production for test runs and feedback, not general use. CONTRACT has a data model and an admin configuration page only. AV is not built on this branch.
 
 ## Documentation Index
 
@@ -11,13 +11,14 @@ This application manages work requests for MAGFest events through a shared workf
 | [Architecture Overview](./architecture.md) | High-level system design and key concepts |
 | [Directory Structure](./directory-structure.md) | Where files live and why |
 | [Work Types](./work-types.md) | How the multi-work-type system works |
-| [Adding a Work Type](./adding-a-work-type.md) | The 10-step recipe (TECHOPS is the reference) |
 | [Permissions](./permissions.md) | RBAC, memberships, and access control |
 | [Workflow](./workflow.md) | Request lifecycle: draft → submit → review → finalize |
 | [Security](./security.md) | CSP, inline scripts, audit logging |
 | [Email outbox](./email-outbox.md) | How email is queued and sent, and what `SENT` does not mean |
 | [Design Language](./design-language.md) | UI patterns, buttons, pills, spacing |
-| [Scaling & Monitoring](./scaling-and-monitoring.md) | Infrastructure, connection pooling, capacity |
+| [Backlog](./backlog.md) | Open and deferred items; not a commitment list |
+
+Design proposals and working notes live in [`docs/proposals/`](./proposals/README.md). They record intent at a point in time, not current behavior.
 
 ## Quick Reference
 
@@ -70,4 +71,4 @@ flask run
 flask seed all
 ```
 
-Dev login is enabled by default — no OAuth setup needed for local development.
+Dev login is enabled by default; no OAuth setup is needed for local development.

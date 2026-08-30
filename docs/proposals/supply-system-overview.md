@@ -1,5 +1,9 @@
 ﻿# MAGFest Supply Order & Inventory System
 
+> **Proposal, April 2026.** Written to pitch the supply system to the team. Not a
+> description of current behavior. For how Supply works today, see
+> [work-types.md](../work-types.md).
+
 **For team review — April 2026**
 
 ---

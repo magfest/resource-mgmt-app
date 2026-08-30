@@ -1,5 +1,9 @@
 # Budget Line Review Page — Action & State Map
 
+> **Working trace, 2026-07-23.** A snapshot of the budget line review page taken
+> during a refactor. Line numbers were approximate when written and have drifted.
+> Kept for the Concerns section; not a reference for current behavior.
+
 **Page:** `/<event>/<dept>/budget/item/<public_id>/line/<n>/review`
 **Route:** `approvals.line_review` (GET) → `app/templates/budget/line_review.html`
 **Date mapped:** 2026-07-23 (working tree; line numbers are approximate and drift as the file changes)
