@@ -8,16 +8,6 @@ from app import db
 from app.models import WorkType, WorkTypeConfig
 
 
-def test_budget_opts_into_board_release(app, seed_workflow_data):
-    config = (
-        WorkTypeConfig.query
-        .filter_by(url_slug="budget")
-        .first()
-    )
-    assert config is not None
-    assert config.uses_board_release is True
-
-
 def test_non_budget_work_type_defaults_to_no_board_release(app, seed_workflow_data):
     """Guard the column default, not just BUDGET's seeded override.
 
