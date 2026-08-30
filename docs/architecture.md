@@ -193,7 +193,7 @@ Work item statuses (actual constants in `app/models/constants.py`):
 - **PAUSED**: Supplementary blocked by a pending PRIMARY
 
 `FINALIZED` does not mean the department was told. BUDGET holds release until
-the board approves the event topline; see [Workflow: Statuses](./workflow.md#work-item-statuses)
+the board approves the event topline; see [Workflow: Board release](./workflow.md#board-release)
 for `board_released_at` and the derived `PENDING_BOARD_APPROVAL` status.
 
 Declared in `app/models/constants.py:18-25` but never persisted:
