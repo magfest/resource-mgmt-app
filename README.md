@@ -1,152 +1,129 @@
 # MAGFest Budget System
 
-> **Status: Production** — This application is live and in use by MAGFest staff for budget requests. Features are actively being added (supply orders, contracts). See the [Roadmap](ROADMAP.md) for what's planned.
+A request and approval workflow application for [MAGFest](https://www.magfest.org/) events, built with Flask. It is in production for budget requests.
 
-A budget request and approval workflow application for [MAGFest](https://www.magfest.org/) events. Built with Flask, it currently handles multi-departmental/event budget requests. Long term the goal is to support contracts and supply orders through a configurable review and approval pipeline.
+MAGFest is a volunteer-run nonprofit that produces several events a year. Each event has dozens of departments (TechOps, Panels, Hotels, and others) that submit budgets and need them approved. This application replaces the spreadsheets and email chains that used to carry that work, with routed reviews, role-based access, and an audit trail.
 
-## What It Does
+## Who uses it
 
-MAGFest is a volunteer-run nonprofit that produces multiple events each year. Each event has dozens of departments (Tech Ops, Panels, Hotels, etc.) that need to submit and get approval for their budgets. This system replaces spreadsheets and email chains with a structured workflow:
+| Role | Does |
+| --- | --- |
+| Requester | Department volunteer. Creates a request with line items, hotel needs, badge counts, and notes |
+| Approval group | Subject matter experts. Review the lines routed to their group and recommend a decision. The interface labels these Reviewer Groups |
+| Budget admin | Sets the approved amounts, resolves recommendations, finalizes the request |
+| Super admin | Configures events, divisions, departments, users, and reference data |
 
-- **Requesters** (department volunteers) create budget requests with line items, hotel needs, badge counts, and notes
-- **Reviewer groups** (subject matter experts) review and recommend approval on routed line items
-- **Budget admins** make final approval decisions and finalize requests
-- The system tracks everything with audit trails, role-based access, and status notifications
+Requests move through Draft, Submitted, dispatch to approval groups (only BUDGET has a UI for this stage), approval group review, admin final review, and Finalized. [Workflow](docs/workflow.md) has the full state table.
 
-## Features
+## Work types
 
-- **Multi-work-type support**: Budget requests, contracts, and supply orders (extensible)
-- **Role-based access control**: Department members, division heads, reviewer groups, budget admins, super admins
-- **Approval workflow**: Draft → Submit → Reviewer Group Review → Admin Final Review → Finalized
-- **Multi-event support**: Manage budgets across different MAGFest events (Super, West, Stock, etc.)
-- **Income tracking**: Departments that generate revenue can record estimated income for reference
-- **Automated security scanning**: pip-audit in CI and pre-commit hooks, Dependabot alerts
+One workflow engine (portfolios, work items, lines, staged reviews) carries every request type. Each work type adds its own route package and template tree on top.
 
-## Tech Stack
+| Work type | State | What exists |
+| --- | --- | --- |
+| BUDGET | Complete | The full pipeline: dispatch, admin final, reports, comments, supplementary requests. The reference implementation |
+| SUPPLY | Partial | Ordering, catalog, and admin final. No warehouse, fulfillment, or returns |
+| TECHOPS | Partial | Request entry and line review. No dispatch stage, no admin final. Deployed to production so the team can do test runs and give feedback, not for general use |
+| CONTRACT | Model only | Data model and an admin configuration page. No route package, no templates |
+| AV | Not built | Not present on this branch |
 
-- **Backend**: Python 3.13, Flask 3.1, SQLAlchemy 2.0, Alembic
-- **Database**: PostgreSQL (production), SQLite (development)
-- **Auth**: Keycloak SSO or Google OAuth via Authlib, with dev login mode
-- **Deployment**: Docker (GHCR)
+BUDGET is the only work type in general production use. [Work Types](docs/work-types.md) holds the registry, the per-work-type configuration, and what differs between them.
 
-## Quick Start
+## Tech stack
 
-### Prerequisites
+| Layer | Choice |
+| --- | --- |
+| Backend | Python, Flask 3.1, SQLAlchemy 2.0, Alembic |
+| Database | PostgreSQL in production, SQLite in development |
+| Auth | Keycloak SSO or Google OAuth via Authlib, plus a dev login mode |
+| Deployment | Heroku with the Python buildpack, Gunicorn (`Procfile`, `app.json`); Heroku Scheduler runs the periodic `flask` commands listed in [docs/README.md](docs/README.md) |
 
-- Python 3.13+
-- pip
+## Run it locally
 
-### Local Development
+Production and the Docker image pin Python 3.13 (`.python-version`, `Dockerfile`). Python 3.12.13 also runs the application and the full test suite; verified August 2026. You also need pip.
 
 ```bash
-# Clone and setup
 git clone https://github.com/magfest/Resource-mgmt-app.git
 cd Resource-mgmt-app
 
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # macOS/Linux
+python3 -m venv .venv
+source .venv/bin/activate
+# Windows instead: .venv\Scripts\activate
 
-# Install dependencies
 pip install -r requirements-dev.txt
 pre-commit install
 
-# Copy environment template
 cp .env.example .env
 
-# Initialize database
 flask db upgrade
-
-# Seed reference data (optional)
-python -c "from app import create_app; from app.seeds.config_seed import run_all_seeds; app = create_app(); app.app_context().push(); run_all_seeds()"
-
-# Run development server
+flask seed
 flask run
 ```
 
-Visit `http://localhost:5000`
+Visit `http://localhost:5000`. Dev login is enabled by `.env.example`, so no OAuth setup is needed.
+
+### Seeding
+
+`flask seed [target]` is the manual seed command (`app/cli.py`). The default target is `all`.
+
+| Target | Inserts |
+| --- | --- |
+| `bootstrap` | Schema-required rows: work types, approval groups, reference data, hotel expense accounts |
+| `demo` | Replaceable `[Demo]` org content: departments, an event cycle, divisions, parking accounts |
+| `all` | Both |
+
+Seeding is insert-only and safe to re-run.
+
+Seed through the `flask` CLI, not through `python -c`. `create_app()` refuses to start without `APP_ENV` (`app/__init__.py`), and only the `flask` CLI loads `.env`.
+
+### git push runs the test suite
+
+`pre-commit install` also installs a pre-push hook that runs the whole pytest suite (`.pre-commit-config.yaml`). Budget about a minute; 612 tests took 57 seconds in August 2026. Activate the virtualenv before you push. Without it the hook fails with `Executable pytest not found` and the push is blocked.
+
+### Authentication
+
+- Development: `DEV_LOGIN_ENABLED=true` gives a local user switcher, no OAuth needed
+- Production: Keycloak SSO or Google OAuth
+
+`.env.example` lists every configuration option with its default.
 
 ### Docker
+
+The `Dockerfile` is not how this application is deployed. It builds a standalone Gunicorn image on port 8000, useful for a container check; deployment is the Heroku buildpack. The workflow that would publish that image to GHCR is a parked draft at `.github/workflows-drafts/docker-build.yml` and is not enabled.
 
 ```bash
 docker build -t magfest-budget .
 docker run -p 8000:8000 -e APP_ENV=development -e DATABASE_URL=sqlite:///budget.db magfest-budget
 ```
 
-### Authentication
-
-- **Development**: Set `DEV_LOGIN_ENABLED=true` for a local user switcher (no OAuth needed)
-- **Production**: Keycloak SSO or Google OAuth
-
-See `.env.example` for all configuration options.
-
-## Project Structure
-
-```
-app/
-├── models/          # Database models (org, workflow, budget, contract, supply)
-├── routes/
-│   ├── admin/       # System configuration (super admin)
-│   ├── admin_final/ # Final review, reports, dashboards
-│   ├── approvals/   # Reviewer group workflow
-│   ├── dispatch/    # Reviewer assignment queue
-│   └── work/        # Requester workflow (create, edit, submit)
-├── routing/         # Pluggable approval routing strategies
-├── services/        # Email (AWS SES), notifications
-└── templates/       # Jinja2 templates
-```
-
 ## Documentation
 
-Detailed documentation is in the [`docs/`](docs/) folder:
+[`docs/`](docs/) is the index. Start there for [Architecture](docs/architecture.md), [Directory Structure](docs/directory-structure.md), [Work Types](docs/work-types.md), [Permissions](docs/permissions.md), and [Workflow](docs/workflow.md).
 
-- [Architecture Overview](docs/architecture.md)
-- [Directory Structure](docs/directory-structure.md)
-- [Work Types](docs/work-types.md)
-- [Permissions & RBAC](docs/permissions.md)
-- [Workflow](docs/workflow.md)
+[ROADMAP.md](ROADMAP.md) is what is planned. [CONTRIBUTING.md](CONTRIBUTING.md) is how to work on it.
 
 ## Security
 
-### Dependency Management
-
-Dependencies are pinned with [pip-tools](https://pip-tools.readthedocs.io/) and audited for known vulnerabilities:
-
-- `requirements.in` / `requirements-dev.in` — direct dependencies
-- `requirements.txt` / `requirements-dev.txt` — compiled lockfiles with pinned versions
-
-To update:
+Dependencies are pinned with [pip-tools](https://pip-tools.readthedocs.io/): `requirements.in` and `requirements-dev.in` hold the direct dependencies, `requirements.txt` and `requirements-dev.txt` are the compiled lockfiles.
 
 ```bash
 pip-compile --generate-hashes requirements.in -o requirements.txt --upgrade
 pip-compile --generate-hashes requirements-dev.in -o requirements-dev.txt --upgrade
 ```
 
-### Automated Scanning
-
-- **Pre-commit**: [pip-audit](https://github.com/trailofbits/pip-audit) blocks commits with known CVEs
-- **CI**: GitHub Actions runs pip-audit on every push and PR to `master`
-- **Dependabot**: Alerts and automatic security PRs enabled
+| Check | Where it runs |
+| --- | --- |
+| pip-audit against `requirements.txt` | pre-commit hook, and GitHub Actions on push and PR to `master` |
+| bandit against `app/` | GitHub Actions on push and PR to `master` |
+| pytest, full suite | pre-push hook, and GitHub Actions on push and PR to `master` |
+| Dependabot weekly pip version updates | `.github/dependabot.yml` |
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-### Tools / Disclosures
+## Tools and disclosures
 
-This project was developed with assistance from AI coding tools (Claude Code, JetBrains AI, Gemini) and writing tools (Grammarly). 
-
-## Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, and PR guidelines.
-
-Quick start:
-1. Fork the repo and create a feature branch
-2. `pip install -r requirements-dev.txt` and `pre-commit install`
-3. `cp .env.example .env` — dev login works out of the box, no OAuth setup needed
-4. `flask db upgrade` and `flask run`
-5. Make changes, run `pytest`, and submit a PR
+This project was developed with assistance from AI coding tools (Claude Code, JetBrains AI, Gemini) and writing tools (Grammarly).
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
-
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).

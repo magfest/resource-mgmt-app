@@ -1,16 +1,28 @@
 # Work Types
 
-The system supports multiple **work types** - different categories of requests that share the same workflow engine.
+The system supports multiple **work types**, different categories of requests that
+share the same workflow engine.
 
 ## Current Work Types
 
-| Code | Name | URL Slug | Status | Contact |
-|------|------|----------|--------|---------|
-| BUDGET | Budget Requests | `/budget/` | **Live** | biz@magfest.org |
-| TECHOPS | TechOps Requests | `/techops/` | **Live** | techops@magfest.org |
-| SUPPLY | Supply Orders | `/supply/` | In development (models + admin pages exist; requester UI next) | festops@magfest.org |
-| AV | AV Requests | `/av/` | In development (on `feature/AV-Request` branch) | av@magfest.org |
-| CONTRACT | Contracts | `/contracts/` | Future (data model exists, no UI) | biz@magfest.org |
+State as of August 2026. Slugs are the seeded `WorkTypeConfig.url_slug` values
+(`app/seeds/bootstrap.py:170-255`).
+
+| Work type | URL slug | State | What exists | Contact |
+| --- | --- | --- | --- | --- |
+| BUDGET | `budget` | Complete | The full pipeline: dispatch, admin final, reports, comments, supplementary requests. The reference implementation | biz@magfest.org |
+| SUPPLY | `supply` | Partial | Ordering, catalog, and admin final. No warehouse, fulfillment, or returns | festops@magfest.org |
+| TECHOPS | `techops` | Partial | Request entry and line review. No dispatch stage, no admin final. Deployed to production so the team can do test runs and give feedback, not for general use | techops@magfest.org |
+| CONTRACT | `contracts` | Model only | Data model and an admin configuration page. No route package, no templates | biz@magfest.org |
+| AV | `av` | Not built | Not present on this branch | av@magfest.org |
+
+BUDGET is the only work type in general production use. A route package on this
+branch is not evidence that a work type is in service.
+
+`bootstrap.py:67-71` seeds BUDGET and SUPPLY with `is_active=True`; CONTRACT,
+TECHOPS, and AV seed inactive. TECHOPS runs in production despite seeding inactive,
+so a fresh development database will not show it in the pickers until someone
+enables it under Admin, Work Types. That flip is a manual step.
 
 ## How It Works
 
@@ -39,8 +51,9 @@ WorkTypeConfig(
     line_detail_type="budget",            # Which detail model to use
     routing_strategy="expense_account",   # How to route to approvers
     supports_supplementary=True,          # Allow supplementary requests?
-    uses_dispatch=True,                   # Lifecycle: admin dispatch stage? (BUDGET yes, TECHOPS no)
+    uses_dispatch=True,                   # Lifecycle: admin dispatch stage?
     has_admin_final=True,                 # Lifecycle: admin final review stage?
+    uses_board_release=True,              # Hold the finished item for board sign-off?
     item_singular="Budget",               # Display labels
     item_plural="Budgets",
     line_singular="Line",
@@ -48,9 +61,22 @@ WorkTypeConfig(
 )
 ```
 
-The lifecycle flags default to `False` — new work types opt into stages explicitly.
-A work type with both flags off (like TECHOPS) skips dispatch and auto-finalizes
-when the last line is decided (`app/routes/work/helpers/lifecycle.py`).
+### Lifecycle flags
+
+Three flags on `WorkTypeConfig` decide which stages a request passes through.
+
+| Flag | Controls |
+| --- | --- |
+| `uses_dispatch` | Whether submit lands in AWAITING_DISPATCH, where an admin assigns approval groups per line |
+| `has_admin_final` | Whether an admin sets the authoritative amounts and finalizes. Without it the item auto-finalizes when the last line is decided (`app/routes/work/helpers/lifecycle.py`) |
+| `uses_board_release` | Whether a finished item waits for board sign-off before its department is told. See [Workflow: Board release](./workflow.md#board-release) |
+
+All three default to `False` (`app/models/workflow.py:102`, `:103`, `:108`). A new
+work type opts into every stage explicitly. TECHOPS has neither dispatch nor admin
+final because nobody turned them on.
+
+[Workflow: Stages by work type](./workflow.md#stages-by-work-type) carries the
+seeded value of each flag per work type.
 
 ## Line Detail Models
 
@@ -66,7 +92,7 @@ unit_price_cents        # Price per unit
 routed_approval_group_id  # Computed from expense_account
 ```
 
-### ContractLineDetail (Future Release)
+### ContractLineDetail (model only)
 
 ```python
 contract_type_id        # Type of contract
@@ -79,7 +105,7 @@ terms_summary           # Key terms
 routed_approval_group_id  # Computed from contract_type
 ```
 
-### TechOpsLineDetail (Live)
+### TechOpsLineDetail
 
 ```python
 service_type_id         # TechOps service type (ethernet, phone, radio, ...)
@@ -89,10 +115,10 @@ config                  # Service-specific extras (JSON)
 routed_approval_group_id  # Snapshot from the service type's routing
 ```
 
-(See `app/models/techops.py` — also has `TechOpsServiceType` catalog and
+(See `app/models/techops.py`; it also has `TechOpsServiceType` catalog and
 `TechOpsRequestDetail` for request-level fields.)
 
-### SupplyOrderLineDetail (In Development)
+### SupplyOrderLineDetail
 
 ```python
 item_id                 # Warehouse item from catalog
@@ -125,7 +151,7 @@ Contract Line
     → Approvers in that group review
 ```
 
-### category (TechOps — live; Supply Orders will use it too)
+### category (TechOps and Supply Orders)
 
 ```
 TechOps Line                          Supply Line
@@ -135,15 +161,6 @@ TechOps Line                          Supply Line
 ```
 
 Implemented per-type in `app/routing/category.py`.
-
-## Adding a New Work Type
-
-See **[`docs/adding-a-work-type.md`](adding-a-work-type.md)** — the full 10-step
-recipe distilled from how TECHOPS shipped. Short version: detail model → migrations →
-seeds (`app/seeds/bootstrap.py`) → routing → line-detail dispatch → **own route
-package** `app/routes/work/<type>/` → **own template tree** `app/templates/<type>/` →
-activation. Do NOT extend the budget routes; TECHOPS (`app/routes/work/techops/`)
-is the reference implementation.
 
 ## Work Type Access Control
 
@@ -177,4 +194,4 @@ detail = get_line_detail(line)  # Returns BudgetLineDetail, ContractLineDetail, 
 amount = get_line_amount_cents(line)  # Returns amount regardless of calculation method
 ```
 
-This is why `line_details.py` lives at the app root - it's not specific to any one work type.
+This is why `line_details.py` lives at the app root; it is not specific to any one work type.

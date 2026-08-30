@@ -14,9 +14,19 @@ or not at all, so a failed commit cannot leave a department told about a
 submission that did not happen.
 
 `app/services/email_enqueue.py` writes the rows. `app/services/email_drainer.py`
-sends them, and is the only code path in the app that calls SES. Rows the
-notification layer writes carry a `dedup_key` under a unique constraint, so a
-double-clicked submit button inserts one row, not two.
+sends them. Rows the notification layer writes carry a `dedup_key` under a
+unique constraint, so a double-clicked submit button inserts one row, not two.
+
+`app/services/email.py` is transport only. `send_via_ses()` reads no config,
+touches no database, and never raises; a raising transport would abort the
+drainer's batch on one bad recipient. Dedup, pacing, retry, and the
+`EMAIL_ENABLED` kill switch all sit above it.
+
+The drainer is the only path that sends *queued* mail, not the only caller of
+SES. Two admin test-send routes call `send_via_ses()` directly and bypass the
+outbox: the template test send in `app/routes/admin/email_templates.py` and the
+test email on the email health page. Each writes its own `notification_logs`
+row, since the transport writes none.
 
 ## Tables
 

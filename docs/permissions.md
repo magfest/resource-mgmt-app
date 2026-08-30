@@ -1,341 +1,209 @@
-# Permissions & Access Control
+# Permissions and Access Control
 
-This document explains how access control works in the system.
+This document answers one question: what decides whether a given user may see or
+change a given thing. Three mechanisms decide it, and they are independent.
 
-## Overview
+| Mechanism | Stored in | Scope |
+|-----------|-----------|-------|
+| System roles | `UserRole` (`app/models/workflow.py:187`) | Global, one work type, or one approval group |
+| Memberships | `DepartmentMembership`, `DivisionMembership` (`app/models/org.py:227`, `:115`) | One department or division, for one event cycle |
+| Checkout lock | Columns on `work_item` | One work item, while a reviewer holds it |
 
-Access is controlled at three levels:
+A user with no role and no membership sees nothing beyond the dashboard.
 
-1. **System Roles** - Global or work-type-scoped admin/approver access
-2. **Memberships** - Department or division membership with work type scoping
-3. **Request-Level** - Checkout locks for concurrent edit prevention
+## Roles and memberships
 
----
+| Role | Scope | Granted by | Revoked by |
+| --- | --- | --- | --- |
+| `SUPER_ADMIN` | Global. Every department, work type, and admin page | Admin → Users → Edit User, "Super Admin" box. Writes a `UserRole` row with both scope columns NULL | Same form with the box cleared |
+| `WORKTYPE_ADMIN` | One work type, via `user_roles.work_type_id` | Admin → Users → Edit User, the box for that work type | Same form with the box cleared |
+| `APPROVER` | One approval group, via `user_roles.approval_group_id` | Admin → Users → Edit User, the box for that group | Same form with the box cleared |
+| Department membership | One department, one event cycle | Admin → Departments → [Department] → Members → Add Member (`admin/departments.py:453`) | Delete on the member row (`departments.py:603`) |
+| Division membership | Every department in one division, one event cycle | Admin → Divisions → [Division] → Members → Add Member (`admin/divisions.py:372`) | Delete on the member row (`divisions.py:495`) |
 
-## Naming Conventions
+All three role checkboxes post to the same handler. `_update_user_roles()`
+(`admin/users.py:309`) deletes every existing role row for the user, then rewrites
+the set from the submitted form. An unchecked box is a revocation.
 
-To avoid confusion, we use consistent naming throughout the codebase:
+Memberships also arrive in bulk through Admin → Data Upload, which accepts CSV for
+department and division memberships. The POST importers are
+`department_memberships_upload()` (`admin/data_upload.py:958`) and
+`division_memberships_upload()` (`:1102`). The
+upload updates an existing membership for the same user, unit, and event cycle
+rather than creating a second one (`:1044`).
 
-| Term | Meaning |
-|------|---------|
-| `is_super_admin` | User has `SUPER_ADMIN` role (global admin access) |
-| `is_worktype_admin` | User is admin for a specific work type (SUPER_ADMIN OR WORKTYPE_ADMIN) |
-| `is_budget_admin()` | Convenience function to check budget work type admin status |
+## Membership is event-scoped
 
-**Important distinctions:**
+A membership grants access for one event cycle, not forever. Both models carry
+`event_cycle_id` (`org.py:246`, `:139`) and both include it in their unique
+constraint (`:270`, `:162`). A user who worked SMF2026 has no access to SMF2027
+until someone adds a membership for that cycle.
 
-- `user_ctx.is_super_admin` - Checks if user is a **global** super admin
-- `perms.is_worktype_admin` - Checks if user is admin for **this specific work type**
+Membership alone grants nothing either. Per-work-type rows in
+`DepartmentMembershipWorkTypeAccess` (`org.py:294`) and
+`DivisionMembershipWorkTypeAccess` (`:186`) carry the actual view and edit flags,
+read through `can_view_work_type()` and `can_edit_work_type()`, declared once per
+membership model (`org.py:283`, `:288` for departments; `:175`, `:180` for
+divisions).
+The `can_view` and `can_edit` columns on the membership row itself are legacy and
+are not what `build_portfolio_perms()` consults.
 
-A super admin is always a worktype admin (for all work types), but a worktype admin is NOT a super admin.
+## What a WORKTYPE_ADMIN can reach
 
----
+A work-type admin is not a scaled-down super admin. The split is per page, not per
+prefix, and two pages under `/admin/config/` fall on opposite sides.
 
-## System Roles
+| Page | Guard | Who gets in |
+|------|-------|-------------|
+| `/admin/` system dashboard | `require_admin(user_ctx)` (`admin_final/dashboard.py:261`) | SUPER_ADMIN only |
+| `/admin/config/users/` | `@require_super_admin` | SUPER_ADMIN only |
+| `/admin/config/approval-groups/` | `@require_super_admin` (`admin/approval_groups.py:66`) | SUPER_ADMIN only |
+| `/admin/config/expense-accounts/` | `@require_budget_admin` (`admin/expense_accounts.py:144`) | Budget admin or SUPER_ADMIN |
+| `/admin/budget/` | Checked inside the view (`admin_final/dashboard.py:301`) | Budget admin or SUPER_ADMIN |
 
-System roles are stored in the `UserRole` model and managed via Admin → Users.
+Approval groups are shared infrastructure, so their config pages sit behind
+SUPER_ADMIN even though budget admins use the groups daily.
 
-### SUPER_ADMIN
+## Guards: the module decides how you call it
 
-Full access to everything:
-- All departments, all work types
-- All admin pages (system config AND work type admin)
-- All approval queues
-- Can finalize/unfinalize requests
+`app/routes/admin/helpers.py` exports decorators. `app/routes/admin_final/helpers.py`
+exports callables that abort 403. The module you import from determines the call
+shape, and the two misuses fail in opposite directions. Decorating a view with the
+callable raises `AttributeError` at decoration time, so the module fails to import.
+Calling the decorator inline as a guard is the silent one: it binds `f` to the
+`user_ctx` you passed, returns a wrapper you discard, runs no check, and leaves the
+view unguarded.
 
-**Code check:** `user_ctx.is_super_admin` or `is_super_admin()`
+Two names exist in both modules. Learn the rule rather than the pairs; a third
+collision will follow the same rule.
 
-### WORKTYPE_ADMIN
-
-Admin access for a specific work type:
-- See all departments for that work type
-- Access admin pages for that work type only (`/admin/budget/`)
-- **Budget Admin** can configure: Expense Accounts, Approval Groups
-- Cannot access system config pages (`/admin/` - users, departments, divisions, etc.)
-- Cannot access other work types
-
-Example: "Budget Admin" can manage all budgets but not contracts.
-
-**Code check:** `is_worktype_admin(user_ctx, work_type_id)` or `is_budget_admin(user_ctx)`
-
-### APPROVER
-
-Can review lines routed to specific approval groups:
-- Appears in approver dashboard
-- Can approve/reject/request info on lines
-- Scoped to one or more approval groups
-
-**Code check:** `user_ctx.approval_group_ids` contains the relevant group ID
-
----
-
-## Permission Functions Reference
-
-### Global Functions (in `app/__init__.py`)
+| Name | Decorator (`admin/helpers.py`) | Callable (`admin_final/helpers.py`) |
+|------|-------------------------------|-------------------------------------|
+| `require_budget_admin` | `:48`, takes `f` | `:119`, takes `user_ctx` |
+| `require_any_worktype_admin` | `:95`, takes `f` | `:144`, takes `user_ctx` |
+| `require_super_admin` | `:28`, takes `f` | none |
+| `require_supply_admin` | `:69`, takes `f` | none |
+| `require_admin` | none | `:113`, takes `user_ctx`, checks SUPER_ADMIN |
 
 ```python
-# Check if user is a super admin (respects beta testing role overrides)
-is_super_admin() -> bool
+# Decorator form
+@expense_accounts_bp.get("/")
+@require_budget_admin
+def list_accounts():
+    ...
 
-# Check actual database role (ignores beta testing overrides)
-# Use this only for checking if override is allowed
-_has_super_admin_role() -> bool
+# Callable form
+@admin_final_bp.get("/admin/budget/")
+def budget_admin_home():
+    user_ctx = get_user_ctx()
+    require_budget_admin(user_ctx)
 ```
 
-### UserContext (built per-request)
+## Where the permission helpers live
+
+Every helper below takes `user_ctx`, a `UserContext` (`app/routes/__init__.py:55`).
+It is a frozen per-request snapshot of `user_id`, `user`, `roles`,
+`is_super_admin`, and `approval_group_ids`; build it with `get_user_ctx()`. The
+helpers are spread across three modules, and the module is not guessable from the
+name.
+
+| Function | Module | Kind |
+|----------|--------|------|
+| `get_user_ctx()` |  `app/routes/__init__.py:77` | Returns the request's `UserContext` |
+| `is_super_admin()` | `app/__init__.py:543` | Zero-arg, reads the session |
+| `_has_super_admin_role()` | `app/__init__.py:523` | Zero-arg, ignores beta overrides |
+| `is_worktype_admin(user_ctx, work_type_id)` | `work/helpers/context.py:243` | Boolean |
+| `is_budget_admin(user_ctx, work_type_id=None)` | `work/helpers/context.py:257` | Boolean |
+| `is_any_worktype_admin(user_ctx)` | `work/helpers/context.py:265` | Boolean |
+| `build_portfolio_perms(ctx)` | `work/helpers/context.py:281` | Returns `PortfolioPerms` |
+| `build_work_item_perms(item, ctx)` | `work/helpers/checkout.py:241` | Returns `WorkItemPerms` |
+| `require_portfolio_view(ctx)` | `work/helpers/context.py:354` | Callable, aborts 403 |
+| `require_portfolio_edit(ctx)` | `work/helpers/context.py:362` | Callable, aborts 403 |
+| `require_work_item_view(item, ctx)` | `work/helpers/context.py:370` | Callable, aborts 403 |
+| `is_reviewer_for_line(line, user_ctx)` | `approvals/helpers.py:130` | Boolean |
+| `can_respond_to_work_item(item, ctx, user_ctx)` | `approvals/helpers.py:148` | Boolean |
+
+`build_work_item_perms()` lives in `checkout.py` while the `WorkItemPerms`
+dataclass it returns is declared in `context.py:67`. Both builders take a
+`PortfolioContext`, so call `get_portfolio_context()` first.
+
+`is_budget_admin()` takes an optional `work_type_id` and forwards to
+`is_worktype_admin()`. When callers pass a work type, the name no longer describes
+what it checks: `build_portfolio_perms()` calls
+`is_budget_admin(ctx.user_ctx, ctx.work_type.id)` for TechOps portfolios too
+(`context.py:283`).
+
+## Beta testing role override
+
+`is_super_admin()` respects a session role override; `_has_super_admin_role()`
+does not. The override applies only when `BETA_TESTING_MODE` is set and only for a
+user who holds the role in the database (`app/__init__.py:533-540`). Values `none`
+and `approver` drop the caller to non-admin, and `approver` narrows
+`approval_group_ids` to the single group chosen in the session. Use
+`_has_super_admin_role()` only to decide whether an override is permitted.
+
+## Permission dicts
+
+`PortfolioPerms` (`context.py:52`) and `WorkItemPerms` (`context.py:67`) are frozen
+dataclasses that templates read instead of calling the checks themselves.
 
 ```python
-@dataclass
-class UserContext:
-    user_id: str
-    user: User | None
-    roles: tuple[str, ...]
-    is_super_admin: bool           # True if SUPER_ADMIN role
-    approval_group_ids: Set[int]   # Approval groups user can review
-```
-
-### Work Type Admin Checks (in `app/routes/work/helpers/context.py`)
-
-> `app/routes/work/helpers` is a **package**, not a module — there is no
-> `helpers.py`. Both functions below are defined in `context.py` (lines 245 and 259).
-
-```python
-# Check if user is admin for a specific work type
-is_worktype_admin(user_ctx: UserContext, work_type_id: int) -> bool
-
-# Convenience: Check if user is budget admin
-is_budget_admin(user_ctx: UserContext, work_type_id: int | None = None) -> bool
-```
-
-### Permission Objects
-
-```python
-@dataclass
+@dataclass(frozen=True)
 class PortfolioPerms:
-    can_view: bool              # Can see the portfolio
-    can_edit: bool              # Can edit draft requests
-    can_create_primary: bool    # Can create primary request
-    can_create_supplementary: bool  # Can create supplementary
-    is_worktype_admin: bool     # Is admin for THIS work type
+    can_view: bool
+    can_edit: bool
+    can_create_primary: bool
+    can_create_supplementary: bool
+    is_worktype_admin: bool     # admin for THIS work type
 
-@dataclass
+@dataclass(frozen=True)
 class WorkItemPerms:
     can_view: bool
     can_edit: bool
     can_submit: bool
-    can_recall: bool            # recall to draft while AWAITING_DISPATCH
+    can_recall: bool
     can_add_lines: bool
     can_delete: bool
     can_checkout: bool
     can_checkin: bool
-    can_request_info: bool
-    can_respond_to_info: bool
-    is_worktype_admin: bool     # Is admin for THIS work type
+    is_worktype_admin: bool
     is_draft: bool
     is_checked_out: bool
     is_checked_out_by_current_user: bool
 ```
 
----
+The four lock fields on `WorkItemPerms` follow the checkout rules described in
+[Workflow](workflow.md#checkout-and-locking), which is authoritative for locking.
 
-## Memberships
+`can_create_supplementary` also depends on the event cycle. The primary must be
+FINALIZED unless the cycle sets `allow_early_supplementary` (`context.py:322-326`).
 
-Memberships grant department/division access and are scoped by:
-- **Event Cycle** - Access is per-event (SMF2027, MAGStock 2027, etc.)
-- **Work Type** - Access is per-work-type (Budget, Contracts, Supply)
+## Duplicate role rows in dev
 
-### Department Membership
+The `uq_user_role_scoped_once` UniqueConstraint on `user_roles` does not stop
+duplicate rows when both scope columns are NULL, because SQL treats NULL as not
+equal to NULL. A user can hold two `SUPER_ADMIN` rows as far as that constraint is
+concerned.
 
-Direct access to one department:
+Two other layers cover the gap:
 
-```
-DepartmentMembership
-├── user_id
-├── department_id
-├── event_cycle_id
-├── can_view (general flag)
-├── can_edit (general flag)
-├── is_department_head (informational)
-└── work_type_access[] ← Per-work-type permissions
-    ├── BUDGET: can_view=True, can_edit=True
-    ├── CONTRACT: can_view=False, can_edit=False
-    └── SUPPLY: can_view=True, can_edit=False
-```
+1. PostgreSQL partial indexes from migration `o5p6q7r8s9t0`:
+   `ix_user_roles_global_unique`, `ix_user_roles_worktype_unique`,
+   `ix_user_roles_approvalgroup_unique`.
+2. Application checks in the admin role routes, which clear the role set before
+   rewriting it.
 
-### Division Membership
+SQLite dev databases get the constraint but not the partial indexes. Duplicate
+global role rows can therefore appear in dev and not in production. Reproduce any
+suspected duplicate-role bug against PostgreSQL before treating it as real.
 
-Access to ALL departments in a division:
+## Role changes are not in the config audit log
 
-```
-DivisionMembership
-├── user_id
-├── division_id
-├── event_cycle_id
-├── can_view
-├── can_edit
-├── is_division_head
-└── work_type_access[] ← Applies to all departments in division
-```
+Editing a user writes a `config_audit_log` row only when `track_changes()` finds a
+difference, and `_user_to_dict()` (`admin/users.py:45`) reports just `email`,
+`display_name`, and `is_active`. Granting or revoking a role changes none of those
+fields. As of August 2026, a role change made on its own leaves no audit row, and
+the only record is the current contents of `user_roles`.
 
-Division membership is useful for:
-- Division heads who oversee multiple departments
-- Cross-department roles
-
-### Work Type Access
-
-**Important**: Just having a membership doesn't grant work type access.
-
-A user must have explicit work type access:
-
-```python
-# Check if user can view budgets for TechOps
-membership = DepartmentMembership.query.filter_by(
-    user_id=user.id,
-    department_id=techops.id,
-    event_cycle_id=smf2027.id,
-).first()
-
-can_view_budget = membership.can_view_work_type(budget_work_type.id)
-```
-
-This allows:
-- Budget-only access (most common)
-- Contracts access for specific people only
-- View-only access for oversight roles
-
----
-
-## Permission Checks in Code
-
-### Route-Level Checks
-
-Most routes use context builders that handle permission checks:
-
-```python
-from app.routes.work.helpers import get_portfolio_context, require_portfolio_view
-
-@work_bp.get("/<event>/<dept>/budget")
-def portfolio_landing(event, dept):
-    ctx = get_portfolio_context(event, dept)  # Builds context
-    perms = require_portfolio_view(ctx)        # Aborts 403 if no access
-    # ... user has access, continue
-```
-
-### Admin Page Checks
-
-```python
-from app.routes.admin_final.helpers import require_budget_admin
-
-@admin_final_bp.get("/budget/")
-def budget_admin_home():
-    user_ctx = get_user_ctx()
-    require_budget_admin(user_ctx)  # Aborts 403 if not budget admin
-    # ... user is budget admin, continue
-```
-
-### Checking Work Type Access
-
-```python
-# In a membership context
-if membership.can_view_work_type(work_type_id):
-    # Show the work type
-
-if membership.can_edit_work_type(work_type_id):
-    # Allow editing
-```
-
----
-
-## Admin UI for Permissions
-
-### Managing System Roles
-
-Admin → Users → Edit User
-
-- Check "Super Admin" for full access
-- Check work type admin boxes for work-type-scoped admin
-- Check approval group boxes for approver access
-
-### Managing Memberships
-
-Admin → Departments → [Department] → Members
-
-Or: Admin → Divisions → [Division] → Members
-
-Each membership form shows:
-- General permissions (legacy, informational)
-- Work Type Access table with View/Edit checkboxes per work type
-
----
-
-## Common Scenarios
-
-### "User can see budgets but not contracts"
-
-Give them:
-- Department membership with BUDGET work type access (view + edit)
-- No CONTRACT work type access
-
-### "User can view all departments in a division"
-
-Give them:
-- Division membership with appropriate work type access
-
-### "User can approve budget lines for a specific category"
-
-Give them:
-- APPROVER role for the relevant approval group(s)
-- They don't need department membership (approvers see lines routed to their group)
-
-### "User is department head but contracts are restricted"
-
-Give them:
-- Department membership, is_department_head=True
-- BUDGET work type access (view + edit)
-- No CONTRACT work type access (or view-only if needed for awareness)
-
-### "User needs to manage ALL budgets but NOT system config"
-
-Give them:
-- WORKTYPE_ADMIN role for BUDGET work type
-- They can access `/admin/budget/` and configure Expense Accounts + Approval Groups
-- They CANNOT access `/admin/` (users, departments, divisions, etc.)
-
----
-
-## Permission Hierarchy
-
-```
-SUPER_ADMIN (global)
-  ├─ Can access /admin/ (system config)
-  ├─ Can access all /admin/{worktype}/ pages
-  ├─ Treated as worktype admin for ALL work types
-  └─ Can use beta testing role override
-
-WORKTYPE_ADMIN (scoped to work type)
-  ├─ Can access /admin/{worktype}/ for their work type
-  ├─ Can configure: Expense Accounts, Approval Groups (budget-specific config)
-  ├─ CANNOT access /admin/ (system config: users, departments, divisions)
-  ├─ Admin for that work type only
-  └─ Equivalent to dept membership + admin powers for that work type
-
-APPROVER (scoped to approval groups)
-  ├─ Can review lines routed to their groups
-  ├─ Appears in approval dashboard
-  └─ No admin access
-
-Department/Division Membership
-  ├─ Can view/edit portfolios (per work type access)
-  ├─ Can create/submit requests
-  └─ Scoped by event cycle and work type
-```
-
----
-
-## Audit Trail
-
-Permission-related changes are logged:
-- User role changes (via UserRole)
-- Membership changes (via DepartmentMembership, DivisionMembership)
-
-Check `config_audit_log` table for history.
+Membership changes do log, through the `log_config_change()` calls in
+`admin/departments.py` and `admin/divisions.py`.

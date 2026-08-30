@@ -1,9 +1,16 @@
 # MAGFest Budget App - Design Language Guide
 
-Created: 2026-02-26
-Status: Living Document
+This document records the UI patterns new templates follow. Written 2026-02-26
+and checked against the templates in August 2026; patterns marked `UNVERIFIED`
+below could not be settled either way and are kept rather than deleted.
 
-This document defines the design patterns and conventions used throughout the application. All new templates should follow these guidelines.
+There is no external stylesheet. `app/static/` holds images and no `.css` file,
+so every rule sits in a `<style>` block inside a template. The shared block is
+in `app/templates/layout/base.html`; eight other templates carry their own local
+blocks, among them the three `quick_review.html` pages, `budget/work_item_edit.html`,
+and `admin/security_logs/list.html`. Check the page's own block before assuming
+a rule is in `base.html`. A class this document names that neither block
+defines is inline-styled at each call site.
 
 ---
 
@@ -22,6 +29,10 @@ This document defines the design patterns and conventions used throughout the ap
 ---
 
 ## Button Placement
+
+UNVERIFIED as of August 2026. These are conventions, not enforced anywhere, and
+no mechanical check settles how closely the templates follow them. Kept because
+they record the intent.
 
 ### Principle
 **Top-right header area is for management/admin actions. Inline buttons are for editing specific content.**
@@ -123,17 +134,24 @@ Primary action first, cancel second, destructive/admin actions pushed right:
 ## Pills & Badges
 
 ### Base Classes
-Use semantic class names for consistent styling:
+Use these semantic class names; `base.html` defines all of them.
 
 | Class | Use Case | Colors |
 |-------|----------|--------|
 | `pill` | Default/neutral | Gray background |
 | `pill-draft` | Draft status | Light gray |
 | `pill-submitted` | Submitted/pending | Light blue |
-| `pill-approved` | Approved/success | Light green |
+| `pill-approved` | Approved, subtle; also FINALIZED | Light green |
+| `pill-success` | Approved, vivid; line-level | Green |
 | `pill-needs` | Needs attention | Light yellow/orange |
+| `pill-warning` | Needs info, needs adjustment, paused, awaiting dispatch, under review, approved needs review, pending board approval | Yellow, dark text |
 | `pill-rejected` | Rejected/error | Light red |
 | `pill-info` | Informational badge | Blue |
+| `pill-dh` | Department head badge | Amber |
+| `pill-divhead` | Division head badge | Purple |
+| `pill-admin` | Admin badge | Blue |
+| `pill-sm` | Modifier, not a color: shrinks any pill above | - |
+| `a.pill-link` | Modifier, not a color: makes any pill above clickable | Hover lift, no underline |
 
 ### Usage Examples
 ```html
@@ -153,18 +171,36 @@ Use semantic class names for consistent styling:
 <span class="pill" style="background: #dbeafe; font-size: 0.7rem;">View Only</span>
 ```
 
-### Status with friendly_status()
-Always use the `friendly_status()` helper for user-facing status text:
+### Status pills go through the macro
+
+`app/templates/macros/status_pill.html` holds the status-to-class mapping for
+the whole app. Do not write an `{% if status == ... %}` chain in a template;
+one edit to the macro should change every render.
+
 ```html
-<span class="pill {{ status_pill_class }}">{{ friendly_status(status) }}</span>
+{% from "macros/status_pill.html" import render_status_pill %}
+{{ render_status_pill(work_item.status) }}
+{{ render_status_pill(line.status, label=friendly_status(line.status)) }}
 ```
+
+An unknown status falls through to `pill-draft`, so a new work type can add a
+status without breaking existing pages. Imported macros that call
+`friendly_status()` need `with context` on the import.
 
 ---
 
 ## Navigation
 
+### Top Navigation Bar
+`app/templates/components/_top_nav.html` renders a persistent bar on every page
+for a signed-in user. It replaced the older hub-and-spoke admin pages in March
+2026. Menus appear by role: Review for approvers, Reports and Budget Admin for
+budget admins, per-work-type admin menus, and Admin for super admins. Add a new
+destination to that file rather than building a page-local menu.
+
 ### Back Links
-Use at the top of pages, with left arrow:
+Back links survive alongside the top bar and carry page-to-page context the bar
+does not. Use at the top of pages, with left arrow:
 ```html
 <div class="muted" style="margin-bottom: 12px;">
   <a href="{{ url_for('...') }}">&larr; Back to [Context]</a>
@@ -180,35 +216,49 @@ Use `.btn-row` for page-level navigation at bottom:
 ```
 
 ### Tabs
-For organizing related content within a page:
+There is no shared tab component, and the `.tab` / `.tab-content` markup this
+document once prescribed appears in no template. Four pages implement tabs
+inline with `tab-btn` buttons and `tab-panel` divs, each styled and switched by
+a nonced script in its own file: `home.html`, `budget/work_item_detail.html`,
+`budget/work_item_edit.html`, and `admin_final/email_debug.html`. Four copies of
+the same pattern is the argument for promoting it to a component.
+
 ```html
-<div class="tab-row" style="display: flex; gap: 4px; margin-bottom: 16px;">
-  <button class="tab active" data-tab="details">Details</button>
-  <button class="tab" data-tab="lines">Lines <span class="badge">5</span></button>
-  <button class="tab" data-tab="comments">Comments</button>
+<div class="tab-row" style="display: flex; flex-wrap: wrap; margin-bottom: -1px;">
+  <button type="button" class="tab-btn active" data-tab="queue" style="...">Queue</button>
+  <button type="button" class="tab-btn" data-tab="log" style="...">Log</button>
 </div>
 
-<div class="tab-content active" id="tab-details">...</div>
-<div class="tab-content" id="tab-lines">...</div>
-<div class="tab-content" id="tab-comments">...</div>
+<div class="tab-panel active" id="panel-queue">...</div>
+<div class="tab-panel" id="panel-log" style="display: none;">...</div>
 ```
+
+Copy that page if you need tabs, or promote it to a shared component first.
 
 ---
 
 ## Forms
 
 ### Field Structure
+`base.html` defines `.form-label` (block, 600 weight, 6px bottom margin) and the
+`.mt-4` and `.mb-16` spacing utilities. Prefer them over repeating the inline
+style.
+
 ```html
-<div style="margin-bottom: 16px;">
-  <label for="field_id" style="display: block; font-weight: 600; margin-bottom: 6px;">
+<div class="mb-16">
+  <label for="field_id" class="form-label">
     Field Label <span style="color: red;">*</span>
   </label>
   <input type="text" id="field_id" name="field_name" required style="width: 100%;">
-  <div class="muted small" style="margin-top: 4px;">
+  <div class="muted small mt-4">
     Helper text explaining the field.
   </div>
 </div>
 ```
+
+Older templates carry `style="font-size: 13px; font-weight: 600; display:
+block; margin-bottom: 4px;"` on the label instead. Both render acceptably; new
+work uses the class.
 
 ### Two-Column Grid
 ```html
@@ -277,20 +327,8 @@ For organizing related content within a page:
 </div>
 ```
 
-### Inline Styles (until CSS classes exist)
-```html
-<!-- Info -->
-<div class="callout" style="background: #e7f3fe; border-left: 4px solid #2196f3;">
-
-<!-- Success -->
-<div class="callout" style="background: #f0fdf4; border-left: 4px solid #059669;">
-
-<!-- Warning -->
-<div class="callout" style="background: #fef3c7; border-left: 4px solid #fbbf24;">
-
-<!-- Danger -->
-<div class="callout" style="background: #fee2e2; border-left: 4px solid #dc3545;">
-```
+`base.html` now defines all five callout classes. The inline-style fallbacks
+this document once listed are no longer needed; use the class.
 
 ---
 
@@ -319,21 +357,15 @@ For organizing related content within a page:
 
 ## Color Tokens
 
-### Status Colors
-| Status | Background | Text | Border |
-|--------|------------|------|--------|
-| Draft | #f3f4f6 | #4b5563 | - |
-| Submitted | #dbeafe | #1e40af | - |
-| Approved | #e9f7ef | #059669 | - |
-| Needs Info | #fef3c7 | #92400e | - |
-| Rejected | #fee2e2 | #991b1b | - |
+The `<style>` block in `app/templates/layout/base.html` holds every hex value.
+Read it there rather than from a copy here; the copy that used to live in this
+section had drifted from the stylesheet by August 2026. Apply the class and do
+not hardcode a hex in a template.
 
-### Role Colors
-| Role | Background | Text |
-|------|------------|------|
-| Department Head | #fef3c7 | #92400e |
-| Division Head | #f3e8ff | #7c3aed |
-| Admin | #dbeafe | #1e40af |
+Two traps worth knowing. `pill-needs` (#fff4e5, orange) and `pill-warning`
+(#fef3c7, yellow) are different classes with similar intent, and the status
+macro picks `pill-warning`. `pill-admin` and `pill-dh` are the same amber, so an
+admin badge and a department head badge look alike.
 
 ### Action Colors
 | Type | Class | Background |
@@ -345,6 +377,10 @@ For organizing related content within a page:
 ---
 
 ## Spacing
+
+`base.html` defines two spacing utilities, `.mt-4` and `.mb-16`. The rest of the
+scale below is UNVERIFIED as of August 2026: it is applied inline, and no check
+enforces it.
 
 ### Standard Values
 - **4px**: Tight spacing (between label and input, pill margins)
@@ -386,9 +422,9 @@ When creating new templates, verify:
 - [ ] Back link at top with `&larr;`
 - [ ] Section headers use `<h3>` with proper margins
 - [ ] Action buttons placed according to placement rules
-- [ ] Pills use semantic class names
+- [ ] Status pills go through `render_status_pill`; other pills use semantic class names
 - [ ] Callouts use appropriate color classes
-- [ ] Form fields have labels with `font-weight: 600`
+- [ ] Form fields have labels using `.form-label`
 - [ ] Form fields have `.muted.small` helper text where needed
 - [ ] Button rows follow primary/secondary/destructive order
 - [ ] `.muted` used consistently for secondary text
@@ -396,20 +432,18 @@ When creating new templates, verify:
 
 ---
 
-## Future Improvements
+## Open Items
 
-### Priority 1 (High Impact)
-1. Create CSS classes for all pill variants
-2. Create CSS classes for callout color variants
-3. Standardize button placement across all forms
-4. Create reusable form field macros
+Checked August 2026. The wider backlog is [ROADMAP.md](../ROADMAP.md); the
+items below are UI-only.
 
-### Priority 2 (Medium Impact)
-1. Remove inline styles for colors - use CSS classes
-2. Create tab component template for reuse
-3. Standardize navigation patterns
-
-### Priority 3 (Low Impact)
-1. Standardize textarea sizing
-2. Document placeholder text patterns
-3. Create breadcrumb component for deep pages
+| Item | State |
+| --- | --- |
+| CSS classes for all pill variants | Done; `base.html` defines thirteen variants plus the base `.pill` they modify |
+| CSS classes for callout color variants | Done; `base.html` defines five |
+| Remove inline colors in favor of classes | Partly done. Role and permission badges still carry inline hexes |
+| Reusable form field macros | Not done. `macros/` holds status, comments, checkout, audit, and badge macros, no form field macro |
+| Tab component for reuse | Not done. Four inline implementations of the same pattern |
+| Standardize button placement across forms | UNVERIFIED. No mechanical check settles it |
+| Standardize textarea sizing | UNVERIFIED. `rows="3"` appears in 19 templates and `rows="2"` in 7, with no rule enforcing either |
+| Breadcrumb component for deep pages | Not done. The top nav bar covers part of the need |

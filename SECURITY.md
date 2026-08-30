@@ -27,14 +27,19 @@ This policy covers the MAGFest Budget System codebase and its deployment infrast
 
 ## What We Have in Place
 
-- Content Security Policy with nonces (no inline handlers)
-- CSRF protection via Flask-WTF on all forms
-- Dependency scanning via pip-audit (pre-commit and CI)
-- Dependabot alerts enabled
-- Role-based access control with per-route permission checks
-- Session timeout and sliding window expiration
+| Control | Where it is configured |
+| --- | --- |
+| Content Security Policy with per-request nonces; no inline event handlers | `app/__init__.py`, documented in [docs/security.md](docs/security.md) |
+| CSRF protection via Flask-WTF on all forms | `CSRFProtect` in `app/__init__.py` |
+| Dependency scanning via pip-audit, in pre-commit and on pushes to master and pull requests | `.pre-commit-config.yaml`, `.github/workflows/security.yml` |
+| Static analysis via bandit on pushes to master and pull requests | `.github/workflows/security.yml` |
+| Dependabot weekly pip version updates | `.github/dependabot.yml` |
+| Role-based access control with per-route permission checks | [docs/permissions.md](docs/permissions.md) |
+| Session timeout with sliding expiration, 30 minutes in production and 60 in development | `SESSION_TIMEOUT_MINUTES` in `app/__init__.py` |
+| Security audit logging of logins, logouts, 403s, and impersonation | [docs/security.md](docs/security.md) |
 
-See the [Roadmap](ROADMAP.md#security--infrastructure) for planned security improvements.
+The [roadmap](ROADMAP.md) records security work. As of August 2026 its security
+entries are completed items, not planned ones.
 
 ## Supported Versions
 

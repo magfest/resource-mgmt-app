@@ -1,5 +1,9 @@
 ﻿# Supply Order & Inventory Management System - Design Document
 
+> **Proposal, 2026-04-13.** Describes intended design, not shipped behavior. The
+> ordering and catalog half shipped; the warehouse half did not. For how Supply
+> works today, see [work-types.md](../work-types.md).
+
 **Status:** DRAFT - Speccing  
 **Branch:** `Supply-Order-framing`  
 **Date:** 2026-04-13  
