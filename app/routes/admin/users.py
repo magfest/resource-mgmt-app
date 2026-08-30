@@ -23,6 +23,13 @@ from app.models import (
     CONFIG_AUDIT_RESTORE,
 )
 from app.routes import h
+from app.security_audit import (
+    log_security_event,
+    EVENT_USER_MODIFY,
+    CATEGORY_ADMIN,
+    SEVERITY_ALERT,
+    SEVERITY_INFO,
+)
 from .helpers import (
     require_super_admin,
     render_admin_config_page,
@@ -306,6 +313,23 @@ def restore_user(user_id: str):
     return redirect(url_for(".list_users"))
 
 
+def _role_codes(user: User) -> set[str]:
+    """Current roles as readable codes, never database IDs.
+
+    An ID is meaningless in an audit entry read a year later, and it breaks if
+    the work type or approval group is renamed or removed.
+    """
+    codes = set()
+    for role in user.roles:
+        if role.work_type_id and role.work_type:
+            codes.add(f"{role.role_code}:{role.work_type.code}")
+        elif role.approval_group_id and role.approval_group:
+            codes.add(f"{role.role_code}:{role.approval_group.code}")
+        else:
+            codes.add(role.role_code)
+    return codes
+
+
 def _update_user_roles(user: User, form_data) -> None:
     """
     Update user roles based on form data.
@@ -314,7 +338,13 @@ def _update_user_roles(user: User, form_data) -> None:
     - role_super_admin: "1" if checked
     - role_worktype_admin_<work_type_id>: "1" if checked
     - role_approver_<approval_group_id>: "1" if checked
+
+    Snapshots the role set before clearing it, and logs a security audit
+    entry naming what was granted and revoked. The snapshot must come first;
+    clear() plus flush() below leaves nothing to diff against afterward.
     """
+    before = _role_codes(user)
+
     # Clear existing roles
     user.roles.clear()
     db.session.flush()
@@ -348,3 +378,33 @@ def _update_user_roles(user: User, form_data) -> None:
                 approval_group_id=ag.id,
             )
             db.session.add(role)
+
+    # New roles are added via db.session.add(), not user.roles.append(). The
+    # already-loaded `roles` collection on `user` (cached when `before` ran)
+    # does not see them. flush() persists the FK rows; it does not refresh a
+    # collection already loaded in memory. Expire it so the next access
+    # requeries instead of returning the stale list.
+    db.session.flush()
+    db.session.expire(user, ["roles"])
+    after = _role_codes(user)
+
+    granted = sorted(after - before)
+    revoked = sorted(before - after)
+    if not granted and not revoked:
+        return
+
+    log_security_event(
+        EVENT_USER_MODIFY,
+        category=CATEGORY_ADMIN,
+        severity=(
+            SEVERITY_ALERT
+            if ROLE_SUPER_ADMIN in granted or ROLE_SUPER_ADMIN in revoked
+            else SEVERITY_INFO
+        ),
+        details={
+            "target_user_id": user.id,
+            "target_email": user.email,
+            "granted": granted,
+            "revoked": revoked,
+        },
+    )
