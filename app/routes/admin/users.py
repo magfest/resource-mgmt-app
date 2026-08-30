@@ -313,21 +313,22 @@ def restore_user(user_id: str):
     return redirect(url_for(".list_users"))
 
 
+def _role_code(role: UserRole) -> str:
+    """One role as a readable code, never a database ID."""
+    if role.work_type_id and role.work_type:
+        return f"{role.role_code}:{role.work_type.code}"
+    if role.approval_group_id and role.approval_group:
+        return f"{role.role_code}:{role.approval_group.code}"
+    return role.role_code
+
+
 def _role_codes(user: User) -> set[str]:
     """Current roles as readable codes, never database IDs.
 
     An ID is meaningless in an audit entry read a year later, and it breaks if
     the work type or approval group is renamed or removed.
     """
-    codes = set()
-    for role in user.roles:
-        if role.work_type_id and role.work_type:
-            codes.add(f"{role.role_code}:{role.work_type.code}")
-        elif role.approval_group_id and role.approval_group:
-            codes.add(f"{role.role_code}:{role.approval_group.code}")
-        else:
-            codes.add(role.role_code)
-    return codes
+    return {_role_code(r) for r in user.roles}
 
 
 def _update_user_roles(user: User, form_data) -> None:

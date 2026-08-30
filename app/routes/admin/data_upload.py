@@ -44,6 +44,14 @@ from app.models import (
     UI_GROUP_HOTEL_SERVICES,
 )
 from app.routes import h
+from app.routes.admin.users import _role_code
+from app.security_audit import (
+    log_security_event,
+    EVENT_USER_MODIFY,
+    CATEGORY_ADMIN,
+    SEVERITY_ALERT,
+    SEVERITY_INFO,
+)
 from .helpers import (
     require_super_admin,
     render_admin_config_page,
@@ -1282,6 +1290,7 @@ def user_roles_upload():
 
     created = 0
     skipped = 0
+    granted_by_user_id: dict[str, dict] = {}
 
     for idx, row in df.iterrows():
         user_identifier = _get_cell_value(row, user_col)
@@ -1332,7 +1341,41 @@ def user_roles_upload():
                 approval_group_id=approval_group_id,
             )
             db.session.add(role)
+            # UserRole.approval_group has load_on_pending=False (the
+            # SQLAlchemy default). A lazy load on a pending, unflushed
+            # object returns None without querying; it does not wait for
+            # autoflush. Flush now so _role_code() below reads the real
+            # approval group instead of silently dropping it.
+            db.session.flush()
             created += 1
+            entry = granted_by_user_id.setdefault(
+                user.id, {"user": user, "codes": [], "raw_codes": []}
+            )
+            entry["codes"].append(_role_code(role))
+            entry["raw_codes"].append(role_code)
+
+    # One audit entry per user touched, logged before the commit so a failure
+    # between the two can never record a grant that did not happen.
+    for entry in granted_by_user_id.values():
+        user = entry["user"]
+        granted = entry["codes"]
+        # Severity is computed from the raw role codes, not the rendered
+        # ones. approval_group_id is set on the row for any role, not just
+        # APPROVER, so a SUPER_ADMIN row with a group column filled would
+        # render "SUPER_ADMIN:TECH" and silently fail a membership test
+        # against ROLE_SUPER_ADMIN.
+        log_security_event(
+            EVENT_USER_MODIFY,
+            category=CATEGORY_ADMIN,
+            severity=SEVERITY_ALERT if ROLE_SUPER_ADMIN in entry["raw_codes"] else SEVERITY_INFO,
+            details={
+                "target_user_id": user.id,
+                "target_email": user.email,
+                "granted": sorted(granted),
+                "revoked": [],
+                "source": "bulk_upload",
+            },
+        )
 
     db.session.commit()
 

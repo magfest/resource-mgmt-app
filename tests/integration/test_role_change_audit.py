@@ -1,4 +1,5 @@
 """Role changes write a security audit row, and ALERT events reach Slack."""
+import io
 import json
 
 from flask import url_for
@@ -24,6 +25,22 @@ def _audit_rows(event_type=EVENT_USER_MODIFY):
         db.session.query(SecurityAuditLog)
         .filter_by(event_type=event_type)
         .all()
+    )
+
+
+def _post_bulk_roles(client, csv_rows):
+    """POST an in-memory CSV to the bulk user-roles upload route.
+
+    Each row is (user_id, role, approval_group); leave approval_group ""
+    for roles that do not need one.
+    """
+    header = "user_id,role,approval_group"
+    body = header + "\n" + "\n".join(",".join(r) for r in csv_rows)
+    return client.post(
+        "/admin/config/data-upload/user-roles",
+        data={"file": (io.BytesIO(body.encode()), "roles.csv")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
     )
 
 
@@ -228,3 +245,79 @@ def test_edit_that_changes_no_role_writes_nothing(app, client, seed_workflow_dat
     }, follow_redirects=True)
 
     assert _audit_rows() == []
+
+
+def test_bulk_role_upload_writes_an_entry(app, client, seed_workflow_data):
+    """The bulk path records what it created, with no revokes."""
+    with app.app_context():
+        db.session.add(User(id="u:bulk", email="bulk@magfest.org", display_name="Bulk"))
+        db.session.commit()
+
+    _login(client, "test:admin")
+    _post_bulk_roles(client, csv_rows=[("u:bulk", "SUPER_ADMIN", "")])
+
+    with app.app_context():
+        rows = _audit_rows()
+        assert len(rows) == 1
+        details = json.loads(rows[0].details)
+        assert "SUPER_ADMIN" in details["granted"]
+        assert details["revoked"] == []
+        assert rows[0].severity == SEVERITY_ALERT
+
+
+def test_bulk_approver_grant_names_the_group(app, client, seed_workflow_data):
+    """An APPROVER grant renders with its group code, not the bare role.
+
+    UserRole.approval_group has load_on_pending=False. A read on a pending,
+    unflushed row returns None without querying rather than waiting for
+    autoflush, so this exercises the branch a SUPER_ADMIN-only row cannot
+    reach.
+    """
+    ag = seed_workflow_data["approval_group"]
+    with app.app_context():
+        db.session.add(User(id="u:bulk-approver", email="bulk-approver@magfest.org", display_name="BulkApprover"))
+        db.session.commit()
+        ag_code = ag.code
+
+    _login(client, "test:admin")
+    _post_bulk_roles(client, csv_rows=[("u:bulk-approver", "APPROVER", ag_code)])
+
+    with app.app_context():
+        rows = _audit_rows()
+        assert len(rows) == 1
+        details = json.loads(rows[0].details)
+        assert details["granted"] == [f"APPROVER:{ag_code}"]
+        assert rows[0].severity == SEVERITY_INFO
+
+
+def test_bulk_role_upload_writes_one_entry_per_user(app, client, seed_workflow_data):
+    """A multi-user upload logs one entry per user, naming only their own roles."""
+    ag = seed_workflow_data["approval_group"]
+    with app.app_context():
+        db.session.add_all([
+            User(id="u:bulk-a", email="bulk-a@magfest.org", display_name="BulkA"),
+            User(id="u:bulk-b", email="bulk-b@magfest.org", display_name="BulkB"),
+        ])
+        db.session.commit()
+        ag_code = ag.code
+
+    _login(client, "test:admin")
+    _post_bulk_roles(client, csv_rows=[
+        ("u:bulk-a", "SUPER_ADMIN", ""),
+        ("u:bulk-b", "APPROVER", ag_code),
+    ])
+
+    with app.app_context():
+        rows = _audit_rows()
+        assert len(rows) == 2
+
+        by_user = {json.loads(r.details)["target_user_id"]: r for r in rows}
+        assert set(by_user) == {"u:bulk-a", "u:bulk-b"}
+
+        a_details = json.loads(by_user["u:bulk-a"].details)
+        assert a_details["granted"] == ["SUPER_ADMIN"]
+        assert by_user["u:bulk-a"].severity == SEVERITY_ALERT
+
+        b_details = json.loads(by_user["u:bulk-b"].details)
+        assert b_details["granted"] == [f"APPROVER:{ag_code}"]
+        assert by_user["u:bulk-b"].severity == SEVERITY_INFO
