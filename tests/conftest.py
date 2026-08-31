@@ -222,6 +222,24 @@ def seed_workflow_data(app):
 
 
 @pytest.fixture(scope="function")
+def super_admin_ctx(seed_workflow_data):
+    """UserContext for the seeded test:admin user, a SUPER_ADMIN.
+
+    Named for the role it builds, not for require_budget_admin's tolerance of
+    super admins; System Admin and Budget Admin stay distinct roles here.
+
+    Tests authenticate as test:admin, not dev:admin: dev:admin is not seeded
+    and has no UserRole row.
+    """
+    from app.routes import UserContext
+
+    return UserContext(
+        user_id="test:admin", user=None, roles=("SUPER_ADMIN",),
+        is_super_admin=True, approval_group_ids=set(),
+    )
+
+
+@pytest.fixture(scope="function")
 def seed_draft_work_item(app, seed_workflow_data):
     """
     Seed a DRAFT work item with one valid budget line, ready for submission.

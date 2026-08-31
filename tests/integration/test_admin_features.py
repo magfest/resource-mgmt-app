@@ -392,6 +392,12 @@ class TestFinalizationLocking:
         # Admin force-releases the checkout
         assert checkin_work_item(work_item, admin_ctx, force=True) is True
 
+        # Checkin and finalize are separate routes and each commits before the
+        # next request starts. Flushing here reproduces that boundary: finalize's
+        # own lock refreshes work_item from the row, which would otherwise
+        # discard the checkin above since it was never written to the database.
+        db.session.flush()
+
         # Now finalization succeeds
         success, error = finalize_work_item(work_item, admin_ctx, note="Finalized after force checkin")
         assert success is True
