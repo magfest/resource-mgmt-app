@@ -141,19 +141,6 @@ def require_budget_admin(user_ctx: UserContext) -> None:
         abort(403, "You need Budget Admin access for this page")
 
 
-def require_any_worktype_admin(user_ctx: UserContext) -> None:
-    """
-    Require WORKTYPE_ADMIN for any work type, OR super admin.
-    Aborts with 403 if user lacks permission.
-
-    Used by shared admin infrastructure where an admin of any work type
-    has legitimate reason to view/edit cross-work-type config.
-    """
-    from app.routes.work.helpers import is_any_worktype_admin
-    if not is_any_worktype_admin(user_ctx):
-        abort(403, "You need work type admin access for this page")
-
-
 # ============================================================
 # Review Record Management
 # ============================================================

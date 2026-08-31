@@ -74,13 +74,12 @@ Calling the decorator inline as a guard is the silent one: it binds `f` to the
 `user_ctx` you passed, returns a wrapper you discard, runs no check, and leaves the
 view unguarded.
 
-Two names exist in both modules. Learn the rule rather than the pairs; a third
+One name exists in both modules. Learn the rule rather than the pair; the next
 collision will follow the same rule.
 
 | Name | Decorator (`admin/helpers.py`) | Callable (`admin_final/helpers.py`) |
 |------|-------------------------------|-------------------------------------|
 | `require_budget_admin` | `:48`, takes `f` | `:119`, takes `user_ctx` |
-| `require_any_worktype_admin` | `:95`, takes `f` | `:144`, takes `user_ctx` |
 | `require_super_admin` | `:28`, takes `f` | none |
 | `require_supply_admin` | `:69`, takes `f` | none |
 | `require_admin` | none | `:113`, takes `user_ctx`, checks SUPER_ADMIN |
@@ -115,11 +114,11 @@ name.
 | `is_worktype_admin(user_ctx, work_type_id)` | `work/helpers/context.py:243` | Boolean |
 | `is_budget_admin(user_ctx, work_type_id=None)` | `work/helpers/context.py:257` | Boolean |
 | `is_any_worktype_admin(user_ctx)` | `work/helpers/context.py:265` | Boolean |
-| `build_portfolio_perms(ctx)` | `work/helpers/context.py:281` | Returns `PortfolioPerms` |
+| `build_portfolio_perms(ctx)` | `work/helpers/context.py:282` | Returns `PortfolioPerms` |
 | `build_work_item_perms(item, ctx)` | `work/helpers/checkout.py:241` | Returns `WorkItemPerms` |
-| `require_portfolio_view(ctx)` | `work/helpers/context.py:354` | Callable, aborts 403 |
-| `require_portfolio_edit(ctx)` | `work/helpers/context.py:362` | Callable, aborts 403 |
-| `require_work_item_view(item, ctx)` | `work/helpers/context.py:370` | Callable, aborts 403 |
+| `require_portfolio_view(ctx)` | `work/helpers/context.py:355` | Callable, aborts 403 |
+| `require_portfolio_edit(ctx)` | `work/helpers/context.py:363` | Callable, aborts 403 |
+| `require_work_item_view(item, ctx)` | `work/helpers/context.py:371` | Callable, aborts 403 |
 | `is_reviewer_for_line(line, user_ctx)` | `approvals/helpers.py:130` | Boolean |
 | `can_respond_to_work_item(item, ctx, user_ctx)` | `approvals/helpers.py:148` | Boolean |
 
@@ -127,11 +126,16 @@ name.
 dataclass it returns is declared in `context.py:67`. Both builders take a
 `PortfolioContext`, so call `get_portfolio_context()` first.
 
+`is_any_worktype_admin()` has no callers as of August 2026 and is kept on
+purpose. The two `require_any_worktype_admin` guards that called it were deleted
+as dead code; the predicate stays for the cross-work-type admin check that is
+likely to be wanted again.
+
 `is_budget_admin()` takes an optional `work_type_id` and forwards to
 `is_worktype_admin()`. When callers pass a work type, the name no longer describes
 what it checks: `build_portfolio_perms()` calls
 `is_budget_admin(ctx.user_ctx, ctx.work_type.id)` for TechOps portfolios too
-(`context.py:283`).
+(`context.py:284`).
 
 ## Beta testing role override
 
@@ -176,7 +180,7 @@ The four lock fields on `WorkItemPerms` follow the checkout rules described in
 [Workflow](workflow.md#checkout-and-locking), which is authoritative for locking.
 
 `can_create_supplementary` also depends on the event cycle. The primary must be
-FINALIZED unless the cycle sets `allow_early_supplementary` (`context.py:322-326`).
+FINALIZED unless the cycle sets `allow_early_supplementary` (`context.py:323-327`).
 
 ## Duplicate role rows in dev
 

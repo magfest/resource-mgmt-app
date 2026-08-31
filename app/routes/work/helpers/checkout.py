@@ -121,7 +121,7 @@ def can_checkout(work_item: WorkItem, user_ctx: UserContext) -> tuple[bool, str]
         and not user_ctx.approval_group_ids
         and not is_worktype_admin(user_ctx, work_item.portfolio.work_type_id)
     ):
-        return False, "Only reviewers can checkout work items."
+        return False, "Only reviewers and admins for this work type can check out work items."
 
     # Cannot checkout if already checked out (unless expired)
     if is_checked_out(work_item):

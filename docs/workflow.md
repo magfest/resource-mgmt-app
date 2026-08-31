@@ -68,16 +68,16 @@ reachable in production.
 | DRAFT | Submit on a work type without `uses_dispatch`; reviews are created inline | SUBMITTED | Portfolio editor (`lifecycle.py:82`) |
 | AWAITING_DISPATCH | Recall to draft | DRAFT | Portfolio editor or work-type admin (`lifecycle.py:112`) |
 | AWAITING_DISPATCH | Dispatch after approval groups are assigned per line | SUBMITTED | Budget admin or super admin (`dispatch/dashboard.py:280`) |
-| SUBMITTED | Finalize on a work type with `has_admin_final` | FINALIZED | Budget admin (`admin_final/helpers.py:541`) |
+| SUBMITTED | Finalize on a work type with `has_admin_final` | FINALIZED | Budget admin (`admin_final/helpers.py:528`) |
 | SUBMITTED | Last approval-group review decided, `has_admin_final` false | FINALIZED | Whichever approver decides the last line (`lifecycle.py:169`) |
 | SUBMITTED | Finalize a supply order, setting approved quantities per line | FINALIZED | SUPPLY work-type admin or super admin (`work/supply/admin.py:525`) |
-| FINALIZED | Unfinalize with a written reason | SUBMITTED | Budget admin (`admin_final/helpers.py:742`) |
-| SUBMITTED (supplementary) | Its PRIMARY is unfinalized | PAUSED | Budget admin, as a side effect (`admin_final/helpers.py:784`) |
-| PAUSED (supplementary) | Its PRIMARY is re-finalized and the supplementary still routes | SUBMITTED | Budget admin, as a side effect (`admin_final/helpers.py:627`) |
+| FINALIZED | Unfinalize with a written reason | SUBMITTED | Budget admin (`admin_final/helpers.py:729`) |
+| SUBMITTED (supplementary) | Its PRIMARY is unfinalized | PAUSED | Budget admin, as a side effect (`admin_final/helpers.py:771`) |
+| PAUSED (supplementary) | Its PRIMARY is re-finalized and the supplementary still routes | SUBMITTED | Budget admin, as a side effect (`admin_final/helpers.py:614`) |
 
 Unfinalize also clears `board_released_at` and withdraws any unsent release
 email, so a re-finalize notifies the department again with the new numbers
-(`admin_final/helpers.py:745-756`).
+(`admin_final/helpers.py:732-743`).
 
 ## Statuses declared but never written
 
@@ -96,7 +96,7 @@ once did. No template posted to its response route, so those work items could
 never be checked out again, and the action was removed (`constants.py:24-28`).
 
 The item-level reads were kept on purpose, for rows stamped before that removal:
-`admin_final/helpers.py:906` and `:1027`, and `computations.py:295` and `:351`.
+`admin_final/helpers.py:893` and `:1014`, and `computations.py:295` and `:351`.
 They are compatibility handling, not dead branches. Do not delete them.
 
 ## Derived display statuses
@@ -129,7 +129,7 @@ name does not exist. Leave them as literals.
 
 `WorkLine.status` and `WorkLineReview.status` are separate columns written by
 different code paths. Do not assume they agree; finalization is the step that
-forces them into line (`admin_final/helpers.py:500-535`).
+forces them into line (`admin_final/helpers.py:487-522`).
 
 | Status | Meaning | Next step |
 |--------|---------|-----------|
@@ -168,8 +168,8 @@ board to approve the event topline. Release state is derived, not stored.
 
 | Field | Meaning |
 |-------|---------|
-| `EventCycle.board_approved_at` (`app/models/org.py:41`) | The gate. Set once, on the first release run (`admin_final/helpers.py:1444`). |
-| `WorkItem.board_released_at` (`app/models/workflow.py:303`) | Stamped per item at release (`admin_final/helpers.py:1449`), and at finalize when the board already approved (`:558`). |
+| `EventCycle.board_approved_at` (`app/models/org.py:41`) | The gate. Set once, on the first release run (`admin_final/helpers.py:1431`). |
+| `WorkItem.board_released_at` (`app/models/workflow.py:303`) | Stamped per item at release (`admin_final/helpers.py:1436`), and at finalize when the board already approved (`:545`). |
 
 Release queues the department email inside the same transaction as the stamp and
 the audit row, so neither can exist without the other. Delivery is not recorded
@@ -189,18 +189,14 @@ are not checkoutable at all.
 
 Rules from `app/routes/work/helpers/checkout.py`:
 
-- Only a SUBMITTED item can be checked out (`:111`). No other status qualifies.
+- Only a SUBMITTED item can be checked out (`:113`). No other status qualifies.
 - Eligible holders (`:116-123`): a SUPER_ADMIN, anyone with `approval_group_ids`,
   or the WORKTYPE_ADMIN for that item's work type. Work-type admins were added
   because admin-final decisions require the lock.
-- `can_checkout()` returns `tuple[bool, str]`, not a bare bool (`:105`). Callers
+- `can_checkout()` returns `tuple[bool, str]`, not a bare bool (`:106`). Callers
   that treat the return value as truthy always see True.
 - Admin-final decisions refuse without the lock: "You must check out this item
   before making an admin decision" (`admin_final/reviews.py:173`).
-
-The refusal string on the eligibility check still reads "Only reviewers can
-checkout work items" (`checkout.py:123`). A work-type admin who is not a
-reviewer passes that check anyway. The string is stale wording, not the rule.
 
 ### Timeouts
 
@@ -297,7 +293,7 @@ same approval flow. A reason is optional and shows beside the date in list views
 
 Supplementary requests pause when their PRIMARY is unfinalized, and resume when
 it finalizes again. Resuming requires every line to still have a budget detail, a
-routed approval group, and an approval-group review (`admin_final/helpers.py:610-627`).
+routed approval group, and an approval-group review (`admin_final/helpers.py:597-614`).
 
 ## Notifications
 

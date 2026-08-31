@@ -54,10 +54,12 @@ def register_cli(app: Flask) -> None:
     @app.cli.command("drain-email-outbox")
     @with_appcontext
     def drain_email_outbox_command():
-        """Send queued email. The only code path that calls SES.
+        """Send queued email.
 
-        Runs under Heroku Scheduler every 10 minutes. Adding the Scheduler job
-        is a manual step; it is not reproducible from this repo.
+        The only path that sends queued mail; two admin test-send routes call
+        send_via_ses() directly and bypass the outbox. Runs under Heroku
+        Scheduler every 10 minutes. Adding the Scheduler job is a manual step;
+        it is not reproducible from this repo.
         """
         from app.services.email_drainer import drain_outbox
 

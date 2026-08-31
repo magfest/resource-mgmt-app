@@ -44,7 +44,7 @@ def test_non_admin_non_approver_still_rejected(app, seed_draft_work_item):
     )
     can, reason = can_checkout(d["work_item"], uc)
     assert can is False
-    assert reason == "Only reviewers can checkout work items."
+    assert reason == "Only reviewers and admins for this work type can check out work items."
 
 
 def test_user_holds_checkout(app, seed_draft_work_item):

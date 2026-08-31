@@ -265,10 +265,11 @@ def is_budget_admin(user_ctx: UserContext, work_type_id: int | None = None) -> b
 def is_any_worktype_admin(user_ctx: UserContext) -> bool:
     """True if user is SUPER_ADMIN or holds WORKTYPE_ADMIN for any work type.
 
-    Used by shared admin infrastructure (approval groups, email templates,
-    dispatch dashboard) where an admin of any work type has a legitimate
-    reason to view/edit shared config. Per-work-type admin separation is
-    still enforced at work-type-specific routes via is_worktype_admin().
+    No callers as of August 2026, and kept on purpose. Its only callers were the
+    two duplicate require_any_worktype_admin guards, deleted because neither was
+    ever used; a cross-work-type "is this person an admin at all" check is likely
+    to be wanted again. Per-work-type routes use is_worktype_admin() instead,
+    which is the check to reach for first.
     """
     if user_ctx.is_super_admin:
         return True

@@ -73,7 +73,7 @@ hands one message to SES (`send_via_ses`, never raises) and writes the
 ```
 services/
 ├── email.py           # SES transport + NotificationLog writer. Sends via send_via_ses()
-├── email_drainer.py   # Drives `drain-email-outbox` + `prune-email-audit` (cli.py:54,76)
+├── email_drainer.py   # Drives `drain-email-outbox` + `prune-email-audit` (cli.py:54,78)
 ├── email_enqueue.py   # Enqueue side: INSERTs email_outbox rows, does not send
 ├── email_errors.py    # Classifies botocore SES error codes into retry actions
 ├── email_health.py    # Read-only outbox health queries (operator page, support lookup)

@@ -92,32 +92,6 @@ def require_supply_admin(f):
     return decorated_function
 
 
-def require_any_worktype_admin(f):
-    """Decorator to require admin access for any work type (SUPER_ADMIN or any WORKTYPE_ADMIN).
-
-    Use on shared admin routes (approval groups, email templates, dispatch
-    dashboard) where an admin of any work type has legitimate access.
-    Per-work-type-scoped routes should still use require_budget_admin or
-    a future require_worktype_admin(work_type_id) check.
-    """
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        from flask import redirect, url_for, session, current_app
-        from app.routes.work.helpers import is_any_worktype_admin
-
-        if not session.get('active_user_id') and not current_app.config.get('DEV_LOGIN_ENABLED'):
-            return redirect(url_for('auth.login_page'))
-
-        user_ctx = get_user_ctx()
-        if user_ctx.user_id is None:
-            return redirect(url_for('auth.login_page'))
-
-        if not is_any_worktype_admin(user_ctx):
-            abort(403, "Work type admin access required")
-        return f(*args, **kwargs)
-    return decorated_function
-
-
 def render_admin_config_page(template: str, **ctx):
     """Render an admin config page with user context. Requires SUPER_ADMIN."""
     user_ctx = get_user_ctx()

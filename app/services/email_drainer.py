@@ -1,7 +1,8 @@
 """Claim, reap, per-row processing, and the run loop for the outbox drainer.
 
-`drain_outbox` is the only code path that calls SES; everything else in the app
-enqueues. Claim is claim-then-select-by-run-id rather than
+`drain_outbox` is the only path that sends queued mail, not the only caller of
+SES; two admin test-send routes call `send_via_ses` directly and bypass the
+outbox. Claim is claim-then-select-by-run-id rather than
 `UPDATE ... RETURNING`: Postgres does not accept `LIMIT` on `UPDATE`, and
 SQLite only gained `RETURNING` in 3.35. `process_row` commits per row, so a
 killed dyno loses at most the row in flight and the reaper recovers that one.
@@ -527,7 +528,7 @@ def _sigterm_watch():
 def drain_outbox(now=None) -> DrainSummary:
     """Send every due row in one batch, then prune. Commits throughout.
 
-    The only code path that calls SES. Runs under Heroku Scheduler, so the run
+    The only path that sends queued mail. Runs under Heroku Scheduler, so the run
     is bounded by EMAIL_DRAIN_MAX_SECONDS and ends before the next tick starts;
     whatever it did not reach is claimed by that tick.
     """
