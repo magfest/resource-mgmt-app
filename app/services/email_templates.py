@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from flask import current_app
 from jinja2 import Environment, BaseLoader, TemplateSyntaxError, UndefinedError
 
 from app import db
-from app.models import EmailTemplate
+from app.models import EmailTemplate, EmailTemplateEventOverride
 
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,81 @@ def get_all_templates() -> list[EmailTemplate]:
         List of all EmailTemplate records
     """
     return db.session.query(EmailTemplate).order_by(EmailTemplate.name).all()
+
+
+@dataclass(frozen=True)
+class EffectiveTemplate:
+    """One template as a given event cycle sees it.
+
+    This is not an EmailTemplate. It is the base row merged with its per-event
+    override, and it is the only shape the send path should read; a caller
+    holding an EmailTemplate is reading the wording no event necessarily gets.
+    """
+    template_key: str
+    subject: str
+    body_text: str
+    is_active: bool
+    send_window_start: datetime | None
+    send_window_end: datetime | None
+    base_version: int
+    override_id: int | None
+    is_stale: bool
+
+
+def get_effective_template(
+    template_key: str,
+    event_cycle_id: int | None = None,
+) -> EffectiveTemplate | None:
+    """Merge a base template with its override for one event.
+
+    Every NULL override column inherits, for subject, body_text, and
+    is_active. Send windows have no base column to inherit from; a NULL
+    window column means unbounded, not inherited. Returns None only when the
+    base template does not exist; an inactive template still resolves,
+    because the caller decides what silence means.
+    """
+    base = get_template(template_key)
+    if base is None:
+        return None
+
+    override = None
+    if event_cycle_id is not None:
+        override = db.session.query(EmailTemplateEventOverride).filter_by(
+            email_template_id=base.id, event_cycle_id=event_cycle_id
+        ).first()
+
+    if override is None:
+        return EffectiveTemplate(
+            template_key=template_key,
+            subject=base.subject,
+            body_text=base.body_text,
+            is_active=bool(base.is_active),
+            send_window_start=None,
+            send_window_end=None,
+            base_version=base.version,
+            override_id=None,
+            is_stale=False,
+        )
+
+    # AND, not override-wins. The base flag stays a dependable kill switch:
+    # an event may silence a template further, never re-enable one the base
+    # has retired.
+    effective_active = bool(base.is_active) and (
+        True if override.is_active is None else bool(override.is_active)
+    )
+    return EffectiveTemplate(
+        template_key=template_key,
+        subject=override.subject if override.subject is not None else base.subject,
+        body_text=(override.body_text
+                   if override.body_text is not None else base.body_text),
+        is_active=effective_active,
+        send_window_start=override.send_window_start,
+        send_window_end=override.send_window_end,
+        base_version=base.version,
+        override_id=override.id,
+        is_stale=(override.base_version_at_override is not None
+                  and override.base_version_at_override != base.version),
+    )
 
 
 def render_email_template(
