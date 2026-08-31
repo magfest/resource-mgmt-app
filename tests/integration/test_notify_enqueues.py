@@ -173,7 +173,7 @@ def test_enqueue_db_error_costs_only_that_recipient(app, seed_draft_work_item):
     """A failing INSERT on one recipient costs that recipient only.
 
     Read this test for what it is. It runs on SQLite, where
-    _recipient_savepoint deliberately takes no savepoint, so it proves the
+    enqueue_savepoint deliberately takes no savepoint, so it proves the
     SQLite half: a failed statement leaves the session usable, the remaining
     recipients enqueue, and the caller's commit succeeds. It does NOT
     exercise the Postgres savepoint path, and no SQLite test can: SQLite has
@@ -227,7 +227,7 @@ def test_savepoint_taken_on_postgres(app):
     fake_db.session.get_bind.return_value.dialect.name = "postgresql"
 
     with patch("app.services.notifications.db", fake_db):
-        with notifications._recipient_savepoint():
+        with notifications.enqueue_savepoint():
             pass
 
     fake_db.session.begin_nested.assert_called_once()
@@ -236,7 +236,7 @@ def test_savepoint_taken_on_postgres(app):
     fake_db.session.get_bind.return_value.dialect.name = "sqlite"
 
     with patch("app.services.notifications.db", fake_db):
-        with notifications._recipient_savepoint():
+        with notifications.enqueue_savepoint():
             pass
 
     fake_db.session.begin_nested.assert_not_called()
