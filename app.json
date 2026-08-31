@@ -27,6 +27,6 @@
     }
   },
   "scripts": {
-    "postdeploy": "flask db upgrade && python -c \"from app import create_app; from app.seeds.config_seed import run_all_seeds; app = create_app(); app.app_context().push(); run_all_seeds()\""
+    "postdeploy": "flask db upgrade && flask seed"
   }
 }
