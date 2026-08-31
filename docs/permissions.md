@@ -74,13 +74,12 @@ Calling the decorator inline as a guard is the silent one: it binds `f` to the
 `user_ctx` you passed, returns a wrapper you discard, runs no check, and leaves the
 view unguarded.
 
-Two names exist in both modules. Learn the rule rather than the pairs; a third
+One name exists in both modules. Learn the rule rather than the pair; the next
 collision will follow the same rule.
 
 | Name | Decorator (`admin/helpers.py`) | Callable (`admin_final/helpers.py`) |
 |------|-------------------------------|-------------------------------------|
 | `require_budget_admin` | `:48`, takes `f` | `:119`, takes `user_ctx` |
-| `require_any_worktype_admin` | `:95`, takes `f` | `:144`, takes `user_ctx` |
 | `require_super_admin` | `:28`, takes `f` | none |
 | `require_supply_admin` | `:69`, takes `f` | none |
 | `require_admin` | none | `:113`, takes `user_ctx`, checks SUPER_ADMIN |
