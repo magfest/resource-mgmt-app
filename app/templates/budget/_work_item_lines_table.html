@@ -19,7 +19,17 @@
 {% set line_action_label = "View" if status == "FINALIZED" else "Review" %}
 
 {% if lines %}
-  {% set show_approved_column = status == "FINALIZED" or totals.approved > 0 %}
+  {# Show the Approved column once an admin has decided any line, not once the
+     approved total goes positive. A rejection and a $0 approval are both real
+     decisions worth 0 cents; gating on the amount hid the column on exactly the
+     requests that needed it, leaving a rejected line's requested amount as the
+     only figure on the page. Comped badges and third-party-pays rooms make $0
+     approvals routine, not an edge case. #}
+  {% set has_admin_decision = lines
+       | selectattr("current_review_stage", "equalto", "ADMIN_FINAL")
+       | list | length > 0 %}
+  {% set show_approved_column = status == "FINALIZED"
+       or has_admin_decision or totals.approved > 0 %}
   <table class="responsive-cards">
     <thead>
       <tr>

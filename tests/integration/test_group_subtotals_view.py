@@ -4,7 +4,8 @@ from app.models import (
     WorkItem, WorkLine, BudgetLineDetail, ApprovalGroup, UserRole,
     REQUEST_KIND_PRIMARY, WORK_ITEM_STATUS_SUBMITTED,
     WORK_LINE_STATUS_PENDING, WORK_LINE_STATUS_APPROVED,
-    REVIEW_STAGE_APPROVAL_GROUP, ROLE_APPROVER,
+    WORK_LINE_STATUS_REJECTED,
+    REVIEW_STAGE_APPROVAL_GROUP, REVIEW_STAGE_ADMIN_FINAL, ROLE_APPROVER,
 )
 
 
@@ -217,3 +218,53 @@ def test_approved_subtotals_render_when_approved_column_shown(app, client, seed_
     assert "Tech Team (" in html
     assert "Hotel Team (" in html
     assert "$350.00" in html                     # approved subtotal for the TECH group
+
+def test_admin_final_rejection_shows_approved_column(app, client, seed_workflow_data):
+    """A rejected line needs the Approved column to show its $0.00.
+
+    Regression: the column gate tested totals.approved > 0, so an item whose
+    only admin decision was a rejection rendered requested amounts alone.
+    """
+    data = seed_workflow_data
+    tech = data["approval_group"]
+    work_item = _make_multi_group_item(data, [
+        (tech.id, 500_00, 1),   # 500.00 still pending
+        (tech.id, 76_00, 6),    # 456.00 rejected by the admin
+    ])
+
+    rejected = WorkLine.query.filter_by(
+        work_item_id=work_item.id, line_number=2,
+    ).first()
+    rejected.status = WORK_LINE_STATUS_REJECTED
+    rejected.current_review_stage = REVIEW_STAGE_ADMIN_FINAL
+    rejected.approved_amount_cents = None
+    db.session.commit()
+
+    with client.session_transaction() as sess:
+        sess["active_user_id"] = "test:admin"
+
+    resp = client.get("/TST2026/TESTDEPT/budget/item/TST2026-TESTDEPT-BUD-1")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert ">Approved</th>" in html
+    assert "Difference:" in html
+
+
+def test_undecided_request_hides_approved_column(app, client, seed_workflow_data):
+    """No decisions yet means no Approved column; the gate must stay narrow."""
+    data = seed_workflow_data
+    tech = data["approval_group"]
+    _make_multi_group_item(data, [
+        (tech.id, 500_00, 1),
+        (tech.id, 76_00, 6),
+    ])
+
+    with client.session_transaction() as sess:
+        sess["active_user_id"] = "test:admin"
+
+    resp = client.get("/TST2026/TESTDEPT/budget/item/TST2026-TESTDEPT-BUD-1")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    assert ">Approved</th>" not in html
