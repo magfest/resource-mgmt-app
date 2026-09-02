@@ -117,8 +117,11 @@
       </form>
     {% endif %}
 
-    {# Quick Review button for reviewers/admins (not shown for drafts) #}
-    {% if not perms.is_draft and (perms.is_worktype_admin or perms.can_checkout or perms.is_checked_out_by_current_user) %}
+    {# Quick Review button for reviewers/admins. Hidden for drafts, and for
+       FINALIZED items because it then repeats what the lines table already
+       shows; the per-line View link covers the read-only case. #}
+    {% if not perms.is_draft and status != "FINALIZED"
+          and (perms.is_worktype_admin or perms.can_checkout or perms.is_checked_out_by_current_user) %}
       <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
         Quick Review
       </a>

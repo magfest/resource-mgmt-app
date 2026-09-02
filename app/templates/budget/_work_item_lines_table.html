@@ -11,8 +11,25 @@
   {% endif %}
 </div>
 
+{# A board-held budget is persisted as FINALIZED, so FINALIZED covers both
+   "finalized" and "Pending FY Budget Approval". The line page stays reachable
+   there because it renders read-only: every decision form on it requires a
+   checkout, and FINALIZED items cannot be checked out. #}
+{% set show_line_actions = status in ("SUBMITTED", "UNDER_REVIEW", "NEEDS_INFO", "FINALIZED") %}
+{% set line_action_label = "View" if status == "FINALIZED" else "Review" %}
+
 {% if lines %}
-  {% set show_approved_column = status == "FINALIZED" or totals.approved > 0 %}
+  {# Show the Approved column once an admin has decided any line, not once the
+     approved total goes positive. A rejection and a $0 approval are both real
+     decisions worth 0 cents; gating on the amount hid the column on exactly the
+     requests that needed it, leaving a rejected line's requested amount as the
+     only figure on the page. Comped badges and third-party-pays rooms make $0
+     approvals routine, not an edge case. #}
+  {% set has_admin_decision = lines
+       | selectattr("current_review_stage", "equalto", "ADMIN_FINAL")
+       | list | length > 0 %}
+  {% set show_approved_column = status == "FINALIZED"
+       or has_admin_decision or totals.approved > 0 %}
   <table class="responsive-cards">
     <thead>
       <tr>
@@ -27,7 +44,7 @@
           <th style="width: 120px;" class="right">Approved</th>
         {% endif %}
         <th style="width: 120px;">Status</th>
-        {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}
+        {% if show_line_actions %}
           <th style="width: 80px;"></th>
         {% endif %}
       </tr>
@@ -123,10 +140,10 @@
               {{ render_status_pill(line_status, label=friendly_status(line_status) if friendly_status else line_status) }}
             {% endif %}
           </td>
-          {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}
+          {% if show_line_actions %}
             <td>
               <a class="btn btn-muted" href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}" style="padding: 4px 8px; font-size: 12px;">
-                Review
+                {{ line_action_label }}
               </a>
             </td>
           {% endif %}
@@ -143,7 +160,7 @@
               <td class="right num">{{ format_currency(g.approved_cents) }}</td>
             {% endif %}
             <td></td>
-            {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}
+            {% if show_line_actions %}
               <td></td>
             {% endif %}
           </tr>
@@ -156,7 +173,7 @@
               <td class="right num" style="color: #059669;">{{ format_currency(visible_approved_cents) }}</td>
             {% endif %}
             <td></td>
-            {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}
+            {% if show_line_actions %}
               <td></td>
             {% endif %}
           </tr>
@@ -175,7 +192,7 @@
           <td class="right num" style="color: #059669;">{{ format_currency(totals.approved) }}</td>
         {% endif %}
         <td></td>
-        {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}
+        {% if show_line_actions %}
           <td></td>
         {% endif %}
       </tr>
@@ -188,7 +205,7 @@
             {% if total_diff > 0 %}+{% endif %}{{ format_currency(total_diff) }}
           </td>
           <td></td>
-          {% if status == "SUBMITTED" or status == "UNDER_REVIEW" or status == "NEEDS_INFO" %}
+          {% if show_line_actions %}
             <td></td>
           {% endif %}
         </tr>
