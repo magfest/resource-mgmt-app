@@ -103,6 +103,7 @@ from .formatting import (
     filter_lines_for_user,
     # Work item detail helpers
     get_kicked_back_lines_summary,
+    build_line_approval_notes,
     get_unified_audit_events,
 )
 
@@ -201,6 +202,7 @@ __all__ = [
     "filter_lines_for_user",
     # Work item detail helpers
     "get_kicked_back_lines_summary",
+    "build_line_approval_notes",
     "get_unified_audit_events",
     # Event enablement - divisions
     "is_division_enabled_for_event",

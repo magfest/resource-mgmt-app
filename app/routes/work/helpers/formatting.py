@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from app import db
 from app.models import (
+    ApprovalGroup,
     WorkItem,
     WorkLine,
     WorkLineReview,
@@ -235,6 +236,82 @@ def get_kicked_back_lines_summary(lines: list) -> list[dict]:
         })
 
     return result
+
+
+# Longest note rendered inline in the lines table. Past this the cell shows an
+# opening fragment and a link to the line, which carries the full text.
+NOTE_PREVIEW_CHARS = 140
+
+
+def _note_preview(text: str) -> tuple[str, bool]:
+    """Cut a note to NOTE_PREVIEW_CHARS on a word boundary."""
+    if len(text) <= NOTE_PREVIEW_CHARS:
+        return text, False
+    cut = text[:NOTE_PREVIEW_CHARS]
+    if " " in cut:
+        cut = cut[:cut.rindex(" ")]
+    return cut.rstrip(), True
+
+
+def build_line_approval_notes(lines: list) -> dict:
+    """
+    Map each line to the decision note its department should see.
+
+    Prefers the ADMIN_FINAL note over the APPROVAL_GROUP one. The admin
+    decision sets the approved amount, so its note is the one that explains
+    the number next to it; the group's note is a recommendation that the
+    admin may have overridden. An admin decision recorded without a note
+    falls through to the group's rather than showing nothing.
+
+    Returns {line_id: {"source", "preview", "truncated"}}, omitting lines
+    with no note at all. Costs at most two queries whatever the line count;
+    the second runs only when a group note needs its code resolved.
+    """
+    if not lines:
+        return {}
+
+    # Imported inside the function on purpose: app.routes.admin_final.helpers
+    # pulls in the admin permission helpers, and importing those at module
+    # scope from a non-admin route package breaks the `h` proxy.
+    from app.routes.admin_final.helpers import batch_load_reviews_by_line
+
+    reviews_by_line = batch_load_reviews_by_line([line.id for line in lines])
+
+    chosen = {}
+    for line in lines:
+        stages = reviews_by_line.get(line.id) or {}
+        for stage_key in ("admin", "ag"):
+            review = stages.get(stage_key)
+            if review and (review.note or "").strip():
+                chosen[line.id] = (stage_key, review)
+                break
+
+    group_ids = {
+        review.approval_group_id
+        for stage_key, review in chosen.values()
+        if stage_key == "ag" and review.approval_group_id
+    }
+    group_codes = {}
+    if group_ids:
+        group_codes = {
+            ag.id: ag.code
+            for ag in ApprovalGroup.query.filter(
+                ApprovalGroup.id.in_(group_ids)
+            ).all()
+        }
+
+    notes = {}
+    for line_id, (stage_key, review) in chosen.items():
+        preview, truncated = _note_preview(review.note.strip())
+        notes[line_id] = {
+            "source": (
+                "Budget Admin" if stage_key == "admin"
+                else group_codes.get(review.approval_group_id) or "Reviewer"
+            ),
+            "preview": preview,
+            "truncated": truncated,
+        }
+    return notes
 
 
 def get_unified_audit_events(work_item: WorkItem) -> list[dict]:
