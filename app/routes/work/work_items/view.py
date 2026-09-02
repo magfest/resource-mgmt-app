@@ -10,6 +10,7 @@ from app.models import (
     WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
     WORK_ITEM_STATUS_SUBMITTED,
+    WORK_ITEM_STATUS_FINALIZED,
     COMMENT_VISIBILITY_ADMIN,
     COMMENT_VISIBILITY_PUBLIC,
     AUDIT_EVENT_VIEW,
@@ -32,6 +33,7 @@ from ..helpers import (
     _is_approver_for_work_item,
     filter_lines_for_user,
     get_kicked_back_lines_summary,
+    build_line_approval_notes,
     get_unified_audit_events,
 )
 from app.routes.admin_final.helpers import (
@@ -120,6 +122,16 @@ def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str 
     # Get kicked-back lines (NEEDS_INFO or NEEDS_ADJUSTMENT) with their review notes
     kicked_back_lines = get_kicked_back_lines_summary(lines)
 
+    # Decision notes take over the Review Group column once the item is
+    # FINALIZED, so the queries are worth paying for only from then on.
+    # FINALIZED is the persisted status for a board-held budget too, which is
+    # the state departments spend the longest looking at.
+    line_approval_notes = (
+        build_line_approval_notes(lines)
+        if work_item.status == WORK_ITEM_STATUS_FINALIZED
+        else {}
+    )
+
     # Check if can finalize (for admins - allowed from AWAITING_DISPATCH or SUBMITTED)
     can_finalize = False
     finalization_summary = None
@@ -158,6 +170,7 @@ def work_item_detail(event: str, dept: str, public_id: str, work_type_slug: str 
         format_currency=format_currency,
         friendly_status=friendly_status,
         kicked_back_lines=kicked_back_lines,
+        line_approval_notes=line_approval_notes,
         can_finalize=can_finalize,
         finalization_summary=finalization_summary,
         filtered_comments=comments,
