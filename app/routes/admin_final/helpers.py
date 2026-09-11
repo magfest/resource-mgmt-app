@@ -466,8 +466,11 @@ def finalize_work_item(
     if not (note or "").strip():
         return False, "A note is required for finalization."
 
-    # Lock the work item row to prevent concurrent finalization
-    db.session.query(WorkItem).with_for_update().get(work_item.id)
+    # Lock the work item row to prevent concurrent finalization. refresh
+    # repopulates the locked row; get() would not (see release_event_budgets).
+    # refresh also discards unflushed edits on work_item. Safe here because
+    # the route loads the item fresh and changes nothing before calling in.
+    db.session.refresh(work_item, with_for_update=True)
 
     can_do, reason = can_finalize_work_item(work_item)
     if not can_do:
@@ -558,9 +561,13 @@ def finalize_work_item(
         # This item released on finalize, so it queues here. The bulk path in
         # release_event_budgets does the same for budgets the board releases
         # later. Neither goes through a scheduled sweep any more.
-        from app.services.notifications import notify_work_item_finalized
+        from app.services.notifications import enqueue_savepoint, notify_work_item_finalized
+        # resolve_template_key and the membership lookups run outside
+        # _enqueue_emails' per-recipient savepoint. On Postgres a DBAPI error
+        # there aborts this whole transaction, not just the email.
         try:
-            notify_work_item_finalized(work_item)
+            with enqueue_savepoint():
+                notify_work_item_finalized(work_item)
         except Exception:
             current_app.logger.exception(
                 f"Could not queue the release email for {work_item.public_id}; "
@@ -708,8 +715,10 @@ def unfinalize_work_item(
     if not (reason or "").strip():
         return False, "Reason required for unfinalize."
 
-    # Lock the work item row to prevent concurrent state changes
-    db.session.query(WorkItem).with_for_update().get(work_item.id)
+    # Lock the work item row to prevent concurrent state changes. refresh
+    # repopulates the locked row; get() would not (see release_event_budgets,
+    # which also notes that refresh discards unflushed edits on this instance).
+    db.session.refresh(work_item, with_for_update=True)
 
     if work_item.status != WORK_ITEM_STATUS_FINALIZED:
         return False, "Work item is not finalized."
@@ -1393,7 +1402,7 @@ def release_event_budgets(
 
     Returns (released_count, error_message).
     """
-    from app.services.notifications import notify_work_item_finalized
+    from app.services.notifications import enqueue_savepoint, notify_work_item_finalized
 
     require_budget_admin(user_ctx)
 
@@ -1403,7 +1412,11 @@ def release_event_budgets(
     # Serialise overlapping releases. Each request stamps its own board_released_at
     # and the dedup key embeds that stamp, so two concurrent runs build different
     # keys and ON CONFLICT never fires. The loser must find nothing held.
-    db.session.query(EventCycle).with_for_update().get(event_cycle.id)
+    # refresh, not query().with_for_update().get(): get() serves the instance
+    # from the identity map, so the latch guard below reads pre-lock values.
+    # refresh discards any unflushed edits on this instance, so callers must
+    # flush or commit first. It still renders FOR UPDATE on Postgres.
+    db.session.refresh(event_cycle, with_for_update=True)
 
     now = datetime.utcnow()
 
@@ -1446,10 +1459,13 @@ def release_event_budgets(
         ))
 
         # Queue inside the caller's transaction. dashboard.py commits the
-        # stamps, the audit rows and the outbox rows together. Neither the
-        # email nor the release can exist without the other.
+        # stamps, the audit rows and the outbox rows together.
+        # The savepoint covers resolve_template_key and the membership queries,
+        # which _enqueue_emails leaves outside its per-recipient one. A failure
+        # there costs this department its email; the release still stands.
         try:
-            notify_work_item_finalized(item)
+            with enqueue_savepoint():
+                notify_work_item_finalized(item)
         except Exception:
             # One unreachable department must not cost the others their
             # release. _enqueue_emails already isolates per recipient; this

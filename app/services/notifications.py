@@ -208,9 +208,9 @@ def notify_response_received(work_item: WorkItem, reviewer_user_id: str) -> int:
     # Never call session.rollback() here. The caller commits this row in the
     # same transaction as the response it announces, so a rollback would
     # discard the requester's response. The savepoint is what makes that
-    # promise hold on Postgres; see _recipient_savepoint.
+    # promise hold on Postgres; see enqueue_savepoint.
     try:
-        with _recipient_savepoint():
+        with enqueue_savepoint():
             outcome = enqueue_email(
                 template_key,
                 user.email,
@@ -269,12 +269,17 @@ def notify_work_item_finalized(work_item: WorkItem) -> int:
 # ============================================================
 
 @contextmanager
-def _recipient_savepoint():
-    """Isolate one recipient's INSERT so a failure cannot poison the caller.
+def enqueue_savepoint():
+    """Isolate one enqueue from the caller's transaction.
+
+    A caller may wrap a single recipient's INSERT, or an entire enqueue
+    including the membership queries and resolve_template_key that run
+    ahead of it; both need the same protection.
 
     On Postgres a DBAPI error aborts the whole transaction: without a
-    SAVEPOINT the except below swallows the error, every later recipient
-    fails, and the caller's commit raises, losing the workflow change.
+    SAVEPOINT the caller's own except swallows the error, every later
+    recipient fails, and the caller's commit raises, losing the workflow
+    change.
 
     Skipped on SQLite, and that is not a shortcut. pysqlite issues BEGIN only
     before DML, so a SAVEPOINT emitted before any write runs in autocommit
@@ -333,10 +338,10 @@ def _enqueue_emails(
         # Catch per recipient and NEVER call session.rollback(). The caller
         # now commits this in the same transaction as the workflow change, so
         # a rollback here would undo the approval that triggered the email.
-        # The savepoint is not ceremony; see _recipient_savepoint for what a
+        # The savepoint is not ceremony; see enqueue_savepoint for what a
         # DBAPI error does to the caller's transaction without it.
         try:
-            with _recipient_savepoint():
+            with enqueue_savepoint():
                 outcome = enqueue_email(
                     template_key,
                     email,
@@ -826,7 +831,7 @@ def send_submission_reminders(
             # Per-recipient isolation, same contract as _enqueue_emails: one
             # bad INSERT costs that recipient, not the rest of the run.
             try:
-                with _recipient_savepoint():
+                with enqueue_savepoint():
                     outcome = enqueue_email(
                         template_key,
                         email,
