@@ -288,45 +288,71 @@ def get_sample_context() -> dict[str, Any]:
         department = MockDepartment()
         event_cycle = MockEventCycle()
 
+    class MockWorkType:
+        name = "Budget"
+        code = "BUDGET"
+
     class MockWorkItem:
         public_id = "TECHOPS-001"
         portfolio = MockPortfolio()
+        # Documented for submission_confirmation. Without it Jinja renders a
+        # blank, which reads as "this template has no reason line" rather than
+        # "the preview has no sample".
+        reason = "Additional equipment for the second stage"
 
     return {
         'work_item': MockWorkItem(),
         'department': MockDepartment(),
         'event_cycle': MockEventCycle(),
         'base_url': current_app.config.get('BASE_URL', 'https://budget.magfest.org'),
+        # Documented in EMAIL_TEMPLATE_VARIABLES and supplied on a real send by
+        # notifications.py. Absent here, submission_confirmation previewed with
+        # blanks where its numbers go.
+        'line_count': 12,
+        'total_requested_dollars': 4820.50,
+        # Supplied by the drainer on every send, undocumented but reachable.
+        'work_type': MockWorkType(),
+        'recipient_email': 'volunteer@example.org',
     }
 
 
-def preview_template(template: EmailTemplate) -> RenderedEmail | None:
-    """
-    Render a template with sample data for preview.
+def preview_template(
+    template: EmailTemplate,
+    event_cycle_id: int | None = None,
+) -> RenderedEmail | None:
+    """Render a template with sample data, optionally as one event sees it.
 
-    Args:
-        template: The EmailTemplate to preview
-
-    Returns:
-        RenderedEmail with sample data rendered, or None on error
+    The passed template may carry unsaved edits from the admin form, so its
+    text is what renders for any field the event does not override. An
+    overridden field wins instead: that is what the event receives whatever
+    the base says. Reading the stored row for both would discard the edit the
+    admin is looking at.
     """
     context = get_sample_context()
+    subject = template.subject
+    body_text = template.body_text
+
+    if event_cycle_id is not None:
+        base = get_template(template.template_key)
+        if base is not None:
+            override = db.session.query(EmailTemplateEventOverride).filter_by(
+                email_template_id=base.id, event_cycle_id=event_cycle_id,
+            ).first()
+            if override is not None:
+                if override.subject is not None:
+                    subject = override.subject
+                if override.body_text is not None:
+                    body_text = override.body_text
 
     try:
         env = Environment(loader=BaseLoader(), autoescape=True)
-
-        subject_template = env.from_string(template.subject)
-        rendered_subject = subject_template.render(**context)
-
-        body_template = env.from_string(template.body_text)
-        rendered_body = body_template.render(**context)
-
+        rendered_subject = env.from_string(subject).render(**context)
+        rendered_body = env.from_string(body_text).render(**context)
         return RenderedEmail(
             subject=rendered_subject,
             body_text=rendered_body,
             template_key=template.template_key,
         )
-
     except (TemplateSyntaxError, UndefinedError) as e:
         logger.error(f"Error previewing template '{template.template_key}': {e}")
         return None

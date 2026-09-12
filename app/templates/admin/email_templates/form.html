@@ -77,6 +77,19 @@
         <input type="hidden" name="subject" id="preview-subject">
         <input type="hidden" name="body_text" id="preview-body_text">
         <input type="hidden" name="is_active" id="preview-is_active">
+        {# No submit-on-change here: the hidden fields above are filled by the
+           preview button's click handler, so an earlier submit would preview
+           the saved wording and quietly drop unsaved edits. #}
+        <label for="preview-event-cycle" class="muted small">Preview as</label>
+        <select id="preview-event-cycle" name="event_cycle_id">
+          <option value="">Base wording (no event)</option>
+          {% for cycle in event_cycles or [] %}
+            <option value="{{ cycle.id }}"
+                    {% if preview_event_cycle_id == cycle.id %}selected{% endif %}>
+              {{ cycle.code }}
+            </option>
+          {% endfor %}
+        </select>
         <button class="btn" type="submit" id="preview-btn">Preview with Sample Data</button>
       </form>
 

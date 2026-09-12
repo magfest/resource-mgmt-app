@@ -45,6 +45,14 @@ from app.services.email_windows import (
 email_templates_bp = Blueprint('email_templates', __name__, url_prefix='/email-templates')
 
 
+def _preview_event_cycles():
+    """Event cycles offered in the preview selector, newest event first."""
+    return db.session.query(EventCycle).order_by(
+        EventCycle.event_start_date.desc().nullslast(),
+        EventCycle.code,
+    ).all()
+
+
 def _get_template_or_404(template_id: int) -> EmailTemplate:
     """Get email template by ID or abort with 404."""
     template = db.session.get(EmailTemplate, template_id)
@@ -89,6 +97,8 @@ def edit_email_template(template_id: int):
         "admin/email_templates/form.html",
         email_template=email_template,
         variables=variables,
+        event_cycles=_preview_event_cycles(),
+        preview_event_cycle_id=None,
     )
 
 
@@ -172,8 +182,11 @@ def preview_email_template(template_id: int):
         is_active=True,
     )
 
+    # Which event to preview as. Blank means the base wording.
+    event_cycle_id = request.form.get("event_cycle_id", type=int)
+
     # Render preview
-    rendered = preview_template(temp_template)
+    rendered = preview_template(temp_template, event_cycle_id=event_cycle_id)
 
     if not rendered:
         flash("Error rendering template. Check for syntax errors.", "error")
@@ -199,6 +212,8 @@ def preview_email_template(template_id: int):
         form_name=request.form.get("name") or email_template.name,
         form_description=request.form.get("description") or email_template.description,
         form_is_active=request.form.get("is_active") == "1" if "is_active" in request.form else email_template.is_active,
+        event_cycles=_preview_event_cycles(),
+        preview_event_cycle_id=event_cycle_id,
     )
 
 

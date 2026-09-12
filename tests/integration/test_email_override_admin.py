@@ -257,3 +257,30 @@ def test_override_form_requires_budget_admin(app, client, seed_workflow_data):
     assert client.post(url, data=dict(_BLANK)).status_code in (302, 403)
     with app.app_context():
         assert db.session.query(EmailTemplateEventOverride).count() == 0
+
+
+def test_preview_posts_the_selected_event_through_to_the_render(
+    app, client, seed_workflow_data
+):
+    """Covers the wiring, not the resolver: form field to request.form to
+    preview_template. The unit tests prove the merge itself."""
+    with app.app_context():
+        t = _template()
+        cycle = db.session.query(EventCycle).first()
+        db.session.add(EmailTemplateEventOverride(
+            email_template_id=t.id, event_cycle_id=cycle.id,
+            subject="Event only subject"))
+        db.session.commit()
+        template_id, cycle_id = t.id, cycle.id
+
+    _login(client, "test:admin")
+    resp = client.post(
+        f"/admin/config/email-templates/{template_id}/preview",
+        data={"subject": "Typed subject", "body_text": "Typed body",
+              "event_cycle_id": str(cycle_id)})
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Event only subject" in body
+    # The body is not overridden, so the unsaved text still previews.
+    assert "Typed body" in body
