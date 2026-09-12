@@ -39,7 +39,16 @@ from app.models import (
     ROLE_SUPER_ADMIN,
     ROLE_APPROVER,
 )
-from app.models.constants import ENQUEUE_OUTCOME_CREATED
+from app.models.constants import (
+    ENQUEUE_BLOCKED_OUTCOMES,
+    ENQUEUE_OUTCOME_CREATED,
+    ENQUEUE_OUTCOME_DEFERRED,
+)
+
+# A deferred row exists and will send when its window opens, so every count of
+# "queued" includes it. Treating it as not-queued would under-report what a
+# department is going to receive.
+_QUEUED_OUTCOMES = (ENQUEUE_OUTCOME_CREATED, ENQUEUE_OUTCOME_DEFERRED)
 from .email_enqueue import build_dedup_key, enqueue_email, resolve_template_key
 from .slack import send_slack_message, is_slack_enabled
 from .slack_messages import (
@@ -231,7 +240,7 @@ def notify_response_received(work_item: WorkItem, reviewer_user_id: str) -> int:
         )
         outcome = None
 
-    queued = 1 if outcome == ENQUEUE_OUTCOME_CREATED else 0
+    queued = 1 if outcome in _QUEUED_OUTCOMES else 0
     if queued:
         logger.info(f"Queued response_received for {user.email} on {work_item.public_id}")
 
@@ -334,6 +343,7 @@ def _enqueue_emails(
     template_key = resolve_template_key(kind, work_type.code if work_type else None)
 
     queued = 0
+    blocked = 0
     for email in recipients:
         # Catch per recipient and NEVER call session.rollback(). The caller
         # now commits this in the same transaction as the workflow change, so
@@ -360,9 +370,19 @@ def _enqueue_emails(
         except Exception:
             logger.exception(f"Could not queue {kind} for {email} on {work_item.public_id}")
             continue
-        if outcome == ENQUEUE_OUTCOME_CREATED:
+        if outcome in _QUEUED_OUTCOMES:
             queued += 1
+        elif outcome in ENQUEUE_BLOCKED_OUTCOMES:
+            blocked += 1
 
+    # Blocked rows get their own line. They are deliberate silence, so the
+    # info line below would report them as simply absent and the operator
+    # would have nothing to act on.
+    if blocked:
+        logger.warning(
+            f"Blocked {blocked}/{len(recipients)} {kind} rows for "
+            f"{work_item.public_id}: template silenced or outside its window"
+        )
     logger.info(f"Queued {queued}/{len(recipients)} {kind} rows for {work_item.public_id}")
     return queued
 
@@ -747,7 +767,8 @@ class ReminderRunSummary:
     targets_with_recipients: int
     targets_without_recipients: list[str]   # dept codes
     rows_queued: int        # outbox rows actually created
-    recipients_total: int   # recipients considered; queued < this means deduped
+    rows_blocked: int       # no row: template silenced or outside its window
+    recipients_total: int   # recipients considered
     dry_run: bool
 
 
@@ -787,6 +808,7 @@ def send_submission_reminders(
             t.department_code for t in targets if not t.recipient_emails
         ],
         rows_queued=0,
+        rows_blocked=0,
         recipients_total=0,
         dry_run=dry_run,
     )
@@ -826,6 +848,7 @@ def send_submission_reminders(
             continue
 
         dept_queued = 0
+        dept_blocked = 0
         for email in target.recipient_emails:
             summary.recipients_total += 1
             # Per-recipient isolation, same contract as _enqueue_emails: one
@@ -850,8 +873,15 @@ def send_submission_reminders(
                     f"(dept={target.department_code}); continuing run."
                 )
                 continue
-            if outcome == ENQUEUE_OUTCOME_CREATED:
+            if outcome in _QUEUED_OUTCOMES:
                 dept_queued += 1
+            elif outcome in ENQUEUE_BLOCKED_OUTCOMES:
+                dept_blocked += 1
+
+        # Blocked rows are counted before the commit and queued rows after.
+        # A blocked recipient never produced a row to commit, so a rollback
+        # below cannot change that count.
+        summary.rows_blocked += dept_blocked
 
         # Count after the commit, not before it. A rolled-back department has
         # no rows, and a summary that says otherwise is the miscount this

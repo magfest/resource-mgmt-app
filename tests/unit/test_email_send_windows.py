@@ -1,4 +1,5 @@
 """Send-window enforcement at enqueue time."""
+import logging
 from datetime import datetime, timedelta
 
 from app import db
@@ -104,3 +105,46 @@ def test_a_window_start_never_pulls_a_later_date_forward(app, seed_workflow_data
         db.session.commit()
         assert outcome == ENQUEUE_OUTCOME_CREATED
         assert db.session.query(EmailOutbox).one().dispatch_at == later
+
+
+def test_enqueue_emails_counts_deferred_as_queued(app, seed_draft_work_item):
+    """A deferred row exists and will send. Counting it as not-queued would
+    make the finalize flash under-report what the department will receive."""
+    from app.services.notifications import _enqueue_emails
+
+    with app.app_context():
+        start = datetime.utcnow() + timedelta(days=30)
+        t, cycle = _seed(send_window_start=start)
+        item = seed_draft_work_item["work_item"]
+        # The override is keyed to this cycle. A work item on another cycle
+        # would resolve no override and pass whatever the counting rule was.
+        assert item.portfolio.event_cycle_id == cycle.id
+
+        queued = _enqueue_emails(
+            ["a@example.org"], "dispatched", item, "no recipients")
+
+        assert queued == 1
+        assert db.session.query(EmailOutbox).one().dispatch_at == start
+
+
+def test_enqueue_emails_reports_blocked_separately(app, seed_draft_work_item, caplog):
+    """Blocked rows get their own log line.
+
+    Asserting on the summary wording, not on "blocked" alone: enqueue_email
+    already logs a per-recipient Blocked warning, so a looser assertion would
+    pass without the count ever being reported.
+    """
+    from app.services.notifications import _enqueue_emails
+
+    with app.app_context():
+        t, cycle = _seed(is_active=False)
+        item = seed_draft_work_item["work_item"]
+
+        with caplog.at_level(logging.WARNING, logger="app.services.notifications"):
+            queued = _enqueue_emails(
+                ["a@example.org"], "dispatched", item, "no recipients")
+
+        assert queued == 0
+        assert db.session.query(EmailOutbox).count() == 0
+        assert "silenced or outside its window" in caplog.text
+        assert "1/1" in caplog.text

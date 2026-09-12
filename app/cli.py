@@ -225,14 +225,23 @@ def register_cli(app: Flask) -> None:
         click.echo(
             f"Queued: {summary.rows_queued} / {summary.recipients_total} rows "
             f"across {summary.targets_with_recipients} departments"
+            # Printed only when non-zero. A line that always reads "0 blocked"
+            # trains an operator to skip it.
+            + (f", {summary.rows_blocked} blocked" if summary.rows_blocked else "")
         )
-        if summary.rows_queued < summary.recipients_total:
-            # A same-day re-run is the normal cause: the dedup key is keyed to
-            # the calendar day, so the second run queues nothing new.
+        if summary.rows_blocked:
             click.echo(
-                f"Already queued today: "
-                f"{summary.recipients_total - summary.rows_queued}"
+                "Blocked rows had no email queued: the template is inactive "
+                "or outside its send window for this event."
             )
+        deduped = (
+            summary.recipients_total - summary.rows_queued - summary.rows_blocked
+        )
+        if deduped > 0:
+            # A same-day re-run is the normal cause: the dedup key is keyed to
+            # the calendar day, so the second run queues nothing new. Blocked
+            # rows are subtracted first; they were never queued, today or ever.
+            click.echo(f"Already queued today: {deduped}")
         if summary.targets_without_recipients:
             click.echo(
                 f"Skipped (no members): "
