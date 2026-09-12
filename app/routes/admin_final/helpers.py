@@ -28,7 +28,6 @@ from app.models import (
     SpendType,
     ApprovalGroup,
     EmailOutbox,
-    EmailTemplate,
     OUTBOX_CLAIMABLE_STATUSES,
     OUTBOX_STATUS_CANCELLED,
     REVIEW_STAGE_APPROVAL_GROUP,
@@ -664,13 +663,26 @@ def _resolved_finalized_key(work_item: WorkItem) -> str:
 def finalized_template_is_live(work_item: WorkItem) -> Tuple[bool, str]:
     """Report whether this item's finalized email can send, and name its template.
 
+    Reads the EFFECTIVE template, not the base row: an event that silenced or
+    closed the window on its own copy would pass a base-row check and then be
+    blocked at enqueue, after every budget was already stamped.
+
     The drainer terminates a row whose template is missing or inactive as
     CANCELLED (email_drainer.py:365-369). CANCELLED is terminal and no route
     re-sends it, so callers must decide before they queue.
     """
+    from app.services.email_templates import get_effective_template
+
     key = _resolved_finalized_key(work_item)
-    template = EmailTemplate.query.filter_by(template_key=key).first()
-    return bool(template is not None and template.is_active), key
+    portfolio = work_item.portfolio
+    cycle_id = portfolio.event_cycle_id if portfolio else None
+    effective = get_effective_template(key, cycle_id)
+    if effective is None or not effective.is_active:
+        return False, key
+    now = datetime.utcnow()
+    if effective.send_window_end is not None and now > effective.send_window_end:
+        return False, key
+    return True, key
 
 
 def _cancel_pending_release_emails(work_item: WorkItem) -> int:
@@ -1432,9 +1444,10 @@ def release_event_budgets(
             dark.add(key)
     if dark:
         return 0, (
-            f"Email template {', '.join(sorted(dark))} is missing or inactive, so no "
-            "department would be emailed. Nothing was released. Activate the "
-            "template under Admin then record the approval again."
+            f"Email template {', '.join(sorted(dark))} will not send for this "
+            "event: it is missing, inactive, or past its send window. Nothing "
+            "was released. Fix the template under Admin then record the "
+            "approval again."
         )
 
     # The latch is set once. Re-running release for stragglers must not rewrite

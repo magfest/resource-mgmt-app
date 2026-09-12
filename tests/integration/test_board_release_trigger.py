@@ -274,7 +274,7 @@ def test_a_dark_finalized_template_stops_the_release(app, client, seed_draft_wor
     resp = _release(client, data)
 
     assert resp.status_code == 200
-    assert "missing or inactive" in resp.get_data(as_text=True)
+    assert "will not send for this event" in resp.get_data(as_text=True)
     db.session.refresh(item)
     db.session.refresh(data["cycle"])
     assert item.board_released_at is None
