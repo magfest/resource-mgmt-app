@@ -67,8 +67,9 @@
           <td class="num" data-count="scheduled">{{ row.scheduled }}</td>
           <td class="num" data-count="sent">{{ row.sent }}</td>
           <td>
-            <a class="btn" href="{{ url_for('admin_config.email_templates.edit_email_template',
-                                            template_id=row.template.id) }}">Base</a>
+            <a class="btn" href="{{ url_for('admin_config.email_templates.edit_event_override',
+                                            event_cycle_id=cycle.id,
+                                            template_id=row.template.id) }}">Edit</a>
           </td>
         </tr>
       {% else %}

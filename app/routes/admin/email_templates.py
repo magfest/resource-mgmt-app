@@ -13,6 +13,7 @@ from app import db
 from app.models import (
     EmailOutbox,
     EmailTemplate,
+    EmailTemplateEventOverride,
     EventCycle,
     NotificationLog,
     NOTIF_STATUS_SENT,
@@ -34,7 +35,11 @@ from .helpers import (
     track_changes,
 )
 from app.models.constants import CONFIG_AUDIT_UPDATE, OUTBOX_CLAIMABLE_STATUSES
-from app.services.email_windows import utc_to_eastern_date
+from app.services.email_windows import (
+    eastern_date_to_utc_end,
+    eastern_date_to_utc_start,
+    utc_to_eastern_date,
+)
 
 
 email_templates_bp = Blueprint('email_templates', __name__, url_prefix='/email-templates')
@@ -359,3 +364,140 @@ def event_email_index(event_cycle_id: int):
 
     return render_budget_admin_page(
         "admin/email_templates/event_index.html", cycle=cycle, rows=rows)
+
+
+def _get_override(template_id: int, event_cycle_id: int):
+    return db.session.query(EmailTemplateEventOverride).filter_by(
+        email_template_id=template_id, event_cycle_id=event_cycle_id).first()
+
+
+def _parse_window_date(raw: str):
+    """Parse a date input. Empty means unbounded, not invalid."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return False
+
+
+def _override_to_dict(override) -> dict:
+    """Values tracked for the config audit log.
+
+    Window bounds become ISO strings: log_config_change serialises this dict
+    to JSON, which has no datetime type.
+    """
+    return {
+        "subject": override.subject,
+        "body_text": override.body_text,
+        "is_active": override.is_active,
+        "send_window_start": (override.send_window_start.isoformat()
+                              if override.send_window_start else None),
+        "send_window_end": (override.send_window_end.isoformat()
+                            if override.send_window_end else None),
+    }
+
+
+@email_templates_bp.get("/events/<int:event_cycle_id>/<int:template_id>")
+@require_budget_admin
+def edit_event_override(event_cycle_id: int, template_id: int):
+    """Edit one template's wording and window for one event."""
+    cycle = db.session.get(EventCycle, event_cycle_id)
+    if not cycle:
+        abort(404, "Event cycle not found")
+    base = _get_template_or_404(template_id)
+    override = _get_override(base.id, cycle.id)
+
+    return render_budget_admin_page(
+        "admin/email_templates/override_form.html",
+        cycle=cycle,
+        base=base,
+        override=override,
+        window_start=utc_to_eastern_date(
+            override.send_window_start if override else None),
+        window_end=utc_to_eastern_date(
+            override.send_window_end if override else None),
+    )
+
+
+@email_templates_bp.post("/events/<int:event_cycle_id>/<int:template_id>")
+@require_budget_admin
+def update_event_override(event_cycle_id: int, template_id: int):
+    """Save one event's override. Blank fields store NULL and inherit."""
+    cycle = db.session.get(EventCycle, event_cycle_id)
+    if not cycle:
+        abort(404, "Event cycle not found")
+    base = _get_template_or_404(template_id)
+
+    back = redirect(url_for(".edit_event_override",
+                            event_cycle_id=cycle.id, template_id=base.id))
+
+    # Blank stores NULL, never "". An empty-string subject would override the
+    # base with nothing and send a subjectless email.
+    subject = (request.form.get("subject") or "").strip() or None
+    # Browsers submit textarea content with CRLF. Unnormalised, the body
+    # differs from the base by invisible characters and reads as customised.
+    body_text = (request.form.get("body_text") or "").replace("\r\n", "\n")
+    body_text = body_text.strip() or None
+
+    # Three states, so a select rather than a checkbox: a checkbox cannot tell
+    # "silenced for this event" from "inherit", and would re-enable a template
+    # an admin had switched off.
+    raw_active = request.form.get("is_active", "inherit")
+    is_active = {"inherit": None, "yes": True, "no": False}.get(raw_active)
+
+    for field in (subject, body_text):
+        if field is None:
+            continue
+        is_valid, error = validate_jinja2_template(field)
+        if not is_valid:
+            flash(f"Template error: {error}", "error")
+            return back
+
+    start_date = _parse_window_date(request.form.get("window_start"))
+    end_date = _parse_window_date(request.form.get("window_end"))
+    if start_date is False or end_date is False:
+        flash("Enter window dates as YYYY-MM-DD.", "error")
+        return back
+    if start_date and end_date and start_date > end_date:
+        # Always an operator error: nothing can fall inside the window, and
+        # the resulting silence looks like a working configuration.
+        flash("The send window starts after it ends. Nothing was saved.",
+              "error")
+        return back
+
+    override = _get_override(base.id, cycle.id)
+    created = override is None
+    if created:
+        override = EmailTemplateEventOverride(
+            email_template_id=base.id, event_cycle_id=cycle.id,
+            created_by_user_id=h.get_active_user_id(),
+        )
+        db.session.add(override)
+        old_values = {}
+    else:
+        old_values = _override_to_dict(override)
+
+    override.subject = subject
+    override.body_text = body_text
+    override.is_active = is_active
+    override.send_window_start = (
+        eastern_date_to_utc_start(start_date) if start_date else None)
+    override.send_window_end = (
+        eastern_date_to_utc_end(end_date) if end_date else None)
+    # Drift marker: records which base wording this override was written
+    # against, so the index can flag one the shared copy has moved past.
+    override.base_version_at_override = base.version
+    override.updated_by_user_id = h.get_active_user_id()
+    override.updated_at = datetime.utcnow()
+
+    db.session.flush()
+    changes = track_changes(old_values, _override_to_dict(override))
+    if changes:
+        log_config_change("email_template_event_override", override.id,
+                          CONFIG_AUDIT_UPDATE, changes)
+
+    db.session.commit()
+    flash(f"Saved {base.template_key} settings for {cycle.code}", "success")
+    return redirect(url_for(".event_email_index", event_cycle_id=cycle.id))

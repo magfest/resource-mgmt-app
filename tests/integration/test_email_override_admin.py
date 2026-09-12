@@ -108,3 +108,152 @@ def _dispatched_row(body):
         name: re.search(rf'data-count="{name}">\s*(\d+)', cells).group(1)
         for name in ("queued", "scheduled", "sent")
     }
+
+
+# ============================================================
+# Task 4.3: the override edit form
+# ============================================================
+
+def _override_url(app, version=2):
+    """Seed a base template and return the override form URL for it."""
+    with app.app_context():
+        t = _template(version=version)
+        cycle = db.session.query(EventCycle).first()
+        db.session.commit()
+        return f"/admin/config/email-templates/events/{cycle.id}/{t.id}"
+
+
+_BLANK = {"subject": "", "body_text": "", "window_start": "",
+          "window_end": "", "is_active": "inherit"}
+
+
+def test_override_saving_blank_fields_leaves_them_inheriting(
+    app, client, seed_workflow_data
+):
+    """Blank is NULL, not an empty string.
+
+    An empty-string subject would override the base with nothing, sending a
+    subjectless email rather than inheriting the shared wording.
+    """
+    url = _override_url(app)
+    _login(client, "test:admin")
+
+    resp = client.post(url, data=dict(_BLANK))
+
+    assert resp.status_code in (200, 302)
+    with app.app_context():
+        row = db.session.query(EmailTemplateEventOverride).one()
+        assert row.subject is None
+        assert row.body_text is None
+        assert row.is_active is None
+
+
+def test_override_window_dates_round_trip_across_a_dst_transition(
+    app, client, seed_workflow_data
+):
+    """Save a March date and a November date, reload, see what was typed.
+
+    Both values verified against zoneinfo: 2027-03-01 is EST (UTC-5), and
+    2027-11-07 is the day DST ends, so 23:59:59 that evening is already EST.
+    """
+    url = _override_url(app)
+    _login(client, "test:admin")
+
+    client.post(url, data=dict(_BLANK, window_start="2027-03-01",
+                               window_end="2027-11-07"))
+
+    with app.app_context():
+        row = db.session.query(EmailTemplateEventOverride).one()
+        assert row.send_window_start == datetime(2027, 3, 1, 5, 0, 0)
+        assert row.send_window_end == datetime(2027, 11, 8, 4, 59, 59)
+
+    body = client.get(url).get_data(as_text=True)
+    assert "2027-03-01" in body
+    assert "2027-11-07" in body
+
+
+def test_override_start_after_end_is_rejected(app, client, seed_workflow_data):
+    """Always an operator error: nothing can fall inside the window, and the
+    resulting silence looks identical to a working configuration."""
+    url = _override_url(app)
+    _login(client, "test:admin")
+
+    resp = client.post(url, data=dict(_BLANK, window_start="2027-06-01",
+                                      window_end="2027-05-01"),
+                       follow_redirects=True)
+
+    # A bare "start" appears on the 404 page too, so match the real message.
+    assert resp.status_code == 200
+    assert "starts after it ends" in resp.get_data(as_text=True).lower()
+    with app.app_context():
+        assert db.session.query(EmailTemplateEventOverride).count() == 0
+
+
+def test_override_saving_stamps_the_base_version(app, client, seed_workflow_data):
+    url = _override_url(app, version=2)
+    _login(client, "test:admin")
+
+    client.post(url, data=dict(_BLANK, subject="Custom"))
+
+    with app.app_context():
+        row = db.session.query(EmailTemplateEventOverride).one()
+        assert row.base_version_at_override == 2
+
+
+def test_override_crlf_from_the_textarea_is_normalised(
+    app, client, seed_workflow_data
+):
+    """Browsers submit textarea content with CRLF. Stored unnormalised, an
+    override differs from the base by invisible characters and every row reads
+    as customised."""
+    url = _override_url(app)
+    _login(client, "test:admin")
+
+    client.post(url, data=dict(_BLANK, body_text="line one\r\nline two"))
+
+    with app.app_context():
+        row = db.session.query(EmailTemplateEventOverride).one()
+        assert row.body_text == "line one\nline two"
+
+
+def test_override_edits_the_existing_row_rather_than_adding_one(
+    app, client, seed_workflow_data
+):
+    """One override per (template, event); the table has a unique constraint.
+
+    A second insert would raise IntegrityError, so saving twice must update.
+    """
+    url = _override_url(app)
+    _login(client, "test:admin")
+
+    client.post(url, data=dict(_BLANK, subject="First"))
+    client.post(url, data=dict(_BLANK, subject="Second"))
+
+    with app.app_context():
+        row = db.session.query(EmailTemplateEventOverride).one()
+        assert row.subject == "Second"
+
+
+def test_override_three_way_active_stores_false_not_null(
+    app, client, seed_workflow_data
+):
+    """is_active has three states. A checkbox would collapse "off" into
+    "inherit" and silently re-enable a template an admin had silenced."""
+    url = _override_url(app)
+    _login(client, "test:admin")
+
+    client.post(url, data=dict(_BLANK, is_active="no"))
+
+    with app.app_context():
+        row = db.session.query(EmailTemplateEventOverride).one()
+        assert row.is_active is False
+
+
+def test_override_form_requires_budget_admin(app, client, seed_workflow_data):
+    url = _override_url(app)
+    _login(client, "test:reviewer")
+
+    assert client.get(url).status_code in (302, 403)
+    assert client.post(url, data=dict(_BLANK)).status_code in (302, 403)
+    with app.app_context():
+        assert db.session.query(EmailTemplateEventOverride).count() == 0
