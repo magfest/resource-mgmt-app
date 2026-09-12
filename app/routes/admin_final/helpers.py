@@ -688,9 +688,22 @@ def finalized_template_is_live(work_item: WorkItem) -> Tuple[bool, str]:
 def _cancel_pending_release_emails(work_item: WorkItem) -> int:
     """Cancel this item's unsent release emails. Does not commit.
 
+    Goes through the drainer's terminal-state helper rather than assigning the
+    status: that helper writes the NotificationLog row and frees the dedup key.
+    Setting the status by hand left no record at all, and the outbox row is
+    pruned at 90 days, so "why did that department never get their email" had
+    no answer once it was.
+
     Scoped to the finalized template key and to claimable rows. A queued
-    needs_attention row is unrelated, and a terminal row is already history.
+    needs_attention row is unrelated, and a terminal row is already history. A
+    row already claimed as SENDING is left to the drainer, which re-checks the
+    template and window at send time; racing it here would be a second writer,
+    not a fix.
     """
+    # Imported inside the function: email_drainer pulls in app.services.email,
+    # and a module-level import here risks a cycle through the admin package.
+    from app.services.email_drainer import _apply_terminal_state
+
     key = _resolved_finalized_key(work_item)
     rows = (
         EmailOutbox.query
@@ -700,8 +713,10 @@ def _cancel_pending_release_emails(work_item: WorkItem) -> int:
         .all()
     )
     for row in rows:
-        row.status = OUTBOX_STATUS_CANCELLED
-        row.last_error = "Unfinalize withdrew this release email before it sent."
+        _apply_terminal_state(
+            row, OUTBOX_STATUS_CANCELLED,
+            "Unfinalize withdrew this release email before it sent.",
+        )
     return len(rows)
 
 
