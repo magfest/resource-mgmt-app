@@ -203,25 +203,27 @@ def get_effective_template(
 def render_email_template(
     template_key: str,
     context: dict[str, Any],
+    event_cycle_id: int | None = None,
 ) -> RenderedEmail | None:
-    """
-    Render an email template with the given context.
+    """Render a template as one event cycle sees it.
+
+    Returns None when the template is missing, inactive for this event, or
+    raises a syntax or undefined-variable error. The caller distinguishes
+    those; process_row cancels the first and parks the last.
 
     Args:
-        template_key: The unique template identifier
-        context: Dictionary of variables to pass to the template
-            (typically includes 'work_item' and 'base_url')
-
-    Returns:
-        RenderedEmail with subject and body_text, or None if template not found/inactive
+        context: Template variables, typically including 'work_item' and
+            'base_url'.
+        event_cycle_id: Resolves the per-event override. Omitting it renders
+            the base wording, which is what a row with no event cycle gets.
     """
-    template = get_template(template_key)
+    effective = get_effective_template(template_key, event_cycle_id)
 
-    if not template:
+    if effective is None:
         logger.error(f"Email template not found: {template_key}")
         return None
 
-    if not template.is_active:
+    if not effective.is_active:
         logger.warning(f"Email template is inactive: {template_key}")
         return None
 
@@ -230,11 +232,11 @@ def render_email_template(
         env = Environment(loader=BaseLoader(), autoescape=True)
 
         # Render subject
-        subject_template = env.from_string(template.subject)
+        subject_template = env.from_string(effective.subject)
         rendered_subject = subject_template.render(**context)
 
         # Render body
-        body_template = env.from_string(template.body_text)
+        body_template = env.from_string(effective.body_text)
         rendered_body = body_template.render(**context)
 
         return RenderedEmail(

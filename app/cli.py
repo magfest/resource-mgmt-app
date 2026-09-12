@@ -194,11 +194,13 @@ def register_cli(app: Flask) -> None:
             if first_with_recipients:
                 from app.models import Department
                 dept = db.session.get(Department, first_with_recipients.department_id)
+                # Pass the cycle: a preview rendered from the base wording
+                # would show text this event is not going to send.
                 rendered = render_email_template('submission_reminder', {
                     'department': dept,
                     'event_cycle': cycle,
                     'base_url': 'https://budget.magfest.org',
-                })
+                }, event_cycle_id=cycle.id)
                 if rendered:
                     click.echo("Sample rendered email (first target):")
                     click.echo("  -----------------------------------------")
