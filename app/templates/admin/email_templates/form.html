@@ -3,6 +3,14 @@
 {% block title %}Edit Email Template - Admin{% endblock %}
 
 {% block content %}
+{# The steer: this editor changes every event at once, which is the rarer
+   intent and the more expensive mistake. #}
+<div class="callout mb-16">
+  This wording is <strong>shared by every event</strong>. To change one event
+  only, use
+  <a href="{{ url_for('admin_config.email_templates.list_event_cycles') }}">Email</a>
+  under Admin and edit the template there.
+</div>
 {% include "components/_narrow_screen_banner.html" %}
 <div class="muted" style="margin-bottom: 12px;">
   <a href="{{ url_for('admin_config.email_templates.list_email_templates') }}">&larr; Back to Email Templates</a>

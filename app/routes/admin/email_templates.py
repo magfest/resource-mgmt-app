@@ -316,18 +316,26 @@ def _window_status(effective, now: datetime) -> str:
 @email_templates_bp.get("/events/")
 @require_budget_admin
 def list_event_cycles():
-    """Pick an event, then configure its email.
+    """Go to the event already selected in the nav, or ask which one.
 
-    Event first, not template first: the recurring task is "configure this
-    event's emails", not "find every event using this template".
+    Event first, not template first: the recurring task is configuring one
+    event's email, and editing the wording every event shares is the rare
+    one. Making someone pick an event they already picked is the friction
+    that sends them to the shared templates instead.
+
+    Imported inside the function: app.routes.home imports admin helpers, so a
+    module-level import here would cycle.
     """
-    # The column is event_start_date. EventCycle has no start_date.
-    cycles = db.session.query(EventCycle).order_by(
-        EventCycle.event_start_date.desc().nullslast(),
-        EventCycle.code,
-    ).all()
+    from app.routes.home import get_selected_event_cycle
+
+    selected, show_all_events = get_selected_event_cycle()
+    if selected and not show_all_events:
+        return redirect(url_for(".event_email_index", event_cycle_id=selected.id))
+
+    # Nothing to resolve: "all events" mode, or no active cycle exists. Ask
+    # rather than choosing for someone who asked to see everything.
     return render_budget_admin_page(
-        "admin/email_templates/event_list.html", cycles=cycles)
+        "admin/email_templates/event_list.html", cycles=_preview_event_cycles())
 
 
 @email_templates_bp.get("/events/<int:event_cycle_id>")
@@ -378,7 +386,8 @@ def event_email_index(event_cycle_id: int):
         })
 
     return render_budget_admin_page(
-        "admin/email_templates/event_index.html", cycle=cycle, rows=rows)
+        "admin/email_templates/event_index.html",
+        cycle=cycle, rows=rows, all_cycles=_preview_event_cycles())
 
 
 def _get_override(template_id: int, event_cycle_id: int):

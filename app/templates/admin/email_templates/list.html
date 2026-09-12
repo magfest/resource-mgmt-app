@@ -4,10 +4,14 @@
 
 {% block content %}
 <h1>Email Templates</h1>
+<div class="callout mb-16">
+  This wording is <strong>shared by every event</strong>. To change one event
+  only, use
+  <a href="{{ url_for('admin_config.email_templates.list_event_cycles') }}">Email</a>
+  under Admin and edit the template there.
+</div>
 <div class="muted mb-16">
-  Manage email notification templates. These templates are sent to users during budget workflow events.
-  Wording here is shared by every event; to change one event only, use
-  <a href="{{ url_for('admin_config.email_templates.list_event_cycles') }}">Event Email</a>.
+  These templates are sent to users during budget workflow events.
 </div>
 
 <table>

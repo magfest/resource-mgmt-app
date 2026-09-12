@@ -4,10 +4,24 @@
 
 {% block content %}
 <h1>Email for {{ cycle.name }}</h1>
+
+<div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;" class="mb-16">
+  <label for="event-switcher" class="muted small">Event</label>
+  <select id="event-switcher"
+          data-base-url="{{ url_for('admin_config.email_templates.event_email_index', event_cycle_id=0) }}">
+    {% for c in all_cycles or [] %}
+      <option value="{{ c.id }}" {% if c.id == cycle.id %}selected{% endif %}>
+        {{ c.code }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
+
 <div class="muted mb-16">
   Every template as this event sees it. Wording and dates set here apply to
-  {{ cycle.code }} only; a template left on Base follows the shared wording under
-  <a href="{{ url_for('admin_config.email_templates.list_email_templates') }}">Email Templates</a>.
+  {{ cycle.code }} only. A template left on Base follows the wording
+  <a href="{{ url_for('admin_config.email_templates.list_email_templates') }}">every event shares</a>,
+  which is rarely what you want to change.
 </div>
 
 <div style="overflow-x: auto;">
@@ -81,9 +95,12 @@
   </table>
 </div>
 
-<div class="mt-16">
-  <a class="btn" href="{{ url_for('admin_config.email_templates.list_event_cycles') }}">
-    Back to events
-  </a>
-</div>
+{# Navigating on change, not a submit button: this is a view switch with
+   nothing to save. The id 0 above is a placeholder the script replaces. #}
+<script nonce="{{ csp_nonce }}">
+  document.getElementById('event-switcher').addEventListener('change', function () {
+    window.location.href =
+      this.dataset.baseUrl.replace(/0$/, this.value);
+  });
+</script>
 {% endblock %}

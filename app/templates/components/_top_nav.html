@@ -111,7 +111,9 @@
         <a href="{{ url_for('admin_config.work_types.list_work_types') }}">Work Types</a>
         <a href="{{ url_for('admin_config.approval_groups.list_approval_groups') }}">Reviewer Groups</a>
         <div class="top-nav-divider"></div>
-        <a href="{{ url_for('admin_config.email_templates.list_email_templates') }}">Email Templates</a>
+        {# Lands on the selected event's email, not the shared templates:
+           configuring one event is the common task. #}
+        <a href="{{ url_for('admin_config.email_templates.list_event_cycles') }}">Email</a>
         <a href="{{ url_for('admin_config.site_content.list_site_content') }}">Site Content</a>
         <a href="{{ url_for('admin_final.email_debug') }}">Email Debug</a>
         <div class="top-nav-divider"></div>

@@ -284,3 +284,80 @@ def test_preview_posts_the_selected_event_through_to_the_render(
     assert "Event only subject" in body
     # The body is not overridden, so the unsaved text still previews.
     assert "Typed body" in body
+
+
+# ============================================================
+# Steering: the event page is the destination, the base list is not
+# ============================================================
+
+EVENTS_ROOT = "/admin/config/email-templates/events/"
+
+
+def test_events_root_redirects_to_the_selected_event(
+    app, client, seed_workflow_data
+):
+    """Land on the event already chosen in the nav bar, not on a picker.
+
+    Choosing the event twice is the friction that sends people to the shared
+    templates instead.
+    """
+    with app.app_context():
+        cycle_id = db.session.query(EventCycle).filter_by(is_default=True).one().id
+
+    _login(client, "test:admin")
+    resp = client.get(EVENTS_ROOT)
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith(f"/events/{cycle_id}")
+
+
+def test_events_root_shows_the_picker_in_all_events_mode(
+    app, client, seed_workflow_data
+):
+    """Nothing to resolve, so ask. The alternative is picking an event for
+    someone who explicitly asked to see all of them."""
+    _login(client, "test:admin")
+    with client.session_transaction() as s:
+        s["selected_event_cycle_id"] = "all"
+
+    resp = client.get(EVENTS_ROOT)
+
+    assert resp.status_code == 200
+    assert "TST2026" in resp.get_data(as_text=True)
+
+
+def test_the_event_index_offers_an_event_switcher(app, client, seed_workflow_data):
+    """Switching events happens on the page, not by navigating back out.
+
+    The nonce assertion is not incidental: CSP blocks an unnonced inline
+    script silently, so the switcher would render and simply never work.
+    """
+    import re
+
+    with app.app_context():
+        cycle_id = db.session.query(EventCycle).first().id
+
+    _login(client, "test:admin")
+    body = client.get(INDEX.format(cycle_id)).get_data(as_text=True)
+
+    assert 'id="event-switcher"' in body
+    assert re.search(r'<script nonce="[A-Za-z0-9_-]{16,}">', body), \
+        "the switcher's script has no usable nonce"
+
+
+def test_the_base_editor_says_its_wording_is_shared(app, client, seed_workflow_data):
+    """Someone who arrives here from a bookmark must be told before they type.
+
+    Editing the base row changes every event at once, which is the rarer
+    intent and the more expensive mistake.
+    """
+    with app.app_context():
+        template_id = _template().id
+        db.session.commit()
+
+    _login(client, "test:admin")
+    body = client.get(
+        f"/admin/config/email-templates/{template_id}").get_data(as_text=True)
+
+    assert "shared by every event" in body.lower()
+    assert EVENTS_ROOT in body
