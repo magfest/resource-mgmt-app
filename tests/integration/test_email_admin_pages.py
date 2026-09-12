@@ -321,7 +321,7 @@ def test_every_section_lands_in_exactly_one_tab(app, client, seed_workflow_data)
 
     homes = {
         "queue": ["In the queue now", "Outcomes, last 90 days",
-                  "Recent Failed Outbox Rows"],
+                  "Failed and Cancelled Outbox Rows"],
         "log": ["Notification Log"],
         "suppression": ["Suppression List"],
         "config": ["SES sending quota", "Send Test Notifications"],

@@ -160,12 +160,15 @@
     </div>
   </section>
   {% endif %}
-  {# Recent Failed Outbox Rows #}
+  {# Failed and cancelled outbox rows #}
   <section class="card" style="margin-bottom: 24px;">
-    <h3 style="margin:0 0 4px 0;">Recent Failed Outbox Rows</h3>
+    <h3 style="margin:0 0 4px 0;">Failed and Cancelled Outbox Rows</h3>
     <div class="muted small" style="margin-bottom: 12px;">
-      Rows that exhausted their retries. These are terminal; the drainer will
-      not pick them up again.
+      Failed rows exhausted their retries. Cancelled rows were deliberate
+      silence: a template switched off, outside its send window, or withdrawn
+      by an unfinalize. Both are terminal and the drainer will not pick them
+      up again. Requeue sends one back to the queue; it is re-rendered from
+      scratch, so a requeue after a template fix picks up the fix.
     </div>
     {% if recent_failures %}
       <div style="overflow-x: auto;">
@@ -176,7 +179,9 @@
               <th>Template</th>
               <th>Recipient</th>
               <th>Attempts</th>
+              <th>Status</th>
               <th>Last Error</th>
+              <th style="width: 110px;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -186,7 +191,16 @@
                 <td><code class="small">{{ row.template_key }}</code></td>
                 <td class="small">{{ row.recipient_email }}</td>
                 <td class="small">{{ row.attempt_count }}</td>
+                <td class="small">{{ row.status }}</td>
                 <td class="small" style="color: #dc2626;">{{ (row.last_error or '-')[:120] }}</td>
+                <td>
+                  <form method="post"
+                        action="{{ url_for('admin_final.email_row_requeue', row_id=row.id) }}"
+                        style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn" type="submit">Requeue</button>
+                  </form>
+                </td>
               </tr>
             {% endfor %}
           </tbody>
