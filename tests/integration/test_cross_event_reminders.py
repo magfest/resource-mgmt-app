@@ -4,7 +4,7 @@ Department rows are global. Without event_cycle_id in the dedup key the
 second event's rows collide with the first event's and are silently dropped.
 """
 from app import db
-from app.models import DepartmentMembership, EmailOutbox, User
+from app.models import DepartmentMembership, EmailOutbox, EmailTemplate, User
 from app.services.notifications import send_submission_reminders
 
 
@@ -26,10 +26,24 @@ def _add_member(seed_workflow_data, cycles):
     return user
 
 
+def _seed_template(key):
+    """Seed the template this path resolves.
+
+    enqueue_email returns BLOCKED_INACTIVE and writes no row when the template
+    is missing, and conftest seeds only "finalized". Without this the
+    assertions below run against an empty queue and pass for the wrong reason.
+    """
+    db.session.add(EmailTemplate(
+        template_key=key, name=key, subject="S", body_text="B", is_active=True,
+    ))
+    db.session.flush()
+
+
 def test_two_event_cycles_same_day_both_enqueue(app, seed_workflow_data):
     first = seed_workflow_data["cycle"]
     second = seed_workflow_data["second_event_cycle"]
     _add_member(seed_workflow_data, [first, second])
+    _seed_template("submission_reminder")
 
     send_submission_reminders(first, dry_run=False)
     send_submission_reminders(second, dry_run=False)
@@ -44,6 +58,7 @@ def test_same_event_twice_in_one_day_queues_once(app, seed_workflow_data):
     """The other half of the same key: a same-day re-run must not double-send."""
     first = seed_workflow_data["cycle"]
     _add_member(seed_workflow_data, [first])
+    _seed_template("submission_reminder")
 
     run_one = send_submission_reminders(first, dry_run=False)
     run_two = send_submission_reminders(first, dry_run=False)

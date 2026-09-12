@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from sqlalchemy import text
 
 from app import db
-from app.models import EmailOutbox, NotificationLog
+from app.models import EmailOutbox, EmailTemplate, NotificationLog
 from app.models.constants import (
     NOTIF_STATUS_SENT,
     OUTBOX_STATUS_QUEUED,
@@ -30,7 +30,21 @@ def _login(client, user_id):
         sess["active_user_id"] = user_id
 
 
+def _seed_template(key):
+    """Seed the template this path resolves.
+
+    enqueue_email returns BLOCKED_INACTIVE and writes no row when the template
+    is missing, and conftest seeds only "finalized". Without this the
+    assertions below run against an empty queue and pass for the wrong reason.
+    """
+    db.session.add(EmailTemplate(
+        template_key=key, name=key, subject="S", body_text="B", is_active=True,
+    ))
+    db.session.flush()
+
+
 def test_submit_enqueues_and_does_not_call_ses(app, seed_draft_work_item):
+    _seed_template("submitted")
     work_item = seed_draft_work_item["work_item"]
 
     with patch("app.services.email.send_via_ses") as ses:
@@ -96,6 +110,7 @@ def test_route_level_atomicity(app, client, seed_draft_work_item):
 def test_notify_does_not_call_slack(app, seed_draft_work_item):
     """notify_* enqueues only. A webhook call inside the workflow transaction
     would hold the work item's row locks for an HTTP round trip."""
+    _seed_template("submitted")
     work_item = seed_draft_work_item["work_item"]
 
     with patch("app.services.notifications.is_slack_enabled", return_value=True), \
@@ -180,6 +195,7 @@ def test_enqueue_db_error_costs_only_that_recipient(app, seed_draft_work_item):
     no aborted-transaction state to reproduce. The gate itself is covered by
     test_savepoint_taken_on_postgres.
     """
+    _seed_template("submitted")
     work_item = seed_draft_work_item["work_item"]
     real_enqueue = email_enqueue.enqueue_email
     calls = []

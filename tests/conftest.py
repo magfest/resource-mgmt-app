@@ -136,6 +136,17 @@ def seed_workflow_data(app):
     # Migration k1l2m3n4o5p6 ships this row to every real database. create_all
     # runs no data migrations, so tests seed it themselves; release_event_budgets
     # refuses to release when the finalized template is missing or inactive.
+    #
+    # This is the ONLY template seeded here, and the other six notification
+    # kinds are seeded per test on purpose: eight test files insert their own
+    # rows and template_key is unique, so seeding a key centrally raises
+    # IntegrityError in every test that also inserts it. Tried and reverted
+    # 2026-09-11.
+    #
+    # The trap that leaves open: enqueue_email returns BLOCKED_INACTIVE when a
+    # template is missing, so a test that drives a notify_* path without
+    # seeding its template asserts against an empty queue and proves nothing.
+    # Seed the template the path resolves, and assert a row exists.
     db.session.add(EmailTemplate(
         template_key="finalized", name="Budget Finalized",
         subject="Your budget is finalized",
