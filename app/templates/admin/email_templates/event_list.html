@@ -1,0 +1,42 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Event Email - Admin{% endblock %}
+
+{% block content %}
+<h1>Event Email</h1>
+<div class="muted mb-16">
+  Pick an event to see what email it sends, with what wording, and when.
+</div>
+
+<div style="overflow-x: auto;">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 140px;">Code</th>
+        <th>Name</th>
+        <th style="width: 160px;">Event start</th>
+        <th style="width: 110px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cycle in cycles %}
+        <tr>
+          <td class="num">{{ cycle.code }}</td>
+          <td>{{ cycle.name }}</td>
+          <td class="muted small">
+            {{ cycle.event_start_date.strftime('%Y-%m-%d') if cycle.event_start_date else '-' }}
+          </td>
+          <td>
+            <a class="btn" href="{{ url_for('admin_config.email_templates.event_email_index',
+                                            event_cycle_id=cycle.id) }}">Configure</a>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="4" class="muted">No event cycles exist yet.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -5,13 +5,22 @@ Allows budget admins to view and edit email templates stored in the database.
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from flask import Blueprint, redirect, url_for, request, abort, flash
 
 from app import db
-from app.models import EmailTemplate, NOTIF_STATUS_SENT
+from app.models import (
+    EmailOutbox,
+    EmailTemplate,
+    EventCycle,
+    NotificationLog,
+    NOTIF_STATUS_SENT,
+)
 from app.routes import h
 from app.services.email_templates import (
     get_all_templates,
+    get_effective_template,
     get_template,
     validate_jinja2_template,
     preview_template,
@@ -24,7 +33,8 @@ from .helpers import (
     log_config_change,
     track_changes,
 )
-from app.models.constants import CONFIG_AUDIT_UPDATE
+from app.models.constants import CONFIG_AUDIT_UPDATE, OUTBOX_CLAIMABLE_STATUSES
+from app.services.email_windows import utc_to_eastern_date
 
 
 email_templates_bp = Blueprint('email_templates', __name__, url_prefix='/email-templates')
@@ -262,3 +272,90 @@ def test_email_template(template_id: int):
         flash("Failed to send test email. Check server logs for details.", "error")
 
     return redirect(url_for(".edit_email_template", template_id=template_id))
+
+
+# ============================================================
+# Per-event email configuration
+# ============================================================
+
+def _window_status(effective, now: datetime) -> str:
+    """Name what this template is doing for one event, right now.
+
+    Silenced outranks the window: a template switched off is off whatever
+    its dates say.
+    """
+    if not effective.is_active:
+        return "silenced"
+    if effective.send_window_start and effective.send_window_start > now:
+        return "scheduled"
+    if effective.send_window_end and effective.send_window_end < now:
+        return "outside window"
+    return "active"
+
+
+@email_templates_bp.get("/events/")
+@require_budget_admin
+def list_event_cycles():
+    """Pick an event, then configure its email.
+
+    Event first, not template first: the recurring task is "configure this
+    event's emails", not "find every event using this template".
+    """
+    # The column is event_start_date. EventCycle has no start_date.
+    cycles = db.session.query(EventCycle).order_by(
+        EventCycle.event_start_date.desc().nullslast(),
+        EventCycle.code,
+    ).all()
+    return render_budget_admin_page(
+        "admin/email_templates/event_list.html", cycles=cycles)
+
+
+@email_templates_bp.get("/events/<int:event_cycle_id>")
+@require_budget_admin
+def event_email_index(event_cycle_id: int):
+    """What email goes out for one event, under what constraint, and how much."""
+    cycle = db.session.get(EventCycle, event_cycle_id)
+    if not cycle:
+        abort(404, "Event cycle not found")
+
+    now = datetime.utcnow()
+    rows = []
+    for base in get_all_templates():
+        eff = get_effective_template(base.template_key, cycle.id)
+
+        queued = db.session.query(EmailOutbox).filter(
+            EmailOutbox.template_key == base.template_key,
+            EmailOutbox.event_cycle_id == cycle.id,
+            EmailOutbox.status.in_(OUTBOX_CLAIMABLE_STATUSES),
+            EmailOutbox.dispatch_at <= now,
+        ).count()
+        scheduled = db.session.query(EmailOutbox).filter(
+            EmailOutbox.template_key == base.template_key,
+            EmailOutbox.event_cycle_id == cycle.id,
+            EmailOutbox.status.in_(OUTBOX_CLAIMABLE_STATUSES),
+            EmailOutbox.dispatch_at > now,
+        ).count()
+        # Reads notification_logs.event_cycle_id. Joining through work_item
+        # would miss submission_reminder rows, whose work_item_id is NULL,
+        # and counting from email_outbox undercounts after the 90-day prune.
+        sent = db.session.query(NotificationLog).filter(
+            NotificationLog.template_key == base.template_key,
+            NotificationLog.event_cycle_id == cycle.id,
+            NotificationLog.status == NOTIF_STATUS_SENT,
+        ).count()
+
+        rows.append({
+            "template": base,
+            "effective": eff,
+            "custom_wording": eff.override_id is not None and (
+                eff.subject != base.subject or eff.body_text != base.body_text),
+            "window_start": utc_to_eastern_date(eff.send_window_start),
+            "window_end": utc_to_eastern_date(eff.send_window_end),
+            "status": _window_status(eff, now),
+            "queued": queued,
+            "scheduled": scheduled,
+            "sent": sent,
+        })
+
+    return render_budget_admin_page(
+        "admin/email_templates/event_index.html", cycle=cycle, rows=rows)
