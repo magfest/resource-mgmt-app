@@ -412,3 +412,61 @@ def index():
 def changelog():
     """Display the changelog / what's new page."""
     return render_page("changelog.html")
+
+
+# ============================================================
+# Stop-gap notice pages for TechOps and Supply
+# ============================================================
+# Leadership announced both work types before they shipped. These two URLs
+# exist to catch that announcement's links and say so. They are not the work
+# types' entry points; those stay at /<event>/<dept>/techops and /supply and
+# are untouched. Retire these routes once both work types open, redirecting
+# the paths to home so the announcement's links do not dead-end.
+
+_NOT_READY_TARGET_DATE = "October 1, 2026"
+
+_NOT_READY_WORK_TYPES = {
+    "techops": {
+        "work_type_name": "TechOps Requests",
+        "short_name": "TechOps",
+        "slack_channel": "#super-techops-requests",
+        "admin_endpoint": "work.techops_all_requests",
+    },
+    "supplyops": {
+        "work_type_name": "Supply Requests",
+        "short_name": "Supply",
+        "slack_channel": "#super-supplyops-requests",
+        "admin_endpoint": "work.supply_admin_home",
+    },
+}
+
+
+def _render_not_ready(key: str):
+    """Render the not-ready notice for one work type.
+
+    Deliberately does not require a session. The announcement links reach
+    people who are not signed in, and a login redirect would hide the notice
+    behind a sign-in page.
+    """
+    details = _NOT_READY_WORK_TYPES[key]
+
+    return render_page(
+        "not_ready.html",
+        work_type_name=details["work_type_name"],
+        short_name=details["short_name"],
+        slack_channel=details["slack_channel"],
+        target_date=_NOT_READY_TARGET_DATE,
+        admin_url=url_for(details["admin_endpoint"]),
+    )
+
+
+@home_bp.get("/techops")
+def techops_not_ready():
+    """Notice page for the announced-but-unreleased TechOps work type."""
+    return _render_not_ready("techops")
+
+
+@home_bp.get("/supplyops")
+def supplyops_not_ready():
+    """Notice page for the announced-but-unreleased Supply work type."""
+    return _render_not_ready("supplyops")

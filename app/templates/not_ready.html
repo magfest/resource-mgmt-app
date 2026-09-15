@@ -1,0 +1,30 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ work_type_name }} - Not Ready Yet{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 48px auto; text-align: center; padding: 48px;">
+  <h1 style="margin: 0 0 8px 0;">{{ work_type_name }}</h1>
+
+  <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 24px; margin: 24px 0;">
+    <h3 style="margin: 0 0 8px 0; color: #92400e;">Not ready yet</h3>
+    <p style="margin: 0; color: #78350f;">
+      {{ short_name }} requests are not open yet. We plan to have both
+      TechOps and Supply live by {{ target_date }}.
+    </p>
+  </div>
+
+  <p style="margin: 0;">
+    For questions, head to
+    <strong>{{ slack_channel }}</strong>
+    in Slack.
+  </p>
+
+  {% if is_super_admin and admin_url %}
+    {# Admins keep a way through so the TechOps dry-run is not blocked. #}
+    <p class="muted small" style="margin: 24px 0 0 0;">
+      <a href="{{ admin_url }}">Admin: open the {{ short_name }} queue</a>
+    </p>
+  {% endif %}
+</div>
+{% endblock %}
