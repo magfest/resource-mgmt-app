@@ -5,6 +5,7 @@ grow with every work type, so dedup rules and required-entity rules key on the
 kind and stay at seven entries permanently.
 """
 import json
+import logging
 from datetime import datetime
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -12,10 +13,16 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app import db
 from app.models import EmailOutbox, EmailTemplate
 from app.models.constants import (
+    ENQUEUE_OUTCOME_BLOCKED_INACTIVE,
+    ENQUEUE_OUTCOME_BLOCKED_WINDOW,
     ENQUEUE_OUTCOME_CREATED,
+    ENQUEUE_OUTCOME_DEFERRED,
     ENQUEUE_OUTCOME_DUPLICATE,
     OUTBOX_STATUS_QUEUED,
 )
+from app.services.email_templates import get_effective_template
+
+logger = logging.getLogger(__name__)
 
 # "Once ever" is per SUBMISSION and per RELEASE, not per work item for all
 # time. Both of these events legitimately recur on the same row: recall then
@@ -64,13 +71,49 @@ def enqueue_email(template_key, recipient_email, *, recipient_user_id=None,
                   dispatch_at=None) -> str:
     """Insert one outbox row. The caller's transaction owns it.
 
-    Returns an outcome string, not a bool. Sub-project 2 adds DEFERRED,
-    BLOCKED_WINDOW, and BLOCKED_INACTIVE; adding string values later is
-    non-breaking, changing a return type across every caller is not.
+    Returns an outcome string, not a bool: CREATED, DEFERRED, DUPLICATE,
+    BLOCKED_WINDOW or BLOCKED_INACTIVE.
 
     Does NOT commit. The row must land in the same transaction as the workflow
     change that caused it, which is the whole point of the outbox.
     """
+    now = datetime.utcnow()
+    dispatch_at = dispatch_at or now
+
+    # Resolve against the event, not the base row. A template silenced or
+    # windowed for THIS event must not queue, and the row's event_cycle_id is
+    # the only thing that knows which event that is. A row with no event cycle
+    # cannot have an override and is never windowed.
+    effective = get_effective_template(
+        template_key, event_cycle.id if event_cycle else None
+    )
+    if effective is None or not effective.is_active:
+        logger.warning(
+            "Blocked %s for %s: template is %s",
+            template_key, recipient_email,
+            "missing" if effective is None else "inactive",
+        )
+        return ENQUEUE_OUTCOME_BLOCKED_INACTIVE
+
+    if effective.send_window_end is not None and now > effective.send_window_end:
+        logger.warning(
+            "Blocked %s for %s: window closed %s (now %s)",
+            template_key, recipient_email, effective.send_window_end, now,
+        )
+        return ENQUEUE_OUTCOME_BLOCKED_WINDOW
+
+    # Deferred, not blocked. The workflow action still commits its row, so an
+    # approval in January whose window opens in April keeps its email. The
+    # window start is a floor: a caller that already asked for a later date
+    # keeps it, and gets CREATED, because DEFERRED records that the window
+    # held the email back and this window held nothing back. Whether a row is
+    # sendable now is a different question, answered by dispatch_at and
+    # counted as queue depth in email_health.py.
+    deferred = False
+    if effective.send_window_start is not None and dispatch_at < effective.send_window_start:
+        dispatch_at = effective.send_window_start
+        deferred = True
+
     values = {
         "template_key": template_key,
         "recipient_email": recipient_email,
@@ -81,15 +124,15 @@ def enqueue_email(template_key, recipient_email, *, recipient_user_id=None,
         "work_type_id": work_type.id if work_type else None,
         "context_json": json.dumps(context) if context else None,
         "dedup_key": dedup_key,
-        "dispatch_at": dispatch_at or datetime.utcnow(),
+        "dispatch_at": dispatch_at,
         "status": OUTBOX_STATUS_QUEUED,
-        "created_at": datetime.utcnow(),
+        "created_at": now,
         "attempt_count": 0,
     }
 
     if dedup_key is None:
         db.session.add(EmailOutbox(**values))
-        return ENQUEUE_OUTCOME_CREATED
+        return ENQUEUE_OUTCOME_DEFERRED if deferred else ENQUEUE_OUTCOME_CREATED
 
     # ON CONFLICT DO NOTHING rather than catching IntegrityError: on Postgres a
     # caught integrity error aborts the surrounding transaction, so a duplicate
@@ -108,4 +151,6 @@ def enqueue_email(template_key, recipient_email, *, recipient_user_id=None,
             index_elements=[table.c.dedup_key]
         )
     result = db.session.execute(stmt)
-    return ENQUEUE_OUTCOME_CREATED if result.rowcount else ENQUEUE_OUTCOME_DUPLICATE
+    if not result.rowcount:
+        return ENQUEUE_OUTCOME_DUPLICATE
+    return ENQUEUE_OUTCOME_DEFERRED if deferred else ENQUEUE_OUTCOME_CREATED

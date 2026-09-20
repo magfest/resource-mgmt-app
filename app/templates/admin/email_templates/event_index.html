@@ -1,0 +1,106 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ cycle.code }} Email - Admin{% endblock %}
+
+{% block content %}
+<h1>Email for {{ cycle.name }}</h1>
+
+<div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;" class="mb-16">
+  <label for="event-switcher" class="muted small">Event</label>
+  <select id="event-switcher"
+          data-base-url="{{ url_for('admin_config.email_templates.event_email_index', event_cycle_id=0) }}">
+    {% for c in all_cycles or [] %}
+      <option value="{{ c.id }}" {% if c.id == cycle.id %}selected{% endif %}>
+        {{ c.code }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
+
+<div class="muted mb-16">
+  Every template as this event sees it. Wording and dates set here apply to
+  {{ cycle.code }} only. A template left on Base follows the wording
+  <a href="{{ url_for('admin_config.email_templates.list_email_templates') }}">every event shares</a>,
+  which is rarely what you want to change.
+</div>
+
+<div style="overflow-x: auto;">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 170px;">Template</th>
+        <th style="width: 130px;">Wording</th>
+        <th>Subject</th>
+        <th style="width: 190px;">Send window (Eastern)</th>
+        <th style="width: 120px;">Status</th>
+        <th style="width: 80px;" class="num">Queued</th>
+        <th style="width: 90px;" class="num">Scheduled</th>
+        <th style="width: 70px;" class="num">Sent</th>
+        <th style="width: 90px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr data-template-key="{{ row.template.template_key }}">
+          <td class="num">{{ row.template.template_key }}</td>
+          <td>
+            {% if row.custom_wording %}
+              <span class="pill" style="background: #eef2fb;">Custom</span>
+            {% else %}
+              <span class="pill">Base</span>
+            {% endif %}
+            {% if row.effective.is_stale %}
+              {# The shared wording changed after this override was written. #}
+              <div class="muted small">Out of date</div>
+            {% endif %}
+          </td>
+          {# The EFFECTIVE subject, not the base row's: this column answers
+             what this event actually sends. #}
+          <td class="muted small" style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            {{ row.effective.subject }}
+          </td>
+          <td class="small">
+            {% if row.window_start or row.window_end %}
+              {{ row.window_start or 'any time' }} &ndash; {{ row.window_end or 'no end' }}
+            {% else %}
+              <span class="muted">&mdash;</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.status == 'active' %}
+              <span class="pill" style="background: #e9f7ef;">Active</span>
+            {% elif row.status == 'scheduled' %}
+              <span class="pill" style="background: #fdf4e3;">Scheduled</span>
+            {% elif row.status == 'outside window' %}
+              <span class="pill" style="background: #fbeaea;">Outside window</span>
+            {% else %}
+              <span class="pill" style="background: #fbeaea;">Silenced</span>
+            {% endif %}
+          </td>
+          <td class="num" data-count="queued">{{ row.queued }}</td>
+          <td class="num" data-count="scheduled">{{ row.scheduled }}</td>
+          <td class="num" data-count="sent">{{ row.sent }}</td>
+          <td>
+            <a class="btn" href="{{ url_for('admin_config.email_templates.edit_event_override',
+                                            event_cycle_id=cycle.id,
+                                            template_id=row.template.id) }}">Edit</a>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="9" class="muted">No email templates are configured.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# Navigating on change, not a submit button: this is a view switch with
+   nothing to save. The id 0 above is a placeholder the script replaces. #}
+<script nonce="{{ csp_nonce }}">
+  document.getElementById('event-switcher').addEventListener('change', function () {
+    window.location.href =
+      this.dataset.baseUrl.replace(/0$/, this.value);
+  });
+</script>
+{% endblock %}

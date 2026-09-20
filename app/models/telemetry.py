@@ -214,6 +214,57 @@ class EmailTemplate(db.Model):
     updated_by_user_id = db.Column(db.String(64), nullable=True)
 
 
+class EmailTemplateEventOverride(db.Model):
+    """Per-event wording and send window for one email template.
+
+    Every nullable column means inherit from the base template. That rule is
+    why this is its own table, not a nullable event_cycle_id on
+    email_templates. On a merged table the same NULL would mean inherit on
+    an event row and genuinely empty on the global row.
+    """
+    __tablename__ = "email_template_event_overrides"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "email_template_id", "event_cycle_id",
+            name="uq_email_template_event_override",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    email_template_id = db.Column(
+        db.Integer,
+        db.ForeignKey("email_templates.id", name="fk_eteo_email_template_id"),
+        nullable=False, index=True,
+    )
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", name="fk_eteo_event_cycle_id"),
+        nullable=False, index=True,
+    )
+
+    subject = db.Column(db.String(256), nullable=True)
+    body_text = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=True)
+
+    # Naive UTC, like every other datetime column. NULL means unbounded.
+    # Conversion to and from US Eastern happens in the admin form only.
+    send_window_start = db.Column(db.DateTime, nullable=True)
+    send_window_end = db.Column(db.DateTime, nullable=True)
+
+    # Drift detection only; nothing merges. A NULL means the override predates
+    # version tracking, which is not the same as being out of date.
+    base_version_at_override = db.Column(db.Integer, nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_by_user_id = db.Column(db.String(64), nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False,
+                           default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_user_id = db.Column(db.String(64), nullable=True)
+
+    template = db.relationship("EmailTemplate")
+    event_cycle = db.relationship("EventCycle")
+
+
 class SiteContent(db.Model):
     """
     Database-backed editable content blocks for UI text.

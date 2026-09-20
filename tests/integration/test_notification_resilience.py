@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 from app import db
 from app.models import (
+    EmailTemplate,
     EmailOutbox,
     WorkItem,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
@@ -64,6 +65,11 @@ class TestNotificationResilience:
         """
         Baseline: submission works normally when notifications succeed.
         """
+        db.session.add(EmailTemplate(
+            template_key="submitted", name="submitted", subject="S",
+            body_text="B", is_active=True,
+        ))
+        db.session.flush()
         with client.session_transaction() as sess:
             sess["active_user_id"] = "test:admin"
 

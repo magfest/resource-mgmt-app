@@ -199,6 +199,17 @@ OUTBOX_CLAIMABLE_STATUSES = (OUTBOX_STATUS_QUEUED, OUTBOX_STATUS_RENDER_BLOCKED)
 
 ENQUEUE_OUTCOME_CREATED = "CREATED"
 ENQUEUE_OUTCOME_DUPLICATE = "DUPLICATE"
+ENQUEUE_OUTCOME_DEFERRED = "DEFERRED"
+ENQUEUE_OUTCOME_BLOCKED_WINDOW = "BLOCKED_WINDOW"
+ENQUEUE_OUTCOME_BLOCKED_INACTIVE = "BLOCKED_INACTIVE"
+
+# Outcomes where no outbox row exists. A window blocks a whole (template,
+# event) pair, so a reminder across 100 departments is one blocked run rather
+# than 100 suppressed rows; there is nothing per-recipient to record.
+ENQUEUE_BLOCKED_OUTCOMES = (
+    ENQUEUE_OUTCOME_BLOCKED_WINDOW,
+    ENQUEUE_OUTCOME_BLOCKED_INACTIVE,
+)
 
 NOTIFICATION_KINDS = (
     "submitted", "dispatched", "needs_attention", "response_received",

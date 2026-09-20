@@ -28,7 +28,6 @@ from app.models import (
     SpendType,
     ApprovalGroup,
     EmailOutbox,
-    EmailTemplate,
     OUTBOX_CLAIMABLE_STATUSES,
     OUTBOX_STATUS_CANCELLED,
     REVIEW_STAGE_APPROVAL_GROUP,
@@ -664,21 +663,47 @@ def _resolved_finalized_key(work_item: WorkItem) -> str:
 def finalized_template_is_live(work_item: WorkItem) -> Tuple[bool, str]:
     """Report whether this item's finalized email can send, and name its template.
 
+    Reads the EFFECTIVE template, not the base row: an event that silenced or
+    closed the window on its own copy would pass a base-row check and then be
+    blocked at enqueue, after every budget was already stamped.
+
     The drainer terminates a row whose template is missing or inactive as
     CANCELLED (email_drainer.py:365-369). CANCELLED is terminal and no route
     re-sends it, so callers must decide before they queue.
     """
+    from app.services.email_templates import get_effective_template
+
     key = _resolved_finalized_key(work_item)
-    template = EmailTemplate.query.filter_by(template_key=key).first()
-    return bool(template is not None and template.is_active), key
+    portfolio = work_item.portfolio
+    cycle_id = portfolio.event_cycle_id if portfolio else None
+    effective = get_effective_template(key, cycle_id)
+    if effective is None or not effective.is_active:
+        return False, key
+    now = datetime.utcnow()
+    if effective.send_window_end is not None and now > effective.send_window_end:
+        return False, key
+    return True, key
 
 
 def _cancel_pending_release_emails(work_item: WorkItem) -> int:
     """Cancel this item's unsent release emails. Does not commit.
 
+    Goes through the drainer's terminal-state helper rather than assigning the
+    status: that helper writes the NotificationLog row and frees the dedup key.
+    Setting the status by hand left no record at all, and the outbox row is
+    pruned at 90 days, so "why did that department never get their email" had
+    no answer once it was.
+
     Scoped to the finalized template key and to claimable rows. A queued
-    needs_attention row is unrelated, and a terminal row is already history.
+    needs_attention row is unrelated, and a terminal row is already history. A
+    row already claimed as SENDING is left to the drainer, which re-checks the
+    template and window at send time; racing it here would be a second writer,
+    not a fix.
     """
+    # Imported inside the function: email_drainer pulls in app.services.email,
+    # and a module-level import here risks a cycle through the admin package.
+    from app.services.email_drainer import _apply_terminal_state
+
     key = _resolved_finalized_key(work_item)
     rows = (
         EmailOutbox.query
@@ -688,8 +713,10 @@ def _cancel_pending_release_emails(work_item: WorkItem) -> int:
         .all()
     )
     for row in rows:
-        row.status = OUTBOX_STATUS_CANCELLED
-        row.last_error = "Unfinalize withdrew this release email before it sent."
+        _apply_terminal_state(
+            row, OUTBOX_STATUS_CANCELLED,
+            "Unfinalize withdrew this release email before it sent.",
+        )
     return len(rows)
 
 
@@ -1432,9 +1459,10 @@ def release_event_budgets(
             dark.add(key)
     if dark:
         return 0, (
-            f"Email template {', '.join(sorted(dark))} is missing or inactive, so no "
-            "department would be emailed. Nothing was released. Activate the "
-            "template under Admin then record the approval again."
+            f"Email template {', '.join(sorted(dark))} will not send for this "
+            "event: it is missing, inactive, or past its send window. Nothing "
+            "was released. Fix the template under Admin then record the "
+            "approval again."
         )
 
     # The latch is set once. Re-running release for stragglers must not rewrite

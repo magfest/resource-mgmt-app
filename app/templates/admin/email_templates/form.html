@@ -3,6 +3,14 @@
 {% block title %}Edit Email Template - Admin{% endblock %}
 
 {% block content %}
+{# The steer: this editor changes every event at once, which is the rarer
+   intent and the more expensive mistake. #}
+<div class="callout mb-16">
+  This wording is <strong>shared by every event</strong>. To change one event
+  only, use
+  <a href="{{ url_for('admin_config.email_templates.list_event_cycles') }}">Email</a>
+  under Admin and edit the template there.
+</div>
 {% include "components/_narrow_screen_banner.html" %}
 <div class="muted" style="margin-bottom: 12px;">
   <a href="{{ url_for('admin_config.email_templates.list_email_templates') }}">&larr; Back to Email Templates</a>
@@ -77,6 +85,19 @@
         <input type="hidden" name="subject" id="preview-subject">
         <input type="hidden" name="body_text" id="preview-body_text">
         <input type="hidden" name="is_active" id="preview-is_active">
+        {# No submit-on-change here: the hidden fields above are filled by the
+           preview button's click handler, so an earlier submit would preview
+           the saved wording and quietly drop unsaved edits. #}
+        <label for="preview-event-cycle" class="muted small">Preview as</label>
+        <select id="preview-event-cycle" name="event_cycle_id">
+          <option value="">Base wording (no event)</option>
+          {% for cycle in event_cycles or [] %}
+            <option value="{{ cycle.id }}"
+                    {% if preview_event_cycle_id == cycle.id %}selected{% endif %}>
+              {{ cycle.code }}
+            </option>
+          {% endfor %}
+        </select>
         <button class="btn" type="submit" id="preview-btn">Preview with Sample Data</button>
       </form>
 

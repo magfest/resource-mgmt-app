@@ -199,6 +199,7 @@ from .telemetry import (
     ConfigAuditEvent,
     SecurityAuditLog,
     EmailTemplate,
+    EmailTemplateEventOverride,
     SiteContent,
 )
 
@@ -371,6 +372,7 @@ __all__ = [
     "ConfigAuditEvent",
     "SecurityAuditLog",
     "EmailTemplate",
+    "EmailTemplateEventOverride",
     "SiteContent",
     # Email outbox models
     "EmailOutbox",

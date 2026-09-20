@@ -21,7 +21,9 @@ from app.models.constants import (
     NOTIF_STATUS_RENDER_BLOCKED,
     NOTIF_STATUS_SENT,
     NOTIF_STATUS_SUPPRESSED,
+    OUTBOX_STATUS_CANCELLED,
     OUTBOX_STATUS_FAILED,
+    OUTBOX_STATUS_QUEUED,
 )
 from app.routes import get_user_ctx
 from app.routes.admin_final.helpers import require_admin
@@ -165,9 +167,13 @@ def email_debug():
                 pending = [p for p in pending
                            if p["template_key"] == template_filter]
 
+    # Cancelled rows belong here too: a template silenced or windowed out is
+    # the most common way an email does not arrive, and the requeue action
+    # below is the only way back for either status.
     recent_failures = (
         db.session.query(EmailOutbox)
-        .filter(EmailOutbox.status == OUTBOX_STATUS_FAILED)
+        .filter(EmailOutbox.status.in_(
+            (OUTBOX_STATUS_FAILED, OUTBOX_STATUS_CANCELLED)))
         .order_by(EmailOutbox.id.desc())
         .limit(20)
         .all()
@@ -471,4 +477,47 @@ def email_suppression_remove():
     db.session.delete(row)
     db.session.commit()
     flash(f"Removed {email} from the suppression list.", "success")
+    return redirect(url_for("admin_final.email_debug"))
+
+
+@admin_final_bp.post("/admin/email/outbox/<int:row_id>/requeue")
+def email_row_requeue(row_id: int):
+    """Return one CANCELLED or FAILED row to the queue.
+
+    Only those two. _apply_terminal_state frees the dedup key for exactly
+    them; SENT and SUPPRESSED keep theirs, so requeueing one would collide on
+    the next enqueue and look like it worked.
+
+    The row is re-rendered from scratch at send time, so a requeue after a
+    template fix picks up the fix.
+    """
+    user_ctx = get_user_ctx()
+    require_admin(user_ctx)
+
+    row = db.session.get(EmailOutbox, row_id)
+    if not row:
+        abort(404, "Outbox row not found")
+    if row.status not in (OUTBOX_STATUS_CANCELLED, OUTBOX_STATUS_FAILED):
+        flash(f"Only cancelled and failed rows can be requeued; this one is "
+              f"{row.status}.", "error")
+        return redirect(url_for("admin_final.email_debug"))
+
+    row.status = OUTBOX_STATUS_QUEUED
+    row.dispatch_at = datetime.utcnow()
+    # Reset the counter: transport_backoff reads it, so a requeued row that
+    # kept its attempts would be one failure away from permanent.
+    row.attempt_count = 0
+    row.last_error = None
+    row.blocked_since = None
+    row.claimed_at = None
+    row.claimed_by = None
+    row.sent_at = None
+    row.provider_message_id = None
+    db.session.commit()
+
+    current_app.logger.info(
+        f"{user_ctx.user_id} requeued outbox row {row_id} "
+        f"({row.template_key} to {row.recipient_email})"
+    )
+    flash(f"Requeued {row.template_key} to {row.recipient_email}.", "success")
     return redirect(url_for("admin_final.email_debug"))

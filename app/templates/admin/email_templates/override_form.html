@@ -1,0 +1,91 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ base.template_key }} for {{ cycle.code }} - Admin{% endblock %}
+
+{% block content %}
+<h1>{{ base.template_key }} for {{ cycle.name }}</h1>
+<div class="muted mb-16">
+  These settings apply to {{ cycle.code }} only. Leave a field blank to use the
+  base wording shown on the right; blank means inherit, not empty.
+</div>
+
+{% if override and override.is_stale %}
+  <div class="callout mb-16">
+    The base wording changed after these settings were saved. Compare the two
+    columns before assuming this event still says what you intended.
+  </div>
+{% endif %}
+
+<form method="post"
+      action="{{ url_for('admin_config.email_templates.update_event_override',
+                         event_cycle_id=cycle.id, template_id=base.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+  <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+    <div style="flex: 1 1 360px; min-width: 300px;">
+      <h2>This event</h2>
+
+      <label for="subject">Subject</label>
+      <input type="text" id="subject" name="subject" maxlength="256"
+             value="{{ override.subject or '' if override else '' }}"/>
+
+      <label for="body_text" class="mt-16">Body</label>
+      <textarea id="body_text" name="body_text" rows="12">{{ override.body_text or '' if override else '' }}</textarea>
+
+      <fieldset class="mt-16">
+        <legend>Send window (US Eastern)</legend>
+        <div class="muted small mb-16">
+          Dates are read in US Eastern and stored as exact instants. An end
+          date includes the whole of that day.
+        </div>
+
+        <label for="window_start">Start</label>
+        <input type="date" id="window_start" name="window_start"
+               value="{{ window_start or '' }}"/>
+
+        <label for="window_end" class="mt-16">End</label>
+        <input type="date" id="window_end" name="window_end"
+               value="{{ window_end or '' }}"/>
+      </fieldset>
+
+      <label for="is_active" class="mt-16">Active for this event</label>
+      <select id="is_active" name="is_active">
+        <option value="inherit" {% if not override or override.is_active is none %}selected{% endif %}>
+          Inherit ({{ 'on' if base.is_active else 'off' }} from base)
+        </option>
+        <option value="yes" {% if override and override.is_active is sameas true %}selected{% endif %}>
+          Yes
+        </option>
+        <option value="no" {% if override and override.is_active is sameas false %}selected{% endif %}>
+          No, silence it for this event
+        </option>
+      </select>
+      <div class="muted small">
+        An event can silence a template further. It cannot switch on one the
+        base has turned off.
+      </div>
+
+      <div class="mt-16">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a class="btn" href="{{ url_for('admin_config.email_templates.event_email_index',
+                                        event_cycle_id=cycle.id) }}">Cancel</a>
+      </div>
+    </div>
+
+    <div style="flex: 1 1 360px; min-width: 300px;">
+      <h2>Base wording</h2>
+      <div class="muted small mb-16">
+        Shared by every event. Change it under
+        <a href="{{ url_for('admin_config.email_templates.edit_email_template',
+                            template_id=base.id) }}">Email Templates</a>.
+      </div>
+
+      <label>Subject</label>
+      <div class="muted small">{{ base.subject }}</div>
+
+      <label class="mt-16">Body</label>
+      <pre class="muted small" style="white-space: pre-wrap;">{{ base.body_text }}</pre>
+    </div>
+  </div>
+</form>
+{% endblock %}

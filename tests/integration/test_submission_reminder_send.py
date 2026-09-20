@@ -7,6 +7,7 @@ command's own exit codes and output.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -140,6 +141,33 @@ def test_live_run_queues_one_row_per_recipient(seeded):
     # A reminder belongs to a department, not to any one request.
     assert {r.work_item_id for r in rows} == {None}
 
+
+def test_a_windowed_out_template_blocks_every_row(seeded):
+    """A closed send window blocks the run and says so in the summary.
+
+    rows_blocked is separate from the dedup shortfall on purpose. The CLI
+    subtracts it before reporting "already queued today", which a blocked run
+    never was.
+    """
+    from app.models import EmailTemplateEventOverride
+
+    template = EmailTemplate.query.filter_by(
+        template_key="submission_reminder").one()
+    db.session.add(EmailTemplateEventOverride(
+        email_template_id=template.id,
+        event_cycle_id=seeded["cycle"].id,
+        send_window_end=datetime.utcnow() - timedelta(days=1),
+    ))
+    db.session.commit()
+
+    summary = send_submission_reminders(seeded["cycle"], dry_run=False)
+
+    assert summary.rows_queued == 0
+    assert summary.rows_blocked == 4
+    assert summary.recipients_total == 4
+
+    db.session.rollback()
+    assert db.session.query(EmailOutbox).count() == 0
 
 def test_enqueue_exception_is_contained(seeded):
     """One recipient's failed INSERT costs that recipient only."""

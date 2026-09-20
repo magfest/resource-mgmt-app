@@ -58,7 +58,7 @@ from app.services.email_errors import (
     ThrottleStopError,
     classify_ses_error,
 )
-from app.services.email_templates import get_template, render_email_template
+from app.services.email_templates import get_effective_template, render_email_template
 from app.services.slack import send_slack_message
 
 # app.config carries these; the defaults live here as well so one missing key
@@ -218,9 +218,9 @@ def _clear_claim(row):
     row.claimed_by = None
 
 
-def _terminate(row, status, reason, rendered=None, parts=None,
-               provider_message_id=None) -> str:
-    """Write the row's final state, its audit row, and its body. Commits.
+def _apply_terminal_state(row, status, reason, rendered=None, parts=None,
+                          provider_message_id=None) -> str:
+    """Write the row's final state, its audit row, and its body. No commit.
 
     Every terminal outcome writes a NotificationLog row, cancellations
     included. The outbox row is pruned at 90 days; the log is the four-year
@@ -255,6 +255,20 @@ def _terminate(row, status, reason, rendered=None, parts=None,
             body_text=parts.text,
             body_html=parts.html,
         ))
+    return status
+
+
+def _terminate(row, status, reason, rendered=None, parts=None,
+               provider_message_id=None) -> str:
+    """Apply the terminal state and commit it.
+
+    The drainer owns its transaction per row. A caller working inside somebody
+    else's transaction wants _apply_terminal_state instead; committing there
+    would land half of an unfinalize.
+    """
+    status = _apply_terminal_state(row, status, reason, rendered=rendered,
+                                   parts=parts,
+                                   provider_message_id=provider_message_id)
     db.session.commit()
     return status
 
@@ -364,10 +378,19 @@ def process_row(row, run_id: str) -> str:
                           f"Referenced {missing} no longer exists")
 
     # A missing or inactive template is deliberate silence, not an error.
-    template = get_template(row.template_key)
-    if template is None or not template.is_active:
+    # Resolve against the row's event: this is the only place that catches a
+    # deferred row whose window an admin narrowed while it waited.
+    effective = get_effective_template(row.template_key, row.event_cycle_id)
+    if effective is None or not effective.is_active:
         return _terminate(row, OUTBOX_STATUS_CANCELLED,
                           f"Template {row.template_key} missing or inactive")
+    if (effective.send_window_end is not None
+            and datetime.utcnow() > effective.send_window_end):
+        return _terminate(
+            row, OUTBOX_STATUS_CANCELLED,
+            f"Send window for {row.template_key} closed "
+            f"{effective.send_window_end:%Y-%m-%d %H:%M} UTC"
+        )
 
     # render_email_template catches only TemplateSyntaxError and UndefinedError.
     # A filter type error, a division by zero, or a stale ORM instance raises
@@ -386,7 +409,9 @@ def process_row(row, run_id: str) -> str:
         }
         if row.context_json:
             context.update(json.loads(row.context_json))
-        rendered = render_email_template(row.template_key, context)
+        rendered = render_email_template(
+            row.template_key, context, event_cycle_id=row.event_cycle_id
+        )
     except Exception as e:
         return _block_on_render(row, f"Template {row.template_key} raised: {e}")
     if rendered is None:
