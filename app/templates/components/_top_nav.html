@@ -99,6 +99,18 @@
     </div>
     {% endif %}
 
+    {# Event Ops menu (SPACE_ADMIN + super admins). "Event Ops" is the team
+       name; the role code is SPACE_ADMIN. #}
+    {% if nav_is_space_admin %}
+    <div class="top-nav-dropdown">
+      <button type="button" class="top-nav-link top-nav-toggle">Event Ops <span class="top-nav-caret">&#9662;</span></button>
+      <div class="top-nav-menu">
+        <a href="{{ url_for('spaces.list_spaces') }}">Spaces</a>
+        <a href="{{ url_for('spaces.list_venues') }}">Venues</a>
+      </div>
+    </div>
+    {% endif %}
+
     {# Admin menu (super admins only) #}
     {% if is_super_admin %}
     <div class="top-nav-dropdown">

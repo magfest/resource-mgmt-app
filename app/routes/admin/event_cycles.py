@@ -20,6 +20,7 @@ from app.models import (
     WorkItem,
     EventCycleDivision,
     EventCycleDepartment,
+    Venue,
     CONFIG_AUDIT_CREATE,
     CONFIG_AUDIT_UPDATE,
     CONFIG_AUDIT_ARCHIVE,
@@ -84,6 +85,7 @@ def _cycle_to_dict(cycle: EventCycle) -> dict:
         "is_default": cycle.is_default,
         "sort_order": cycle.sort_order,
         "qb_class": cycle.qb_class,
+        "venue_id": cycle.venue_id,
         "allow_early_supplementary": cycle.allow_early_supplementary,
         "dates_are_public": cycle.dates_are_public,
         "event_start_date": cycle.event_start_date.isoformat() if cycle.event_start_date else None,
@@ -152,6 +154,16 @@ def list_event_cycles():
     )
 
 
+def _active_venues():
+    """Active venues for the event cycle form's venue select."""
+    return (
+        db.session.query(Venue)
+        .filter(Venue.is_active.is_(True))
+        .order_by(Venue.name)
+        .all()
+    )
+
+
 @event_cycles_bp.get("/new")
 @require_super_admin
 def new_event_cycle():
@@ -159,6 +171,7 @@ def new_event_cycle():
     return render_admin_config_page(
         "admin/event_cycles/form.html",
         cycle=None,
+        venues=_active_venues(),
     )
 
 
@@ -196,6 +209,7 @@ def create_event_cycle():
         is_default=is_default,
         sort_order=safe_int_or_none(request.form.get("sort_order")),
         qb_class=(request.form.get("qb_class") or "").strip() or None,
+        venue_id=safe_int_or_none(request.form.get("venue_id")),
         allow_early_supplementary=request.form.get("allow_early_supplementary") == "1",
         dates_are_public=request.form.get("dates_are_public") == "1",
         event_start_date=_parse_date(request.form.get("event_start_date")),
@@ -240,6 +254,7 @@ def edit_event_cycle(cycle_id: int):
         portfolio_count=portfolio_count,
         code_locked=code_locked,
         work_item_count=work_item_count,
+        venues=_active_venues(),
     )
 
 
@@ -297,6 +312,7 @@ def update_event_cycle(cycle_id: int):
     cycle.is_default = is_default
     cycle.sort_order = safe_int_or_none(request.form.get("sort_order"))
     cycle.qb_class = (request.form.get("qb_class") or "").strip() or None
+    cycle.venue_id = safe_int_or_none(request.form.get("venue_id"))
     cycle.allow_early_supplementary = request.form.get("allow_early_supplementary") == "1"
     cycle.dates_are_public = request.form.get("dates_are_public") == "1"
     cycle.event_start_date = _parse_date(request.form.get("event_start_date"))

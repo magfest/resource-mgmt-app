@@ -62,6 +62,18 @@
         <div class="muted small mt-4">QuickBooks class name for financial reporting. Multiple events can share the same class.</div>
       </div>
 
+      <div>
+        <label for="venue_id" class="form-label">Venue</label>
+        <select id="venue_id" name="venue_id">
+          <option value="">&mdash; none &mdash;</option>
+          {% for v in venues %}
+            <option value="{{ v.id }}"
+              {% if cycle and cycle.venue_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="muted small mt-4">Set this to enable the Spaces page for this event. A cycle with no venue, such as the FY corporate-budget cycle, leaves this blank.</div>
+      </div>
+
       <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 28px;">
         <label style="display: flex; gap: 8px; align-items: center; font-weight: normal;">
           <input type="checkbox" name="is_active" value="1"

@@ -1,0 +1,196 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Spaces - Event Ops{% endblock %}
+
+{% block content %}
+<div class="row space-between">
+  <div>
+    <h1>Spaces</h1>
+    <div class="muted mb-16">
+      The shared list of rooms, slices, and pop-up spaces for one event. Every
+      work type reads from it. TechOps requests, supply deliveries, signage.
+      Assignments reset each event cycle.
+    </div>
+  </div>
+  <form method="get" action="{{ url_for('spaces.list_spaces') }}">
+    <label class="muted small" for="event-select">Event cycle</label>
+    <select id="event-select" name="event">
+      {% for c in cycles %}
+        <option value="{{ c.code }}"
+          {% if cycle and c.id == cycle.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit">Go</button></noscript>
+  </form>
+</div>
+
+{% if cycle is none %}
+  <p class="muted">No active event cycle. Create one in Admin, Event Cycles.</p>
+{% elif cycle.venue_id is none %}
+  <p class="muted">
+    {{ cycle.name }} has no venue set. Set the venue on the event cycle before
+    adding spaces.
+  </p>
+{% else %}
+<div class="row mb-16">
+  <div class="stat-card"><div class="muted small">Spaces</div><strong>{{ stats.total }}</strong></div>
+  <div class="stat-card"><div class="muted small">Assigned</div><strong>{{ stats.assigned }}</strong></div>
+  <div class="stat-card"><div class="muted small">Shared</div><strong>{{ stats.shared }}</strong></div>
+  <div class="stat-card"><div class="muted small">Unassigned</div><strong>{{ stats.unassigned }}</strong></div>
+</div>
+
+<div class="row mb-16">
+  <input type="text" id="space-filter" placeholder="Filter by name, code, or department">
+  <button type="button" class="btn btn-small" data-filter="all">All</button>
+  <button type="button" class="btn btn-small" data-filter="shared">Shared only</button>
+  <button type="button" class="btn btn-small" data-filter="unassigned">Unassigned only</button>
+  <a class="btn btn-small"
+     href="{{ url_for('spaces.list_spaces', event=cycle.code, show_archived=0 if show_archived else 1) }}">
+    {{ 'Hide archived' if show_archived else 'Show archived' }}
+  </a>
+  <a class="btn btn-primary"
+     href="{{ url_for('spaces.list_spaces', event=cycle.code, add=1) }}#add-space">Add space</a>
+  <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code, combine=1) }}#combine-spaces">Combine spaces</a>
+  <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code, copy=1) }}#copy-layout">Copy layout</a>
+</div>
+
+{% if request.args.get('add') %}
+<form id="add-space" method="post"
+      action="{{ url_for('spaces.create_space') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="event" value="{{ cycle.code }}">
+  <div class="row">
+    <label>Name <input type="text" name="name" required maxlength="128"></label>
+    <label>Code <input type="text" name="code" required maxlength="32"></label>
+    <label>Kind
+      <!-- Kind is not derived from Parent room here; create_space in
+           app/routes/spaces/views.py gives the reason. A COMBO is never
+           created on this form; Combine spaces builds one, so it is left
+           out of this select. -->
+      <select name="kind">
+        {% for value, label in space_kinds %}
+          {% if value != SPACE_KIND_COMBO %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <label>Parent room
+      <select name="parent_id">
+        <option value="">&mdash; none &mdash;</option>
+        {% for row in rows %}
+          {% if row.space.kind == SPACE_KIND_ROOM %}
+            <option value="{{ row.space.id }}">{{ row.space.name }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="row">
+    <label>Dimensions <input type="text" name="dimensions" placeholder="35x57x22"></label>
+    <label>Area (sq ft) <input type="number" name="area_sqft"></label>
+    <label>Where is it? <input type="text" name="location_note"
+      placeholder="Outside the Expo Hall B doors, house-left"></label>
+  </div>
+  <button type="submit" class="btn btn-primary">Add space</button>
+  <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
+</form>
+{% endif %}
+
+{% if request.args.get('combine') %}
+<form id="combine-spaces" method="post"
+      action="{{ url_for('spaces.combine_spaces') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="event" value="{{ cycle.code }}">
+  <div class="muted small mb-8">
+    Pick the spaces this event uses as one. They do not have to sit next to
+    each other.
+  </div>
+  <div class="row">
+    <label>Name at this event <input type="text" name="name" required
+      maxlength="128" placeholder="e.g. Ches J/K"></label>
+    <label>Event code <input type="text" name="code" required maxlength="32"></label>
+  </div>
+  <input type="text" id="member-filter" placeholder="Filter spaces">
+  <div id="member-list">
+    {% for row in rows %}
+      {% if row.space.kind != 'COMBO' %}
+        <label class="block" data-member-haystack="{{ (row.space.name ~ ' ' ~ row.space.code)|lower }}">
+          <input type="checkbox" name="member_ids" value="{{ row.space.id }}">
+          {{ row.space.name }} <code>{{ row.space.code }}</code>
+        </label>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <button type="submit" class="btn btn-primary">Combine</button>
+  <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
+</form>
+{% endif %}
+
+{% if request.args.get('copy') %}
+<form id="copy-layout" method="post"
+      action="{{ url_for('spaces.copy_layout') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="event" value="{{ cycle.code }}">
+  <div class="muted small mb-8">
+    Copies combinations, pop-up spaces and per-event names. Assignments are
+    not copied; every room gets a fresh decision this cycle.
+  </div>
+  <label>Copy from
+    <select name="source_event">
+      {% for c in cycles %}
+        {% if c.id != cycle.id %}
+          <option value="{{ c.code }}">{{ c.name }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-primary">Copy layout</button>
+  <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
+</form>
+{% endif %}
+
+<table>
+  <thead>
+    <tr>
+      <th>Space</th>
+      <th style="width: 110px;">Code</th>
+      <th style="width: 150px;">Dimensions</th>
+      <th style="width: 330px;">Assigned to</th>
+      <th style="width: 80px;"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+      {% include "spaces/_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="row mt-16">
+  <div class="card">
+    <strong>Combos and slices</strong>
+    <p class="muted small">
+      Assigning a combo does not mark its slices in use, and the app does not
+      check for overlap. Record the tree here and confirm room-wide work with
+      every department holding a slice.
+    </p>
+  </div>
+  <div class="card">
+    <strong>Not here yet</strong>
+    <p class="muted small">
+      Load-in and load-out times, floor maps, and a merged view of every
+      request against one room are planned for a later cycle. Capacity counts
+      from the venue sheet are left out on purpose.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<script nonce="{{ csp_nonce }}">
+  document.getElementById('event-select').addEventListener('change', function () {
+    this.form.submit();
+  });
+</script>
+{% include "spaces/_table_script.html" %}
+{% endblock %}

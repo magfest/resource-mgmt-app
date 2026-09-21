@@ -1,0 +1,66 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Venues - Event Ops{% endblock %}
+
+{% block content %}
+<h1>Venues</h1>
+<div class="muted mb-16">
+  Venues hold the room list. Set an event cycle's venue in Admin, Event
+  Cycles; the Spaces page then lists that venue's rooms.
+</div>
+
+<form method="post" action="{{ url_for('spaces.create_venue') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row">
+    <label>Code <input type="text" name="code" required maxlength="32"></label>
+    <label>Name <input type="text" name="name" required maxlength="128"></label>
+    <label>Notes <input type="text" name="notes"></label>
+  </div>
+  <button type="submit" class="btn btn-primary">Add venue</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th style="width: 140px;">Code</th><th>Name</th><th>Notes</th>
+        <th style="width: 90px;">Status</th><th style="width: 80px;"></th></tr>
+  </thead>
+  <tbody>
+    {% for v in venues %}
+      <tr id="venue-{{ v.id }}">
+        <td><code>{{ v.code }}</code></td>
+        <td><a href="{{ url_for('spaces.venue_catalog', venue_id=v.id) }}">{{ v.name }}</a></td>
+        <td class="muted">{{ v.notes or '' }}</td>
+        <td>{{ 'Active' if v.is_active else 'Inactive' }}</td>
+        <td>
+          <a class="btn btn-small"
+             href="{{ url_for('spaces.list_venues', edit=v.id) }}#venue-{{ v.id }}">Edit</a>
+        </td>
+      </tr>
+      {% if edit_id == v.id %}
+      <tr>
+        <td colspan="5" style="background: #f8fafc;">
+          <form method="post" action="{{ url_for('spaces.update_venue', venue_id=v.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row">
+              <label>Name <input type="text" name="name" value="{{ v.name }}"
+                required maxlength="128"></label>
+              <label>Notes <input type="text" name="notes" value="{{ v.notes or '' }}"></label>
+              <label class="block">
+                <input type="checkbox" name="is_active" value="1"
+                  {% if v.is_active %}checked{% endif %}>
+                Active
+              </label>
+            </div>
+            <!-- Code stays fixed after creation; spaces join to it, not to a
+                 string that could drift out from under them. -->
+            <div class="muted small mb-8">Code cannot be changed here.</div>
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a class="btn" href="{{ url_for('spaces.list_venues') }}">Cancel</a>
+          </form>
+        </td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -22,6 +22,15 @@ class EventCycle(db.Model):
     sort_order = db.Column(db.Integer, nullable=True, default=None)
     qb_class = db.Column(db.String(128), nullable=True)
 
+    # Nullable: existing rows predate venues, and the FY corporate-budget
+    # cycle is not held at a venue.
+    venue_id = db.Column(
+        db.Integer,
+        db.ForeignKey("venues.id", name="fk_event_cycles_venue_id"),
+        nullable=True,
+        index=True,
+    )
+
     # When True, supplementary budget requests can be created before the
     # primary is FINALIZED. Used for events like the FY corporate-budget
     # cycle where a department splits its budget across sibling requests.

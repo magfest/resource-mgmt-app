@@ -66,6 +66,27 @@ ROLE_SUPER_ADMIN = "SUPER_ADMIN"        # global admin
 ROLE_WORKTYPE_ADMIN = "WORKTYPE_ADMIN"  # admin for a work type (e.g., BUDGET)
 ROLE_APPROVER = "APPROVER"              # approver (typically scoped to approval group)
 
+# Manages venues, spaces, and per-event assignments. Held by Event Ops, who
+# must not hold SUPER_ADMIN. Unscoped: one team runs all venues, so the role
+# sets no scope columns on user_roles and the existing partial index
+# ix_user_roles_global_unique already covers it.
+ROLE_SPACE_ADMIN = "SPACE_ADMIN"
+
+# Space kinds. A SLICE is part of a room. A COMBO is event-scoped and
+# groups member spaces for one event; it has no slices of its own. A
+# FREEFORM space has no parent and uses location_note for where it sits.
+SPACE_KIND_ROOM = "ROOM"
+SPACE_KIND_SLICE = "SLICE"
+SPACE_KIND_COMBO = "COMBO"
+SPACE_KIND_FREEFORM = "FREEFORM"
+
+SPACE_KINDS = (
+    SPACE_KIND_ROOM,
+    SPACE_KIND_SLICE,
+    SPACE_KIND_COMBO,
+    SPACE_KIND_FREEFORM,
+)
+
 # ============================================================
 # Spend type selection modes for expense accounts
 # ============================================================

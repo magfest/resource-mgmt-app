@@ -1,0 +1,127 @@
+<script nonce="{{ csp_nonce }}">
+  var allRows = Array.prototype.slice.call(
+    document.querySelectorAll('tbody tr[data-haystack]'));
+  var childRows = allRows.filter(function (tr) { return tr.dataset.parentId; });
+  var parentIds = [];
+  childRows.forEach(function (tr) {
+    if (parentIds.indexOf(tr.dataset.parentId) === -1) {
+      parentIds.push(tr.dataset.parentId);
+    }
+  });
+
+  var collapsedRooms = {};
+  var mode = 'all';
+  var term = '';
+
+  // A filter decides what shows while it is active, so a collapsed room
+  // cannot hide a match. Collapse state is remembered and comes back when
+  // the filter clears.
+  function filtering() { return term !== '' || mode !== 'all'; }
+
+  function matchesFilter(tr) {
+    var matchesTerm = !term || tr.dataset.haystack.indexOf(term) !== -1;
+    var matchesMode =
+      mode === 'all' ||
+      (mode === 'shared' && tr.dataset.shared === '1') ||
+      (mode === 'unassigned' && tr.dataset.unassigned === '1');
+    return matchesTerm && matchesMode;
+  }
+
+  // Two passes: decide matches first, then force-show a room whose child
+  // matched, so a search result never renders without its room.
+  function render() {
+    var matches = {};
+    var roomsWithMatchingChild = {};
+    allRows.forEach(function (tr) {
+      matches[tr.dataset.spaceId] = matchesFilter(tr);
+      if (matches[tr.dataset.spaceId] && tr.dataset.parentId) {
+        roomsWithMatchingChild[tr.dataset.parentId] = true;
+      }
+    });
+    allRows.forEach(function (tr) {
+      var parent = tr.dataset.parentId;
+      var isMatch = matches[tr.dataset.spaceId] ||
+        (!parent && roomsWithMatchingChild[tr.dataset.spaceId]);
+      var hiddenByCollapse = !filtering() && parent && collapsedRooms[parent];
+      tr.style.display = (isMatch && !hiddenByCollapse) ? '' : 'none';
+    });
+    parentIds.forEach(function (id) {
+      var toggle = document.querySelector('[data-toggle-for="' + id + '"]');
+      if (toggle) {
+        toggle.innerHTML =
+          (!filtering() && collapsedRooms[id]) ? '&#9656;' : '&#9662;';
+      }
+    });
+  }
+
+  // Rooms render expanded so the page works without JavaScript. Collapsing
+  // happens here, on load, once we know scripting is available.
+  parentIds.forEach(function (id) { collapsedRooms[id] = true; });
+
+  // A row being edited must be visible; its editor renders directly beneath it.
+  var editing = new URLSearchParams(window.location.search).get('edit');
+  // The server reads this parameter as an int, so anything else is not a
+  // row id. An unvalidated value here builds an invalid selector, and the
+  // throw would take collapse and filtering down with it.
+  if (editing && /^\d+$/.test(editing)) {
+    var editedRow = document.querySelector(
+      'tr[data-space-id="' + editing + '"]');
+    if (editedRow && editedRow.dataset.parentId) {
+      collapsedRooms[editedRow.dataset.parentId] = false;
+    }
+  }
+
+  render();
+
+  document.querySelectorAll('[data-toggle-for]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = this.dataset.toggleFor;
+      collapsedRooms[id] = !collapsedRooms[id];
+      render();
+    });
+  });
+
+  // The toolbar is absent when the event cycle has no venue set yet.
+  var filterInput = document.getElementById('space-filter');
+  if (filterInput) {
+    filterInput.addEventListener('input', function () {
+      term = this.value.toLowerCase();
+      render();
+    });
+    document.querySelectorAll('[data-filter]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        mode = this.dataset.filter;
+        render();
+      });
+    });
+  }
+
+  var memberFilter = document.getElementById('member-filter');
+  if (memberFilter) {
+    var memberLabels = Array.prototype.slice.call(
+      document.querySelectorAll('[data-member-haystack]'));
+    memberFilter.addEventListener('input', function () {
+      var t = this.value.toLowerCase();
+      memberLabels.forEach(function (el) {
+        el.style.display =
+          (!t || el.dataset.memberHaystack.indexOf(t) !== -1) ? '' : 'none';
+      });
+    });
+  }
+
+  // Scoped to its own list, not queried globally: only one editor renders
+  // at a time today, but a bare document query would break if that changes.
+  document.querySelectorAll('.dept-filter').forEach(function (input) {
+    var list = input.parentNode.querySelector('.dept-list');
+    if (!list) { return; }
+    var deptLabels = Array.prototype.slice.call(
+      list.querySelectorAll('[data-dept-haystack]'));
+    input.addEventListener('input', function () {
+      var t = this.value.toLowerCase();
+      deptLabels.forEach(function (el) {
+        el.style.display =
+          (!t || el.dataset.deptHaystack.indexOf(t) !== -1) ? '' : 'none';
+      });
+    });
+  });
+</script>
