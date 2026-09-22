@@ -172,7 +172,7 @@
 {% endif %}
 
 {# Department Info #}
-{% if department.description or department.mailing_list or department.slack_channel or can_edit_info %}
+{% if department.description or department.mailing_list or department.slack_channel or can_edit_info or spaces %}
 <section class="card" style="margin-top: 24px;">
   <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
     <h4 style="margin: 0;">Department Info</h4>
@@ -201,6 +201,33 @@
   {% elif can_edit_info %}
   <div class="muted small">No contact info set. Click Edit to add mailing list or Slack channel.</div>
   {% endif %}
+
+  {# Spaces: read-only here. Assignments change on the Spaces admin page,
+     not from this card. #}
+  <div style="border-top: 1px solid #e5e7eb; margin-top: 16px; padding-top: 16px;">
+    <h4 style="margin: 0 0 8px 0;">Spaces</h4>
+    {% if spaces %}
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        {% for entry in spaces %}
+          <div>
+            <strong>{{ entry.display_name }}</strong>
+            <code>{{ entry.space.code }}</code>
+            {% if not entry.is_available %}
+              <span class="pill pill-warning">Unavailable</span>
+            {% endif %}
+            {% if entry.covers %}
+              <div class="muted small">Includes {{ entry.covers|map(attribute='code')|join(', ') }}</div>
+            {% endif %}
+            {% if entry.unavailable_reason %}
+              <div class="muted small">{{ entry.unavailable_reason }}</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted small">No spaces assigned yet.</div>
+    {% endif %}
+  </div>
 </section>
 {% endif %}
 
