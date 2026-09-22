@@ -26,6 +26,10 @@ from app.routes.work.helpers import (
     is_department_enabled_for_event,
 )
 from app.routes.admin.helpers import can_manage_department_members, can_edit_department_info
+# queries.py is pure (no Flask, no request context), so importing it here at
+# module level is safe; an admin helper module-level import is not, since
+# that breaks the h proxy.
+from app.routes.spaces.queries import spaces_for_department
 from . import work_bp
 
 
@@ -156,6 +160,8 @@ def department_home(event: str, dept: str):
         user_ctx, department.id, event_cycle.id
     )
 
+    spaces = spaces_for_department(department.id, event_cycle.id)
+
     return render_page(
         "budget/department_home.html",
         event_cycle=event_cycle,
@@ -165,4 +171,5 @@ def department_home(event: str, dept: str):
         work_type_cards=work_type_cards,
         can_manage_members=can_manage_members,
         can_edit_info=can_edit_info,
+        spaces=spaces,
     )

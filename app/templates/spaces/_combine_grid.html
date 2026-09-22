@@ -1,0 +1,61 @@
+<tr class="combine-grid">
+  <td colspan="5" style="background: #f8fafc;">
+    <form method="post"
+          action="{{ url_for('spaces.combine_room', room_id=row.space.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="event" value="{{ cycle.code }}">
+      <div class="muted small mb-8">
+        Point a slice at another slice of {{ row.display_name }} to fold it
+        in for {{ cycle.name }}. The target becomes the primary and keeps
+        the alias, the assignment, and the Edit.
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Slice</th>
+            <th style="width: 110px;">Code</th>
+            <th style="width: 220px;">Combined into</th>
+            <th>Assigned to</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for slice_row in combine_slices %}
+            {% set slice_id = slice_row.space.id %}
+            <tr>
+              <td>{{ slice_row.space.name }}</td>
+              <td><code>{{ slice_row.space.code }}</code></td>
+              <td>
+                <select name="combined_into_{{ slice_id }}">
+                  <option value="">&mdash; not combined &mdash;</option>
+                  {% for other in combine_slices %}
+                    {% if other.space.id != slice_id %}
+                      <option value="{{ other.space.id }}"
+                        {% if combine_selected.get(slice_id) == other.space.id %}selected{% endif %}>
+                        {{ other.space.name }}
+                      </option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+                {% if combine_errors.get(slice_id) %}
+                  <div class="callout callout-warning small mt-4"
+                       data-combine-error="{{ slice_id }}">
+                    {{ combine_errors[slice_id] }}
+                  </div>
+                {% endif %}
+              </td>
+              <td>
+                {% for d in slice_row.departments %}
+                  <span class="pill pill-dept">{{ d.name }}</span>
+                {% else %}
+                  <span class="muted">Unassigned</span>
+                {% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit" class="btn btn-primary">Save groupings</button>
+      <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
+    </form>
+  </td>
+</tr>

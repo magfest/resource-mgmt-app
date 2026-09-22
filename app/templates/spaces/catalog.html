@@ -1,0 +1,135 @@
+{% extends "layout/base.html" %}
+
+{% block title %}{{ venue.name }} - Spaces{% endblock %}
+
+{% block content %}
+<div class="row space-between">
+  <div>
+    <h1>{{ venue.name }}</h1>
+    <div class="muted mb-16">
+      Every room and slice at this venue. Events pick from this list; they do
+      not change it. Code <code>{{ venue.code }}</code>.
+    </div>
+  </div>
+  <a class="btn" href="{{ url_for('spaces.list_venues') }}">All venues</a>
+</div>
+
+{% if flagged_count %}
+<!-- Advisory only: the -S- marker is generator-only and unenforced, so a
+     hand-typed code can trip this. See is_slice_coded in catalog_parse.py. -->
+<div id="orphan-slice-warning" class="callout callout-warning mb-16"
+     data-orphan-count="{{ flagged_count }}">
+  <strong>{{ flagged_count }} space{{ '' if flagged_count == 1 else 's' }}</strong>
+  {{ 'has' if flagged_count == 1 else 'have' }} a code marking it a slice
+  but no parent room.
+  <a href="{{ repair_url }}">Review and repair</a>
+</div>
+{% endif %}
+
+<!-- Action first, then filters, matching every admin list page in
+     app/templates/admin/. Operators here already use those pages. -->
+<div class="row mb-16">
+  <a class="btn btn-primary" href="{{ url_for('spaces.venue_catalog', venue_id=venue.id, add=1) }}#add-space">Add space</a>
+  <a class="btn" href="{{ url_for('spaces.venue_catalog', venue_id=venue.id, paste=1) }}#paste-rows">Paste rows</a>
+  <input type="text" id="space-filter" placeholder="Filter by name or code">
+  <a class="btn" href="{{ url_for('spaces.venue_catalog', venue_id=venue.id) if show_archived else url_for('spaces.venue_catalog', venue_id=venue.id, show_archived=1) }}">
+    {{ 'Hide archived' if show_archived else 'Show archived' }}
+  </a>
+</div>
+
+<!-- Carries the current show_archived into every link and form action
+     below that returns to this page, omitting it when false. Restore only
+     ever appears under show_archived=1; a link or redirect that dropped it
+     would land back on a page where the archived row cannot render. -->
+{% set archived_qs = {'show_archived': 1} if show_archived else {} %}
+
+{% if request.args.get('add') == '1' or form_values %}
+<form id="add-space" method="post" class="card mb-16"
+      action="{{ url_for('spaces.catalog_add_space', venue_id=venue.id, **archived_qs) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid">
+    <div>
+      <label for="add-space-name" class="form-label">Venue space name</label>
+      <input id="add-space-name" type="text" name="name" required maxlength="128"
+             value="{{ form_values.get('name', '') }}">
+    </div>
+    <div>
+      <label for="add-space-code" class="form-label">Code</label>
+      <input id="add-space-code" type="text" name="code" maxlength="32"
+             value="{{ form_values.get('code', '') }}">
+      <div class="muted small">Leave blank to generate one.</div>
+    </div>
+    <div>
+      <label for="add-space-parent" class="form-label">Parent room</label>
+      <!-- Kind is derived from this field; see catalog_add_space's
+           docstring for why this form can do that and the event page's
+           add form (list.html) cannot. -->
+      <select id="add-space-parent" name="parent_id">
+        <option value="">&mdash; none, this is a room &mdash;</option>
+        {% for r in rooms %}
+          <option value="{{ r.space.id }}"{% if form_values.get('parent_id') == r.space.id|string %} selected{% endif %}>{{ r.space.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="add-space-dimensions" class="form-label">Dimensions</label>
+      <input id="add-space-dimensions" type="text" name="dimensions" placeholder="29x28x14"
+             value="{{ form_values.get('dimensions', '') }}">
+    </div>
+    <div>
+      <label for="add-space-area" class="form-label">Area (sq ft)</label>
+      <input id="add-space-area" type="number" name="area_sqft" min="0"
+             value="{{ form_values.get('area_sqft', '') }}">
+    </div>
+  </div>
+  <div class="mt-16">
+    <button type="submit" class="btn btn-primary">Add space</button>
+    <a class="btn" href="{{ url_for('spaces.venue_catalog', venue_id=venue.id, **archived_qs) }}">Cancel</a>
+  </div>
+</form>
+{% endif %}
+
+{% if request.args.get('paste') == '1' and not preview %}
+<form id="paste-rows" method="post" class="card mb-16"
+      action="{{ url_for('spaces.catalog_paste_preview', venue_id=venue.id, **archived_qs) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="muted small mb-8">
+    Paste rows from your spreadsheet. One row per line, tab or comma
+    separated. Every row needs all five columns, in this order, even where
+    a value is empty:
+    <div class="mt-8 mb-8"><code>{{ paste_columns|join(' | ') }}</code></div>
+    Leave a code blank and one is generated for you. A parent code makes a
+    slice; leave it blank for a room. Extra columns past Parent code are
+    ignored.
+  </div>
+  <textarea name="pasted" rows="12" style="width: 100%;"></textarea>
+  <div class="mt-16">
+    <button type="submit" class="btn btn-primary">Preview</button>
+    <a class="btn" href="{{ url_for('spaces.venue_catalog', venue_id=venue.id, **archived_qs) }}">Cancel</a>
+  </div>
+</form>
+{% endif %}
+
+{% if preview %}
+  {% include "spaces/_catalog_preview.html" %}
+{% endif %}
+
+<table>
+  <thead>
+    <tr>
+      <th>Space</th>
+      <th style="width: 120px;">Code</th>
+      <th style="width: 150px;">Dimensions</th>
+      <th style="width: 100px;">Area</th>
+      <th style="width: 80px;"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+      {% include "spaces/_catalog_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include "spaces/_table_script.html" %}
+{% endblock %}

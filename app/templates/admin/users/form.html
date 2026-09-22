@@ -67,6 +67,19 @@
         </label>
       </div>
 
+      {# Space Admin (Event Ops) #}
+      <div class="mb-16">
+        <label style="display: flex; gap: 8px; align-items: flex-start; font-weight: normal;">
+          <input type="checkbox" name="role_space_admin" value="1"
+                 {% if user %}{% for r in user.roles %}{% if r.role_code == 'SPACE_ADMIN' %}checked{% endif %}{% endfor %}{% endif %}
+                 style="margin-top: 3px;" />
+          <div>
+            <strong>Space Admin</strong>
+            <div class="muted small">Event Ops. Manages venues, spaces, and per-event assignments.</div>
+          </div>
+        </label>
+      </div>
+
       {# Work Type Admin #}
       {% if work_types %}
       <div class="mb-16">

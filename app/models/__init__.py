@@ -51,6 +51,7 @@ from .constants import (
     ROLE_SUPER_ADMIN,
     ROLE_WORKTYPE_ADMIN,
     ROLE_APPROVER,
+    ROLE_SPACE_ADMIN,
     # Spend type modes
     SPEND_TYPE_MODE_SINGLE_LOCKED,
     SPEND_TYPE_MODE_ALLOW_LIST,
@@ -192,6 +193,17 @@ from .techops import (
     TechOpsRequestDetail,
 )
 
+# Re-export space models
+from .spaces import (
+    Venue, Space, SpaceEventOverride, SpaceAssignment,
+)
+from .constants import (
+    SPACE_KIND_ROOM,
+    SPACE_KIND_SLICE,
+    SPACE_KIND_FREEFORM,
+    SPACE_KINDS,
+)
+
 # Re-export telemetry models
 from .telemetry import (
     ActivityEvent,
@@ -245,6 +257,7 @@ __all__ = [
     "ROLE_SUPER_ADMIN",
     "ROLE_WORKTYPE_ADMIN",
     "ROLE_APPROVER",
+    "ROLE_SPACE_ADMIN",
     # Constants - Spend type modes
     "SPEND_TYPE_MODE_SINGLE_LOCKED",
     "SPEND_TYPE_MODE_ALLOW_LIST",
@@ -366,6 +379,15 @@ __all__ = [
     "TechOpsServiceType",
     "TechOpsLineDetail",
     "TechOpsRequestDetail",
+    # Space models
+    "Venue",
+    "Space",
+    "SpaceEventOverride",
+    "SpaceAssignment",
+    "SPACE_KIND_ROOM",
+    "SPACE_KIND_SLICE",
+    "SPACE_KIND_FREEFORM",
+    "SPACE_KINDS",
     # Telemetry models
     "ActivityEvent",
     "NotificationLog",

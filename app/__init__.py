@@ -620,6 +620,7 @@ def create_app() -> Flask:
                 "env_banner_enabled": app.config.get("ENV_BANNER_ENABLED", False),
                 "env_banner_message": app.config.get("ENV_BANNER_MESSAGE", ""),
                 "nav_admin_work_types": [],
+                "nav_is_space_admin": False,
                 "nav_approval_groups": [],
                 "nav_event_cycle": None,
                 "nav_dept_memberships": [],
@@ -639,6 +640,7 @@ def create_app() -> Flask:
         # --- Nav bar context (role-gated menus) ---
         _is_super = is_super_admin()
         nav_admin_work_types: list[str] = []
+        nav_is_space_admin = False
         nav_approval_groups = []
         nav_event_cycle = None
         nav_dept_memberships = []
@@ -648,7 +650,7 @@ def create_app() -> Flask:
             from .models import (
                 UserRole, WorkType, ApprovalGroup, EventCycle,
                 DepartmentMembership, DivisionMembership, Department, Division,
-                ROLE_WORKTYPE_ADMIN,
+                ROLE_WORKTYPE_ADMIN, ROLE_SPACE_ADMIN,
             )
 
             # nav_admin_work_types is the codes of work types this user can
@@ -682,6 +684,8 @@ def create_app() -> Flask:
                             .all()
                         )
                     ]
+
+            nav_is_space_admin = _is_super or (ROLE_SPACE_ADMIN in roles)
 
             from .routes.admin.helpers import sort_with_override as _sort_override
 
@@ -758,6 +762,7 @@ def create_app() -> Flask:
             "env_banner_message": app.config.get("ENV_BANNER_MESSAGE", ""),
             # Navigation bar
             "nav_admin_work_types": nav_admin_work_types,
+            "nav_is_space_admin": nav_is_space_admin,
             "nav_approval_groups": nav_approval_groups,
             "nav_event_cycle": nav_event_cycle,
             "nav_dept_memberships": nav_dept_memberships,

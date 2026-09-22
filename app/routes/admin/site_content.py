@@ -65,6 +65,22 @@ DEFAULT_CONTENT = {
         "content": "Add notes or context about this budget request for reviewers.",
         "display_style": DISPLAY_STYLE_PLAIN,
     },
+    "link_space_allocation_map": {
+        "name": "Space Allocation Map Link",
+        "category": "External Links",
+        "title": "Space Allocation Map",
+        # This app is the fifth place a room assignment is written down and
+        # it is not the authority. The map is. Point people at it and say
+        # where to ask, because a wrong room is found on load-in day.
+        "content": (
+            "Always check the "
+            "[Space Allocation Map](https://docs.google.com/presentation/) "
+            "before you act on a room. It is kept ahead of this page. If "
+            "the two disagree, or you are unsure, ask in the Hotels "
+            "request channel in Slack. Never assume."
+        ),
+        "display_style": DISPLAY_STYLE_INFO_BOX,
+    },
     "link_budget_policy": {
         "name": "Budget Policy Link",
         "category": "External Links",

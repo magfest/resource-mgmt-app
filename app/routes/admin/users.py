@@ -17,6 +17,7 @@ from app.models import (
     ROLE_SUPER_ADMIN,
     ROLE_WORKTYPE_ADMIN,
     ROLE_APPROVER,
+    ROLE_SPACE_ADMIN,
     CONFIG_AUDIT_CREATE,
     CONFIG_AUDIT_UPDATE,
     CONFIG_AUDIT_ARCHIVE,
@@ -79,6 +80,7 @@ def _get_role_context():
             (ROLE_SUPER_ADMIN, "Super Admin", "Full system access"),
             (ROLE_WORKTYPE_ADMIN, "Work Type Admin", "Admin for specific work type (e.g., Budget)"),
             (ROLE_APPROVER, "Approver", "Can review/approve lines in assigned approval groups"),
+            (ROLE_SPACE_ADMIN, "Space Admin", "Manages venues and spaces (Event Ops)"),
         ],
     }
 
@@ -337,6 +339,7 @@ def _update_user_roles(user: User, form_data) -> None:
 
     Form fields:
     - role_super_admin: "1" if checked
+    - role_space_admin: "1" if checked
     - role_worktype_admin_<work_type_id>: "1" if checked
     - role_approver_<approval_group_id>: "1" if checked
 
@@ -355,6 +358,15 @@ def _update_user_roles(user: User, form_data) -> None:
         role = UserRole(
             user_id=user.id,
             role_code=ROLE_SUPER_ADMIN,
+        )
+        db.session.add(role)
+
+    # Space Admin (Event Ops). Unscoped, like Super Admin: no work type or
+    # approval group column.
+    if form_data.get("role_space_admin") == "1":
+        role = UserRole(
+            user_id=user.id,
+            role_code=ROLE_SPACE_ADMIN,
         )
         db.session.add(role)
 

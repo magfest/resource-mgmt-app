@@ -1,0 +1,64 @@
+{% extends "layout/base.html" %}
+
+{% block title %}Repair slices - {{ venue.name }}{% endblock %}
+
+{% block content %}
+{% set archived_qs = {'show_archived': 1} if show_archived else {} %}
+<div class="row space-between">
+  <div>
+    <h1>Repair slice-coded rooms</h1>
+    <div class="muted mb-16">
+      {{ venue.name }}. Each row below carries a code marking it a slice
+      but has no parent room. Tick a row and pick its parent to fix it;
+      an unticked row is left alone.
+    </div>
+  </div>
+  <a class="btn" href="{{ url_for('spaces.venue_catalog', venue_id=venue.id, **archived_qs) }}">Back to catalog</a>
+</div>
+
+<form method="post" class="card mb-16"
+      action="{{ url_for('spaces.catalog_repair_slices_apply', venue_id=venue.id, **archived_qs) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 60px;">Fix</th>
+        <th>Name</th>
+        <th>Code</th>
+        <th>Suggested parent</th>
+        <th>Problem</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr data-repair-row="{{ row.space.id }}" {% if row.error %}data-repair-error="1"{% endif %}>
+          <td>
+            <input type="checkbox" name="apply_{{ row.space.id }}" value="1"
+              {% if row.checked %}checked{% endif %}>
+          </td>
+          <td>{{ row.space.name }}</td>
+          <td><code>{{ row.space.code }}</code></td>
+          <td>
+            <select name="parent_{{ row.space.id }}" id="repair-parent-{{ row.space.id }}">
+              <option value="">&mdash; choose a parent &mdash;</option>
+              {% for r in rooms %}
+                {% if r.space.id != row.space.id %}
+                  <option value="{{ r.space.id }}"{% if row.parent_id == r.space.id %} selected{% endif %}>{{ r.space.name }} ({{ r.space.code }})</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </td>
+          <td class="muted small">{{ row.error or '' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not rows %}
+    <div class="muted mt-16">Nothing needs repair right now.</div>
+  {% endif %}
+  <div class="mt-16">
+    <button type="submit" class="btn btn-primary">Repair ticked spaces</button>
+    <a class="btn" href="{{ url_for('spaces.venue_catalog', venue_id=venue.id, **archived_qs) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

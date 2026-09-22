@@ -1,0 +1,55 @@
+<!-- Every cell is an input, not display text, so a generated code or a typo
+     gets fixed here before catalog_paste_confirm writes anything. -->
+<form method="post" class="card mb-16"
+      action="{{ url_for('spaces.catalog_paste_confirm', venue_id=venue.id, **archived_qs) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="mb-8">
+    <strong>Preview:</strong> {{ create_count }} row{{ '' if create_count == 1 else 's' }} to create,
+    {{ problem_count }} problem{{ '' if problem_count == 1 else 's' }}.
+    Nothing is saved until you press Create.
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 60px;">Create</th>
+        <th>Name</th><th>Code</th><th>Dimensions</th>
+        <th>Area</th><th>Parent</th><th>Problem</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in preview %}
+        <tr data-preview-row="{{ loop.index0 }}" {% if r.error %}data-preview-error="1"{% endif %}>
+          <td>
+            <input type="checkbox" name="create_{{ loop.index0 }}" value="1"
+              {% if r.checked %}checked{% endif %}>
+          </td>
+          <td><input type="text" name="name_{{ loop.index0 }}" value="{{ r.name }}"></td>
+          <td><input type="text" name="code_{{ loop.index0 }}" value="{{ r.code }}"
+                     size="10"></td>
+          <td><input type="text" name="dimensions_{{ loop.index0 }}"
+                     value="{{ r.dimensions or '' }}" size="12"></td>
+          <td><input type="text" name="area_{{ loop.index0 }}"
+                     value="{{ r.area_text }}"
+                     size="6"></td>
+          <td><input type="text" name="parent_{{ loop.index0 }}"
+                     value="{{ r.parent_code or '' }}" size="10"></td>
+          <td class="muted small">
+            {% if r.error %}{{ r.error }}
+            {% elif r.generated_code %}code generated{% endif %}
+            <!-- Carries generated_code through a rejected confirm's
+                 re-render; the route has no other way to tell a
+                 generated code from a typed one once the form comes
+                 back. -->
+            <input type="hidden" name="generated_{{ loop.index0 }}"
+                   value="{{ '1' if r.generated_code else '0' }}">
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <input type="hidden" name="row_count" value="{{ preview|length }}">
+  <div class="mt-16">
+    <button type="submit" class="btn btn-primary">Create {{ create_count }} space{{ '' if create_count == 1 else 's' }}</button>
+    <a class="btn" href="{{ url_for('spaces.venue_catalog', venue_id=venue.id, **archived_qs) }}">Cancel</a>
+  </div>
+</form>
