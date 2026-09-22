@@ -72,18 +72,16 @@ ROLE_APPROVER = "APPROVER"              # approver (typically scoped to approval
 # ix_user_roles_global_unique already covers it.
 ROLE_SPACE_ADMIN = "SPACE_ADMIN"
 
-# Space kinds. A SLICE is part of a room. A COMBO is event-scoped and
-# groups member spaces for one event; it has no slices of its own. A
-# FREEFORM space has no parent and uses location_note for where it sits.
+# Space kinds. A SLICE is part of a room. A FREEFORM space has no parent and
+# uses location_note for where it sits. Combining two slices for one event is
+# not a kind; it is SpaceEventOverride.combined_into_space_id.
 SPACE_KIND_ROOM = "ROOM"
 SPACE_KIND_SLICE = "SLICE"
-SPACE_KIND_COMBO = "COMBO"
 SPACE_KIND_FREEFORM = "FREEFORM"
 
 SPACE_KINDS = (
     SPACE_KIND_ROOM,
     SPACE_KIND_SLICE,
-    SPACE_KIND_COMBO,
     SPACE_KIND_FREEFORM,
 )
 

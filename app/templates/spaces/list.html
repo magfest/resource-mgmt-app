@@ -50,7 +50,6 @@
   </a>
   <a class="btn btn-primary"
      href="{{ url_for('spaces.list_spaces', event=cycle.code, add=1) }}#add-space">Add space</a>
-  <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code, combine=1) }}#combine-spaces">Combine spaces</a>
   <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code, copy=1) }}#copy-layout">Copy layout</a>
 </div>
 
@@ -64,14 +63,10 @@
     <label>Code <input type="text" name="code" required maxlength="32"></label>
     <label>Kind
       <!-- Kind is not derived from Parent room here; create_space in
-           app/routes/spaces/views.py gives the reason. A COMBO is never
-           created on this form; Combine spaces builds one, so it is left
-           out of this select. -->
+           app/routes/spaces/views.py gives the reason. -->
       <select name="kind">
         {% for value, label in space_kinds %}
-          {% if value != SPACE_KIND_COMBO %}
-            <option value="{{ value }}">{{ label }}</option>
-          {% endif %}
+          <option value="{{ value }}">{{ label }}</option>
         {% endfor %}
       </select>
     </label>
@@ -93,36 +88,6 @@
       placeholder="Outside the Expo Hall B doors, house-left"></label>
   </div>
   <button type="submit" class="btn btn-primary">Add space</button>
-  <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
-</form>
-{% endif %}
-
-{% if request.args.get('combine') %}
-<form id="combine-spaces" method="post"
-      action="{{ url_for('spaces.combine_spaces') }}" class="card mb-16">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="event" value="{{ cycle.code }}">
-  <div class="muted small mb-8">
-    Pick the spaces this event uses as one. They do not have to sit next to
-    each other.
-  </div>
-  <div class="row">
-    <label>Name at this event <input type="text" name="name" required
-      maxlength="128" placeholder="e.g. Ches J/K"></label>
-    <label>Event code <input type="text" name="code" required maxlength="32"></label>
-  </div>
-  <input type="text" id="member-filter" placeholder="Filter spaces">
-  <div id="member-list">
-    {% for row in rows %}
-      {% if row.space.kind != 'COMBO' %}
-        <label class="block" data-member-haystack="{{ (row.space.name ~ ' ' ~ row.space.code)|lower }}">
-          <input type="checkbox" name="member_ids" value="{{ row.space.id }}">
-          {{ row.space.name }} <code>{{ row.space.code }}</code>
-        </label>
-      {% endif %}
-    {% endfor %}
-  </div>
-  <button type="submit" class="btn btn-primary">Combine</button>
   <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
 </form>
 {% endif %}
@@ -169,11 +134,11 @@
 
 <div class="row mt-16">
   <div class="card">
-    <strong>Combos and slices</strong>
+    <strong>Rooms and slices</strong>
     <p class="muted small">
-      Assigning a combo does not mark its slices in use, and the app does not
-      check for overlap. Record the tree here and confirm room-wide work with
-      every department holding a slice.
+      Assigning a room whole does not mark its slices in use, and the app
+      does not check for overlap. Record the tree here and confirm
+      room-wide work with every department holding a slice.
     </p>
   </div>
   <div class="card">

@@ -71,6 +71,14 @@
     }
   }
 
+  // The combining grid renders inside its room, so that room must be
+  // expanded for the grid to read as "inside" it rather than floating
+  // above a collapsed one.
+  var combining = new URLSearchParams(window.location.search).get('combine');
+  if (combining && /^\d+$/.test(combining)) {
+    collapsedRooms[combining] = false;
+  }
+
   render();
 
   document.querySelectorAll('[data-toggle-for]').forEach(function (btn) {
@@ -92,19 +100,6 @@
       btn.addEventListener('click', function () {
         mode = this.dataset.filter;
         render();
-      });
-    });
-  }
-
-  var memberFilter = document.getElementById('member-filter');
-  if (memberFilter) {
-    var memberLabels = Array.prototype.slice.call(
-      document.querySelectorAll('[data-member-haystack]'));
-    memberFilter.addEventListener('input', function () {
-      var t = this.value.toLowerCase();
-      memberLabels.forEach(function (el) {
-        el.style.display =
-          (!t || el.dataset.memberHaystack.indexOf(t) !== -1) ? '' : 'none';
       });
     });
   }

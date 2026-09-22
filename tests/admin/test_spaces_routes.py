@@ -10,9 +10,8 @@ import pytest
 from app import db
 from app.models import (
     Department, EventCycle, ROLE_SPACE_ADMIN, Space, SpaceAssignment,
-    SpaceCombinationMember, SpaceEventOverride, SPACE_KIND_COMBO,
-    SPACE_KIND_FREEFORM, SPACE_KIND_ROOM, SPACE_KIND_SLICE, User, UserRole,
-    Venue,
+    SpaceEventOverride, SPACE_KIND_FREEFORM, SPACE_KIND_ROOM,
+    SPACE_KIND_SLICE, User, UserRole, Venue,
 )
 
 
@@ -956,30 +955,6 @@ def test_the_department_picker_summarises_and_filters(client, world):
     assert "Registration, Staff Ops" in body or "Staff Ops, Registration" in body
 
 
-def test_dissolving_a_combination_with_an_alias_does_not_500(client, world):
-    """SpaceEventOverride.space_id is NOT NULL. Dissolving a combo without
-    deleting its override row raised IntegrityError on the UPDATE that
-    tried to null the column instead."""
-    _login(client, "test:spaceadmin")
-    combo = Space(venue_id=world["venue"].id, event_cycle_id=world["cycle"].id,
-                 name="Ches J/K", code="CHES-JK", kind=SPACE_KIND_COMBO)
-    db.session.add(combo)
-    db.session.flush()
-    db.session.add(SpaceEventOverride(space_id=combo.id,
-                                      event_cycle_id=world["cycle"].id,
-                                      alias="VIP Lounge"))
-    db.session.commit()
-    combo_id = combo.id
-
-    resp = client.post(f"/spaces/combination/{combo_id}/dissolve",
-                       data={"event": "SMF2027"})
-
-    assert resp.status_code == 302
-    assert db.session.query(Space).filter_by(id=combo_id).first() is None
-    assert db.session.query(SpaceEventOverride).filter_by(
-        space_id=combo_id).count() == 0
-
-
 def test_saving_a_space_from_event_a_with_event_b_is_refused(client, world):
     """The pop-up belongs to SMF2027. A stale tab posting event=SMF2028
     must not write a 2028 row against a 2027 space; neither page can show
@@ -1029,31 +1004,40 @@ def test_the_unassigned_attribute_matches_the_accounted_for_rule(client, world):
     assert _row_unassigned(body, slice_b.id) == "0"
 
 
-def test_copy_layout_remaps_a_combo_member_that_is_a_pop_up(client, world):
-    """Before the fix, member_space_id was copied verbatim and pointed
-    back at the source event's pop-up, a space the target event's page
-    cannot see."""
+def test_copying_a_layout_brings_popups_and_aliases_not_assignments(client, world):
+    """Assignments never copy: a copied one makes the page look finished
+    and hides the rooms whose owner should have changed this year."""
     _login(client, "test:spaceadmin")
-    popup = db.session.query(Space).filter_by(code="POP-1").one()
-    combo = Space(venue_id=world["venue"].id, event_cycle_id=world["cycle"].id,
-                 name="Merch Combo", code="MERCH-COMBO", kind=SPACE_KIND_COMBO)
-    db.session.add(combo)
-    db.session.flush()
-    db.session.add(SpaceCombinationMember(combination_space_id=combo.id,
-                                          member_space_id=popup.id))
-    db.session.commit()
 
     client.post("/spaces/copy-layout", data={
         "event": "SMF2028",
         "source_event": "SMF2027",
     }, follow_redirects=True)
 
-    new_popup = db.session.query(Space).filter_by(
+    popup = db.session.query(Space).filter_by(
         code="POP-1", event_cycle_id=world["other"].id).one()
-    new_combo = db.session.query(Space).filter_by(
-        code="MERCH-COMBO", event_cycle_id=world["other"].id).one()
-    member = db.session.query(SpaceCombinationMember).filter_by(
-        combination_space_id=new_combo.id).one()
+    assert popup.kind == SPACE_KIND_FREEFORM
 
-    assert member.member_space_id == new_popup.id
-    assert member.member_space_id != popup.id
+    slice_a = db.session.query(Space).filter_by(code="MD-A").one()
+    alias = db.session.query(SpaceEventOverride).filter_by(
+        space_id=slice_a.id, event_cycle_id=world["other"].id).one()
+    assert alias.alias == "Regdesk A"
+    assert alias.is_available is True
+
+    assert db.session.query(SpaceAssignment).filter_by(
+        event_cycle_id=world["other"].id).count() == 0
+
+
+def test_an_availability_only_override_is_not_copied(client, world):
+    """A room out of service last year is not assumed to be out of service
+    this year, and the override table stays sparse."""
+    _login(client, "test:spaceadmin")
+
+    client.post("/spaces/copy-layout", data={
+        "event": "SMF2028",
+        "source_event": "SMF2027",
+    }, follow_redirects=True)
+
+    closed = db.session.query(Space).filter_by(code="EX-E").one()
+    assert db.session.query(SpaceEventOverride).filter_by(
+        space_id=closed.id, event_cycle_id=world["other"].id).count() == 0

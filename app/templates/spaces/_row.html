@@ -11,8 +11,22 @@
                 data-toggle-for="{{ row.space.id }}">&#9662;</button>
       {% endif %}
       <strong>{{ row.display_name }}</strong>
-      {% if row.alias %}
-        <span class="pill pill-alias">{{ row.alias }}</span>
+      {% if row.combined_into_space_id %}
+        {# A folded slice: no alias, code, assignment or Edit of its own;
+           see spec 3.2. combined_primary is None only if the primary was
+           filtered out of rows, which build_space_rows never does. #}
+        {% set combined_primary = rows_by_id.get(row.combined_into_space_id) %}
+        <span class="muted small">&middot; combined with {{ combined_primary.space.code if combined_primary else 'another slice' }}</span>
+      {% else %}
+        {% if row.alias %}
+          <span class="pill pill-alias">{{ row.alias }}</span>
+        {% endif %}
+        {% if row.combined_codes %}
+          {# A primary: the codes pointing at it, per spec 5.2's "+ B, D, 1,
+             2". This renders full codes rather than the mockup's bare
+             letters; see the task report for why. #}
+          <span class="pill">+ {{ row.combined_codes|join(', ') }}</span>
+        {% endif %}
       {% endif %}
       {% if row.space.kind != SPACE_KIND_SLICE %}
         <span class="pill pill-kind">{{ row.space.kind|capitalize }}</span>
@@ -27,8 +41,13 @@
         <span class="pill">Archived</span>
       {% endif %}
     </div>
+    {% if not row.combined_into_space_id %}
     <div class="muted small" style="padding-left: {{ 26 if row.depth else 0 }}px;">
-      {% if row.space.area_sqft %}{{ row.space.area_sqft }} sq ft{% endif %}
+      {% if row.combined_codes and row.combined_area_sqft %}
+        {{ row.combined_area_sqft }} sq ft
+      {% elif not row.combined_codes and row.space.area_sqft %}
+        {{ row.space.area_sqft }} sq ft
+      {% endif %}
       {% if row.child_codes %}
         &middot; Made up of {{ row.child_codes|join(', ') }}
       {% endif %}
@@ -38,35 +57,28 @@
       {% if row.unavailable_reason %}
         &middot; {{ row.unavailable_reason }}
       {% endif %}
-      {% if row.member_names %}
-        &middot; {{ row.member_names|join(', ') }}
-      {% endif %}
-      {% if row.member_of_names %}
-        &middot; in {{ row.member_of_names|map('tojson')|join(', ') }}
-      {% endif %}
     </div>
+    {% endif %}
   </td>
-  <td><code>{{ row.space.code }}</code></td>
-  <td>{{ row.space.dimensions or '' }}</td>
+  <td>{% if not row.combined_into_space_id %}<code>{{ row.space.code }}</code>{% endif %}</td>
+  <td>{% if not row.combined_into_space_id %}{{ row.space.dimensions or '' }}{% endif %}</td>
   <td>
-    {% for d in row.departments %}
-      <span class="pill pill-dept">{{ d.name }}</span>
-    {% else %}
-      <span class="muted">Unassigned</span>
-    {% endfor %}
+    {% if not row.combined_into_space_id %}
+      {% for d in row.departments %}
+        <span class="pill pill-dept">{{ d.name }}</span>
+      {% else %}
+        <span class="muted">Unassigned</span>
+      {% endfor %}
+    {% endif %}
   </td>
   <td>
-    {% if row.space.is_active %}
+    {% if row.space.kind == SPACE_KIND_ROOM and row.has_children and row.space.is_active %}
+    <a class="btn btn-small"
+       href="{{ url_for('spaces.list_spaces', event=cycle.code, combine=row.space.id) }}#space-{{ row.space.id }}">Combine</a>
+    {% endif %}
+    {% if row.space.is_active and not row.combined_into_space_id %}
     <a class="btn btn-small"
        href="{{ url_for('spaces.list_spaces', event=cycle.code, edit=row.space.id) }}#space-{{ row.space.id }}">Edit</a>
-    {% endif %}
-    {% if row.space.kind == 'COMBO' %}
-    <form method="post" style="display:inline"
-          action="{{ url_for('spaces.dissolve_combination', space_id=row.space.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="event" value="{{ cycle.code }}">
-      <button type="submit" class="btn btn-small">Dissolve</button>
-    </form>
     {% endif %}
     <form method="post" style="display:inline"
           action="{{ url_for('spaces.archive_space' if row.space.is_active else 'spaces.restore_space', space_id=row.space.id) }}">
@@ -78,6 +90,9 @@
     </form>
   </td>
 </tr>
+{% if row.space.kind == SPACE_KIND_ROOM and combine_room_id == row.space.id %}
+  {% include "spaces/_combine_grid.html" %}
+{% endif %}
 {% if edit_id == row.space.id %}
 <tr>
   <td colspan="5" style="background: #f8fafc;">

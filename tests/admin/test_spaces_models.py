@@ -126,3 +126,25 @@ def test_an_override_without_an_alias_does_not_rename_the_space(app, expo, cycle
     db.session.commit()
 
     assert get_effective_space_name(expo, cycle.id) == "Expo Hall B"
+
+
+def test_an_override_can_point_at_another_space(app, venue, cycle):
+    room = Space(venue_id=venue.id, name="Woodrow Wilson Ballroom",
+                 code="WW", kind=SPACE_KIND_ROOM)
+    db.session.add(room)
+    db.session.flush()
+
+    primary = Space(venue_id=venue.id, name="Woodrow Wilson C", code="WW-C",
+                    kind=SPACE_KIND_SLICE, parent_id=room.id)
+    member = Space(venue_id=venue.id, name="Woodrow Wilson D", code="WW-D",
+                   kind=SPACE_KIND_SLICE, parent_id=room.id)
+    db.session.add_all([primary, member])
+    db.session.flush()
+
+    override = SpaceEventOverride(space_id=member.id, event_cycle_id=cycle.id,
+                                  combined_into_space_id=primary.id)
+    db.session.add(override)
+    db.session.commit()
+
+    assert override.combined_into.code == "WW-C"
+    assert list(primary.combined_members) == [override]

@@ -1,11 +1,11 @@
 """
 Venues, spaces, and per-event department assignments.
 
-A space is a room, a named slice of a room, a free-form pop-up, or a
-combination. Rooms and slices persist across events; a combination is
-event-scoped, grouping member spaces for one event only. Assignments and
-per-event names reset each cycle. Event Ops owns this data and holds the
-SPACE_ADMIN role.
+A space is a room, a named slice of a room, or a free-form pop-up. Rooms and
+slices persist across events; a pop-up is event-scoped. Combining is not a
+space; a slice's SpaceEventOverride points at the slice it folds into, for
+one event only. Assignments, overrides, and combining reset each cycle.
+Event Ops owns this data and holds the SPACE_ADMIN role.
 
 Capacity counts from the venue sheet are excluded; departments misread them
 and no TechOps work uses them.
@@ -35,11 +35,7 @@ class Venue(db.Model):
 
 
 class Space(db.Model):
-    """One room, slice, combo, or pop-up at a venue.
-
-    A combo is event-scoped: it groups member spaces for one event through
-    SpaceCombinationMember and is not a parent of slices.
-    """
+    """One room, slice, or pop-up at a venue."""
     __tablename__ = "spaces"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -93,15 +89,15 @@ class Space(db.Model):
 
     venue = db.relationship("Venue", backref="spaces")
     # No cascade here on purpose: deleting a room must not delete its
-    # slices. create_space rejects a non-ROOM parent so a slice can never
-    # be parented to a combo, the one space kind this app hard-deletes.
+    # slices. create_space rejects a non-ROOM parent, so a slice is never
+    # parented to anything else.
     parent = db.relationship("Space", remote_side=[id], backref="children")
     event_cycle = db.relationship("EventCycle")
 
     __table_args__ = (
         # A permanent row's code is unique at its venue. An event-scoped row
         # is unique within its event, because two years may both use the
-        # code CHES-JK for a combination they each built.
+        # code POP-1 for a pop-up they each built.
         db.Index("ix_spaces_code_permanent", "venue_id", "code",
                  unique=True,
                  sqlite_where=db.text("event_cycle_id IS NULL"),
@@ -114,12 +110,13 @@ class Space(db.Model):
 
 
 class SpaceEventOverride(db.Model):
-    """Per-event name and availability for one space.
+    """Per-event name, availability, and combining for one space.
 
     This is not a status row for every space. A row exists only when a space
-    is renamed or unavailable for one event; absence means the venue name
-    applies and the space is available. Resolution goes through
-    get_effective_space_name(), mirroring ExpenseAccountEventOverride.
+    is renamed, unavailable, or combined for one event; absence means the
+    venue name applies, the space is available, and it stands alone.
+    Resolution goes through get_effective_space_name(), mirroring
+    ExpenseAccountEventOverride.
     """
     __tablename__ = "space_event_overrides"
 
@@ -148,17 +145,35 @@ class SpaceEventOverride(db.Model):
     is_available = db.Column(db.Boolean, nullable=False, default=True)
     unavailable_reason = db.Column(db.Text, nullable=True)
 
+    # The slice this row's space folds into, for this event only. NULL means
+    # the space stands alone. Set only on a SLICE; a room or a slice with
+    # nothing pointing at it is a primary or standalone by definition, not a
+    # separate flag. Same room only, and no chains: a slice already pointed
+    # at cannot itself point elsewhere. Both are enforced by the caller, not
+    # by this column, since SQLite checks neither.
+    combined_into_space_id = db.Column(
+        db.Integer,
+        db.ForeignKey("spaces.id",
+                      name="fk_space_event_overrides_combined_into_space_id"),
+        nullable=True,
+        index=True,
+    )
+
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by_user_id = db.Column(db.String(64), nullable=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
                            onupdate=datetime.utcnow)
     updated_by_user_id = db.Column(db.String(64), nullable=True)
 
-    # Cascades so a deleted space, a dissolved combo, cannot leave an
-    # override row pointing at nothing; space_id is NOT NULL.
+    # Cascades so a deleted space cannot leave an override row pointing at
+    # nothing; space_id is NOT NULL. Two FKs to spaces, so each relationship
+    # names its own column.
     space = db.relationship(
-        "Space", backref=db.backref("event_overrides",
-                                    cascade="all, delete-orphan"))
+        "Space", foreign_keys=[space_id],
+        backref=db.backref("event_overrides", cascade="all, delete-orphan"))
+    combined_into = db.relationship(
+        "Space", foreign_keys=[combined_into_space_id],
+        backref="combined_members")
     event_cycle = db.relationship("EventCycle")
 
     __table_args__ = (
@@ -213,48 +228,4 @@ class SpaceAssignment(db.Model):
     __table_args__ = (
         db.UniqueConstraint("space_id", "event_cycle_id", "department_id",
                             name="uq_space_assignment_per_event"),
-    )
-
-
-class SpaceCombinationMember(db.Model):
-    """One space inside an event's combination.
-
-    Nothing here validates adjacency, shared parentage, or exclusive
-    membership. Maryland A and C are a valid pair although B sits between
-    them, and the admin owns correctness.
-    """
-    __tablename__ = "space_combination_members"
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    combination_space_id = db.Column(
-        db.Integer,
-        db.ForeignKey("spaces.id", name="fk_scm_combination_space_id"),
-        nullable=False,
-        index=True,
-    )
-    member_space_id = db.Column(
-        db.Integer,
-        db.ForeignKey("spaces.id", name="fk_scm_member_space_id"),
-        nullable=False,
-        index=True,
-    )
-
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    created_by_user_id = db.Column(db.String(64), nullable=True)
-
-    # Two foreign keys to one table, so each relationship names its own.
-    combination = db.relationship(
-        "Space", foreign_keys=[combination_space_id],
-        backref=db.backref("combination_members",
-                           cascade="all, delete-orphan"),
-    )
-    member = db.relationship(
-        "Space", foreign_keys=[member_space_id],
-        backref="member_of",
-    )
-
-    __table_args__ = (
-        db.UniqueConstraint("combination_space_id", "member_space_id",
-                            name="uq_space_combination_member"),
     )

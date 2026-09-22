@@ -195,12 +195,11 @@ from .techops import (
 
 # Re-export space models
 from .spaces import (
-    Venue, Space, SpaceEventOverride, SpaceAssignment, SpaceCombinationMember,
+    Venue, Space, SpaceEventOverride, SpaceAssignment,
 )
 from .constants import (
     SPACE_KIND_ROOM,
     SPACE_KIND_SLICE,
-    SPACE_KIND_COMBO,
     SPACE_KIND_FREEFORM,
     SPACE_KINDS,
 )
@@ -385,10 +384,8 @@ __all__ = [
     "Space",
     "SpaceEventOverride",
     "SpaceAssignment",
-    "SpaceCombinationMember",
     "SPACE_KIND_ROOM",
     "SPACE_KIND_SLICE",
-    "SPACE_KIND_COMBO",
     "SPACE_KIND_FREEFORM",
     "SPACE_KINDS",
     # Telemetry models

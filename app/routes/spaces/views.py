@@ -8,11 +8,12 @@ from app import db
 from app.models import (
     CONFIG_AUDIT_ARCHIVE, CONFIG_AUDIT_CREATE, CONFIG_AUDIT_RESTORE,
     CONFIG_AUDIT_UPDATE, Department, EventCycle, Space, SpaceAssignment,
-    SpaceCombinationMember, SpaceEventOverride, SPACE_KIND_COMBO,
-    SPACE_KIND_FREEFORM, SPACE_KIND_ROOM, SPACE_KIND_SLICE, SPACE_KINDS,
+    SpaceEventOverride, SPACE_KIND_FREEFORM, SPACE_KIND_ROOM,
+    SPACE_KIND_SLICE, SPACE_KINDS,
 )
 from app.routes import h
 from . import spaces_bp
+from .catalog import MAX_SPACE_ID
 from .helpers import (
     build_space_rows, build_space_stats, flash_if_too_long,
     parse_optional_int, render_space_admin_page, require_space_admin,
@@ -24,23 +25,28 @@ from .helpers import (
 SPACE_KIND_LABELS = {
     SPACE_KIND_ROOM: "Room",
     SPACE_KIND_SLICE: "Slice of a room",
-    SPACE_KIND_COMBO: "Combination (event-scoped, built via Combine spaces)",
     SPACE_KIND_FREEFORM: "Free-form pop-up space",
 }
 
 
-@spaces_bp.get("/")
-@require_space_admin
-def list_spaces():
-    """The Spaces page for one event."""
-    cycles = (
+def _list_cycles():
+    return (
         db.session.query(EventCycle)
         .filter(EventCycle.is_active.is_(True))
         .order_by(EventCycle.sort_order, EventCycle.code)
         .all()
     )
-    cycle = resolve_event_cycle(request.args.get("event"))
-    show_archived = request.args.get("show_archived") == "1"
+
+
+def _render_spaces_list(cycle, cycles, *, show_archived=False, edit_id=None,
+                        combine_room_id=None, combine_errors=None,
+                        combine_selected=None):
+    """Render the Spaces page for one event.
+
+    Shared by the GET route and a rejected combine-grid submission. A
+    rejected submission re-renders here instead of redirecting, so the
+    room's grid keeps what the operator chose and shows what was wrong.
+    """
     rows = build_space_rows(cycle, include_archived=show_archived)
     departments = (
         db.session.query(Department)
@@ -49,19 +55,52 @@ def list_spaces():
         .all()
     )
 
+    # Only the room's own slices, in catalog order. A FREEFORM can carry a
+    # parent_id too (the add-space form does not forbid it), so kind is
+    # checked here rather than trusting parent_id alone.
+    combine_slices = [
+        r for r in rows
+        if r["parent_id"] == combine_room_id and r["space"].kind == SPACE_KIND_SLICE
+    ] if combine_room_id else []
+
+    if combine_selected is None:
+        # First open of the grid: preselect each slice's saved target.
+        # A rejected resubmission passes its own map instead, so the
+        # operator's last choice survives the re-render.
+        combine_selected = {
+            r["space"].id: r["combined_into_space_id"] for r in combine_slices
+        }
+
     return render_space_admin_page(
         "spaces/list.html",
         cycles=cycles,
         cycle=cycle,
         rows=rows,
+        rows_by_id={r["space"].id: r for r in rows},
         stats=build_space_stats(rows),
-        edit_id=request.args.get("edit", type=int),
+        edit_id=edit_id,
         departments=departments,
         show_archived=show_archived,
         space_kinds=[(k, SPACE_KIND_LABELS[k]) for k in SPACE_KINDS],
         SPACE_KIND_ROOM=SPACE_KIND_ROOM,
-        SPACE_KIND_COMBO=SPACE_KIND_COMBO,
         SPACE_KIND_SLICE=SPACE_KIND_SLICE,
+        combine_room_id=combine_room_id,
+        combine_slices=combine_slices,
+        combine_errors=combine_errors or {},
+        combine_selected=combine_selected,
+    )
+
+
+@spaces_bp.get("/")
+@require_space_admin
+def list_spaces():
+    """The Spaces page for one event."""
+    cycle = resolve_event_cycle(request.args.get("event"))
+    return _render_spaces_list(
+        cycle, _list_cycles(),
+        show_archived=request.args.get("show_archived") == "1",
+        edit_id=request.args.get("edit", type=int),
+        combine_room_id=request.args.get("combine", type=int),
     )
 
 
@@ -71,8 +110,8 @@ def _load_space_for_cycle(space_id: int, cycle, *, require_active: bool | None =
     404s when the space is missing, or when require_active is set and does
     not match. 404s too on a venue mismatch, or when the space's event does
     not match the cycle. event_cycle_id NULL means permanent; it passes the
-    event check for any cycle at its venue. A combination or pop-up from
-    another event fails the check and is treated as missing. A cycle that
+    event check for any cycle at its venue. A pop-up from another event
+    fails the check and is treated as missing. A cycle that
     failed to resolve has nothing to compare against, so both checks are
     skipped.
     """
@@ -146,13 +185,6 @@ def create_space():
         flash("Pick a space kind", "error")
         return redirect(back)
 
-    # A COMBO is always event-scoped, and Combine spaces is what scopes it.
-    # A COMBO created here would carry no event and break the rule that a
-    # space row outlives the event only if it describes physical structure.
-    if kind == SPACE_KIND_COMBO:
-        flash("Use Combine spaces to build a combination", "error")
-        return redirect(back)
-
     # A pop-up belongs to the event that created it, so it stops showing up
     # at this venue in later cycles. A permanent room has no event.
     event_cycle_id = cycle.id if kind == SPACE_KIND_FREEFORM else None
@@ -164,8 +196,7 @@ def create_space():
     if parent_id is not None:
         # SQLite does not enforce this FK. A bad or cross-venue id would
         # otherwise be stored silently and 500 on Postgres instead. Only a
-        # ROOM can be a parent; a COMBO parent would let dissolving it null
-        # out a slice's parent_id, since Space.children has no cascade.
+        # ROOM can be a parent; a room is never two levels deep.
         parent = db.session.get(Space, parent_id)
         if (parent is None or parent.venue_id != cycle.venue_id
                 or parent.kind != SPACE_KIND_ROOM):
@@ -317,6 +348,144 @@ def save_space(space_id: int):
     return redirect(back)
 
 
+def _load_room_for_combine(room_id: int, cycle):
+    """Return the room, or None when it is not a legal combining target.
+
+    A parent must be at the venue, kind ROOM, parent_id NULL, active, and
+    permanent, per the global constraint every parent check in this
+    package repeats. room_id past MAX_SPACE_ID is refused ahead of the
+    lookup; SQLite tolerates it, Postgres's int4 column does not.
+    """
+    if room_id > MAX_SPACE_ID:
+        return None
+    room = db.session.get(Space, room_id)
+    if (room is None or room.kind != SPACE_KIND_ROOM
+            or room.parent_id is not None
+            or room.venue_id != cycle.venue_id
+            or not room.is_active
+            or room.event_cycle_id is not None):
+        return None
+    return room
+
+
+@spaces_bp.post("/room/<int:room_id>/combine")
+@require_space_admin
+def combine_room(room_id: int):
+    """Save one room's slice groupings for one event.
+
+    Every slice of the room is submitted in one grid, since a slice's only
+    legal target is another slice in the same room. The whole submission is
+    validated before any override is written or deleted; one bad row
+    refuses all of them, and the grid re-renders with what was chosen and
+    each offending row marked.
+    """
+    from app.routes.admin.helpers import log_config_change
+
+    cycle = resolve_event_cycle(request.form.get("event"))
+    if cycle is None:
+        abort(400, "Pick an event cycle first")
+
+    room = _load_room_for_combine(room_id, cycle)
+    if room is None:
+        abort(404)
+
+    slices = (
+        db.session.query(Space)
+        .filter(Space.parent_id == room.id, Space.kind == SPACE_KIND_SLICE,
+                Space.is_active.is_(True))
+        .order_by(Space.sort_order, Space.code)
+        .all()
+    )
+    slice_ids = {s.id for s in slices}
+    by_id = {s.id: s for s in slices}
+
+    # Parse every choice before validating any of them. A value past
+    # MAX_SPACE_ID or not a whole number can never name a slice in this
+    # room, so it is folded into the same "not here" refusal the dropdown
+    # itself cannot produce; it never reaches db.session.get.
+    selections: dict[int, int | None] = {}
+    for slice_ in slices:
+        raw = (request.form.get(f"combined_into_{slice_.id}") or "").strip()
+        if not raw:
+            selections[slice_.id] = None
+            continue
+        try:
+            target_id = int(raw)
+        except ValueError:
+            target_id = -1
+        if not (0 < target_id <= MAX_SPACE_ID):
+            target_id = -1
+        selections[slice_.id] = target_id
+
+    # Refuse per the global constraints: a target outside this room or not
+    # a slice, a target already combined into something (a chain), and a
+    # slice others already point at being combined into a third.
+    targets_used = {t for t in selections.values() if t and t in slice_ids}
+    errors: dict[int, str] = {}
+    for slice_id, target_id in selections.items():
+        if not target_id:
+            continue
+        if target_id not in slice_ids:
+            errors[slice_id] = "Pick a slice in this room, or leave it not combined"
+            continue
+        if selections.get(target_id):
+            errors[slice_id] = (f"{by_id[target_id].name} is already combined "
+                                "into another slice")
+    for slice_id in slice_ids:
+        if slice_id in targets_used and selections.get(slice_id):
+            errors.setdefault(slice_id, (
+                "Other slices are already combined into this one; it cannot "
+                "also combine into another slice"))
+
+    if errors:
+        return _render_spaces_list(
+            cycle, _list_cycles(), combine_room_id=room.id,
+            combine_errors=errors, combine_selected=selections,
+        )
+
+    actor = h.get_active_user_id()
+    existing = {
+        o.space_id: o
+        for o in db.session.query(SpaceEventOverride)
+        .filter(SpaceEventOverride.event_cycle_id == cycle.id,
+                SpaceEventOverride.space_id.in_(slice_ids))
+        .all()
+    } if slice_ids else {}
+
+    groupings = {}
+    for slice_ in slices:
+        target_id = selections[slice_.id]
+        override = existing.get(slice_.id)
+        groupings[slice_.code] = by_id[target_id].code if target_id else None
+
+        if target_id:
+            if override is None:
+                override = SpaceEventOverride(
+                    space_id=slice_.id, event_cycle_id=cycle.id,
+                    created_by_user_id=actor,
+                )
+                db.session.add(override)
+                existing[slice_.id] = override
+            override.combined_into_space_id = target_id
+            override.updated_by_user_id = actor
+        elif override is not None:
+            override.combined_into_space_id = None
+            override.updated_by_user_id = actor
+            # Sparse table: a row that says nothing else is dropped rather
+            # than kept as a no-op, matching save_space's own alias/
+            # availability rule.
+            if (not override.alias and override.is_available
+                    and not override.unavailable_reason):
+                db.session.delete(override)
+
+    log_config_change("space", room.id, CONFIG_AUDIT_UPDATE, {
+        "event_cycle": cycle.code, "combined": groupings,
+    })
+    db.session.commit()
+    flash(f"Saved groupings for {room.name}", "success")
+    return redirect(url_for("spaces.list_spaces", event=cycle.code))
+
+
 def _set_space_active(space_id: int, active: bool, action: str):
     """Archive or restore a space. Retires it at the venue, for every event.
 
@@ -350,126 +519,13 @@ def restore_space(space_id: int):
     return _set_space_active(space_id, True, CONFIG_AUDIT_RESTORE)
 
 
-@spaces_bp.post("/combine")
-@require_space_admin
-def combine_spaces():
-    """Create a combination this event uses as one space.
-
-    Nothing checks that members are adjacent, share a room, or belong to no
-    other combination. All three happen at real events and the admin owns
-    correctness.
-    """
-    from app.routes.admin.helpers import log_config_change
-
-    cycle = resolve_event_cycle(request.form.get("event"))
-    if cycle is None or cycle.venue_id is None:
-        abort(400, "Pick an event cycle with a venue first")
-
-    back = url_for("spaces.list_spaces", event=cycle.code)
-    name = (request.form.get("name") or "").strip()
-    code = (request.form.get("code") or "").strip().upper()
-    member_ids = {int(v) for v in request.form.getlist("member_ids") if v}
-
-    if not name or not code:
-        flash("Name and code are required", "error")
-        return redirect(back)
-    if flash_if_too_long(name, "name"):
-        return redirect(back)
-    if not member_ids:
-        flash("Pick at least one space to combine", "error")
-        return redirect(back)
-
-    members = db.session.query(Space).filter(
-        Space.id.in_(member_ids),
-        Space.venue_id == cycle.venue_id,
-    ).all()
-    if len(members) != len(member_ids):
-        flash("One of those spaces is not at this event's venue", "error")
-        return redirect(back)
-
-    if _code_taken(cycle.venue_id, code, cycle.id):
-        flash(f"A space with code '{code}' already exists at this venue",
-              "error")
-        return redirect(back)
-
-    actor = h.get_active_user_id()
-    combo = Space(
-        venue_id=cycle.venue_id,
-        event_cycle_id=cycle.id,
-        name=name,
-        code=code,
-        kind=SPACE_KIND_COMBO,
-        is_active=True,
-        created_by_user_id=actor,
-        updated_by_user_id=actor,
-    )
-    db.session.add(combo)
-    db.session.flush()
-
-    for member in members:
-        db.session.add(SpaceCombinationMember(
-            combination_space_id=combo.id,
-            member_space_id=member.id,
-            created_by_user_id=actor,
-        ))
-
-    log_config_change("space", combo.id, CONFIG_AUDIT_CREATE, {
-        "event_cycle": cycle.code,
-        "member_ids": sorted(member_ids),
-    })
-    db.session.commit()
-    flash(f"Combined {len(members)} spaces into {combo.name}", "success")
-    return redirect(back)
-
-
-@spaces_bp.post("/combination/<int:space_id>/dissolve")
-@require_space_admin
-def dissolve_combination(space_id: int):
-    """Delete a combination: its membership, override, and assignment rows.
-
-    The combination is the thing that was assigned, so its assignment cannot
-    outlive it. The member spaces are untouched and return to unassigned.
-    _load_space_for_cycle already 404s a combination from another event.
-    """
-    from app.routes.admin.helpers import log_config_change
-
-    cycle = resolve_event_cycle(request.form.get("event"))
-    if cycle is None:
-        abort(400, "Pick an event cycle first")
-
-    combo = _load_space_for_cycle(space_id, cycle)
-    if combo.kind != SPACE_KIND_COMBO:
-        abort(404)
-
-    name = combo.name
-    db.session.query(SpaceAssignment).filter_by(
-        space_id=combo.id, event_cycle_id=cycle.id).delete()
-    db.session.query(SpaceCombinationMember).filter_by(
-        combination_space_id=combo.id).delete()
-    # Belt and braces: the model's cascade="all, delete-orphan" covers this
-    # on the ORM path, but deleting it here keeps the intent readable.
-    db.session.query(SpaceEventOverride).filter_by(space_id=combo.id).delete()
-    log_config_change("space", combo.id, CONFIG_AUDIT_ARCHIVE, {
-        "event_cycle": cycle.code, "dissolved": True,
-    })
-    # A combination is the only space this app hard-deletes. Everything
-    # pointing at one, its overrides, assignments, and membership rows,
-    # has to go with it or the FK either orphans a row or raises
-    # IntegrityError.
-    db.session.delete(combo)
-    db.session.commit()
-
-    flash(f"Dissolved {name}", "success")
-    return redirect(url_for("spaces.list_spaces", event=cycle.code))
-
-
 @spaces_bp.post("/copy-layout")
 @require_space_admin
 def copy_layout():
     """Copy another event's layout into this one.
 
-    Copies combinations, pop-ups and per-event names. Never assignments:
-    a copied assignment makes the page look finished and hides the rooms
+    Copies pop-ups, per-event names, and combining. Never assignments: a
+    copied assignment makes the page look finished and hides the rooms
     whose owner should have changed this year.
     """
     from app.routes.admin.helpers import log_config_change
@@ -495,11 +551,10 @@ def copy_layout():
 
     created = 0
     skipped: list[str] = []
-    # Only event-scoped spaces (combos, pop-ups) match this query. A
-    # permanent ROOM or SLICE has event_cycle_id NULL, so it already
-    # exists for every event and is never copied. old_to_new maps each
-    # copied space's source id to its new id, for remapping membership
-    # and aliases below.
+    # Only event-scoped spaces (pop-ups) match this query. A permanent ROOM
+    # or SLICE has event_cycle_id NULL, so it already exists for every
+    # event and is never copied. old_to_new maps each copied space's
+    # source id to its new id, for remapping aliases below.
     old_to_new: dict[int, int] = {}
     for old in source_spaces:
         # Scoped the same way as the inline checks: a code already used by
@@ -520,42 +575,19 @@ def copy_layout():
         old_to_new[old.id] = new.id
         created += 1
 
-    for old in source_spaces:
-        if old.kind != SPACE_KIND_COMBO or old.id not in old_to_new:
-            continue
-        new_combo_id = old_to_new[old.id]
-        for link in old.combination_members:
-            # A member archived since last event is skipped by name, not
-            # silently, so the admin knows the copy is incomplete.
-            if not link.member.is_active:
-                skipped.append(link.member.code)
-                continue
-            if link.member.event_cycle_id is None:
-                # A permanent ROOM or SLICE keeps its id across events.
-                member_id = link.member_space_id
-            else:
-                # An event-scoped member, typically a pop-up, was copied
-                # under a new id above; point at that copy, not the
-                # source event's row.
-                member_id = old_to_new.get(link.member_space_id)
-                if member_id is None:
-                    skipped.append(link.member.code)
-                    continue
-            db.session.add(SpaceCombinationMember(
-                combination_space_id=new_combo_id,
-                member_space_id=member_id,
-                created_by_user_id=actor,
-            ))
-
-    aliases = db.session.query(SpaceEventOverride).filter(
+    # A row worth copying carries an alias or a fold; an availability-only
+    # row is left out on purpose, below.
+    carrying = db.session.query(SpaceEventOverride).filter(
         SpaceEventOverride.event_cycle_id == source.id,
+    ).filter(or_(
         SpaceEventOverride.alias.isnot(None),
-    ).all()
-    aliases_copied = 0
-    for old in aliases:
-        # A permanent space keeps its id. An alias on a combo or pop-up
-        # must follow that space's copy; the source event's row is not
-        # on this event's page.
+        SpaceEventOverride.combined_into_space_id.isnot(None),
+    )).all()
+    overrides_copied = 0
+    for old in carrying:
+        # A permanent space keeps its id. An override on a pop-up must
+        # follow that space's copy; the source event's row is not on this
+        # event's page.
         if old.space.event_cycle_id is None:
             space_id = old.space_id
         else:
@@ -571,24 +603,41 @@ def copy_layout():
             # not go quiet about the one category it left out.
             skipped.append(old.space.code)
             continue
+
+        combined_into_id = None
+        if old.combined_into_space_id is not None:
+            # A folded slice is always permanent (constraint 2), so this
+            # branch never fires in practice; it exists so a future kind
+            # that could be combined does not silently copy the wrong id.
+            fold_target = old.combined_into
+            if fold_target is not None and fold_target.event_cycle_id is None:
+                combined_into_id = old.combined_into_space_id
+            elif fold_target is not None:
+                combined_into_id = old_to_new.get(old.combined_into_space_id)
+                if combined_into_id is None:
+                    skipped.append(old.space.code)
+                    continue
+
         # Availability resets. A room out of service last year is not
         # assumed to be out of service this year.
         db.session.add(SpaceEventOverride(
             space_id=space_id, event_cycle_id=target.id,
             alias=old.alias, is_available=True, unavailable_reason=None,
+            combined_into_space_id=combined_into_id,
             created_by_user_id=actor, updated_by_user_id=actor,
         ))
-        aliases_copied += 1
+        overrides_copied += 1
 
     # target is an EventCycle, not a space; entity_type says so rather
     # than logging an EventCycle id under "space".
     log_config_change("event_cycle", target.id, CONFIG_AUDIT_CREATE, {
         "copied_from": source.code, "spaces_created": created,
-        "aliases_copied": aliases_copied, "skipped": skipped,
+        "overrides_copied": overrides_copied, "skipped": skipped,
     })
     db.session.commit()
 
-    message = f"Copied {created} spaces and {aliases_copied} names from {source.name}"
+    message = (f"Copied {created} spaces and {overrides_copied} names or "
+              f"groupings from {source.name}")
     if skipped:
         message += f". Skipped: {', '.join(sorted(set(skipped)))}"
     flash(message, "success")

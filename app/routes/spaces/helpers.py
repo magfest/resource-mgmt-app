@@ -8,8 +8,8 @@ from sqlalchemy import or_
 
 from app import db
 from app.models import (
-    Department, EventCycle, ROLE_SPACE_ADMIN, Space, SPACE_KIND_COMBO,
-    SpaceAssignment, SpaceCombinationMember, SpaceEventOverride,
+    Department, EventCycle, ROLE_SPACE_ADMIN, Space,
+    SpaceAssignment, SpaceEventOverride,
 )
 from app.routes import get_user_ctx
 
@@ -110,10 +110,12 @@ def resolve_event_cycle(code: str | None):
 
 
 def build_space_rows(cycle, include_archived: bool = False) -> list[dict]:
-    """Rows for the Spaces table, parents followed by their slices.
+    """Rows for the Spaces table, rooms followed by their slices.
 
     Loads assignments and overrides in two queries rather than per row. A
     fifty-room venue with thirty departments makes per-row lookups costly.
+    Every space renders exactly once; combining is a flag on a slice's
+    override, not a row of its own.
     """
     if cycle is None or cycle.venue_id is None:
         return []
@@ -147,82 +149,58 @@ def build_space_rows(cycle, include_archived: bool = False) -> list[dict]:
     for assignment, department in rows:
         assigned.setdefault(assignment.space_id, []).append(department)
 
-    # Two maps from one query: what each combination holds, and which
-    # combinations hold each space.
-    members_by_combo: dict[int, list] = {}
-    member_of: dict[int, list] = {}
-    combo_ids = [s.id for s in spaces if s.kind == SPACE_KIND_COMBO]
-    if combo_ids:
-        member_rows = (
-            db.session.query(SpaceCombinationMember, Space)
-            .join(Space, Space.id == SpaceCombinationMember.member_space_id)
-            .filter(SpaceCombinationMember.combination_space_id.in_(combo_ids))
-            .order_by(Space.sort_order, Space.code)
-            .all()
-        )
-        for link, member_space in member_rows:
-            members_by_combo.setdefault(
-                link.combination_space_id, []).append(member_space)
-            member_of.setdefault(
-                link.member_space_id, []).append(link.combination_space_id)
-
     by_id = {s.id: s for s in spaces}
 
-    # The display map places combinations under a room. Coverage needs the
-    # physical tree instead, so a slice's real parent is tracked separately.
-    real_children: dict[int, list] = {}
+    children: dict[int, list] = {}
     for space in spaces:
         if space.parent_id:
-            real_children.setdefault(space.parent_id, []).append(space)
+            children.setdefault(space.parent_id, []).append(space)
+
+    # A primary is whatever a fold points at. Built from the overrides
+    # already loaded above; spaces is already in catalog order, so a
+    # primary's group lists in that same order.
+    combined_groups: dict[int, list] = {}
+    for space in spaces:
+        override = overrides.get(space.id)
+        if override and override.combined_into_space_id:
+            combined_groups.setdefault(
+                override.combined_into_space_id, []).append(space)
 
     def is_accounted_for(space) -> bool:
         """True when this space has been dealt with for this event.
 
-        A slice covered by an assigned room, and a room split across
-        assigned slices, both count. Otherwise assigning Chesapeake A/B/C
-        would leave its three slices in the Unassigned card.
+        A slice covered by an assigned room, a room split across assigned
+        slices, and a slice folded into an assigned primary all count.
+        Otherwise assigning Chesapeake A/B/C would leave its three slices
+        in the Unassigned card.
         """
         if assigned.get(space.id):
             return True
         if space.parent_id and assigned.get(space.parent_id):
             return True
-        if any(assigned.get(c.id) for c in real_children.get(space.id, [])):
+        if any(assigned.get(c.id) for c in children.get(space.id, [])):
             return True
-        return any(assigned.get(cid) for cid in member_of.get(space.id, []))
-
-    def display_parent_id(space):
-        """Where this space renders. A combination sits under the room its
-        first member belongs to, so its relationship to the slices is
-        visible. A combination spanning rooms renders under the first.
-        """
-        if space.kind == SPACE_KIND_COMBO:
-            members = members_by_combo.get(space.id, [])
-            if members:
-                first = members[0]
-                return first.parent_id or first.id
-            return None
-        return space.parent_id
-
-    children: dict[int, list] = {}
-    for space in spaces:
-        parent = display_parent_id(space)
-        if parent is not None and parent in by_id:
-            children.setdefault(parent, []).append(space)
-
-    # A combination renders below its room's slices, not interleaved among
-    # them by code. Reading the slices first and then what was built from
-    # them is the order the page is meant to tell.
-    for bucket in children.values():
-        bucket.sort(key=lambda s: (s.kind == SPACE_KIND_COMBO,
-                                   s.sort_order or 0, s.code))
+        override = overrides.get(space.id)
+        if override and override.combined_into_space_id:
+            return bool(assigned.get(override.combined_into_space_id))
+        return False
 
     def to_row(space, depth: int) -> dict:
         override = overrides.get(space.id)
         departments = assigned.get(space.id, [])
+        group = combined_groups.get(space.id, [])
+        # A primary's area is the sum of itself and its group. An
+        # incomplete sum is worse than none: the number is read to size an
+        # event, and a group missing one slice's area would understate
+        # itself while looking authoritative. Unknown until every member
+        # has one.
+        areas = [space.area_sqft] + [m.area_sqft for m in group]
+        combined_area_sqft = (sum(areas)
+                              if all(a is not None for a in areas) else None)
         return {
             "space": space,
             "depth": depth,
-            "parent_id": display_parent_id(space),
+            "parent_id": space.parent_id,
             "has_children": bool(children.get(space.id)),
             # The base venue name is the stable heading; the alias pill
             # carries the override instead of replacing it. The admin table
@@ -234,20 +212,19 @@ def build_space_rows(cycle, include_archived: bool = False) -> list[dict]:
             "is_available": override.is_available if override else True,
             "unavailable_reason": (override.unavailable_reason
                                    if override else None),
-            # "Made up of" lists what a room divides into. A combination is
-            # built from those pieces, not one of them.
-            "child_codes": [c.code for c in children.get(space.id, [])
-                            if c.kind != SPACE_KIND_COMBO],
-            "member_names": [m.name for m in members_by_combo.get(space.id, [])],
-            "member_of_names": [by_id[c].name for c in member_of.get(space.id, [])
-                                if c in by_id],
+            # "Made up of" lists what a room divides into.
+            "child_codes": [c.code for c in children.get(space.id, [])],
+            "combined_into_space_id": (override.combined_into_space_id
+                                       if override else None),
+            "combined_codes": [m.code for m in group],
+            "combined_area_sqft": combined_area_sqft,
             "is_accounted_for": is_accounted_for(space),
         }
 
     ordered: list[dict] = []
     seen: set[int] = set()
     for space in spaces:
-        if display_parent_id(space) in by_id:
+        if space.parent_id in by_id:
             continue
         ordered.append(to_row(space, 0))
         seen.add(space.id)
