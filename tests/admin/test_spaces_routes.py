@@ -1293,3 +1293,42 @@ def test_an_availability_only_override_is_not_copied(client, world):
     closed = db.session.query(Space).filter_by(code="EX-E").one()
     assert db.session.query(SpaceEventOverride).filter_by(
         space_id=closed.id, event_cycle_id=world["other"].id).count() == 0
+
+
+def test_saving_returns_to_the_row_it_saved(client, world):
+    """A save lands back on the row, not at the top of the list.
+
+    The list runs to 145 rows at Gaylord National. Both halves matter:
+    `open` expands the room so the row is not display:none, and the anchor
+    is what scrolls.
+    """
+    _login(client, "test:spaceadmin")
+    space = _md_b(world)
+
+    resp = client.post(f"/spaces/space/{space.id}", data={
+        "event": "SMF2027",
+        "alias": "",
+        "is_available": "1",
+        "unavailable_reason": "",
+    })
+
+    assert resp.status_code == 302
+    assert f"open={space.id}" in resp.headers["Location"]
+    assert resp.headers["Location"].endswith(f"#space-{space.id}")
+
+
+def test_a_rejected_save_returns_to_the_row_too(client, world):
+    """Losing your place is worse after a rejection; the values are gone
+    and the row has to be found again to retype them."""
+    _login(client, "test:spaceadmin")
+    space = _md_b(world)
+
+    resp = client.post(f"/spaces/space/{space.id}", data={
+        "event": "SMF2027",
+        "alias": "x" * 129,
+        "is_available": "1",
+        "unavailable_reason": "",
+    })
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith(f"#space-{space.id}")

@@ -654,3 +654,16 @@ def test_woodrow_wilson_renders_a_b_and_c_plus_d_with_summed_area(client, woodro
     assert "+ WW-D" in text
     assert "3809 sq ft" in text
     assert "<code>WW-D</code>" not in body  # a folded slice shows no code
+
+
+def test_saving_groupings_returns_to_the_room(client, chesapeake, admin):
+    """The grid is per room, so the room is where the work continues."""
+    _login(client, "test:spaceadmin")
+    room_id = chesapeake["room"].id
+
+    resp = client.post(_combine_room_url(chesapeake),
+                       data=_combine_form(chesapeake, K="J"))
+
+    assert resp.status_code == 302
+    assert f"open={room_id}" in resp.headers["Location"]
+    assert resp.headers["Location"].endswith(f"#space-{room_id}")

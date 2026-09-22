@@ -58,28 +58,44 @@
   // happens here, on load, once we know scripting is available.
   parentIds.forEach(function (id) { collapsedRooms[id] = true; });
 
-  // A row being edited must be visible; its editor renders directly beneath it.
-  var editing = new URLSearchParams(window.location.search).get('edit');
-  // The server reads this parameter as an int, so anything else is not a
-  // row id. An unvalidated value here builds an invalid selector, and the
+  var params = new URLSearchParams(window.location.search);
+
+  // Expand the room holding one row, so that row is not display:none.
+  // The server reads these parameters as ints, so anything else is not a
+  // row id. An unvalidated value builds an invalid selector, and the
   // throw would take collapse and filtering down with it.
-  if (editing && /^\d+$/.test(editing)) {
-    var editedRow = document.querySelector(
-      'tr[data-space-id="' + editing + '"]');
-    if (editedRow && editedRow.dataset.parentId) {
-      collapsedRooms[editedRow.dataset.parentId] = false;
+  function expandRoomFor(id) {
+    if (!id || !/^\d+$/.test(id)) { return null; }
+    var tr = document.querySelector('tr[data-space-id="' + id + '"]');
+    if (tr && tr.dataset.parentId) {
+      collapsedRooms[tr.dataset.parentId] = false;
     }
+    return tr;
   }
+
+  // A row being edited must be visible; its editor renders directly beneath it.
+  expandRoomFor(params.get('edit'));
+
+  // ?open= is where a save sends the operator back to. The list runs to
+  // 145 rows, so returning to the top costs the scroll every save.
+  var openedRow = expandRoomFor(params.get('open'));
 
   // The combining grid renders inside its room, so that room must be
   // expanded for the grid to read as "inside" it rather than floating
   // above a collapsed one.
-  var combining = new URLSearchParams(window.location.search).get('combine');
+  var combining = params.get('combine');
   if (combining && /^\d+$/.test(combining)) {
     collapsedRooms[combining] = false;
   }
 
   render();
+
+  // Scrolled here rather than left to the URL fragment. The browser
+  // resolves the fragment while the row may still be collapsed, so its
+  // scroll lands in the wrong place or nowhere.
+  if (openedRow) {
+    openedRow.scrollIntoView({block: 'center'});
+  }
 
   document.querySelectorAll('[data-toggle-for]').forEach(function (btn) {
     btn.addEventListener('click', function () {

@@ -96,6 +96,18 @@ def list_spaces():
     )
 
 
+def _back_to_space(cycle, space_id: int) -> str:
+    """The list URL, scrolled and expanded back to one row.
+
+    Gaylord National runs to 145 rows, so a plain redirect to the top
+    costs the scroll back every save. `open` tells _table_script.html to
+    expand that row's room; the anchor is what scrolls. The anchor alone
+    targets a row the script has already collapsed, and nothing moves.
+    """
+    return url_for("spaces.list_spaces", event=cycle.code,
+                   open=space_id, _anchor=f"space-{space_id}")
+
+
 def _load_space_for_cycle(space_id: int, cycle, *, require_active: bool | None = None):
     """Load a space and confirm it belongs to the cycle's venue and event.
 
@@ -256,7 +268,7 @@ def save_space(space_id: int):
     # it as missing rather than let a crafted POST write orphaned rows.
     space = _load_space_for_cycle(space_id, cycle, require_active=True)
 
-    back = url_for("spaces.list_spaces", event=cycle.code)
+    back = _back_to_space(cycle, space.id)
     actor = h.get_active_user_id()
 
     # 1. Space core fields: name, code, dimensions, area. Read and written
@@ -493,7 +505,7 @@ def combine_room(room_id: int):
     })
     db.session.commit()
     flash(f"Saved groupings for {room.name}", "success")
-    return redirect(url_for("spaces.list_spaces", event=cycle.code))
+    return redirect(_back_to_space(cycle, room.id))
 
 
 def _set_space_active(space_id: int, active: bool, action: str):
