@@ -53,3 +53,24 @@ def test_page_renders_the_subsection_with_no_spaces(
     assert response.status_code == 200
     assert "Spaces" in body
     assert "No spaces assigned yet." in body
+
+
+def test_the_space_allocation_map_notice_renders_even_with_no_spaces(
+    app, client, seed_workflow_data
+):
+    """The map is the authority and this page is the fifth copy. An empty
+    list is itself a claim worth checking against the map.
+    """
+    cycle = seed_workflow_data["cycle"]
+    dept = seed_workflow_data["department"]
+
+    _login(client, "test:admin")
+    body = client.get(f"/{cycle.code}/{dept.code}/").get_data(as_text=True)
+
+    assert "No spaces assigned yet." in body
+    assert "Space Allocation Map" in body
+    assert "Hotels request channel" in body
+    # The default content carries a markdown link, so the filter must have
+    # turned it into an anchor rather than printing the brackets.
+    assert "[Space Allocation Map]" not in body
+    assert "<a href=" in body

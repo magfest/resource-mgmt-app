@@ -227,6 +227,16 @@
     {% else %}
       <div class="muted small">No spaces assigned yet.</div>
     {% endif %}
+
+    {# The map is the authority, not this page. It renders whether or not a
+       space is listed here, because an empty list is itself a claim worth
+       checking. Edit the wording in Admin, Site Content. #}
+    {% set map_notice = get_site_content('link_space_allocation_map') %}
+    {% if map_notice.content %}
+      <div class="callout callout-warning mt-16">
+        {{ map_notice.content|markdown_links|safe }}
+      </div>
+    {% endif %}
   </div>
 </section>
 {% endif %}
