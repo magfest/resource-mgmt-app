@@ -219,17 +219,34 @@ def build_space_rows(cycle, include_archived: bool = False) -> list[dict]:
             "combined_codes": [m.code for m in group],
             "combined_area_sqft": combined_area_sqft,
             "is_accounted_for": is_accounted_for(space),
+            # Set below, once the room's own row exists to point at.
+            "covered_by": None,
         }
+
+    def covering_room(slice_row, room_row):
+        """The room row whose departments this slice inherits, or None.
+
+        This writes nothing. Coverage reads the room's one SpaceAssignment,
+        so unassigning the room clears every slice at once. A slice with
+        departments of its own keeps them; the room never overwrites an
+        assignment an admin recorded.
+        """
+        if slice_row["departments"] or not room_row["departments"]:
+            return None
+        return room_row
 
     ordered: list[dict] = []
     seen: set[int] = set()
     for space in spaces:
         if space.parent_id in by_id:
             continue
-        ordered.append(to_row(space, 0))
+        parent_row = to_row(space, 0)
+        ordered.append(parent_row)
         seen.add(space.id)
         for child in children.get(space.id, []):
-            ordered.append(to_row(child, 1))
+            child_row = to_row(child, 1)
+            child_row["covered_by"] = covering_room(child_row, parent_row)
+            ordered.append(child_row)
             seen.add(child.id)
 
     # Archiving a room does not cascade to its slices. A slice whose parent
