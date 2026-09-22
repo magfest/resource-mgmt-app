@@ -1,7 +1,12 @@
+{# A slice inside an assigned room shows that room's departments. The
+   room holds the only SpaceAssignment row; covered_by is a display rule,
+   so filtering by department has to read it too or a covered slice
+   disappears from a search for the department that holds it. #}
+{% set holder = row.covered_by or row %}
 <tr id="space-{{ row.space.id }}"
     data-space-id="{{ row.space.id }}"
     {% if row.depth %}data-parent-id="{{ row.parent_id }}"{% endif %}
-    data-haystack="{{ (row.display_name ~ ' ' ~ (row.alias or '') ~ ' ' ~ row.space.code ~ ' ' ~ (row.departments|map(attribute='name')|join(' ')))|lower }}"
+    data-haystack="{{ (row.display_name ~ ' ' ~ (row.alias or '') ~ ' ' ~ row.space.code ~ ' ' ~ (holder.departments|map(attribute='name')|join(' ')))|lower }}"
     data-shared="{{ '1' if row.is_shared else '0' }}"
     data-unassigned="{{ '1' if not row.is_accounted_for and row.is_available else '0' }}">
   <td>
@@ -64,30 +69,36 @@
   <td>{% if not row.combined_into_space_id %}{{ row.space.dimensions or '' }}{% endif %}</td>
   <td>
     {% if not row.combined_into_space_id %}
-      {% for d in row.departments %}
+      {% for d in holder.departments %}
         <span class="pill pill-dept">{{ d.name }}</span>
       {% else %}
         <span class="muted">Unassigned</span>
       {% endfor %}
+      {% if row.covered_by %}
+        <span class="muted small">via {{ row.covered_by.display_name }}</span>
+      {% endif %}
     {% endif %}
   </td>
   <td>
-    {% if row.space.kind == SPACE_KIND_ROOM and row.has_children and row.space.is_active %}
-    <a class="btn btn-small"
-       href="{{ url_for('spaces.list_spaces', event=cycle.code, combine=row.space.id) }}#space-{{ row.space.id }}">Combine</a>
-    {% endif %}
-    {% if not row.combined_into_space_id %}
-    <!-- Not gated on is_active: Archive moved inside the editor (spec 5),
-         and Edit is the only way back to Restore an archived space. -->
-    <a class="btn btn-small"
-       href="{{ url_for('spaces.list_spaces', event=cycle.code, edit=row.space.id) }}#space-{{ row.space.id }}">Edit</a>
-    {% endif %}
+    <div class="btn-row">
+      {% if row.space.kind == SPACE_KIND_ROOM and row.has_children and row.space.is_active %}
+      <a class="btn btn-small"
+         href="{{ url_for('spaces.list_spaces', event=cycle.code, combine=row.space.id) }}#space-{{ row.space.id }}">Combine</a>
+      {% endif %}
+      {% if not row.combined_into_space_id and not row.covered_by %}
+      <!-- Not gated on is_active: Archive moved inside the editor (spec 5),
+           and Edit is the only way back to Restore an archived space. -->
+      <a class="btn btn-small"
+         href="{{ url_for('spaces.list_spaces', event=cycle.code, edit=row.space.id) }}#space-{{ row.space.id }}">Edit</a>
+      {% endif %}
+    </div>
   </td>
 </tr>
 {% if row.space.kind == SPACE_KIND_ROOM and combine_room_id == row.space.id %}
   {% include "spaces/_combine_grid.html" %}
 {% endif %}
-{% if edit_id == row.space.id %}
+{% if edit_id == row.space.id
+      and not row.covered_by and not row.combined_into_space_id %}
 <tr>
   <td colspan="5" style="background: #f8fafc;">
     <form method="post" class="space-edit-form"
