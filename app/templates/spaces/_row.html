@@ -76,18 +76,12 @@
     <a class="btn btn-small"
        href="{{ url_for('spaces.list_spaces', event=cycle.code, combine=row.space.id) }}#space-{{ row.space.id }}">Combine</a>
     {% endif %}
-    {% if row.space.is_active and not row.combined_into_space_id %}
+    {% if not row.combined_into_space_id %}
+    <!-- Not gated on is_active: Archive moved inside the editor (spec 5),
+         and Edit is the only way back to Restore an archived space. -->
     <a class="btn btn-small"
        href="{{ url_for('spaces.list_spaces', event=cycle.code, edit=row.space.id) }}#space-{{ row.space.id }}">Edit</a>
     {% endif %}
-    <form method="post" style="display:inline"
-          action="{{ url_for('spaces.archive_space' if row.space.is_active else 'spaces.restore_space', space_id=row.space.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="event" value="{{ cycle.code }}">
-      <button type="submit" class="btn btn-small">
-        {{ 'Archive' if row.space.is_active else 'Restore' }}
-      </button>
-    </form>
   </td>
 </tr>
 {% if row.space.kind == SPACE_KIND_ROOM and combine_room_id == row.space.id %}
@@ -110,17 +104,20 @@
               nobody yet
             {% endif %}
           </div>
-          <input type="text" class="dept-filter mb-8"
-                 id="dept-filter-{{ row.space.id }}"
-                 placeholder="Filter departments">
-          <div class="dept-list">
-            {% for d in departments %}
-              <label class="block" data-dept-haystack="{{ d.name|lower }}">
-                <input type="checkbox" name="department_ids" value="{{ d.id }}"
-                  {% if d in row.departments %}checked{% endif %}>
-                {{ d.name }}
-              </label>
-            {% endfor %}
+          <!-- Server-rendered fallback: every department as an option in a
+               plain multi-select, so the page works with scripting off.
+               list.html's dept-picker script upgrades this into a
+               search-as-you-type chip field. The posted field name does
+               not change, so request.form.getlist("department_ids") in
+               save_space reads the same thing either way. See spec 5.3. -->
+          <div class="mb-8" data-dept-picker>
+            <select multiple name="department_ids" size="8"
+                    id="dept-select-{{ row.space.id }}"
+                    aria-label="Departments assigned to {{ row.display_name }}">
+              {% for d in departments %}
+                <option value="{{ d.id }}"{% if d in row.departments %} selected{% endif %}>{{ d.name }}</option>
+              {% endfor %}
+            </select>
           </div>
           {% if row.is_shared %}
             <div class="callout callout-warning mt-8">
@@ -181,6 +178,25 @@
       <button type="submit" class="btn btn-primary">Save</button>
       <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
     </form>
+
+    <div class="mt-16">
+      <div class="muted small">
+        {% if row.space.is_active %}
+          Archive this space. It retires at the venue, for every event, and
+          stays in the list under Show archived.
+        {% else %}
+          This space is archived.
+        {% endif %}
+      </div>
+      <form method="post"
+            action="{{ url_for('spaces.archive_space' if row.space.is_active else 'spaces.restore_space', space_id=row.space.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="event" value="{{ cycle.code }}">
+        <button type="submit" class="btn btn-small">
+          {{ 'Archive' if row.space.is_active else 'Restore' }}
+        </button>
+      </form>
+    </div>
   </td>
 </tr>
 {% endif %}

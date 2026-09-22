@@ -13,6 +13,7 @@ from app.models import (
     SpaceEventOverride, SPACE_KIND_FREEFORM, SPACE_KIND_ROOM,
     SPACE_KIND_SLICE, User, UserRole, Venue,
 )
+from app.routes.spaces.catalog_parse import MAX_AREA_SQFT, MAX_CODE_LENGTH
 
 
 def _login(client, user_id):
@@ -264,19 +265,23 @@ def test_an_event_with_no_venue_renders_without_the_toolbar(client, world):
     assert "no venue set" in body.lower()
 
 
-def test_adding_a_room_puts_it_on_the_page(client, world):
+def test_adding_a_popup_puts_it_on_the_page(client, world):
+    """The event page's Add space no longer takes a Kind; every space it
+    creates is a FREEFORM pop-up. Page A owns permanent rooms."""
     _login(client, "test:spaceadmin")
 
     resp = client.post("/spaces/space/new", data={
         "event": "SMF2027",
-        "name": "Chesapeake Hall",
+        "name": "Chesapeake Hall Popup",
         "code": "CHES",
-        "kind": SPACE_KIND_ROOM,
         "dimensions": "40x60x20",
     }, follow_redirects=True)
 
     assert resp.status_code == 200
-    assert "Chesapeake Hall" in resp.get_data(as_text=True)
+    assert "Chesapeake Hall Popup" in resp.get_data(as_text=True)
+    created = db.session.query(Space).filter_by(code="CHES").one()
+    assert created.kind == SPACE_KIND_FREEFORM
+    assert created.event_cycle_id == world["cycle"].id
 
 
 def test_a_duplicate_code_at_one_venue_is_refused(client, world):
@@ -286,7 +291,6 @@ def test_a_duplicate_code_at_one_venue_is_refused(client, world):
         "event": "SMF2027",
         "name": "Another Maryland",
         "code": "MD-A",
-        "kind": SPACE_KIND_ROOM,
     }, follow_redirects=True)
 
     body = resp.get_data(as_text=True)
@@ -301,12 +305,99 @@ def test_a_freeform_space_is_scoped_to_the_active_event(client, world):
         "event": "SMF2027",
         "name": "Photo Booth",
         "code": "POP-2",
-        "kind": SPACE_KIND_FREEFORM,
         "location_note": "By the north escalators",
     }, follow_redirects=True)
 
     created = db.session.query(Space).filter_by(code="POP-2").one()
     assert created.event_cycle_id == world["cycle"].id
+    assert created.kind == SPACE_KIND_FREEFORM
+
+
+def test_the_add_popup_form_offers_no_kind_or_parent_picker(client, world):
+    """Spec section 5: this page has no Add space for a permanent room or
+    slice, so its form must not offer Kind or a parent room."""
+    _login(client, "test:spaceadmin")
+
+    body = client.get("/spaces/?event=SMF2027&add=1").get_data(as_text=True)
+
+    assert 'name="kind"' not in body
+    assert 'name="parent_id"' not in body
+    assert 'name="location_note"' in body
+
+
+def test_a_popup_name_colliding_with_a_permanent_space_is_refused(client, world):
+    """Two rows reading the same name on one event page is what confuses
+    an operator; see _popup_name_taken's asymmetry note."""
+    _login(client, "test:spaceadmin")
+
+    resp = client.post("/spaces/space/new", data={
+        "event": "SMF2027",
+        "name": "Maryland Ballroom",
+        "code": "POP-MD",
+    }, follow_redirects=True)
+
+    body = resp.get_data(as_text=True)
+    assert "already exists" in body
+    assert db.session.query(Space).filter_by(code="POP-MD").count() == 0
+
+
+def test_a_popup_name_colliding_with_another_popup_is_refused(client, world):
+    _login(client, "test:spaceadmin")
+
+    client.post("/spaces/space/new", data={
+        "event": "SMF2027", "name": "Merch Table", "code": "MERCH-A",
+    }, follow_redirects=True)
+    resp = client.post("/spaces/space/new", data={
+        "event": "SMF2027", "name": "Merch Table", "code": "MERCH-B",
+    }, follow_redirects=True)
+
+    body = resp.get_data(as_text=True)
+    assert "already exists" in body
+    assert db.session.query(Space).filter_by(code="MERCH-B").count() == 0
+
+
+def test_an_over_length_popup_code_is_refused(client, world):
+    """create_space never bounded code length before; a code this long
+    used to be written silently, only failing on Postgres."""
+    _login(client, "test:spaceadmin")
+    long_code = "A" * (MAX_CODE_LENGTH + 1)
+
+    resp = client.post("/spaces/space/new", data={
+        "event": "SMF2027", "name": "Merch Overflow", "code": long_code,
+    }, follow_redirects=True)
+
+    assert "too long" in resp.get_data(as_text=True)
+    assert db.session.query(Space).filter_by(code=long_code).count() == 0
+
+
+def test_a_popup_area_over_the_bound_is_refused(client, world):
+    """area_sqft is a plain Integer; Postgres's int4 rejects a value past
+    MAX_AREA_SQFT and SQLite silently stores it. Bound it in Python."""
+    _login(client, "test:spaceadmin")
+
+    resp = client.post("/spaces/space/new", data={
+        "event": "SMF2027", "name": "Huge Popup", "code": "POP-HUGE",
+        "area_sqft": str(MAX_AREA_SQFT + 1),
+    }, follow_redirects=True)
+
+    assert "square feet or fewer" in resp.get_data(as_text=True)
+    assert db.session.query(Space).filter_by(code="POP-HUGE").count() == 0
+
+
+def test_an_oversized_parent_id_on_popup_create_does_not_500(client, world):
+    """The pop-up form no longer takes a parent, so parent_id in the POST
+    body (a stale bookmark, a crafted request) must be ignored outright
+    rather than parsed with a bare int() and handed to db.session.get."""
+    _login(client, "test:spaceadmin")
+
+    resp = client.post("/spaces/space/new", data={
+        "event": "SMF2027", "name": "Photo Booth 2", "code": "POP-PB2",
+        "parent_id": str(2 ** 63),
+    }, follow_redirects=True)
+
+    assert resp.status_code == 200
+    created = db.session.query(Space).filter_by(code="POP-PB2").one()
+    assert created.parent_id is None
 
 
 def _md_b(world):
@@ -545,6 +636,47 @@ def test_an_archived_row_is_marked_in_the_archived_view(client, world):
     assert "Archived" in body
 
 
+def test_archive_is_not_offered_on_the_row_itself(client, world):
+    """Spec section 5: the event page has no per-row Archive. It is rare
+    and hard to undo, so it moved one click further away, inside the
+    editor, matching Page A's own catalog row."""
+    _login(client, "test:spaceadmin")
+
+    body = client.get("/spaces/?event=SMF2027").get_data(as_text=True)
+
+    assert "/archive" not in body
+    assert "/restore" not in body
+
+
+def test_archive_control_is_inside_the_row_editor(client, world):
+    _login(client, "test:spaceadmin")
+    space = db.session.query(Space).filter_by(code="MD").one()
+
+    body = client.get(
+        f"/spaces/?event=SMF2027&edit={space.id}").get_data(as_text=True)
+
+    assert f'/spaces/space/{space.id}/archive"' in body
+
+
+def test_an_archived_row_still_offers_a_way_back_to_restore_it(client, world):
+    """Archive moving off the row means Edit is the only path back to the
+    editor's Restore button. Edit cannot stay hidden for an archived row,
+    or moving Archive would strand every archived space."""
+    _login(client, "test:spaceadmin")
+    space = db.session.query(Space).filter_by(code="EX-E").one()
+    space.is_active = False
+    db.session.commit()
+
+    list_body = client.get(
+        "/spaces/?event=SMF2027&show_archived=1").get_data(as_text=True)
+    assert f"edit={space.id}" in list_body
+
+    edit_body = client.get(
+        f"/spaces/?event=SMF2027&show_archived=1&edit={space.id}"
+    ).get_data(as_text=True)
+    assert "Restore" in edit_body
+
+
 def test_a_space_admin_can_add_a_venue(client, world):
     _login(client, "test:spaceadmin")
 
@@ -639,7 +771,6 @@ def test_a_spaces_post_succeeds_with_csrf_enabled():
                 "event": "CSRFEVT",
                 "name": "CSRF Room",
                 "code": "CSRF-1",
-                "kind": SPACE_KIND_ROOM,
             })
 
             assert resp.status_code != 400
@@ -948,11 +1079,73 @@ def test_the_department_picker_summarises_and_filters(client, world):
     body = client.get(
         f"/spaces/?event=SMF2027&edit={space.id}").get_data(as_text=True)
 
-    assert 'data-dept-haystack' in body
-    assert 'id="dept-filter-' in body
+    assert 'data-dept-picker' in body
+    assert 'id="dept-select-' in body
     # MD-B is shared between Registration and Staff Ops in the fixture, and
-    # both must appear in the summary line above the filter.
+    # both must appear in the summary line above the picker.
     assert "Registration, Staff Ops" in body or "Staff Ops, Registration" in body
+
+
+def test_the_department_picker_renders_a_select_not_checkboxes(client, world):
+    """Spec 5.3: the server renders a plain <select multiple>, not a
+    checkbox per department. Scripting off still assigns from it."""
+    _login(client, "test:spaceadmin")
+    space = db.session.query(Space).filter_by(code="MD-B").one()
+    reg = db.session.query(Department).filter_by(code="REG").one()
+    staff = db.session.query(Department).filter_by(code="STAFFOPS").one()
+
+    body = client.get(
+        f"/spaces/?event=SMF2027&edit={space.id}").get_data(as_text=True)
+
+    assert '<select multiple name="department_ids"' in body
+    assert 'type="checkbox" name="department_ids"' not in body
+    assert f'<option value="{reg.id}" selected>' in body
+    assert f'<option value="{staff.id}" selected>' in body
+
+
+def test_the_department_select_lists_every_department_without_a_row_each(client, world):
+    """The 70 must never render as 70 rows; the select just carries every
+    department as an option, however many there are."""
+    _login(client, "test:spaceadmin")
+    space = db.session.query(Space).filter_by(code="MD-B").one()
+    db.session.add_all([
+        Department(code=f"D{i}", name=f"Dept {i}", is_active=True)
+        for i in range(68)
+    ])
+    db.session.commit()
+    total_depts = db.session.query(Department).filter_by(is_active=True).count()
+    assert total_depts == 70
+
+    body = client.get(
+        f"/spaces/?event=SMF2027&edit={space.id}").get_data(as_text=True)
+
+    match = re.search(
+        r'<select multiple name="department_ids"[^>]*>(.*?)</select>',
+        body, re.DOTALL)
+    assert match, "no department select found"
+    assert len(re.findall(r'<option', match.group(1))) == total_depts
+    assert 'type="checkbox" name="department_ids"' not in body
+
+
+def test_department_ids_post_still_assigns_through_the_select(client, world):
+    """The posted field name is unchanged by the select swap, so a plain
+    POST of department_ids (what the select submits with scripting off,
+    and what the chip script's select stays in sync with) still assigns."""
+    _login(client, "test:spaceadmin")
+    space = db.session.query(Space).filter_by(code="MD").one()
+    reg = db.session.query(Department).filter_by(code="REG").one()
+
+    client.post(f"/spaces/space/{space.id}", data={
+        "event": "SMF2027",
+        "code": "MD",
+        "name": space.name,
+        "is_available": "1",
+        "department_ids": [str(reg.id)],
+    }, follow_redirects=True)
+
+    assigned = db.session.query(SpaceAssignment).filter_by(
+        space_id=space.id, event_cycle_id=world["cycle"].id).all()
+    assert [a.department_id for a in assigned] == [reg.id]
 
 
 def test_saving_a_space_from_event_a_with_event_b_is_refused(client, world):

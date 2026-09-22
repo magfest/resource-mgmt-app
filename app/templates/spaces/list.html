@@ -49,7 +49,7 @@
     {{ 'Hide archived' if show_archived else 'Show archived' }}
   </a>
   <a class="btn btn-primary"
-     href="{{ url_for('spaces.list_spaces', event=cycle.code, add=1) }}#add-space">Add space</a>
+     href="{{ url_for('spaces.list_spaces', event=cycle.code, add=1) }}#add-space">Add pop-up space</a>
   <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code, copy=1) }}#copy-layout">Copy layout</a>
 </div>
 
@@ -58,28 +58,14 @@
       action="{{ url_for('spaces.create_space') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="event" value="{{ cycle.code }}">
+  <div class="muted small mb-8">
+    A space this event invented, such as a photo booth or a merch table.
+    The building's own rooms and slices come from the venue catalog and are
+    not added here.
+  </div>
   <div class="row">
     <label>Name <input type="text" name="name" required maxlength="128"></label>
     <label>Code <input type="text" name="code" required maxlength="32"></label>
-    <label>Kind
-      <!-- Kind is not derived from Parent room here; create_space in
-           app/routes/spaces/views.py gives the reason. -->
-      <select name="kind">
-        {% for value, label in space_kinds %}
-          <option value="{{ value }}">{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Parent room
-      <select name="parent_id">
-        <option value="">&mdash; none &mdash;</option>
-        {% for row in rows %}
-          {% if row.space.kind == SPACE_KIND_ROOM %}
-            <option value="{{ row.space.id }}">{{ row.space.name }}</option>
-          {% endif %}
-        {% endfor %}
-      </select>
-    </label>
   </div>
   <div class="row">
     <label>Dimensions <input type="text" name="dimensions" placeholder="35x57x22"></label>
@@ -87,7 +73,7 @@
     <label>Where is it? <input type="text" name="location_note"
       placeholder="Outside the Expo Hall B doors, house-left"></label>
   </div>
-  <button type="submit" class="btn btn-primary">Add space</button>
+  <button type="submit" class="btn btn-primary">Add pop-up space</button>
   <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
 </form>
 {% endif %}
@@ -155,6 +141,136 @@
 <script nonce="{{ csp_nonce }}">
   document.getElementById('event-select').addEventListener('change', function () {
     this.form.submit();
+  });
+</script>
+
+<style>
+  /* Local to this page: the chip control _row.html's dept-picker script
+     builds. The server-rendered <select multiple> it replaces needs none
+     of this, so scripting off never shows an unstyled fallback. */
+  .dept-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .dept-chip { display: inline-flex; align-items: center; gap: 4px; }
+  .dept-chip button {
+    border: none; background: transparent; padding: 0 2px;
+    line-height: 1; cursor: pointer; color: inherit;
+  }
+  .dept-results {
+    list-style: none; margin: 4px 0 8px; padding: 0;
+    border: 1px solid #ccc; border-radius: 6px; max-height: 180px;
+    overflow-y: auto;
+  }
+  .dept-results button {
+    display: block; width: 100%; text-align: left; border: none;
+    border-radius: 0; background: #fff; padding: 6px 8px;
+  }
+  .dept-results button:hover { background: #eee; }
+</style>
+<script nonce="{{ csp_nonce }}">
+  // Progressive enhancement for the department picker (spec 5.3). The
+  // server always renders a plain <select multiple name="department_ids">
+  // listing every department; this replaces it with a search-as-you-type
+  // field that adds a chip per choice. The select stays in the DOM and
+  // keeps carrying the posted field, so save_space reads the same values
+  // either way.
+  document.querySelectorAll('[data-dept-picker]').forEach(function (wrap) {
+    var select = wrap.querySelector('select[multiple]');
+    if (!select) { return; }
+    var options = Array.prototype.slice.call(select.options);
+
+    select.style.display = 'none';
+
+    var chipRow = document.createElement('div');
+    chipRow.className = 'dept-chip-row';
+
+    var search = document.createElement('input');
+    search.type = 'text';
+    search.placeholder = 'Add a department';
+    search.setAttribute('aria-label', 'Add a department');
+
+    var results = document.createElement('ul');
+    results.className = 'dept-results';
+    results.style.display = 'none';
+
+    wrap.appendChild(chipRow);
+    wrap.appendChild(search);
+    wrap.appendChild(results);
+
+    function matching(term) {
+      return options.filter(function (opt) {
+        return !opt.selected &&
+          opt.textContent.toLowerCase().indexOf(term) !== -1;
+      });
+    }
+
+    function renderChips() {
+      chipRow.innerHTML = '';
+      options.forEach(function (opt) {
+        if (!opt.selected) { return; }
+        var chip = document.createElement('span');
+        chip.className = 'pill pill-dept dept-chip';
+        var label = document.createElement('span');
+        label.textContent = opt.textContent;
+        var remove = document.createElement('button');
+        remove.type = 'button';
+        remove.setAttribute('aria-label', 'Remove ' + opt.textContent);
+        remove.textContent = '×';
+        remove.addEventListener('click', function () {
+          opt.selected = false;
+          renderChips();
+          renderResults();
+        });
+        chip.appendChild(label);
+        chip.appendChild(remove);
+        chipRow.appendChild(chip);
+      });
+    }
+
+    function renderResults() {
+      var term = search.value.trim().toLowerCase();
+      results.innerHTML = '';
+      if (!term) {
+        results.style.display = 'none';
+        return;
+      }
+      // 25 is plenty for what a few typed letters narrows 70 down to; the
+      // point is never listing all of them at once.
+      var found = matching(term).slice(0, 25);
+      found.forEach(function (opt) {
+        var item = document.createElement('li');
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = opt.textContent;
+        button.addEventListener('click', function () {
+          opt.selected = true;
+          search.value = '';
+          renderChips();
+          renderResults();
+          search.focus();
+        });
+        item.appendChild(button);
+        results.appendChild(item);
+      });
+      results.style.display = found.length ? '' : 'none';
+    }
+
+    search.addEventListener('input', renderResults);
+    search.addEventListener('keydown', function (event) {
+      // Enter adds the top match. preventDefault also stops it from
+      // submitting the surrounding save form.
+      if (event.key !== 'Enter') { return; }
+      event.preventDefault();
+      var term = search.value.trim().toLowerCase();
+      if (!term) { return; }
+      var found = matching(term);
+      if (found.length) {
+        found[0].selected = true;
+        search.value = '';
+        renderChips();
+        renderResults();
+      }
+    });
+
+    renderChips();
   });
 </script>
 {% include "spaces/_table_script.html" %}

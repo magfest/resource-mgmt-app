@@ -9,24 +9,17 @@ from app.models import (
     CONFIG_AUDIT_ARCHIVE, CONFIG_AUDIT_CREATE, CONFIG_AUDIT_RESTORE,
     CONFIG_AUDIT_UPDATE, Department, EventCycle, Space, SpaceAssignment,
     SpaceEventOverride, SPACE_KIND_FREEFORM, SPACE_KIND_ROOM,
-    SPACE_KIND_SLICE, SPACE_KINDS,
+    SPACE_KIND_SLICE,
 )
 from app.routes import h
 from . import spaces_bp
-from .catalog import MAX_SPACE_ID
+from .catalog import MAX_SPACE_ID, _name_taken, _read_space_form
+from .catalog_parse import MAX_CODE_LENGTH, _normalize_name
 from .helpers import (
     build_space_rows, build_space_stats, flash_if_too_long,
     parse_optional_int, render_space_admin_page, require_space_admin,
     resolve_event_cycle,
 )
-
-# Kind labels shown in the Spaces page's Kind select. Keyed off SPACE_KINDS
-# so a new kind fails loudly here instead of rendering with no label.
-SPACE_KIND_LABELS = {
-    SPACE_KIND_ROOM: "Room",
-    SPACE_KIND_SLICE: "Slice of a room",
-    SPACE_KIND_FREEFORM: "Free-form pop-up space",
-}
 
 
 def _list_cycles():
@@ -81,7 +74,6 @@ def _render_spaces_list(cycle, cycles, *, show_archived=False, edit_id=None,
         edit_id=edit_id,
         departments=departments,
         show_archived=show_archived,
-        space_kinds=[(k, SPACE_KIND_LABELS[k]) for k in SPACE_KINDS],
         SPACE_KIND_ROOM=SPACE_KIND_ROOM,
         SPACE_KIND_SLICE=SPACE_KIND_SLICE,
         combine_room_id=combine_room_id,
@@ -150,15 +142,38 @@ def _code_taken(venue_id, code, event_cycle_id, exclude_space_id=None):
     return query.first() is not None
 
 
+def _popup_name_taken(venue_id, event_cycle_id, name, exclude_space_id=None):
+    """True when a pop-up's name would collide with a permanent space at
+    this venue or another pop-up already on this event's page.
+
+    Not symmetric with catalog.py's _name_taken, on purpose: a permanent
+    space is never blocked by a pop-up's name there, because a pop-up
+    built for one event must not reserve a name forever. This is the
+    other direction. It is blocked, because two rows reading "Green Room"
+    on one event page is what confuses an operator.
+    """
+    if _name_taken(venue_id, name, exclude_space_id=exclude_space_id):
+        return True
+    query = db.session.query(Space).filter(
+        Space.venue_id == venue_id,
+        Space.event_cycle_id == event_cycle_id,
+    )
+    if exclude_space_id is not None:
+        query = query.filter(Space.id != exclude_space_id)
+    target = _normalize_name(name)
+    return any(_normalize_name(s.name) == target for s in query.all())
+
+
 @spaces_bp.post("/space/new")
 @require_space_admin
 def create_space():
-    """Create a space at the active event's venue.
+    """Create a pop-up space for the active event.
 
-    The panel offers an explicit Kind select rather than deriving kind
-    from the parent picker. This form can also produce a FREEFORM pop-up,
-    so an empty parent would not say which was meant. The venue catalog's
-    add form derives kind, because it offers no FREEFORM.
+    This page has no Add space for a permanent room or slice; those come
+    from the venue catalog (catalog.py), which owns their name and code
+    rules. Every space this route writes is a FREEFORM row scoped to the
+    event, using the shared field reader and name rule those own so this
+    page cannot drift from them.
     """
     # Imported here, not at module level: app/routes/spaces/ is not an admin
     # package, and a module-level admin import from a non-admin route
@@ -171,56 +186,45 @@ def create_space():
 
     back = url_for("spaces.list_spaces", event=cycle.code)
 
-    name = (request.form.get("name") or "").strip()
+    fields = _read_space_form(request.form)
+    if fields is None:
+        return redirect(back)
+
     code = (request.form.get("code") or "").strip().upper()
-    kind = (request.form.get("kind") or "").strip().upper()
-
-    if not name or not code:
-        flash("Name and code are required", "error")
+    if not code:
+        flash("Code is required", "error")
         return redirect(back)
-    if flash_if_too_long(name, "name"):
+    # Space.code is String(32). SQLite does not enforce that, so the check
+    # is here rather than left to the column.
+    if flash_if_too_long(code, "code", limit=MAX_CODE_LENGTH):
         return redirect(back)
 
-    if kind not in SPACE_KINDS:
-        flash("Pick a space kind", "error")
+    if _popup_name_taken(cycle.venue_id, cycle.id, fields["name"]):
+        flash(f"A space named '{fields['name']}' already exists at this "
+              "event", "error")
         return redirect(back)
 
     # A pop-up belongs to the event that created it, so it stops showing up
-    # at this venue in later cycles. A permanent room has no event.
-    event_cycle_id = cycle.id if kind == SPACE_KIND_FREEFORM else None
-    if _code_taken(cycle.venue_id, code, event_cycle_id):
+    # at this venue in later cycles. _code_taken already checks both a
+    # permanent row and this event's own rows.
+    if _code_taken(cycle.venue_id, code, cycle.id):
         flash(f"A space with code '{code}' already exists at this venue", "error")
         return redirect(back)
 
-    parent_id = request.form.get("parent_id", type=int)
-    if parent_id is not None:
-        # SQLite does not enforce this FK. A bad or cross-venue id would
-        # otherwise be stored silently and 500 on Postgres instead. Only a
-        # ROOM can be a parent; a room is never two levels deep.
-        parent = db.session.get(Space, parent_id)
-        if (parent is None or parent.venue_id != cycle.venue_id
-                or parent.kind != SPACE_KIND_ROOM):
-            flash("Pick a parent room at this venue", "error")
-            return redirect(back)
-
-    area_sqft, area_ok = parse_optional_int(request.form.get("area_sqft"))
-    if not area_ok:
-        flash("Area (sq ft) must be a whole number", "error")
-        return redirect(back)
-
+    actor = h.get_active_user_id()
     space = Space(
         venue_id=cycle.venue_id,
-        parent_id=parent_id,
-        event_cycle_id=event_cycle_id,
-        name=name,
+        parent_id=None,
+        event_cycle_id=cycle.id,
+        name=fields["name"],
         code=code,
-        kind=kind,
-        dimensions=(request.form.get("dimensions") or "").strip() or None,
-        area_sqft=area_sqft,
+        kind=SPACE_KIND_FREEFORM,
+        dimensions=fields["dimensions"],
+        area_sqft=fields["area_sqft"],
         location_note=(request.form.get("location_note") or "").strip() or None,
         is_active=True,
-        created_by_user_id=h.get_active_user_id(),
-        updated_by_user_id=h.get_active_user_id(),
+        created_by_user_id=actor,
+        updated_by_user_id=actor,
     )
     db.session.add(space)
     db.session.flush()
