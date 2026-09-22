@@ -11,7 +11,8 @@ import pytest
 from app import db
 from app.models import (
     Department, EventCycle, ROLE_SPACE_ADMIN, Space, SpaceAssignment,
-    SPACE_KIND_ROOM, SPACE_KIND_SLICE, User, UserRole, Venue,
+    SpaceEventOverride, SPACE_KIND_ROOM, SPACE_KIND_SLICE, User,
+    UserRole, Venue,
 )
 from app.routes.spaces.helpers import build_space_rows
 
@@ -150,3 +151,90 @@ def test_a_covered_slice_editor_stays_shut_when_asked_for_by_url(
         as_text=True)
 
     assert f'id="dept-select-{slice_id}"' not in body
+
+
+# ============================================================
+# A room with no assignment of its own summarises its slices.
+# ============================================================
+
+def _add_slice(chesapeake, letter):
+    s = Space(venue_id=chesapeake["venue"].id, name=f"Chesapeake {letter}",
+              code=f"CHES-{letter}", kind=SPACE_KIND_SLICE,
+              parent_id=chesapeake["room"].id)
+    db.session.add(s)
+    db.session.commit()
+    chesapeake["slices"][letter] = s
+    return s
+
+
+def _fold(chesapeake, member_letter, primary_letter):
+    db.session.add(SpaceEventOverride(
+        space_id=chesapeake["slices"][member_letter].id,
+        event_cycle_id=chesapeake["cycle"].id,
+        combined_into_space_id=chesapeake["slices"][primary_letter].id,
+    ))
+    db.session.commit()
+
+
+def test_a_room_with_every_slice_assigned_reads_fully_assigned(
+        app, chesapeake):
+    _assign(chesapeake["slices"]["J"], _department("ARENA"),
+            chesapeake["cycle"])
+    _assign(chesapeake["slices"]["K"], _department("ORCHESTRA"),
+            chesapeake["cycle"])
+
+    room = _by_code(chesapeake["cycle"])["CHES-JKLM"]
+
+    assert room["slice_summary"] == "Fully assigned"
+
+
+def test_a_room_with_some_slices_assigned_reads_partially_assigned(
+        app, chesapeake):
+    _assign(chesapeake["slices"]["J"], _department("ARENA"),
+            chesapeake["cycle"])
+
+    room = _by_code(chesapeake["cycle"])["CHES-JKLM"]
+
+    assert room["slice_summary"] == "Partially assigned"
+
+
+def test_a_room_with_no_slice_assigned_says_nothing(app, chesapeake):
+    assert _by_code(chesapeake["cycle"])["CHES-JKLM"]["slice_summary"] is None
+
+
+def test_a_folded_slice_is_not_counted_against_the_room(app, chesapeake):
+    """D folds into C and cannot hold an assignment of its own. Counting it
+    would leave any room with a combination at partial forever."""
+    _add_slice(chesapeake, "L")
+    _fold(chesapeake, "L", "K")
+    _assign(chesapeake["slices"]["J"], _department("ARENA"),
+            chesapeake["cycle"])
+    _assign(chesapeake["slices"]["K"], _department("ORCHESTRA"),
+            chesapeake["cycle"])
+
+    room = _by_code(chesapeake["cycle"])["CHES-JKLM"]
+
+    assert room["slice_summary"] == "Fully assigned"
+
+
+def test_a_room_with_no_slices_at_all_says_nothing(app, chesapeake):
+    standalone = Space(venue_id=chesapeake["venue"].id, name="Expo Hall E",
+                       code="EX-E", kind=SPACE_KIND_ROOM)
+    db.session.add(standalone)
+    db.session.commit()
+
+    assert _by_code(chesapeake["cycle"])["EX-E"]["slice_summary"] is None
+
+
+def test_a_room_assigned_outright_still_names_its_departments(
+        client, chesapeake, admin):
+    """The summary replaces "Unassigned", never a real assignment."""
+    _assign(chesapeake["room"], _department("PANELS"), chesapeake["cycle"])
+    _assign(chesapeake["slices"]["J"], _department("ARENA"),
+            chesapeake["cycle"])
+    _login(client, "test:spaceadmin")
+
+    body = client.get("/spaces/?event=SMF2027").get_data(as_text=True)
+
+    assert "Partially assigned" not in body
+    assert "Fully assigned" not in body

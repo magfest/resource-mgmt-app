@@ -185,6 +185,24 @@ def build_space_rows(cycle, include_archived: bool = False) -> list[dict]:
             return bool(assigned.get(override.combined_into_space_id))
         return False
 
+    def slice_summary(space) -> str | None:
+        """How much of a room its own slices account for, or None.
+
+        Counts only slices not folded into another. A folded slice holds no
+        assignment of its own, so counting it would leave any room with a
+        combination reading partial however much is assigned. None means
+        there is nothing to say and the room falls back to "Unassigned".
+        """
+        units = [
+            c for c in children.get(space.id, [])
+            if not (overrides.get(c.id)
+                    and overrides[c.id].combined_into_space_id)
+        ]
+        held = sum(1 for c in units if assigned.get(c.id))
+        if not held:
+            return None
+        return "Fully assigned" if held == len(units) else "Partially assigned"
+
     def to_row(space, depth: int) -> dict:
         override = overrides.get(space.id)
         departments = assigned.get(space.id, [])
@@ -221,6 +239,7 @@ def build_space_rows(cycle, include_archived: bool = False) -> list[dict]:
             "is_accounted_for": is_accounted_for(space),
             # Set below, once the room's own row exists to point at.
             "covered_by": None,
+            "slice_summary": slice_summary(space),
         }
 
     def covering_room(slice_row, room_row):

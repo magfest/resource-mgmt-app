@@ -72,7 +72,10 @@
       {% for d in holder.departments %}
         <span class="pill pill-dept">{{ d.name }}</span>
       {% else %}
-        <span class="muted">Unassigned</span>
+        {# A room holding nothing itself reports its slices instead.
+           "Unassigned" on a room whose slices are spoken for reads as
+           free space; slice_summary is None when it genuinely is. #}
+        <span class="muted">{{ row.slice_summary or 'Unassigned' }}</span>
       {% endfor %}
       {% if row.covered_by %}
         <span class="muted small">via {{ row.covered_by.display_name }}</span>

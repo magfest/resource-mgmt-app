@@ -78,7 +78,14 @@
 
   // ?open= is where a save sends the operator back to. The list runs to
   // 145 rows, so returning to the top costs the scroll every save.
-  var openedRow = expandRoomFor(params.get('open'));
+  var opened = params.get('open');
+  var openedRow = expandRoomFor(opened);
+  // A room arrives here from the combining grid, whose result is on the
+  // slices underneath it. Expanding is what makes that result visible.
+  // ?edit= deliberately does not do this; it targets one row's editor.
+  if (openedRow && !openedRow.dataset.parentId) {
+    collapsedRooms[opened] = false;
+  }
 
   // The combining grid renders inside its room, so that room must be
   // expanded for the grid to read as "inside" it rather than floating
