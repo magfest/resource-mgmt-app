@@ -145,6 +145,27 @@
 </script>
 
 <style>
+  /* Local to this page: the row editor in _row.html. A wrapping
+     <label>Text <input></label> collapses to one line because label is
+     inline and base.html's input[type="text"]/select are width: 100%; this
+     gives every field its own block and a size that fits its content. */
+  .space-edit-form .field-block { margin-bottom: 12px; }
+  .space-edit-form .field-block:last-child { margin-bottom: 0; }
+  .space-edit-form .mb-4 { margin-bottom: 4px; }
+  .space-edit-form .space-field-row {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px;
+  }
+  .space-edit-form .space-field-row > div { margin-bottom: 0; }
+  .space-edit-form .space-field-checkbox {
+    display: flex; align-items: center; gap: 6px; font-weight: 600;
+  }
+  .space-edit-form .space-field-alias input,
+  .space-edit-form .space-field-name input { width: 360px; }
+  .space-edit-form .space-field-code input { width: 160px; }
+  .space-edit-form .space-field-area input { width: 120px; }
+  .space-edit-form .space-field-dimensions input { width: 180px; }
+  .space-edit-form .space-field-reason input { width: 240px; }
+
   /* Local to this page: the chip control _row.html's dept-picker script
      builds. The server-rendered <select multiple> it replaces needs none
      of this, so scripting off never shows an unstyled fallback. */

@@ -259,37 +259,43 @@ def save_space(space_id: int):
     back = url_for("spaces.list_spaces", event=cycle.code)
     actor = h.get_active_user_id()
 
-    # 1. Space core fields.
-    code = (request.form.get("code") or "").strip().upper()
-    if code and code != space.code:
-        if _code_taken(space.venue_id, code, space.event_cycle_id,
-                       exclude_space_id=space.id):
-            flash(f"A space with code '{code}' already exists at this venue",
-                  "error")
+    # 1. Space core fields: name, code, dimensions, area. Read and written
+    # only for a pop-up (event_cycle_id set). A permanent space's catalog
+    # row owns these; the catalog has its own name-uniqueness and bounds
+    # rules that this route does not enforce, so a permanent space ignores
+    # all four here, including on a crafted POST that names them.
+    if space.event_cycle_id is not None:
+        code = (request.form.get("code") or "").strip().upper()
+        if code and code != space.code:
+            if _code_taken(space.venue_id, code, space.event_cycle_id,
+                           exclude_space_id=space.id):
+                flash(f"A space with code '{code}' already exists at this venue",
+                      "error")
+                return redirect(back)
+            space.code = code
+
+        # Entry is 145 rows by hand, so a typo has to be fixable in place.
+        # A blank name would render a row nobody can identify, so it is
+        # refused outright rather than silently kept, which would flash
+        # success over the old name.
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("A space needs a name", "error")
             return redirect(back)
-        space.code = code
+        if flash_if_too_long(name, "name"):
+            return redirect(back)
+        space.name = name
+
+        # Unlike name, dimensions and area clear to None when submitted
+        # blank. That is intentional; only the name cannot go empty.
+        space.dimensions = (request.form.get("dimensions") or "").strip() or None
+        area_sqft, area_ok = parse_optional_int(request.form.get("area_sqft"))
+        if not area_ok:
+            flash("Area (sq ft) must be a whole number", "error")
+            return redirect(back)
+        space.area_sqft = area_sqft
+
     space.updated_by_user_id = actor
-
-    # Entry is 145 rows by hand, so a typo has to be fixable in place.
-    # A blank name would render a row nobody can identify, so it is refused
-    # outright rather than silently kept, which would flash success over
-    # the old name.
-    name = (request.form.get("name") or "").strip()
-    if not name:
-        flash("A space needs a name", "error")
-        return redirect(back)
-    if flash_if_too_long(name, "name"):
-        return redirect(back)
-    space.name = name
-
-    # Unlike name, dimensions and area clear to None when submitted blank.
-    # That is intentional; only the name cannot go empty.
-    space.dimensions = (request.form.get("dimensions") or "").strip() or None
-    area_sqft, area_ok = parse_optional_int(request.form.get("area_sqft"))
-    if not area_ok:
-        flash("Area (sq ft) must be a whole number", "error")
-        return redirect(back)
-    space.area_sqft = area_sqft
 
     # 2. Per-event override, written only when it says something.
     alias = (request.form.get("alias") or "").strip() or None

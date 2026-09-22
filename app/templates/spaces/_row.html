@@ -90,95 +90,115 @@
 {% if edit_id == row.space.id %}
 <tr>
   <td colspan="5" style="background: #f8fafc;">
-    <form method="post"
+    <form method="post" class="space-edit-form"
           action="{{ url_for('spaces.save_space', space_id=row.space.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="event" value="{{ cycle.code }}">
-      <div class="row">
-        <div>
-          <div class="muted small mb-8">
-            Assigned:
-            {% if row.departments %}
-              {{ row.departments|map(attribute='name')|join(', ') }}
-            {% else %}
-              nobody yet
-            {% endif %}
-          </div>
-          <!-- Server-rendered fallback: every department as an option in a
-               plain multi-select, so the page works with scripting off.
-               list.html's dept-picker script upgrades this into a
-               search-as-you-type chip field. The posted field name does
-               not change, so request.form.getlist("department_ids") in
-               save_space reads the same thing either way. See spec 5.3. -->
-          <div class="mb-8" data-dept-picker>
-            <select multiple name="department_ids" size="8"
-                    id="dept-select-{{ row.space.id }}"
-                    aria-label="Departments assigned to {{ row.display_name }}">
-              {% for d in departments %}
-                <option value="{{ d.id }}"{% if d in row.departments %} selected{% endif %}>{{ d.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          {% if row.is_shared %}
-            <div class="callout callout-warning mt-8">
-              Two or more departments hold this space. TechOps confirms
-              anything room-wide with all of them before approving it.
-            </div>
+
+      <!-- 1. Departments: the reason this page exists, so it leads. -->
+      <div class="field-block">
+        <label class="form-label" for="dept-select-{{ row.space.id }}">Departments using this space</label>
+        <div class="muted small mb-4">
+          Assigned:
+          {% if row.departments %}
+            {{ row.departments|map(attribute='name')|join(', ') }}
+          {% else %}
+            nobody yet
           {% endif %}
-          <div class="mt-8">
-            <div class="muted small">Out of service</div>
-            <label class="block">
-              <input type="checkbox" name="is_available" value="1"
-                {% if row.is_available %}checked{% endif %}>
-              Available this event
-            </label>
-            <label>Reason
-              <input type="text" name="unavailable_reason"
-                     value="{{ row.unavailable_reason or '' }}"
-                     placeholder="Out of service">
-            </label>
+        </div>
+        <!-- Server-rendered fallback: every department as an option in a
+             plain multi-select, so the page works with scripting off.
+             list.html's dept-picker script upgrades this into a
+             search-as-you-type chip field. The posted field name does
+             not change, so request.form.getlist("department_ids") in
+             save_space reads the same thing either way. See spec 5.3. -->
+        <div data-dept-picker>
+          <select multiple name="department_ids" size="8"
+                  id="dept-select-{{ row.space.id }}"
+                  aria-label="Departments assigned to {{ row.display_name }}">
+            {% for d in departments %}
+              <option value="{{ d.id }}"{% if d in row.departments %} selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if row.is_shared %}
+          <div class="callout callout-warning mt-4">
+            Two or more departments hold this space. TechOps confirms
+            anything room-wide with all of them before approving it.
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- 2. What this event calls it. -->
+      <div class="field-block space-field-alias">
+        <label class="form-label" for="alias-{{ row.space.id }}">Name at this event</label>
+        <input id="alias-{{ row.space.id }}" type="text" name="alias"
+               value="{{ row.alias or '' }}" maxlength="128" placeholder="e.g. Panels 4">
+        <div class="muted small">Leave blank to use the venue name.</div>
+      </div>
+
+      {% if row.space.event_cycle_id %}
+        <!-- 3 (pop-up variant). A FREEFORM space scoped to this event has
+             no catalog row, so its own name, dimensions, area and code
+             live only here. save_space accepts them only when
+             event_cycle_id is set. -->
+        <div class="field-block space-field-row">
+          <div class="space-field-name">
+            <label class="form-label" for="name-{{ row.space.id }}">Name</label>
+            <input id="name-{{ row.space.id }}" type="text" name="name"
+                   value="{{ row.space.name }}" maxlength="128" required>
+          </div>
+          <div class="space-field-dimensions">
+            <label class="form-label" for="dimensions-{{ row.space.id }}">Dimensions</label>
+            <input id="dimensions-{{ row.space.id }}" type="text" name="dimensions"
+                   value="{{ row.space.dimensions or '' }}" placeholder="99x54x28.5">
+          </div>
+          <div class="space-field-area">
+            <label class="form-label" for="area-{{ row.space.id }}">Area (sq ft)</label>
+            <input id="area-{{ row.space.id }}" type="number" name="area_sqft"
+                   value="{{ row.space.area_sqft or '' }}">
+          </div>
+          <div class="space-field-code">
+            <label class="form-label" for="code-{{ row.space.id }}">Code</label>
+            <input id="code-{{ row.space.id }}" type="text" name="code"
+                   value="{{ row.space.code }}" maxlength="32">
           </div>
         </div>
-        <div>
-          <label>Name
-            <input type="text" name="name" value="{{ row.space.name }}"
-                   maxlength="128" required>
-          </label>
-          <label>Dimensions
-            <input type="text" name="dimensions"
-                   value="{{ row.space.dimensions or '' }}" placeholder="99x54x28.5">
-          </label>
-          <label>Area (sq ft)
-            <input type="number" name="area_sqft"
-                   value="{{ row.space.area_sqft or '' }}">
-          </label>
-
-          <label>What this space is called at this event
-            <input type="text" name="alias" value="{{ row.alias or '' }}"
-                   maxlength="128" placeholder="e.g. Panels 4">
-          </label>
+      {% else %}
+        <!-- 3 (permanent variant). The catalog owns name, dimensions, area
+             and code for a permanent space; save_space ignores all four
+             here, so this is read-only with a link to where they change. -->
+        <div class="field-block">
+          {%- set facts = [row.space.dimensions,
+                            (row.space.area_sqft ~ ' sq ft') if row.space.area_sqft else none,
+                            row.space.code] -%}
+          <div class="muted small">{{ facts|select|join(' · ') }}</div>
           <div class="muted small">
-            The venue name stays on the door. This is what your team calls it.
-            Leave it blank to use the venue name.
+            Changed in the venue catalog, not here.
+            <a href="{{ url_for('spaces.venue_catalog', venue_id=row.space.venue_id, edit=row.space.id) }}">Edit in catalog</a>
           </div>
+        </div>
+      {% endif %}
 
-          <label>
-            {% if row.space.event_cycle_id %}Event code{% else %}Venue code{% endif %}
-            <input type="text" name="code" value="{{ row.space.code }}" maxlength="32">
-          </label>
-          <div class="muted small">
-            {% if row.space.event_cycle_id %}
-              A code this event invents for this space.
-            {% else %}
-              The venue's own code, the one on the door.
-            {% endif %}
-          </div>
+      <!-- 4. Availability: last and small, one line. -->
+      <div class="field-block space-field-row space-availability-row">
+        <label class="space-field-checkbox">
+          <input type="checkbox" name="is_available" value="1"
+            {% if row.is_available %}checked{% endif %}>
+          Available this event
+        </label>
+        <div class="space-field-reason">
+          <label class="form-label" for="reason-{{ row.space.id }}">Reason if not</label>
+          <input id="reason-{{ row.space.id }}" type="text" name="unavailable_reason"
+                 value="{{ row.unavailable_reason or '' }}" placeholder="Out of service">
         </div>
       </div>
+
       <button type="submit" class="btn btn-primary">Save</button>
       <a class="btn" href="{{ url_for('spaces.list_spaces', event=cycle.code) }}">Cancel</a>
     </form>
 
+    <!-- 5. Archive: rarest action, stays at the very bottom. -->
     <div class="mt-16">
       <div class="muted small">
         {% if row.space.is_active %}

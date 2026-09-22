@@ -1000,63 +1000,122 @@ def test_an_orphaned_slice_carries_no_parent_for_collapsing(client, world):
     assert f'data-parent-id="{room.id}"' not in body
 
 
-def test_a_space_name_can_be_corrected(client, world):
-    """Section 8 of the spec asks for 145 rows of hand entry. A typo that
-    can only be fixed by archiving and re-entering is a blocker."""
+def test_a_popup_name_can_be_corrected(client, world):
+    """A pop-up has no catalog row of its own, so this route is the only
+    place its name, dimensions, area and code live. A typo has to be
+    fixable here."""
     _login(client, "test:spaceadmin")
-    space = db.session.query(Space).filter_by(code="MD-A").one()
+    popup = db.session.query(Space).filter_by(code="POP-1").one()
 
-    client.post(f"/spaces/space/{space.id}", data={
+    client.post(f"/spaces/space/{popup.id}", data={
         "event": "SMF2027",
-        "code": "MD-A",
-        "name": "Maryland Ballroom A",
-        "dimensions": "99x54x28.5",
-        "area_sqft": "5427",
+        "code": "POP-1",
+        "name": "Merch Popup Corrected",
+        "dimensions": "10x10x8",
+        "area_sqft": "100",
         "is_available": "1",
     }, follow_redirects=True)
 
-    db.session.refresh(space)
-    assert space.name == "Maryland Ballroom A"
-    assert space.dimensions == "99x54x28.5"
-    assert space.area_sqft == 5427
+    db.session.refresh(popup)
+    assert popup.name == "Merch Popup Corrected"
+    assert popup.dimensions == "10x10x8"
+    assert popup.area_sqft == 100
 
 
-def test_a_blank_name_tells_the_user_it_was_refused(client, world):
+def test_a_popup_blank_name_tells_the_user_it_was_refused(client, world):
     """Silently keeping the old name and flashing success sends someone
     away believing a typo was fixed."""
     _login(client, "test:spaceadmin")
-    space = db.session.query(Space).filter_by(code="MD-A").one()
-    original = space.name
+    popup = db.session.query(Space).filter_by(code="POP-1").one()
+    original = popup.name
 
-    resp = client.post(f"/spaces/space/{space.id}", data={
+    resp = client.post(f"/spaces/space/{popup.id}", data={
         "event": "SMF2027",
-        "code": "MD-A",
+        "code": "POP-1",
         "name": "   ",
         "is_available": "1",
     }, follow_redirects=True)
 
-    db.session.refresh(space)
-    assert space.name == original
+    db.session.refresh(popup)
+    assert popup.name == original
     assert "needs a name" in resp.get_data(as_text=True).lower()
 
 
-def test_an_over_length_name_is_refused(client, world):
+def test_a_popup_over_length_name_is_refused(client, world):
     """Space.name is String(128). SQLite does not enforce that, so
     without this check the failure appears only on Postgres."""
     _login(client, "test:spaceadmin")
-    space = db.session.query(Space).filter_by(code="MD-A").one()
-    original = space.name
+    popup = db.session.query(Space).filter_by(code="POP-1").one()
+    original = popup.name
 
-    resp = client.post(f"/spaces/space/{space.id}", data={
+    resp = client.post(f"/spaces/space/{popup.id}", data={
         "event": "SMF2027",
-        "code": "MD-A",
+        "code": "POP-1",
         "name": "x" * 129,
         "is_available": "1",
     }, follow_redirects=True)
 
-    db.session.refresh(space)
-    assert space.name == original
+    db.session.refresh(popup)
+    assert popup.name == original
     assert "too long" in resp.get_data(as_text=True).lower()
+
+
+def test_a_permanent_spaces_editor_offers_no_name_dimensions_area_or_code_inputs(client, world):
+    """A permanent space's name, dimensions, area and code belong to the
+    venue catalog; this page must not offer them as editable fields."""
+    _login(client, "test:spaceadmin")
+    space = db.session.query(Space).filter_by(code="MD-A").one()
+
+    body = client.get(
+        f"/spaces/?event=SMF2027&edit={space.id}").get_data(as_text=True)
+
+    assert 'name="name"' not in body
+    assert 'name="dimensions"' not in body
+    assert 'name="area_sqft"' not in body
+    assert 'name="code"' not in body
+    assert "Edit in catalog" in body
+
+
+def test_a_popups_editor_offers_name_dimensions_area_and_code_inputs(client, world):
+    """A pop-up has no catalog row, so its own facts must stay editable
+    on this page."""
+    _login(client, "test:spaceadmin")
+    popup = db.session.query(Space).filter_by(code="POP-1").one()
+
+    body = client.get(
+        f"/spaces/?event=SMF2027&edit={popup.id}").get_data(as_text=True)
+
+    assert 'name="name"' in body
+    assert 'name="dimensions"' in body
+    assert 'name="area_sqft"' in body
+    assert 'name="code"' in body
+
+
+def test_a_crafted_name_change_for_a_permanent_space_is_ignored(client, world):
+    """The editor no longer sends these fields for a permanent space, but
+    save_space must refuse them from a crafted POST too; the catalog owns
+    them and enforces its own name-uniqueness and bounds rules."""
+    _login(client, "test:spaceadmin")
+    space = db.session.query(Space).filter_by(code="MD-A").one()
+    original_name = space.name
+    original_dimensions = space.dimensions
+    original_area = space.area_sqft
+    original_code = space.code
+
+    client.post(f"/spaces/space/{space.id}", data={
+        "event": "SMF2027",
+        "code": "MD-A-HACKED",
+        "name": "Hacked Name",
+        "dimensions": "1x1x1",
+        "area_sqft": "1",
+        "is_available": "1",
+    }, follow_redirects=True)
+
+    db.session.refresh(space)
+    assert space.name == original_name
+    assert space.dimensions == original_dimensions
+    assert space.area_sqft == original_area
+    assert space.code == original_code
 
 
 def test_the_alias_label_says_what_the_field_is_for(client, world):
@@ -1066,8 +1125,8 @@ def test_the_alias_label_says_what_the_field_is_for(client, world):
     body = client.get(
         f"/spaces/?event=SMF2027&edit={space.id}").get_data(as_text=True)
 
-    assert "called at this event" in body
-    assert "Name this event" not in body
+    assert "Name at this event" in body
+    assert "What this space is called at this event" not in body
 
 
 def test_the_department_picker_summarises_and_filters(client, world):
