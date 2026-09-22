@@ -108,7 +108,9 @@
       <th style="width: 110px;">Code</th>
       <th style="width: 150px;">Dimensions</th>
       <th style="width: 330px;">Assigned to</th>
-      <th style="width: 80px;"></th>
+      <!-- Wide enough for Combine and Edit side by side. At 80px the pair
+           wrapped, which set every room's row height to two buttons. -->
+      <th style="width: 160px;"></th>
     </tr>
   </thead>
   <tbody>
@@ -122,9 +124,11 @@
   <div class="card">
     <strong>Rooms and slices</strong>
     <p class="muted small">
-      Assigning a room whole does not mark its slices in use, and the app
-      does not check for overlap. Record the tree here and confirm
-      room-wide work with every department holding a slice.
+      Assigning a room gives its slices to the same departments, and those
+      slices cannot be edited on their own; change the room instead. A
+      slice assigned directly keeps what it holds. The app still does not
+      check two departments for overlap, so confirm room-wide work with
+      everyone holding a slice.
     </p>
   </div>
   <div class="card">
