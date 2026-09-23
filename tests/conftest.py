@@ -21,6 +21,8 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.setdefault("APP_ENV", "testing")
 
 import pytest
+from sqlalchemy import event, text
+
 from app import create_app, db
 from app.models import (
     EmailTemplate,
@@ -45,6 +47,29 @@ from app.models import (
     WORK_LINE_STATUS_PENDING,
     REVIEW_STAGE_APPROVAL_GROUP,
 )
+
+
+def _enforce_foreign_keys():
+    """Make SQLite check foreign keys, the way PostgreSQL always does.
+
+    SQLite ships with enforcement off, so without this the 91 foreign keys
+    declared across app/models are checked in production and nowhere in
+    CI. A delete in the wrong order, or a row pointing at nothing, passes
+    every test here and raises IntegrityError on Heroku. One such defect
+    reached review in September 2026: re-saving a TechOps draft deleted a
+    work line while another line still referenced it.
+
+    This does not make SQLite equal to PostgreSQL. Deferred constraints and
+    some ON DELETE semantics still differ, and a foreign key on a code path
+    no test exercises stays unchecked either way.
+    """
+    @event.listens_for(db.engine, "connect")
+    def _set_pragma(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    # The pooled connection for this session already exists by the time the
+    # listener is registered, so set it directly too.
+    db.session.execute(text("PRAGMA foreign_keys=ON"))
 
 
 @pytest.fixture(scope="function")
@@ -75,6 +100,7 @@ def app():
     )
 
     with test_app.app_context():
+        _enforce_foreign_keys()
         db.create_all()
         yield test_app
         db.session.remove()
