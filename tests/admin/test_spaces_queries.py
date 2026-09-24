@@ -11,6 +11,7 @@ from app.models import (
     Department, EventCycle, Space, SpaceAssignment, SpaceEventOverride,
     SPACE_KIND_FREEFORM, SPACE_KIND_ROOM, SPACE_KIND_SLICE, Venue,
 )
+from app.routes.spaces.helpers import build_space_rows
 from app.routes.spaces.queries import spaces_for_department
 
 
@@ -107,6 +108,7 @@ def test_a_plain_slice_covers_nothing(app):
 
     assert len(result) == 1
     assert result[0]["covers"] == []
+    assert result[0]["display_name"] == "Room Three A"
 
 
 def test_an_archived_space_appears_nowhere(app):
@@ -176,6 +178,86 @@ def test_an_unavailable_space_reports_its_reason(app):
 
     assert result[0]["is_available"] is False
     assert result[0]["unavailable_reason"] == "Flooded"
+
+
+def test_a_folded_primarys_name_composes_from_its_members(app):
+    venue, cycle = _venue_and_cycle()
+    dept = _department()
+
+    room = Space(venue_id=venue.id, name="Chesapeake", code="CHES",
+                kind=SPACE_KIND_ROOM)
+    db.session.add(room)
+    db.session.flush()
+    primary = Space(venue_id=venue.id, name="Chesapeake 4", code="CHES-4",
+                    kind=SPACE_KIND_SLICE, parent_id=room.id)
+    member = Space(venue_id=venue.id, name="Chesapeake 5", code="CHES-5",
+                   kind=SPACE_KIND_SLICE, parent_id=room.id)
+    db.session.add_all([primary, member])
+    db.session.flush()
+    _assign(primary, dept, cycle)
+    db.session.add(SpaceEventOverride(
+        space_id=member.id, event_cycle_id=cycle.id,
+        combined_into_space_id=primary.id))
+    db.session.commit()
+
+    result = spaces_for_department(dept.id, cycle.id)
+
+    assert result[0]["display_name"] == "Chesapeake 4/5"
+
+
+def test_an_alias_on_a_folded_primary_wins_over_composition(app):
+    venue, cycle = _venue_and_cycle()
+    dept = _department()
+
+    room = Space(venue_id=venue.id, name="Chesapeake", code="CHES2",
+                kind=SPACE_KIND_ROOM)
+    db.session.add(room)
+    db.session.flush()
+    primary = Space(venue_id=venue.id, name="Chesapeake 4", code="CHES2-4",
+                    kind=SPACE_KIND_SLICE, parent_id=room.id)
+    member = Space(venue_id=venue.id, name="Chesapeake 5", code="CHES2-5",
+                   kind=SPACE_KIND_SLICE, parent_id=room.id)
+    db.session.add_all([primary, member])
+    db.session.flush()
+    _assign(primary, dept, cycle)
+    db.session.add(SpaceEventOverride(
+        space_id=member.id, event_cycle_id=cycle.id,
+        combined_into_space_id=primary.id))
+    db.session.add(SpaceEventOverride(
+        space_id=primary.id, event_cycle_id=cycle.id, alias="Main Stage"))
+    db.session.commit()
+
+    result = spaces_for_department(dept.id, cycle.id)
+
+    assert result[0]["display_name"] == "Main Stage"
+
+
+def test_the_department_page_and_the_spaces_admin_page_agree_on_a_combined_name(app):
+    venue, cycle = _venue_and_cycle()
+    dept = _department()
+
+    room = Space(venue_id=venue.id, name="Chesapeake", code="CHES3",
+                kind=SPACE_KIND_ROOM)
+    db.session.add(room)
+    db.session.flush()
+    primary = Space(venue_id=venue.id, name="Chesapeake 4", code="CHES3-4",
+                    kind=SPACE_KIND_SLICE, parent_id=room.id)
+    member = Space(venue_id=venue.id, name="Chesapeake 5", code="CHES3-5",
+                   kind=SPACE_KIND_SLICE, parent_id=room.id)
+    db.session.add_all([primary, member])
+    db.session.flush()
+    _assign(primary, dept, cycle)
+    db.session.add(SpaceEventOverride(
+        space_id=member.id, event_cycle_id=cycle.id,
+        combined_into_space_id=primary.id))
+    db.session.commit()
+
+    department_page_name = spaces_for_department(dept.id, cycle.id)[0]["display_name"]
+    admin_row = next(r for r in build_space_rows(cycle)
+                     if r["space"].id == primary.id)
+
+    assert department_page_name == "Chesapeake 4/5"
+    assert admin_row["display_name"] == department_page_name
 
 
 def test_a_department_with_nothing_gets_an_empty_list(app):

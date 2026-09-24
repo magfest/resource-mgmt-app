@@ -14,6 +14,7 @@
      reviewer's mental model carries over. #}
 {% extends "layout/base.html" %}
 {% from "macros/status_pill.html" import render_status_pill %}
+{% from "macros/techops_line_facts.html" import render_line_space, render_phone_ring %}
 
 {% block title %}Quick Review - {{ work_item.public_id }}{% endblock %}
 
@@ -97,6 +98,7 @@
         <tr>
           <th style="width: 50px;">#</th>
           <th style="width: 180px;">Service</th>
+          <th style="width: 150px;">Space</th>
           <th>Details</th>
           <th style="width: 100px;">Status</th>
           <th style="width: 380px;">Actions</th>
@@ -125,16 +127,34 @@
                 <span class="muted">-</span>
               {% endif %}
             </td>
+            <td style="font-size: 13px;">
+              {{ render_line_space(detail, space_facts) }}
+            </td>
             <td>
               {% if detail %}
-                {% if st and st.instance_noun %}
-                  {% if st.code == "RADIO_CHANNEL" %}
-                    <div style="font-size: 13px;"><strong>Channel:</strong> {{ detail.location or '-' }}</div>
-                    <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
-                  {% else %}
-                    <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
-                    <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
-                  {% endif %}
+                {% if st and st.code == "RADIO_CHANNEL" %}
+                  <div style="font-size: 13px;"><strong>Channel:</strong> {{ detail.location or '-' }}</div>
+                  <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
+                {% elif st and st.code == "PHONE_NUMBER" %}
+                  <div style="font-size: 13px;">
+                    <strong>
+                      {% if detail.purpose == "VOICE" %}Voice
+                      {% elif detail.purpose == "TEXT" %}Text
+                      {% elif detail.purpose == "BOTH" %}Voice &amp; text
+                      {% else %}Purpose not chosen
+                      {% endif %}
+                    </strong>
+                    {% if detail.internal_only %}(internal only){% endif %}
+                  </div>
+                  <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
+                {% elif st and st.code == "DESK_PHONE" %}
+                  <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
+                  <div class="muted small">{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
+                {% elif st and st.code == "NO_SERVICES" %}
+                  <div style="font-size: 13px; max-width: 360px;"><strong>Reason:</strong> {{ (detail.description or 'No reason given.')[:120] }}{% if detail.description and detail.description|length > 120 %}...{% endif %}</div>
+                {% elif st and st.instance_noun %}
+                  <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
+                  <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
                 {% elif detail.description %}
                   <div style="font-size: 13px; max-width: 360px;">{{ detail.description[:120] }}{% if detail.description|length > 120 %}...{% endif %}</div>
                 {% else %}

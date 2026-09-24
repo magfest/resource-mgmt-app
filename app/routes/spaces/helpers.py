@@ -9,7 +9,7 @@ from sqlalchemy import or_
 from app import db
 from app.models import (
     Department, EventCycle, ROLE_SPACE_ADMIN, Space,
-    SpaceAssignment, SpaceEventOverride,
+    SpaceAssignment, SpaceEventOverride, compose_combined_name,
 )
 from app.routes import get_user_ctx
 
@@ -215,16 +215,32 @@ def build_space_rows(cycle, include_archived: bool = False) -> list[dict]:
         areas = [space.area_sqft] + [m.area_sqft for m in group]
         combined_area_sqft = (sum(areas)
                               if all(a is not None for a in areas) else None)
+        alias = override.alias if override else None
+        if group:
+            # A primary combined with other slices needs one name covering
+            # all of them, not just its own; spaces_for_department()
+            # computes the same thing for the TechOps card, via the same
+            # function, so the two pages never disagree about what a
+            # combined room is called. The alias still wins here too: it
+            # is what an admin typed for this event.
+            display_name = alias or compose_combined_name(
+                [space.name] + [member.name for member in group])
+            # Already folded into display_name; a separate pill next to
+            # itself would repeat it.
+            alias_pill = None
+        else:
+            # Not a combine: unchanged from before this feature. The venue
+            # name is the stable heading and the alias renders as its own
+            # pill, so an admin sees both the catalog name and the override.
+            display_name = space.name
+            alias_pill = alias
         return {
             "space": space,
             "depth": depth,
             "parent_id": space.parent_id,
             "has_children": bool(children.get(space.id)),
-            # The base venue name is the stable heading; the alias pill
-            # carries the override instead of replacing it. The admin table
-            # is where Event Ops manages overrides, so both stay visible.
-            "display_name": space.name,
-            "alias": override.alias if override else None,
+            "display_name": display_name,
+            "alias": alias_pill,
             "departments": departments,
             "is_shared": len(departments) >= 2,
             "is_available": override.is_available if override else True,

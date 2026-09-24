@@ -332,6 +332,17 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
     # Pick the per-worktype template (same pattern as line_review).
     template_name = f"{work_type_slug}/quick_review.html"
 
+    # TechOps-only: the line's space, matching what the requester saw, and
+    # whether the item's own department still holds it. Local import for
+    # the same circular-import reason as approvals/reviews.py.
+    space_facts = {}
+    phone_line_not_chosen = None
+    if work_type_slug == "techops":
+        from app.routes.work.techops.preview import PHONE_LINE_NOT_CHOSEN
+        from app.routes.work.techops.spaces import review_space_facts
+        space_facts = review_space_facts(work_item, ctx.department.id, ctx.event_cycle)
+        phone_line_not_chosen = PHONE_LINE_NOT_CHOSEN
+
     return render_template(
         template_name,
         ctx=ctx,
@@ -347,4 +358,6 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
         can_checkout=can_checkout,
         format_currency=format_currency,
         friendly_status=friendly_status,
+        space_facts=space_facts,
+        phone_line_not_chosen=phone_line_not_chosen,
     )

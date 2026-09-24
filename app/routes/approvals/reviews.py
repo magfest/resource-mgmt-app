@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app import db
 from app.models import (
+    TechOpsLineDetail,
     WorkItem,
     WorkLine,
     WorkLineComment,
@@ -92,7 +93,8 @@ def get_work_item_and_line(event: str, dept: str, public_id: str, line_num: int,
         joinedload(WorkLine.budget_detail),
         joinedload(WorkLine.contract_detail),
         joinedload(WorkLine.supply_detail),
-        joinedload(WorkLine.techops_detail),
+        joinedload(WorkLine.techops_detail).joinedload(TechOpsLineDetail.space),
+        joinedload(WorkLine.techops_detail).joinedload(TechOpsLineDetail.parent_line),
         selectinload(WorkLine.comments),
         selectinload(WorkLine.audit_events),
     ).first()
@@ -196,6 +198,19 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     detail = get_line_detail(line)
     line_total = get_line_amount_cents(line)
 
+    # TechOps-only: the line's space, matching what the requester saw, and
+    # whether the item's own department still holds it. Local import: a
+    # module-level import of app.routes.work.techops from this module
+    # risks a circular chain through work.techops.admin's own import of
+    # app.routes.approvals.helpers.
+    space_facts = {}
+    phone_line_not_chosen = None
+    if work_type_slug == "techops":
+        from app.routes.work.techops.preview import PHONE_LINE_NOT_CHOSEN
+        from app.routes.work.techops.spaces import review_space_facts
+        space_facts = review_space_facts(work_item, ctx.department.id, ctx.event_cycle)
+        phone_line_not_chosen = PHONE_LINE_NOT_CHOSEN
+
     # Get comments for this line (filter admin-only for non-admins)
     comments = line.comments
     # Reviewers of this line are a trusted group and may see ADMIN notes.
@@ -237,6 +252,8 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         # Admin extras (None for non-BUDGET worktypes)
         admin_review=admin_review,
         ag_review=ag_review,
+        space_facts=space_facts,
+        phone_line_not_chosen=phone_line_not_chosen,
     )
 
 

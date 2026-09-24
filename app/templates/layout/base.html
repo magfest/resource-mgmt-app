@@ -215,6 +215,308 @@
             border-left: 4px solid #3b82f6;
         }
 
+        /* Submit-refusal panel (techops/_submit_error_panel.html). Renders
+           only when a SUBMIT is refused, never for a draft save, so the
+           two outcomes cannot be mistaken for each other at a glance. */
+        .submit-error-panel {
+            margin-bottom: 16px;
+        }
+
+        .submit-error-list {
+            margin: 4px 0 0;
+            padding-left: 20px;
+        }
+
+        .submit-error-list li {
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+
+        .submit-error-list a {
+            color: #b91c1c;
+            text-decoration: underline;
+        }
+
+        /* -------- Room-first TechOps request form -------- */
+        /* One card per space; the card is the unit a requester answers, so
+           it carries its own border and header. */
+        .space-card {
+            border: 1px solid #e5e5e5;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            background: #fff;
+        }
+
+        .space-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .space-card-header .space-card-title {
+            flex: 1;
+        }
+
+        .space-card-answered {
+            border-color: #93c5fd;
+        }
+
+        .space-card-answered > .space-card-header {
+            background: #f7fbff;
+        }
+
+        /* A card the submit-refusal panel names (_space_card.html's
+           is_blocked, from validate()'s ValidationError.space_id). Wins
+           over .space-card-answered's blue border; an answered card can
+           still be the one blocking submit. */
+        .space-card-blocked {
+            border-color: #f0b4b4;
+        }
+
+        .space-card-blocked > .space-card-header {
+            background: #fff5f5;
+        }
+
+        .badge-blocked {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #fee2e2;
+            color: #b91c1c;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .space-card-body {
+            padding: 14px;
+        }
+
+        .space-subsection {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        /* WiFi is the lead answer on a space card, not one of three equal
+           boxes: most rooms need only this, so it is un-boxed and reads
+           first, ahead of the collapsed ethernet/phone affordances. */
+        .space-wifi-row {
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        /* Ethernet, phone, and the section-3 per-service blocks: plain
+           <details>/<summary>, so collapse works with no script. The
+           badge in the summary is what keeps a collapsed section from
+           reading as empty when it still holds a drop, a line, or a
+           channel; see work_item_form.html's badge-update functions. */
+        .space-collapsible {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+        }
+
+        .space-collapsible-summary {
+            cursor: pointer;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        /* A <summary> loses its native disclosure triangle in every
+           browser once `display` is set to anything but `list-item`,
+           which flex requires here for the badge to sit on its own line.
+           This glyph replaces it; open/closed match the spaces list's own
+           expand/collapse convention (spaces/_table_script.html). */
+        .space-collapsible-summary::before {
+            content: '\25B8';
+            flex: 0 0 auto;
+            color: #888;
+            font-size: 11px;
+            line-height: 1.8;
+        }
+
+        .space-collapsible[open] > .space-collapsible-summary::before {
+            content: '\25BE';
+        }
+
+        .space-collapsible-summary .space-card-row-header {
+            margin-bottom: 0;
+        }
+
+        /* Title + one-line description, stacked, so a collapsed section
+           explains itself without needing to be opened. */
+        .space-collapsible-heading {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .space-collapsible[open] > .space-collapsible-summary {
+            margin-bottom: 8px;
+        }
+
+        .space-collapsible-body {
+            margin-top: 4px;
+        }
+
+        /* The "Needs services" / "Nothing needed" radio pair, restyled by
+           script to read as a button pair. The bare radio + label is the
+           no-script fallback. */
+        .space-answer {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 999px;
+            font-size: 13px;
+            cursor: pointer;
+            background: #fff;
+        }
+
+        .space-answer input {
+            margin: 0;
+        }
+
+        .space-answer-selected {
+            border-color: #0a66c2;
+            background: #eaf2fc;
+            font-weight: 600;
+        }
+
+        .space-card-summary {
+            color: #666;
+            font-size: 13px;
+        }
+
+        /* One drop, phone line, or handset row within a subsection. */
+        .space-card-row {
+            padding: 10px;
+            margin-bottom: 8px;
+            border-left: 3px solid #d1d5db;
+            background: #fafafa;
+            border-radius: 4px;
+        }
+
+        .space-card-row-header {
+            font-weight: 600;
+            font-size: 12px;
+            color: #374151;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 6px;
+        }
+
+        .space-card-field {
+            margin-bottom: 8px;
+        }
+
+        .space-card-field label {
+            display: block;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+
+        /* Task 10's space picker: a plain <select> the script upgrades
+           into search-as-you-type, mirroring the spaces admin department
+           picker (spaces/list.html), whose .dept-chip-row/.dept-results
+           rules are local to that page and not available here. */
+        .space-picker {
+            border: 1px solid #e5e5e5;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-top: 10px;
+            background: #fafafa;
+        }
+
+        .space-picker-chosen {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .space-picker-chosen .pill button {
+            border: none;
+            background: transparent;
+            padding: 0 2px;
+            line-height: 1;
+            cursor: pointer;
+            color: inherit;
+        }
+
+        .space-picker-results {
+            list-style: none;
+            margin: 4px 0 0;
+            padding: 0;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            max-height: 220px;
+            overflow-y: auto;
+            background: #fff;
+        }
+
+        .space-picker-results button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            border: none;
+            border-radius: 0;
+            background: #fff;
+            padding: 6px 8px;
+        }
+
+        .space-picker-results button:hover {
+            background: #eee;
+        }
+
+        /* Task 11's order preview (section 5). The counter and empty
+           state mirror the space counter's plain, low-emphasis styling;
+           the table alternates row shading per the approved copy. */
+        .order-preview-counter {
+            margin-bottom: 8px;
+        }
+
+        .order-preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .order-preview-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #eee;
+            vertical-align: top;
+        }
+
+        .order-preview-row-alt {
+            background: #fafafa;
+        }
+
+        .order-preview-number {
+            width: 28px;
+            color: #888;
+        }
+
+        .order-preview-empty {
+            border: 1px dashed #ccc;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            color: #888;
+            font-size: 13px;
+        }
 
         /* -------- Pills -------- */
         .pill {
@@ -883,11 +1185,20 @@
       return;
     }
     form.dataset.submitted = 'true';
-    // Disable all submit buttons in the form
-    form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function(btn) {
-      btn.disabled = true;
-      btn.style.opacity = '0.6';
-    });
+    // Deferred by one task on purpose. A disabled control is not submitted,
+    // and this handler runs before the browser builds the form data, so
+    // disabling the clicked button here drops its name and value from the
+    // payload. A form whose buttons carry meaning, such as the TechOps
+    // request form's save_draft and submit, then reaches the server with no
+    // action at all and takes the wrong branch silently. The dataset flag
+    // above is what actually prevents a double submit; this is only the
+    // visual half, so it can wait until the request is already underway.
+    setTimeout(function() {
+      form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function(btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+      });
+    }, 0);
     // Re-enable after 5 seconds in case of network error / validation failure
     setTimeout(function() {
       delete form.dataset.submitted;

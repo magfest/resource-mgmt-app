@@ -1,0 +1,31 @@
+{# templates/techops/_submit_error_panel.html
+   Renders only when the posting route set show_error_panel, which is
+   only true for a refused SUBMIT (edit.py/create.py). A refused draft
+   save flashes the same errors but never sets it, so a save can never
+   render this panel and look like a refused submit, or vice versa.
+   blocking_errors is form_utils.panel_entries(errors): each entry's
+   message is exactly what validate()/parse_form produced, with
+   space_id carried alongside for the link and the card marker in
+   _space_card.html. #}
+{% if show_error_panel and blocking_errors %}
+<div class="callout callout-danger submit-error-panel" data-submit-error-panel tabindex="-1">
+  <strong>
+    {{ blocking_errors|length }} problem{{ 's' if blocking_errors|length != 1 else '' }}
+    kept this from submitting.
+  </strong>
+  <div class="muted small" style="margin: 2px 0 8px;">
+    Nothing you typed was lost. Fix each item below, then submit again.
+  </div>
+  <ul class="submit-error-list">
+    {% for entry in blocking_errors %}
+      <li>
+        {% if entry.space_id %}
+          <a href="#space-card-{{ entry.space_id }}">{{ entry.message }}</a>
+        {% else %}
+          {{ entry.message }}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

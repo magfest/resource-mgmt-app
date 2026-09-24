@@ -191,11 +191,12 @@ from .techops import (
     TechOpsServiceType,
     TechOpsLineDetail,
     TechOpsRequestDetail,
+    TechOpsRequestSpace,
 )
 
 # Re-export space models
 from .spaces import (
-    Venue, Space, SpaceEventOverride, SpaceAssignment,
+    Venue, Space, SpaceEventOverride, SpaceAssignment, compose_combined_name,
 )
 from .constants import (
     SPACE_KIND_ROOM,
@@ -379,11 +380,13 @@ __all__ = [
     "TechOpsServiceType",
     "TechOpsLineDetail",
     "TechOpsRequestDetail",
+    "TechOpsRequestSpace",
     # Space models
     "Venue",
     "Space",
     "SpaceEventOverride",
     "SpaceAssignment",
+    "compose_combined_name",
     "SPACE_KIND_ROOM",
     "SPACE_KIND_SLICE",
     "SPACE_KIND_FREEFORM",
