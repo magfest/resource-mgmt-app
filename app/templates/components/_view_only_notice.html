@@ -1,0 +1,14 @@
+{# templates/components/_view_only_notice.html
+
+   Shown on the line review page to a department member holding can_view
+   without can_edit. Without it the page renders with no action controls and
+   no reason given, which reads as a broken page rather than a permission
+   level. The route sets is_view_only_member off the grant, not off whether
+   any button happens to be showing. #}
+{% if is_view_only_member %}
+  <div class="callout muted small" style="margin: 12px 0; padding: 10px 12px; border-left: 3px solid #94a3b8;">
+    <strong>View-only access.</strong>
+    You can read {{ ctx.department.name }}'s requests but cannot review lines
+    or respond to them. A department head or an admin can grant edit access.
+  </div>
+{% endif %}

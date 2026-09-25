@@ -145,6 +145,45 @@ def is_reviewer_for_line(line: WorkLine, user_ctx: UserContext) -> bool:
     return routed_group.id in user_ctx.approval_group_ids
 
 
+def can_view_work_item_lines(work_item: WorkItem, ctx, user_ctx: UserContext) -> bool:
+    """Check if user may READ the lines of a work item they requested.
+
+    The read counterpart of can_respond_to_work_item, which requires edit.
+    `DepartmentMembershipWorkTypeAccess.can_edit` defaults to False
+    (app/models/org.py:329), so view-only is the default shape of a grant and
+    a read must not go through the edit predicate.
+
+    This grants access on membership in the REQUESTING department only. Do not
+    replace it with the WorkItemPerms.can_view that require_work_item_view
+    returns: that flag is also True for an approver on any line of the item,
+    so reusing it would let an approver read lines routed to another group.
+
+    Args:
+        work_item: The work item whose lines are being read.
+        ctx: PortfolioContext carrying the viewer's memberships.
+
+    Returns:
+        True if the user may read this work item's lines.
+    """
+    if user_ctx.is_super_admin:
+        return True
+
+    if work_item.created_by_user_id == user_ctx.user_id:
+        return True
+
+    work_type_id = ctx.work_type.id if ctx.work_type else None
+    if not work_type_id:
+        return False
+
+    if ctx.membership and ctx.membership.can_view_work_type(work_type_id):
+        return True
+
+    if ctx.division_membership and ctx.division_membership.can_view_work_type(work_type_id):
+        return True
+
+    return False
+
+
 def can_respond_to_work_item(work_item: WorkItem, ctx, user_ctx: UserContext) -> bool:
     """
     Check if user can respond to kicked-back lines on a work item.
