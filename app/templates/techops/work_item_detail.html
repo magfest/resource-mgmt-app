@@ -173,7 +173,14 @@
          state. The line_review handler does its own permission check, so
          the button is visible to anyone viewing the page; it's a no-op
          for users who can't actually decide. #}
-      {% set show_line_actions = status in ("SUBMITTED", "NEEDS_INFO") %}
+      {# FINALIZED is included because a finished request is what a department
+         goes back to read; the link becomes "View" there, since the line page
+         offers no actions without checkout and a FINALIZED item cannot be
+         checked out. UNDER_REVIEW never reaches `status`, which is the raw
+         column, but it is listed to match budget/_work_item_lines_table.html
+         so the two do not look like they disagree. #}
+      {% set show_line_actions = status in ("SUBMITTED", "UNDER_REVIEW", "NEEDS_INFO", "FINALIZED") %}
+      {% set line_action_label = "View" if status == "FINALIZED" else "Review" %}
       {% if lines %}
         <table>
           <thead>
@@ -255,7 +262,7 @@
                 {% if show_line_actions %}
                   <td>
                     <a class="btn btn-muted" href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='techops') }}" style="padding: 4px 8px; font-size: 12px;">
-                      Review
+                      {{ line_action_label }}
                     </a>
                   </td>
                 {% endif %}

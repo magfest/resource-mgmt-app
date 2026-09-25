@@ -14,6 +14,8 @@ when config.has_admin_final is True). Task 11's tests pinned the same flag
 combo at submit time; this pins it at the "last line decided" trigger point
 inside apply_review_decision.
 """
+from datetime import datetime, timedelta
+
 from app import db
 from app.models import (
     ApprovalGroup,
@@ -342,3 +344,57 @@ class TestSupplyQueueTableRendersItemAndQty:
         assert item.item_name in body
         assert "&times;3" in body
         assert "need for tech booth" in body
+
+
+class TestSupplyCheckoutButton:
+    """The "Start Reviewing" button must match what the checkout route accepts.
+
+    The old gate keyed off "do I hold the lock", which is false both when the
+    item is free and when another reviewer holds it, so the button rendered in
+    both cases and the POST refused in one of them.
+    """
+
+    def test_no_checkout_button_while_another_reviewer_holds_the_lock(
+        self, app, client, seed_workflow_data
+    ):
+        wt, cycle, dept, group, item, work_item, line = _setup_submitted_order(
+            app, client, seed_workflow_data,
+        )
+        work_item.checked_out_by_user_id = "test:admin"
+        work_item.checked_out_at = datetime.utcnow()
+        work_item.checked_out_expires_at = datetime.utcnow() + timedelta(minutes=30)
+        db.session.commit()
+
+        _login(client, "test:reviewer")
+        url = (f"/{cycle.code}/{dept.code}/supply/item/{work_item.public_id}"
+               f"/line/{line.line_number}/review")
+        response = client.get(url)
+
+        assert response.status_code == 200
+        body = response.data.decode()
+        checkout_url = (f"/{cycle.code}/{dept.code}/supply/item/"
+                        f"{work_item.public_id}/checkout")
+        assert checkout_url not in body
+        # The "Under Active Review" banner above already states this; the
+        # checkout callout stays hidden rather than repeating it.
+        assert "This item is checked out by another reviewer." in body
+        assert "Checkout Required" not in body
+
+    def test_the_checkout_form_targets_the_supply_route(
+        self, app, client, seed_workflow_data
+    ):
+        """Guards the slug. The shared macro defaults to budget, so omitting it
+        would post a supply order to /budget/."""
+        wt, cycle, dept, group, item, work_item, line = _setup_submitted_order(
+            app, client, seed_workflow_data,
+        )
+
+        _login(client, "test:reviewer")
+        url = (f"/{cycle.code}/{dept.code}/supply/item/{work_item.public_id}"
+               f"/line/{line.line_number}/review")
+        body = client.get(url).data.decode()
+
+        assert (f"/{cycle.code}/{dept.code}/supply/item/"
+                f"{work_item.public_id}/checkout") in body
+        assert (f"/{cycle.code}/{dept.code}/budget/item/"
+                f"{work_item.public_id}/checkout") not in body

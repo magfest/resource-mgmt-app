@@ -57,12 +57,20 @@
      {{ render_checkout_action(work_item, perms, ctx) }}
 #}
 
-{% macro render_checkout_action(work_item, perms, ctx) -%}
+{# work_type_slug defaults to budget so the three BUDGET call sites keep working
+   unchanged. Non-budget templates must pass their own slug: the checkout route
+   takes one (work_items/actions.py), and omitting it posts a TechOps or Supply
+   item to /budget/. #}
+{% macro render_checkout_action(work_item, perms, ctx, work_type_slug="budget") -%}
 <div style="margin-top: 12px;">
   {%- if perms.can_checkout %}
-    <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+    <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug=work_type_slug) }}" style="display: inline;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="return_to" value="{{ request.url }}">
+      {# full_path, not url: safe_redirect_url (admin/helpers.py:218) accepts
+         relative paths only, so an absolute return_to is dropped and checkout
+         falls back to the item detail page. A reviewer part-way down a long
+         request lands back at the top. #}
+      <input type="hidden" name="return_to" value="{{ request.full_path }}">
       <button type="submit" class="btn btn-primary">Start Reviewing</button>
     </form>
   {%- elif perms.is_checked_out %}
