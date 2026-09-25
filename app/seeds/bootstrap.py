@@ -442,10 +442,26 @@ def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dic
             "TECHOPS_NET", 30, None, False,
         ),
         (
+            # Deactivated: room-first splits this into PHONE_NUMBER and
+            # DESK_PHONE below. Row kept for rollback / historical lines.
             "PHONE",
             "Hardwired phone line",
             "Dedicated phone line at a location, internal-only or external-callable",
-            "TECHOPS_NET", 40, "phone line", True,
+            "TECHOPS_NET", 40, "phone line", False,
+        ),
+        (
+            "PHONE_NUMBER",
+            "Phone number",
+            "One number to configure. Purpose, caller ID, and how calls are "
+            "delivered. Handsets are requested separately.",
+            "TECHOPS_NET", 41, "phone line", True,
+        ),
+        (
+            "DESK_PHONE",
+            "Desk phone",
+            "One handset to provision and physically place. Rings the number "
+            "on its parent line.",
+            "TECHOPS_NET", 42, "desk phone", True,
         ),
         (
             "RADIO_CHANNEL",
@@ -458,6 +474,13 @@ def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dic
             "Other / consultation",
             "Anything not covered above, including general consultation requests",
             "TECHOPS_GEN", 60, None, True,
+        ),
+        (
+            "NO_SERVICES",
+            "No services needed",
+            "A space the department confirmed needs nothing. Reviewed so an "
+            "empty room does not go unanswered.",
+            "TECHOPS_GEN", 70, None, True,
         ),
     ]
 

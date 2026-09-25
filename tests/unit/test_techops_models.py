@@ -17,6 +17,7 @@ from app.models import (
     EventCycle,
     TechOpsLineDetail,
     TechOpsRequestDetail,
+    TechOpsRequestSpace,
     TechOpsServiceType,
     User,
     WorkItem,
@@ -115,6 +116,34 @@ def techops_seed(app):
         "work_item": work_item,
         "line": line,
     }
+
+
+@pytest.fixture(scope="function")
+def techops_draft(techops_seed):
+    """Alias onto techops_seed's DRAFT work item, for the room-first tests.
+
+    Reuses the org setup above rather than the BUDGET-shaped
+    seed_workflow_data fixture, per this module's own local-setup policy.
+    """
+    return techops_seed
+
+
+def _add_techops_line(techops_draft, line_number=2):
+    """Attach a WorkLine + TechOpsLineDetail to the draft's work item."""
+    line = WorkLine(
+        work_item_id=techops_draft["work_item"].id, line_number=line_number,
+        status=WORK_LINE_STATUS_PENDING,
+    )
+    db.session.add(line)
+    db.session.flush()
+
+    detail = TechOpsLineDetail(
+        work_line_id=line.id,
+        service_type_id=techops_draft["wifi_service"].id,
+    )
+    db.session.add(detail)
+    db.session.flush()
+    return line
 
 
 def test_service_type_persists_with_default_group(techops_seed):
@@ -220,3 +249,43 @@ def test_request_detail_cascade_on_work_item_delete(techops_seed):
     db.session.commit()
 
     assert db.session.query(TechOpsRequestDetail).count() == 0
+
+
+def test_line_detail_carries_the_room_first_columns():
+    """hasattr on a declared Column passes whatever the column's type or
+    nullability is, so assert against the table instead."""
+    cols = TechOpsLineDetail.__table__.columns
+    assert {"space_id", "parent_line_id", "purpose",
+            "internal_only"} <= set(cols.keys())
+    assert cols["internal_only"].nullable is False
+    assert cols["purpose"].nullable is True
+    assert cols["purpose"].type.length == 8
+    # storage_only was removed (owner feedback round 2, item 3): redundant
+    # with the free-text no-services reason. auto_added was removed once
+    # WiFi required an explicit answer (round-3 fix item 3): no line is
+    # ever created without one, so the flag protected against nothing.
+    # Locks down that a reader who re-adds either for "consistency" is
+    # reintroducing dropped scope.
+    assert "storage_only" not in cols.keys()
+    assert "auto_added" not in cols.keys()
+
+
+def test_a_written_line_defaults_internal_only_to_false(app, techops_draft):
+    """SQLite does not apply a Python-side default on a raw INSERT, so
+    prove the default through the ORM path the app actually uses."""
+    line = _add_techops_line(techops_draft)
+    db.session.flush()
+    assert line.techops_detail.internal_only is False
+
+
+def test_request_space_declares_a_unique_constraint_on_item_and_space():
+    cols = {c.name for c in TechOpsRequestSpace.__table__.columns}
+    assert cols == {
+        "id", "work_item_id", "space_id", "answer",
+        "no_services_reason", "wifi_requested", "wifi_declined_reason",
+        "notes",
+    }
+    uniques = [c for c in TechOpsRequestSpace.__table__.constraints
+               if c.__class__.__name__ == "UniqueConstraint"]
+    assert any({col.name for col in u.columns} == {"work_item_id", "space_id"}
+               for u in uniques)

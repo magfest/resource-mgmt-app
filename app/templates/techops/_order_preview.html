@@ -1,0 +1,32 @@
+{# templates/techops/_order_preview.html
+   Section 5's content, rendered both inline (work_item_form.html, on
+   GET or a redisplay after POST) and as the AJAX fragment
+   preview.techops_preview_lines returns. `rows` is
+   preview.build_preview_rows()'s or preview.rows_from_saved_lines()'s
+   output, never recomputed here. Callers still pass `saved`; this
+   template no longer reads it; the fallback it used to gate (a "last
+   save" label and its own Save Draft button, for a no-script browser)
+   was dropped along with the rest of the scripting-off design. #}
+<div class="order-preview-counter muted small" data-preview-counter>
+  {{ rows|length }} order lines
+</div>
+
+{% if rows %}
+  <table class="order-preview-table">
+    <tbody>
+      {% for row in rows %}
+        <tr data-preview-line class="{{ 'order-preview-row-alt' if loop.index0 is odd }}">
+          <td class="order-preview-number">{{ row.number }}</td>
+          <td>{{ row.service_label }}</td>
+          <td>{{ row.space_name }}</td>
+          <td>{{ row.spec }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="order-preview-empty">
+    No lines yet. Answer a space, or add a department-wide service, to see
+    what TechOps will receive.
+  </div>
+{% endif %}

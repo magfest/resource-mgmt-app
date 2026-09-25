@@ -94,6 +94,32 @@ class TechOpsLineDetail(db.Model):
     # Service-specific extras (e.g. {"external_callable": true} for PHONE)
     config = db.Column(db.JSON, nullable=True)
 
+    # The room this line is installed in. NULL for department-wide lines
+    # (radio, consultation) and for rows that predate the room-first form.
+    space_id = db.Column(
+        db.Integer,
+        db.ForeignKey("spaces.id", name="fk_techops_line_details_space_id"),
+        nullable=True,
+        index=True,
+    )
+
+    # A DESK_PHONE points at the PHONE_NUMBER it rings. Through work_lines,
+    # not through this table, because the reviewer resolves it to a line
+    # number.
+    parent_line_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_lines.id", name="fk_techops_line_details_parent_line_id"),
+        nullable=True,
+        index=True,
+    )
+
+    # VOICE, TEXT, or BOTH. A column rather than config JSON because it
+    # gates the whole phone branch.
+    purpose = db.Column(db.String(8), nullable=True)
+
+    # No outside calls either direction. Changes provisioning.
+    internal_only = db.Column(db.Boolean, nullable=False, default=False)
+
     # Snapshot of routing at submission/review time
     routed_approval_group_id = db.Column(
         db.Integer,
@@ -102,9 +128,16 @@ class TechOpsLineDetail(db.Model):
         index=True,
     )
 
-    work_line = db.relationship("WorkLine", backref=db.backref("techops_detail", uselist=False, cascade="all, delete-orphan"))
+    # parent_line_id is a second FK to work_lines, so both relationships
+    # must pin their own foreign_keys or SQLAlchemy can't tell them apart.
+    work_line = db.relationship(
+        "WorkLine", foreign_keys=[work_line_id],
+        backref=db.backref("techops_detail", uselist=False, cascade="all, delete-orphan"),
+    )
     service_type = db.relationship("TechOpsServiceType")
     routed_approval_group = db.relationship("ApprovalGroup", foreign_keys=[routed_approval_group_id])
+    space = db.relationship("Space", foreign_keys=[space_id])
+    parent_line = db.relationship("WorkLine", foreign_keys=[parent_line_id])
 
     __table_args__ = (
         db.Index("ix_techops_line_details_approval_routing", "routed_approval_group_id", "service_type_id"),
@@ -126,10 +159,15 @@ class TechOpsRequestDetail(db.Model):
     primary_contact_email = db.Column(db.String(256), nullable=False)
 
     # True when the requester affirmed their department needs no TechOps services
-    # this event. Submit synthesizes a TECHOPS_GEN-routed OTHER line so the
+    # this event. Submit synthesizes a NO_SERVICES line with space_id NULL so the
     # affirmation goes through normal review (admins verify the department
     # actually thought it through).
     no_services_needed = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Set by a reviewer when a shared space has been cleared with the other
+    # department. Recorded here in pass 1; the approval block that reads it
+    # lands with the order sheet.
+    shared_space_confirmed = db.Column(db.Boolean, nullable=False, default=False)
 
     additional_notes = db.Column(db.Text, nullable=True)
 
@@ -139,3 +177,67 @@ class TechOpsRequestDetail(db.Model):
     updated_by_user_id = db.Column(db.String(64), nullable=True)
 
     work_item = db.relationship("WorkItem", backref=db.backref("techops_detail", uselist=False, cascade="all, delete-orphan"))
+
+
+class TechOpsRequestSpace(db.Model):
+    """One space card on a TechOps request.
+
+    Lines hold the work. This row holds the answers: which cards were
+    opened, why WiFi was declined, why a space needs nothing. Without it a
+    request's spaces exist only as a side effect of its lines, so a draft
+    with three spaces marked and one filled in loses the other two.
+    """
+    __tablename__ = "techops_request_spaces"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    work_item_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_items.id", name="fk_techops_request_spaces_work_item_id"),
+        nullable=False,
+        index=True,
+    )
+    space_id = db.Column(
+        db.Integer,
+        db.ForeignKey("spaces.id", name="fk_techops_request_spaces_space_id"),
+        nullable=False,
+        index=True,
+    )
+
+    # NEEDS, NOTHING, or NULL for a card the requester has opened but not
+    # yet answered. A space added through the picker has no other record
+    # of being on the request, unlike an assigned space, which reappears
+    # from the department's assignment list on its own. So an unanswered
+    # picked card has to persist to survive a
+    # reload. validate() still refuses a SUBMIT with any space this way.
+    answer = db.Column(db.String(8), nullable=True)
+
+    no_services_reason = db.Column(db.Text, nullable=True)
+
+    # True (needed), False (declined), or NULL (never answered). Reading
+    # this back is the fix for the lost-work bug: before this column
+    # existed, "declined" was inferred from a non-empty
+    # wifi_declined_reason, so a decline typed with no reason left no
+    # evidence anywhere and reloaded as unanswered. space_cards() and
+    # redisplay_cards() read this column directly; neither infers the
+    # answer from line presence or from wifi_declined_reason anymore.
+    wifi_requested = db.Column(db.Boolean, nullable=True)
+
+    # Required when the requester declines WiFi on a space that invariant 2
+    # forces a reason for. No WiFi line exists to carry it.
+    wifi_declined_reason = db.Column(db.Text, nullable=True)
+
+    # The per-space special request. Lives here once rather than being
+    # copied onto every line in the space.
+    notes = db.Column(db.Text, nullable=True)
+
+    work_item = db.relationship(
+        "WorkItem",
+        backref=db.backref("techops_spaces", cascade="all, delete-orphan"),
+    )
+    space = db.relationship("Space")
+
+    __table_args__ = (
+        db.UniqueConstraint("work_item_id", "space_id",
+                            name="uq_techops_request_spaces_item_space"),
+    )

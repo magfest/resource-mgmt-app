@@ -1,0 +1,55 @@
+{# templates/techops/_space_picker.html
+   Adds a space the department does not already see as a card. Posting
+   picks an id into the same `space_ids` field every card's hidden input
+   already uses (see _space_card.html), so parse_form reads it the same
+   way regardless of which control produced it. It does not write a
+   SpaceAssignment; the picked space renders like any other unassigned
+   card, with the "not currently assigned" note from _space_card.html.
+
+   `offerable_spaces` is every space offerable_spaces() returns for this
+   event; `picker_options` is that list minus every space already shown as
+   a card above (spaces.py:picker_candidates). Passing both lets the empty
+   state say why the control is missing instead of just not appearing.
+
+   Server renders a plain <select>; the script block in work_item_form.html
+   upgrades it to search-as-you-type, following spaces/list.html's
+   department picker. The field name is unchanged either way. #}
+{% if not offerable_spaces %}
+  <div class="callout callout-warning" data-space-add-empty>
+    Your spaces come from Event Ops. If one is missing, check the Space
+    Allocation Map and ask in the Hotels request channel.
+  </div>
+{% elif picker_options %}
+  {# The wrapper and button markers deliberately do not start with
+     "data-space-picker": that string is reserved for the <select> alone,
+     so a test can split the page on it and land exactly at the control's
+     own options, not at an earlier attribute the substring also matches. #}
+  <div class="space-picker" data-space-add-wrap>
+    <div class="space-card-row-header">Add a space</div>
+    <div class="row">
+      <div style="flex: 1; min-width: 220px;">
+        <label for="space-picker-select" class="muted small">
+          {# "not listed above" only makes sense once a card is listed
+             above; a department with no cards yet sees this control as
+             the whole section, so it gets its own wording rather than
+             pointing at nothing. #}
+          {% if cards %}A room or space not listed above{% else %}Choose a room or space to add{% endif %}
+        </label>
+        <select id="space-picker-select" name="space_ids" data-space-picker>
+          <option value="">Choose a space&hellip;</option>
+          {% for space in picker_options %}
+            <option value="{{ space.id }}">{{ space.name }} ({{ space.code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" name="action" value="add_space" class="btn"
+              data-space-add-submit>
+        Add space
+      </button>
+    </div>
+    <div class="muted small mt-8">
+      Not an assignment. TechOps confirms this space belongs on the
+      request before approving it.
+    </div>
+  </div>
+{% endif %}

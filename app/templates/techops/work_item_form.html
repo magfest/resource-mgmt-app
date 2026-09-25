@@ -2,17 +2,35 @@
 {% extends "layout/base.html" %}
 
 {# Editing an existing draft when work_item is set; creating a new
-   request otherwise. existing_lines_by_code is {service_code: [row, ...]}:
-   single-line services have a single-element list with {description},
-   per-instance services have one entry per existing line with
-   {location, usage, config}. #}
+   request otherwise. `cards` is space_cards() — one dict per assigned or
+   already-held space, see app/routes/work/techops/spaces.py. `picker_options`
+   (_space_picker.html) is every other offerable space; picking one posts
+   the whole form back through this same route with action=add_space.
+   `TechOpsRequestSpace.answer` is nullable, so a picked-but-unanswered
+   space is a real, persisted card like any other by the time either
+   route re-reads it. edit.py's add_space branch re-renders this same
+   template in place; create.py's redirects to the edit route instead,
+   since the draft this post just created makes the "new request" GET's
+   own permission check refuse a later refresh of that URL.
+   On a validation failure, the route has already overlaid the posted
+   answers onto `cards` (spaces.redisplay_cards), so this template and
+   _space_card.html always render from `cards` alone.
+   existing_lines_by_code is {service_code: [row, ...]} for the
+   department-wide services in section 3: single-line services have a
+   single-element list, per-instance services have one entry per
+   existing line with {location, usage, config}. #}
 {% set is_edit = work_item is not none %}
 {% set form_action = url_for('work.techops_request_update', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) if is_edit else url_for('work.techops_request_create', event=ctx.event_cycle.code, dept=ctx.department.code) %}
+{# The item-scoped preview route on an existing draft, so a held space
+   preview.py cannot otherwise see (archived, venue-swapped) previews the
+   same as it saves. The unscoped route otherwise, matching create.py. #}
+{% set preview_url = url_for('work.techops_preview_lines', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) if is_edit else url_for('work.techops_preview_lines', event=ctx.event_cycle.code, dept=ctx.department.code) %}
 
 {% block title %}{% if is_edit %}Edit {{ work_item.public_id }}{% else %}New TechOps Request{% endif %} - {{ ctx.department.name }}{% endblock %}
 
 {% block content %}
 {% include "components/_narrow_screen_banner.html" %}
+{% include "techops/_submit_error_panel.html" %}
 
   {# Breadcrumb #}
   <nav class="muted small" style="margin-bottom: 12px;">
@@ -20,7 +38,9 @@
     <span style="margin: 0 6px;">&rsaquo;</span>
     <a href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">{{ ctx.department.name }}</a>
     <span style="margin: 0 6px;">&rsaquo;</span>
-    <a href="{{ url_for('work.techops_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">TechOps</a>
+    {# Not a link: TechOps has no page of its own. The department holds one
+       request per event, so its own crumb one step back is the section. #}
+    <span>TechOps</span>
     <span style="margin: 0 6px;">&rsaquo;</span>
     {% if is_edit %}
       <a href="{{ url_for('work.techops_work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">{{ work_item.public_id }}</a>
@@ -37,8 +57,8 @@
       {% if is_edit %}Edit Draft &middot; {{ work_item.public_id }}{% else %}New TechOps Request{% endif %}
     </h1>
     <div class="muted" style="margin-top: 4px;">
-      Tell TechOps what network, phone, radio, or other services your department
-      needs for this event. Skip sections you don't need.
+      Tell TechOps what each of your event spaces needs. Rooms come from the
+      space list Event Ops keeps for this event.
     </div>
   </div>
 
@@ -82,42 +102,94 @@
       </div>
 
       <div class="muted small" style="margin-top: 8px;">
-        Defaults to your account info. Change this if a different team member should
-        answer questions about this specific request — for example, a department head
-        submitted it but a tech lead is the right point of contact for clarifications.
+        Defaults to your account info. Change it if a different team member
+        should answer questions about this request.
       </div>
     </section>
 
     {# ─────────────────────────────────────────────────────── #}
-    {# Section 2: Services                                     #}
+    {# Section 2: Your Event Spaces                            #}
+    {# ─────────────────────────────────────────────────────── #}
+    <section class="card" style="margin-bottom: 16px;">
+      <div class="row" style="margin-bottom: 8px;">
+        <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em;">
+          2 &middot; Your Event Spaces
+        </div>
+        {% if cards %}
+          {# Every card collapses, answered or not (item 4). A department
+             with many rooms otherwise scrolls through all of them
+             expanded. #}
+          <div class="btn-row">
+            <button type="button" class="btn btn-muted" data-collapse-all>Collapse all</button>
+            <button type="button" class="btn btn-muted" data-expand-all>Expand all</button>
+          </div>
+        {% endif %}
+      </div>
+
+      {% if ctx.event_cycle.venue_id is none %}
+        <div class="callout callout-warning">
+          This event has no venue set yet, so no spaces can be offered.
+          Contact the Hotels request channel to get spaces added before
+          submitting a TechOps request.
+        </div>
+      {% else %}
+        {% for card in cards %}
+          {% include "techops/_space_card.html" %}
+        {% endfor %}
+        {% include "techops/_space_picker.html" %}
+      {% endif %}
+    </section>
+
+    {# ─────────────────────────────────────────────────────── #}
+    {# Section 3: Department-Wide Services                     #}
     {# ─────────────────────────────────────────────────────── #}
     <section class="card" style="margin-bottom: 16px;">
       <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
-        2 &middot; Services
+        3 &middot; Department-Wide Services
       </div>
       <div class="muted small" style="margin-bottom: 16px;">
-        Check each service your department needs. For ethernet drops, phones,
-        and radio channels, add one entry per instance — each one has its own
-        location and use case so TechOps can plan and load it in.
+        These belong to your team rather than a room.
       </div>
 
-      {% for st in service_types %}
+      {# Only RADIO_CHANNEL and OTHER are department-wide as of the
+         room-first form; WIFI and ETHERNET moved onto space cards, and
+         PHONE was replaced by the per-space PHONE_NUMBER/DESK_PHONE
+         pair. parse_form._parse_department_wide only reads these two
+         codes' fields — rendering a checkbox for any other code here
+         would post fields nobody reads. #}
+      {% for st in service_types if st.code in ('RADIO_CHANNEL', 'OTHER') %}
         {% set existing_rows = existing_lines_by_code.get(st.code, []) %}
         {% set is_per_instance = st.instance_noun is not none %}
-        <div class="techops-service-section"
+        {# RADIO_CHANNEL's badge follows the same non-blank-input rule
+           ethernet and phone use (spaces.py's count_filled_drops): a row
+           counts when either of its inputs holds content, and the badge
+           always shows a number, including zero, the same as theirs.
+           `existing_rows` already obeys it (form_utils._parse_department_wide
+           drops an all-blank instance), so this is a plain length read;
+           the script's updateServiceSectionBadge restates the rule
+           against live, unsaved DOM state. OTHER has no repeating group
+           behind it, just one description, so a count here would be
+           invented; its header stays bare on purpose. #}
+        {% if is_per_instance %}
+          {% set section_count = existing_rows|length %}
+          {% set count_label = section_count|string ~ ' channel' ~ ('s' if section_count != 1 else '') %}
+        {% endif %}
+        {# Collapsed by default, same treatment as ethernet/phone on a
+           space card: an empty radio-channel or consultation box left
+           expanded reads as "fill this in" even to a department that
+           needs neither. Open only when saved or just-posted data
+           exists, so nothing typed already is ever hidden on load. #}
+        <details class="techops-service-section space-collapsible"
              data-service-section="{{ st.code }}"
              {% if is_per_instance %}data-instance-mode="1" data-instance-noun="{{ st.instance_noun }}"{% endif %}
-             style="padding: 12px 0; border-bottom: 1px solid #eee;">
-          <label style="display: flex; gap: 8px; align-items: flex-start; cursor: pointer; font-weight: 600;">
-            <input
-              type="checkbox"
-              name="service_{{ st.code }}_enabled"
-              value="1"
-              data-service-toggle
-              {% if existing_rows %}checked{% endif %}
-              style="margin-top: 3px;">
-            <span>{{ st.name }}</span>
-          </label>
+             {% if existing_rows %}open{% endif %}>
+          <summary class="space-collapsible-summary">
+            <span style="font-weight: 600;">{{ st.name }}</span>
+            {% if is_per_instance %}
+              <span class="muted small" data-service-count>&middot; {{ count_label }}</span>
+            {% endif %}
+          </summary>
+          <div class="space-collapsible-body">
 
           {% if st.description %}
             <div class="muted small" style="margin: 4px 0 8px 24px;">
@@ -128,28 +200,20 @@
           <div class="techops-service-fields" style="margin-left: 24px; margin-top: 8px;">
 
           {% if is_per_instance %}
-            {# Per-instance service (ETHERNET / PHONE / RADIO_CHANNEL).
-               Renders one row per existing instance (or one empty row when
-               creating a new request). The "Add another" button below
-               clones the hidden template element to extend the list. #}
+            {# RADIO_CHANNEL: one entry per channel. location = channel
+               name, usage = what it's for; field labels overload by
+               service type the same way the pre-room-first form did. #}
+            {% set field_a_label = "Channel name (preferred or assigned)" %}
+            {% set field_a_placeholder = "e.g. Tech-1, Logistics" %}
+            {% set field_b_label = "What is this channel for?" %}
+            {% set field_b_placeholder = "Who uses it, what kind of traffic, etc." %}
 
-            {# Field labels overload by service type: RADIO_CHANNEL reuses
-               the location column for "Channel name", and the usage column
-               for "What's this channel for". ETHERNET and PHONE use them
-               literally. #}
-            {% if st.code == "RADIO_CHANNEL" %}
-              {% set field_a_label = "Channel name (preferred or assigned)" %}
-              {% set field_a_placeholder = "e.g. Tech-1, Logistics" %}
-              {% set field_b_label = "What is this channel for?" %}
-              {% set field_b_placeholder = "Who uses it, what kind of traffic, etc." %}
-            {% else %}
-              {% set field_a_label = "Location" %}
-              {% set field_a_placeholder = "Where this " ~ st.instance_noun ~ " needs to go" %}
-              {% set field_b_label = "Usage" %}
-              {% set field_b_placeholder = "What this " ~ st.instance_noun ~ " is for, who uses it, special needs" %}
-            {% endif %}
-
-            {% set rows_to_render = existing_rows if existing_rows else [{}] %}
+            {# Rendered rows are exactly the saved/posted channels, no
+               trailing blank (item 2, same rule as a space card's ethernet
+               drops): a phantom row here read as a saved channel to
+               delete, and "+ Add another channel" below is the only way
+               to add one now that no-script row support is gone. #}
+            {% set rows_to_render = existing_rows %}
             {% set next_index = rows_to_render|length + 1 %}
 
             <div class="techops-instances"
@@ -158,50 +222,27 @@
                  data-next-index="{{ next_index }}">
               {% for inst in rows_to_render %}
                 {% set idx = loop.index %}
-                <div class="techops-instance-row" data-instance-row data-instance-idx="{{ idx }}">
-                  <div class="techops-instance-header">
+                <div class="space-card-row" data-instance-row data-instance-idx="{{ idx }}">
+                  <div class="space-card-row-header">
                     {{ st.instance_noun|capitalize }} {{ idx }}
                   </div>
-                  <div style="margin-bottom: 8px;">
-                    <label style="display: block; font-size: 13px; margin-bottom: 4px;">
-                      {{ field_a_label }}
-                      <span class="muted small techops-required-marker" style="display: none;">(required)</span>
-                    </label>
+                  <div class="space-card-field">
+                    <label>{{ field_a_label }}</label>
                     <input
                       type="text"
                       name="service_{{ st.code }}_instance_{{ idx }}_location"
-                      data-service-input
-                      data-service-required
                       placeholder="{{ field_a_placeholder }}"
                       value="{{ inst.get('location', '') }}"
                       style="width: 100%; max-width: 480px;">
                   </div>
-                  <div style="margin-bottom: 8px;">
-                    <label style="display: block; font-size: 13px; margin-bottom: 4px;">
-                      {{ field_b_label }}
-                      <span class="muted small techops-required-marker" style="display: none;">(required)</span>
-                    </label>
+                  <div class="space-card-field">
+                    <label>{{ field_b_label }}</label>
                     <textarea
                       name="service_{{ st.code }}_instance_{{ idx }}_usage"
                       rows="2"
-                      data-service-input
-                      data-service-required
                       placeholder="{{ field_b_placeholder }}"
                       style="width: 100%; max-width: 600px;">{{ inst.get('usage', '') }}</textarea>
                   </div>
-                  {% if st.code == "PHONE" %}
-                    <div>
-                      <label style="display: flex; gap: 6px; align-items: center; font-size: 13px;">
-                        <input
-                          type="checkbox"
-                          name="service_PHONE_instance_{{ idx }}_external_callable"
-                          value="1"
-                          data-service-input
-                          {% if inst.get('config') and inst.get('config').get('external_callable') %}checked{% endif %}>
-                        This phone needs to be externally callable (not just internal)
-                      </label>
-                    </div>
-                  {% endif %}
                 </div>
               {% endfor %}
             </div>
@@ -210,87 +251,66 @@
               type="button"
               class="btn btn-muted techops-add-instance"
               data-add-instance="{{ st.code }}"
-              data-service-input
               style="margin-top: 4px;">
-              + Add another {{ st.instance_noun }}
+              {{ ('+ Add another ' ~ st.instance_noun) if existing_rows else ('+ Add a ' ~ st.instance_noun) }}
             </button>
 
-            {# Hidden template row used by the "Add another" JS. The
-               __IDX__ tokens are replaced with the next available index
-               at clone time. The element is inert until cloned thanks to
-               the HTML5 <template> element semantics. #}
             <template data-instance-template="{{ st.code }}">
-              <div class="techops-instance-row" data-instance-row data-instance-idx="__IDX__">
-                <div class="techops-instance-header">
+              <div class="space-card-row" data-instance-row data-instance-idx="__IDX__">
+                <div class="space-card-row-header">
                   {{ st.instance_noun|capitalize }} __IDX__
                 </div>
-                <div style="margin-bottom: 8px;">
-                  <label style="display: block; font-size: 13px; margin-bottom: 4px;">
-                    {{ field_a_label }}
-                    <span class="muted small techops-required-marker" style="display: none;">(required)</span>
-                  </label>
+                <div class="space-card-field">
+                  <label>{{ field_a_label }}</label>
                   <input
                     type="text"
                     name="service_{{ st.code }}_instance___IDX___location"
-                    data-service-input
-                    data-service-required
                     placeholder="{{ field_a_placeholder }}"
                     style="width: 100%; max-width: 480px;">
                 </div>
-                <div style="margin-bottom: 8px;">
-                  <label style="display: block; font-size: 13px; margin-bottom: 4px;">
-                    {{ field_b_label }}
-                    <span class="muted small techops-required-marker" style="display: none;">(required)</span>
-                  </label>
+                <div class="space-card-field">
+                  <label>{{ field_b_label }}</label>
                   <textarea
                     name="service_{{ st.code }}_instance___IDX___usage"
                     rows="2"
-                    data-service-input
-                    data-service-required
                     placeholder="{{ field_b_placeholder }}"
                     style="width: 100%; max-width: 600px;"></textarea>
                 </div>
-                {% if st.code == "PHONE" %}
-                  <div>
-                    <label style="display: flex; gap: 6px; align-items: center; font-size: 13px;">
-                      <input
-                        type="checkbox"
-                        name="service_PHONE_instance___IDX___external_callable"
-                        value="1"
-                        data-service-input>
-                      This phone needs to be externally callable (not just internal)
-                    </label>
-                  </div>
-                {% endif %}
               </div>
             </template>
 
           {% else %}
-            {# Single-line service (WIFI / OTHER). One description box. #}
+            {# OTHER: single description box, requested when non-blank.
+               No enabled checkbox and no count badge: one description is
+               not a repeating group, so any number here would be
+               invented. #}
             {% set existing = existing_rows[0] if existing_rows else None %}
             <label for="service_{{ st.code }}_description"
                    style="display: block; font-size: 13px; margin-bottom: 4px;">
               What do you need?
-              <span class="muted small techops-required-marker" style="display: none;">(required)</span>
             </label>
             <textarea
               id="service_{{ st.code }}_description"
               name="service_{{ st.code }}_description"
               rows="3"
-              data-service-input
-              data-service-required
               placeholder="Describe the use case, location, or what this is for."
               style="width: 100%; max-width: 600px;">{{ existing.description if existing else '' }}</textarea>
           {% endif %}
 
           </div>
-        </div>
+
+          </div>
+        </details>
       {% endfor %}
 
-      {# "No services needed" warning callout — visually distinct from the
-         service checkboxes above so it reads as a deliberate choice, not as
-         "yet another box to check." #}
-      <div style="margin-top: 24px; padding: 16px; background: #fef3c7; border-left: 4px solid #d97706; border-radius: 4px;">
+      {# For a department with no space cards to answer at all (no venue
+         set, or nothing offerable), this is the only way to submit.
+         validate() rejects it when the request also has space cards;
+         hidden here whenever `cards` is non-empty so the form cannot
+         even offer a choice the server would refuse (item 6). A
+         department that holds rooms answers each one instead. #}
+      {% if not cards %}
+      <div class="callout callout-warning mt-16">
         <label style="display: flex; gap: 8px; align-items: flex-start; cursor: pointer;">
           <input
             type="checkbox"
@@ -302,65 +322,52 @@
           <span>
             <strong>My department needs no TechOps services for this event.</strong>
             <div class="muted small" style="margin-top: 6px;">
-              <strong>Uncommon.</strong> Most departments need at least basic WiFi or
-              radio coverage. Only check this if you've genuinely reviewed every
-              service above and confirmed your department needs none. TechOps
-              will follow up to verify.
+              Only for a department with no event spaces to answer.
             </div>
           </span>
         </label>
       </div>
+      {% endif %}
     </section>
 
     {# ─────────────────────────────────────────────────────── #}
-    {# Section 3: Additional Notes                             #}
+    {# Section 4: Additional Notes                             #}
     {# ─────────────────────────────────────────────────────── #}
     <section class="card" style="margin-bottom: 16px;">
       <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
-        3 &middot; Additional Notes (optional)
-      </div>
-      <div class="muted small" style="margin-bottom: 8px;">
-        Anything else the TechOps team should know? Concerns, questions,
-        why-can't-I-find-X, links to layout diagrams, etc.
+        4 &middot; Additional Notes (optional)
       </div>
       <textarea
         id="additional_notes"
         name="additional_notes"
         rows="4"
-        placeholder="Optional"
+        maxlength="4000"
+        placeholder="Anything else the TechOps team should know"
         style="width: 100%;">{{ request_detail.additional_notes if request_detail and request_detail.additional_notes else '' }}</textarea>
     </section>
 
-    {# Visual treatment: disabled service sections grey out + per-instance
-       row separators give visual structure to the repeating groups. #}
-    <style>
-      .techops-service-section.is-disabled .techops-service-fields {
-        opacity: 0.45;
-      }
-      .techops-service-section.is-disabled textarea,
-      .techops-service-section.is-disabled input[type="text"],
-      .techops-service-section.is-disabled input[type="number"],
-      .techops-service-section.is-disabled input[type="checkbox"]:not([data-service-toggle]),
-      .techops-service-section.is-disabled button[data-add-instance] {
-        background: #f3f4f6;
-        cursor: not-allowed;
-      }
-      .techops-instance-row {
-        padding: 12px 12px 4px 12px;
-        margin-bottom: 8px;
-        border-left: 3px solid #d1d5db;
-        background: #fafafa;
-        border-radius: 4px;
-      }
-      .techops-instance-header {
-        font-weight: 600;
-        font-size: 13px;
-        color: #374151;
-        margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-      }
-    </style>
+    {# ─────────────────────────────────────────────────────── #}
+    {# Section 5: What TechOps Will Receive                    #}
+    {# _order_preview.html renders `preview_rows`, built by                #}
+    {# preview.build_preview_rows() or preview.rows_from_saved_lines()     #}
+    {# in create.py/edit.py, never recomputed here. The nonce-protected    #}
+    {# script below re-fetches it from techops_preview_lines on change,    #}
+    {# so this initial render is what a no-script browser is stuck with.  #}
+    {# ─────────────────────────────────────────────────────── #}
+    <section class="card" style="margin-bottom: 16px;">
+      <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+        5 &middot; What TechOps Will Receive
+      </div>
+      <div class="muted small" style="margin-bottom: 8px;">
+        TechOps reviews and approves each of these separately, so this is
+        worth a look before you submit.
+      </div>
+      <div data-order-preview>
+        {% with rows = preview_rows, saved = preview_saved %}
+          {% include "techops/_order_preview.html" %}
+        {% endwith %}
+      </div>
+    </section>
 
     {# Buttons #}
     <div class="btn-row" style="margin-top: 16px;">
@@ -370,68 +377,80 @@
       <button type="submit" name="action" value="submit" class="btn btn-primary">
         Submit for TechOps Review
       </button>
-      <a class="btn btn-muted" href="{% if is_edit %}{{ url_for('work.techops_work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}{% else %}{{ url_for('work.techops_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}{% endif %}">
+      {# Cancelling a new request goes to the department home, not back to
+         /techops: that URL redirects to this same form when no request
+         exists, so Cancel would return the requester to what they left. #}
+      <a class="btn btn-muted" href="{% if is_edit %}{{ url_for('work.techops_work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}{% else %}{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}{% endif %}">
         Cancel
       </a>
     </div>
   </form>
 
   {# Form behavior script.
-     - Disables all data-service-input fields when the section's
-       checkbox is unchecked (prevents typing into a service the user
-       isn't actually requesting).
-     - Toggles HTML5 'required' on every data-service-required field
-       within the section so the browser blocks submit when a checked
-       service has missing required fields.
-     - Mutually excludes the no-services-needed affirmation with any
-       checked service sections.
-     - Per-instance services: clones the hidden <template> on
-       "+ Add another" click, replacing __IDX__ with the next index.
-
+     - Restyles the space-card answer radios as a button pair and keeps
+       which branch (needs-services vs. nothing-needed) in sync as the
+       requester changes their pick. The server already rendered the
+       right branch for the card's current answer, including "neither"
+       for an unanswered card; this only keeps that state current after
+       a click, and defaults a still-unanswered card to "Needs services"
+       on load — a default applied here, not server-rendered, so a
+       browser with scripting off leaves the card genuinely unanswered
+       and validate() catches it, same as always.
+     - Keeps the WiFi radio pair's "who and what" / "why decline" fields
+       in sync with which radio is checked. The decline reason shows for
+       any decline, not only a forced one; only validate() cares whether
+       a reason is required.
+     - Toggles a card between expanded and collapsed on a header click,
+       and via the section's own "Collapse all" / "Expand all" controls.
+       Not tied to whether the card is answered; an unanswered card
+       collapses to its own honest summary ("Not answered yet") rather
+       than staying stuck open. The one-line summary must agree with
+       whichever answer radio is actually checked above it — a card
+       marked "Needs services" with nothing filled in yet must not read
+       "Nothing needed" just because nothing has been typed.
+     - "Save this space" is a real submit (name="save_space_id"), not a
+       client-side-only collapse: the route saves the draft and redirects
+       back to this same form with ?open=<space id>, and this script
+       collapses and scrolls to that card so the requester lands back
+       roughly where they left off instead of at the top of a long form.
+     - Clones the hidden <template> for "+ Add another drop / phone
+       line / desk phone / <instance>" buttons, replacing __IDX__ with
+       the next index. Event-delegated so it also covers rows added by
+       a previous clone.
+     - Updates the RADIO_CHANNEL <details> badge from its own rows, same
+       rule and always-shown wording as the ethernet/phone badges below.
+       OTHER carries no such badge; one description cannot support one
+       honestly.
      Runs once on page load to apply correct state to pre-filled drafts. #}
   <script nonce="{{ csp_nonce }}">
   (function() {
-    var noServicesCheckbox = document.getElementById('techops-no-services');
     var sections = document.querySelectorAll('[data-service-section]');
 
-    function applySectionState(section) {
-      var toggle = section.querySelector('[data-service-toggle]');
-      if (!toggle) return;
-      var enabled = toggle.checked;
+    function cloneFromTemplate(template, nextIdx) {
+      var html = template.innerHTML.split('__IDX__').join(String(nextIdx));
+      var wrapper = document.createElement('div');
+      wrapper.innerHTML = html.trim();
+      return wrapper.firstElementChild;
+    }
 
-      section.classList.toggle('is-disabled', !enabled);
-
-      section.querySelectorAll('[data-service-input]').forEach(function(input) {
-        input.disabled = !enabled;
-      });
-
-      section.querySelectorAll('[data-service-required]').forEach(function(field) {
-        if (enabled) {
-          field.setAttribute('required', '');
-        } else {
-          field.removeAttribute('required');
-        }
-      });
-
-      section.querySelectorAll('.techops-required-marker').forEach(function(marker) {
-        marker.style.display = enabled ? '' : 'none';
+    // Section 3's own RADIO_CHANNEL badge. Same non-blank-input rule as
+    // filledDropRows/filledPhoneLineRows below, applied against a channel
+    // row's two fields. OTHER has no badge to update: see
+    // work_item_form.html's comment on why one description gets no count.
+    function filledInstanceRows(root) {
+      return Array.prototype.filter.call(root.querySelectorAll('[data-instance-row]'), function(row) {
+        var loc = row.querySelector('input[type="text"]');
+        var use = row.querySelector('textarea');
+        return !!((loc && loc.value.trim()) || (use && use.value.trim()));
       });
     }
 
-    function applyNoServicesState() {
-      if (!noServicesCheckbox) return;
-      var noServices = noServicesCheckbox.checked;
-      sections.forEach(function(section) {
-        var toggle = section.querySelector('[data-service-toggle]');
-        if (!toggle) return;
-        if (noServices) {
-          toggle.checked = false;
-          toggle.disabled = true;
-        } else {
-          toggle.disabled = false;
-        }
-        applySectionState(section);
-      });
+    function updateServiceSectionBadge(section) {
+      if (!section.hasAttribute('data-instance-mode')) return;
+      var badge = section.querySelector('[data-service-count]');
+      if (!badge) return;
+      var count = filledInstanceRows(section).length;
+      badge.textContent = '· ' + pluralize(count, 'channel');
     }
 
     function addInstanceRow(section) {
@@ -439,53 +458,509 @@
       var container = section.querySelector('[data-instances-container]');
       var template = section.querySelector('template[data-instance-template="' + code + '"]');
       if (!container || !template) return;
-
       var nextIdx = parseInt(container.getAttribute('data-next-index') || '1', 10);
-      // Stringify the template content with __IDX__ swapped for the new
-      // index. innerHTML round-trip is cheaper than walking the DOM and
-      // safe because the source is server-rendered, not user input.
-      var html = template.innerHTML.split('__IDX__').join(String(nextIdx));
-      var wrapper = document.createElement('div');
-      wrapper.innerHTML = html.trim();
-      var newRow = wrapper.firstElementChild;
+      var newRow = cloneFromTemplate(template, nextIdx);
       if (!newRow) return;
-
       container.appendChild(newRow);
       container.setAttribute('data-next-index', String(nextIdx + 1));
-
-      // Re-apply section state so the new row inherits enabled/required.
-      applySectionState(section);
+      var addBtn = section.querySelector('[data-add-instance]');
+      var noun = section.getAttribute('data-instance-noun');
+      if (addBtn && noun) addBtn.textContent = '+ Add another ' + noun;
+      updateServiceSectionBadge(section);
     }
 
     sections.forEach(function(section) {
-      var toggle = section.querySelector('[data-service-toggle]');
-      if (toggle) {
-        toggle.addEventListener('change', function() {
-          applySectionState(section);
-          // If the user checks any service, uncheck the no-services
-          // affirmation so the two cannot coexist on submit.
-          if (toggle.checked && noServicesCheckbox && noServicesCheckbox.checked) {
-            noServicesCheckbox.checked = false;
-            applyNoServicesState();
-          }
-        });
-      }
-
       var addBtn = section.querySelector('[data-add-instance]');
       if (addBtn) {
         addBtn.addEventListener('click', function() {
           addInstanceRow(section);
         });
       }
-
-      applySectionState(section);
+      updateServiceSectionBadge(section);
     });
 
-    if (noServicesCheckbox) {
-      noServicesCheckbox.addEventListener('change', applyNoServicesState);
-      applyNoServicesState();
+    // ---- Space cards ----
+
+    // The one place "does this card have a filled drop / phone line" is
+    // decided in script, for the collapsed summary's counts and the
+    // ethernet/phone <details> badges below. Both readers apply the same
+    // rule the server applies on submit (form_utils._parse_drops,
+    // _parse_phone_lines): a row counts when any of its inputs holds a
+    // non-blank value. `root` is a card or a single <details>, so the
+    // same functions serve the whole-card summary and a scoped badge.
+    function filledDropRows(root) {
+      return Array.prototype.filter.call(root.querySelectorAll('[data-drop-row]'), function(row) {
+        var loc = row.querySelector('input[type="text"]');
+        var use = row.querySelector('textarea');
+        return !!((loc && loc.value.trim()) || (use && use.value.trim()));
+      });
     }
+
+    function filledPhoneLineRows(root) {
+      return Array.prototype.filter.call(root.querySelectorAll('[data-phone-line-row]'), function(row) {
+        var usage = row.querySelector('textarea');
+        var purposeField = row.querySelector('[data-phone-purpose-field] select');
+        var hasHandset = Array.prototype.some.call(row.querySelectorAll('[data-handset-row] input'), function(h) {
+          return !!h.value.trim();
+        });
+        return !!((usage && usage.value.trim()) || (purposeField && purposeField.value) || hasHandset);
+      });
+    }
+
+    function pluralize(n, noun) {
+      return n + ' ' + noun + (n === 1 ? '' : 's');
+    }
+
+    // Updates one ETHERNET/PHONE <details> badge to match its own rows,
+    // by the same rule filledDropRows/filledPhoneLineRows apply. Always
+    // shown, including "0 drops": item 3 dropped the old blank-when-empty
+    // behavior because an empty section with no badge at all read as one
+    // that could be missed entirely.
+    function updateEthernetBadge(details) {
+      var badge = details.querySelector('[data-ethernet-count]');
+      if (!badge) return;
+      var count = filledDropRows(details).length;
+      badge.textContent = '· ' + pluralize(count, 'drop');
+    }
+
+    function updatePhoneBadge(details) {
+      var badge = details.querySelector('[data-phone-count]');
+      if (!badge) return;
+      var lineCount = filledPhoneLineRows(details).length;
+      var handsetCount = 0;
+      details.querySelectorAll('[data-handset-row] input').forEach(function(h) {
+        if (h.value.trim()) handsetCount += 1;
+      });
+      var text = pluralize(lineCount, 'line');
+      if (handsetCount) text += ', ' + pluralize(handsetCount, 'handset');
+      badge.textContent = '· ' + text;
+    }
+
+    function summarizeCard(card) {
+      var parts = [];
+      if (card.querySelector('[data-wifi-answer-radio][value="1"]:checked')) parts.push('WiFi');
+      var dropCount = filledDropRows(card).length;
+      if (dropCount > 0) parts.push(dropCount + ' drop' + (dropCount === 1 ? '' : 's'));
+      var phoneCount = filledPhoneLineRows(card).length;
+      var handsetCount = 0;
+      card.querySelectorAll('[data-phone-line-row]').forEach(function(row) {
+        row.querySelectorAll('[data-handset-row] input').forEach(function(h) {
+          if (h.value.trim()) handsetCount += 1;
+        });
+      });
+      if (phoneCount > 0) {
+        var line = phoneCount + ' phone line' + (phoneCount === 1 ? '' : 's');
+        if (handsetCount > 0) line += ', ' + handsetCount + ' desk phone' + (handsetCount === 1 ? '' : 's');
+        parts.push(line);
+      }
+      if (parts.length) return parts.join(' - ');
+
+      // Nothing filled in yet: the fallback must match the radio above
+      // it. Always returning "Nothing needed" here was the bug — a card
+      // marked "Needs services" with nothing behind it yet said the
+      // opposite of its own control.
+      var needsChecked = !!card.querySelector('[data-space-answer-radio][value="NEEDS"]:checked');
+      var nothingChecked = !!card.querySelector('[data-space-answer-radio][value="NOTHING"]:checked');
+      if (nothingChecked) return 'Nothing needed';
+      if (needsChecked) return 'Needs services, nothing entered yet';
+      return 'Not answered yet';
+    }
+
+    // Keeps the WiFi radio pair's own reveal fields current: "who and
+    // what" only for an explicit "needed" answer, "why decline" for any
+    // explicit decline. Whether a reason is required on a decline is
+    // validate()'s call, not a reason to hide the field.
+    function applyWifiReveal(card) {
+      var subsection = card.querySelector('[data-service-subsection="WIFI"]');
+      if (!subsection) return;
+      var neededRadio = subsection.querySelector('[data-wifi-answer-radio][value="1"]');
+      var declinedRadio = subsection.querySelector('[data-wifi-answer-radio][value="0"]');
+      var descField = subsection.querySelector('[data-wifi-description-field]');
+      var reasonField = subsection.querySelector('[data-wifi-declined-field]');
+      if (descField) descField.style.display = (neededRadio && neededRadio.checked) ? '' : 'none';
+      if (reasonField) reasonField.style.display = (declinedRadio && declinedRadio.checked) ? '' : 'none';
+    }
+
+    function applyCardState(card) {
+      var needsRadio = card.querySelector('[data-space-answer-radio][value="NEEDS"]');
+      var nothingRadio = card.querySelector('[data-space-answer-radio][value="NOTHING"]');
+      var needsBlock = card.querySelector('[data-needs-block]');
+      var nothingBlock = card.querySelector('[data-nothing-needed-block]');
+      var needsChecked = !!(needsRadio && needsRadio.checked);
+      var nothingChecked = !!(nothingRadio && nothingRadio.checked);
+
+      card.classList.toggle('space-card-answered', needsChecked || nothingChecked);
+      card.querySelectorAll('[data-space-answer-radio]').forEach(function(radio) {
+        var label = radio.closest('.space-answer');
+        if (label) label.classList.toggle('space-answer-selected', radio.checked);
+      });
+
+      // Neither block shows until one radio is picked (item 1); exactly
+      // one shows once it is. A server-rendered unanswered card already
+      // matches this before any script runs.
+      if (needsBlock) needsBlock.style.display = needsChecked ? '' : 'none';
+      if (nothingBlock) nothingBlock.style.display = nothingChecked ? '' : 'none';
+    }
+
+    function collapseCard(card) {
+      var body = card.querySelector('[data-space-card-body]');
+      var summary = card.querySelector('[data-space-card-summary]');
+      if (!body || !summary) return;
+      summary.textContent = summarizeCard(card);
+      summary.hidden = false;
+      Array.prototype.forEach.call(body.children, function(child) {
+        if (child !== summary) child.style.display = 'none';
+      });
+    }
+
+    function expandCard(card) {
+      var body = card.querySelector('[data-space-card-body]');
+      var summary = card.querySelector('[data-space-card-summary]');
+      if (!body) return;
+      Array.prototype.forEach.call(body.children, function(child) {
+        child.style.display = '';
+      });
+      if (summary) summary.hidden = true;
+      applyCardState(card);
+      applyWifiReveal(card);
+    }
+
+    document.querySelectorAll('[data-space-card]').forEach(function(card) {
+      // A card with neither radio answered defaults to "Needs services"
+      // once script runs. Set here, not server-rendered, so a browser
+      // with scripting off leaves the card genuinely unanswered and
+      // validate() still catches it on submit, exactly as it always has
+      // for an unanswered card.
+      var needsRadio = card.querySelector('[data-space-answer-radio][value="NEEDS"]');
+      var nothingRadio = card.querySelector('[data-space-answer-radio][value="NOTHING"]');
+      if (needsRadio && nothingRadio && !needsRadio.checked && !nothingRadio.checked) {
+        needsRadio.checked = true;
+      }
+      applyCardState(card);
+      applyWifiReveal(card);
+      card.querySelectorAll('[data-service-subsection="ETHERNET"]').forEach(updateEthernetBadge);
+      card.querySelectorAll('[data-service-subsection="PHONE"]').forEach(updatePhoneBadge);
+      card.querySelectorAll('[data-space-answer-radio]').forEach(function(radio) {
+        radio.addEventListener('change', function() {
+          applyCardState(card);
+        });
+      });
+      // Every card toggles, answered or not: collapse is a display
+      // choice, not a completeness signal.
+      var header = card.querySelector('.space-card-header');
+      if (header) {
+        header.addEventListener('click', function(e) {
+          // Excludes the whole answer label, not just the radio itself:
+          // clicking "Needs services" text also fires a click on its
+          // wrapping label, and toggling collapse from that click would
+          // hide the block the requester just chose to open.
+          if (e.target.closest('.space-answer')) return;
+          var summary = card.querySelector('[data-space-card-summary]');
+          var isCollapsed = !!(summary && !summary.hidden);
+          if (isCollapsed) {
+            expandCard(card);
+          } else {
+            collapseCard(card);
+          }
+        });
+      }
+    });
+
+    document.querySelectorAll('[data-collapse-all]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('[data-space-card]').forEach(collapseCard);
+      });
+    });
+    document.querySelectorAll('[data-expand-all]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('[data-space-card]').forEach(expandCard);
+      });
+    });
+
+    // "Save this space" redirects here with ?open=<space id> so the
+    // requester lands back near where they were instead of the top of a
+    // long form. Collapsed, not expanded, since the card was just saved:
+    // the spaces list's own ?open= (_table_script.html) expands its
+    // target row instead, because that page's rows start collapsed and
+    // the point there is showing an edit result, not confirming a save.
+    var openedSpaceId = new URLSearchParams(window.location.search).get('open');
+    if (openedSpaceId && /^\d+$/.test(openedSpaceId)) {
+      var openedCard = document.querySelector('[data-space-card="' + openedSpaceId + '"]');
+      if (openedCard) {
+        collapseCard(openedCard);
+        openedCard.scrollIntoView({block: 'center'});
+      }
+    }
+
+    // A sharing line's purpose is inherited from the line it shares and
+    // is ignored server-side; hide the (now-pointless) purpose control
+    // when a phone line's source select points at another line. Server
+    // render already set the right initial state; this keeps it correct
+    // as the requester changes the selection. Delegated so a select on a
+    // cloned phone-line row is covered too.
+    document.addEventListener('change', function(e) {
+      var card = e.target.closest('[data-space-card]');
+      if (card) {
+        applyWifiReveal(card);
+      }
+      updateBadgeFor(e.target);
+
+      var sourceSelect = e.target.closest('[data-phone-source]');
+      if (sourceSelect) {
+        var row = sourceSelect.closest('[data-phone-line-row]');
+        var purposeField = row ? row.querySelector('[data-phone-purpose-field]') : null;
+        if (purposeField) {
+          var isNew = sourceSelect.options[sourceSelect.selectedIndex].getAttribute('value') === sourceSelect.getAttribute('data-source-new');
+          purposeField.style.display = isNew ? '' : 'none';
+        }
+        return;
+      }
+    });
+
+    // Keeps a collapsed section's badge current as the requester types,
+    // by the same rule the server applies to what gets saved (stated
+    // once in spaces.py's count_filled_drops). Covers both the space
+    // card's ETHERNET/PHONE <details> and section 3's RADIO_CHANNEL/
+    // OTHER <details>, on 'input' (typing) and 'change' (select, blur).
+    function updateBadgeFor(target) {
+      var section = target.closest('[data-service-section]');
+      if (section) { updateServiceSectionBadge(section); return; }
+      var ethernetDetails = target.closest('[data-service-subsection="ETHERNET"]');
+      if (ethernetDetails) { updateEthernetBadge(ethernetDetails); return; }
+      var phoneDetails = target.closest('[data-service-subsection="PHONE"]');
+      if (phoneDetails) { updatePhoneBadge(phoneDetails); return; }
+    }
+
+    document.addEventListener('input', function(e) {
+      updateBadgeFor(e.target);
+    });
+
+    // Delegated so rows added by a previous clone are covered too.
+    document.addEventListener('click', function(e) {
+      var addDrop = e.target.closest('[data-add-drop]');
+      if (addDrop) {
+        var sid = addDrop.getAttribute('data-add-drop');
+        var container = document.querySelector('[data-drops-container][data-space-id="' + sid + '"]');
+        var template = document.querySelector('template[data-drop-template="' + sid + '"]');
+        if (container && template) {
+          var nextIdx = parseInt(container.getAttribute('data-next-index') || '1', 10);
+          var row = cloneFromTemplate(template, nextIdx);
+          if (row) {
+            container.appendChild(row);
+            container.setAttribute('data-next-index', String(nextIdx + 1));
+            addDrop.textContent = '+ Add another drop';
+            var ethernetDetails = container.closest('[data-service-subsection="ETHERNET"]');
+            if (ethernetDetails) updateEthernetBadge(ethernetDetails);
+          }
+        }
+        return;
+      }
+
+      var addPhone = e.target.closest('[data-add-phone-line]');
+      if (addPhone) {
+        var psid = addPhone.getAttribute('data-add-phone-line');
+        var pcontainer = document.querySelector('[data-phone-lines-container][data-space-id="' + psid + '"]');
+        var ptemplate = document.querySelector('template[data-phone-line-template="' + psid + '"]');
+        if (pcontainer && ptemplate) {
+          var pNextIdx = parseInt(pcontainer.getAttribute('data-next-index') || '1', 10);
+          var prow = cloneFromTemplate(ptemplate, pNextIdx);
+          if (prow) {
+            pcontainer.appendChild(prow);
+            pcontainer.setAttribute('data-next-index', String(pNextIdx + 1));
+            addPhone.textContent = '+ Add another phone line';
+            var phoneDetails = pcontainer.closest('[data-service-subsection="PHONE"]');
+            if (phoneDetails) updatePhoneBadge(phoneDetails);
+          }
+        }
+        return;
+      }
+
+      var addHandset = e.target.closest('[data-add-handset]');
+      if (addHandset) {
+        var prefix = addHandset.getAttribute('data-add-handset');
+        var hcontainer = document.querySelector('[data-handsets-container][data-prefix="' + prefix + '"]');
+        var htemplate = document.querySelector('template[data-handset-template="' + prefix + '"]');
+        if (hcontainer && htemplate) {
+          var hNextIdx = parseInt(hcontainer.getAttribute('data-next-index') || '1', 10);
+          var hrow = cloneFromTemplate(htemplate, hNextIdx);
+          if (hrow) {
+            hcontainer.appendChild(hrow);
+            hcontainer.setAttribute('data-next-index', String(hNextIdx + 1));
+            var handsetPhoneDetails = hcontainer.closest('[data-service-subsection="PHONE"]');
+            if (handsetPhoneDetails) updatePhoneBadge(handsetPhoneDetails);
+          }
+        }
+        return;
+      }
+    });
+
+    // ---- Space picker ----
+    // Progressive enhancement over the plain select _space_picker.html
+    // always renders; its posted field is unchanged, so a submit reads
+    // the same value with or without this script running. Mirrors
+    // spaces/list.html's department picker, capped
+    // at one choice: picking a result sets the hidden select's value
+    // rather than toggling `.selected` on multiple options.
+    document.querySelectorAll('[data-space-picker]').forEach(function(select) {
+      var wrap = select.closest('[data-space-add-wrap]');
+      if (!wrap) return;
+      var options = Array.prototype.slice.call(select.options).filter(function(o) {
+        return o.value !== '';
+      });
+
+      select.style.display = 'none';
+
+      var chosenRow = document.createElement('div');
+      chosenRow.className = 'space-picker-chosen';
+
+      var search = document.createElement('input');
+      search.type = 'text';
+      search.placeholder = 'Search rooms and spaces';
+      search.setAttribute('aria-label', 'Search for a space to add');
+
+      var results = document.createElement('ul');
+      results.className = 'space-picker-results';
+      results.style.display = 'none';
+
+      select.insertAdjacentElement('beforebegin', chosenRow);
+      select.insertAdjacentElement('beforebegin', search);
+      select.insertAdjacentElement('afterend', results);
+
+      function matching(term) {
+        return options.filter(function(o) {
+          return o.textContent.toLowerCase().indexOf(term) !== -1;
+        });
+      }
+
+      function renderChosen() {
+        chosenRow.innerHTML = '';
+        if (!select.value) return;
+        var opt = options.filter(function(o) { return o.value === select.value; })[0];
+        if (!opt) return;
+        var chip = document.createElement('span');
+        chip.className = 'pill';
+        var label = document.createElement('span');
+        label.textContent = opt.textContent;
+        var remove = document.createElement('button');
+        remove.type = 'button';
+        remove.setAttribute('aria-label', 'Clear ' + opt.textContent);
+        remove.textContent = '×';
+        remove.addEventListener('click', function() {
+          select.value = '';
+          renderChosen();
+        });
+        chip.appendChild(label);
+        chip.appendChild(remove);
+        chosenRow.appendChild(chip);
+      }
+
+      function renderResults() {
+        var term = search.value.trim().toLowerCase();
+        results.innerHTML = '';
+        if (!term) { results.style.display = 'none'; return; }
+        // 25 is plenty for what a few typed letters narrows ~145 down to
+        // at the largest venue; the point is never listing all of them.
+        var found = matching(term).slice(0, 25);
+        found.forEach(function(opt) {
+          var item = document.createElement('li');
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = opt.textContent;
+          button.addEventListener('click', function() {
+            select.value = opt.value;
+            search.value = '';
+            renderChosen();
+            renderResults();
+          });
+          item.appendChild(button);
+          results.appendChild(item);
+        });
+        results.style.display = found.length ? '' : 'none';
+      }
+
+      search.addEventListener('input', renderResults);
+      search.addEventListener('keydown', function(e) {
+        // Enter picks the top match. preventDefault also stops it from
+        // submitting the surrounding form.
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        var term = search.value.trim().toLowerCase();
+        if (!term) return;
+        var found = matching(term);
+        if (found.length) {
+          select.value = found[0].value;
+          search.value = '';
+          renderChosen();
+          renderResults();
+        }
+      });
+
+      renderChosen();
+    });
   })();
   </script>
+
+  {# Section 5's live preview. Posts the whole form to preview-lines on
+     every change and swaps the returned fragment into #order-preview, so
+     the count a requester sees before submitting is the server's own
+     expand_to_lines() output, not a second count kept in sync by hand.
+     Debounced on free-typing fields so a fast typist does not fire one
+     request per keystroke; a change event (checkbox, select, blur) fires
+     immediately. The initial server-rendered fragment (last saved state,
+     or the just-redisplayed state after a POST) stays in place if the
+     fetch fails, rather than being cleared to nothing. #}
+  <script nonce="{{ csp_nonce }}">
+  (function() {
+    // The dev "view as" header (base.html, above this block) renders a
+    // form of its own first in document order when it's shown, so the
+    // request form is found from the preview container rather than by
+    // the first form element on the page, which would silently be the
+    // wrong one in that configuration.
+    var preview = document.querySelector('[data-order-preview]');
+    var form = preview ? preview.closest('form') : null;
+    if (!form || !preview) return;
+    var previewUrl = "{{ preview_url }}";
+    var debounceTimer = null;
+
+    function refreshPreview() {
+      var formData = new FormData(form);
+      fetch(previewUrl, { method: 'POST', body: formData, credentials: 'same-origin' })
+        .then(function(response) { return response.ok ? response.text() : null; })
+        .then(function(html) {
+          if (html !== null) preview.innerHTML = html;
+        })
+        .catch(function() {
+          // Leave the last fragment in place; a network hiccup should not
+          // blank out a preview the requester was just reading.
+        });
+    }
+
+    form.addEventListener('input', function(e) {
+      if (!form.contains(e.target)) return;
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(refreshPreview, 400);
+    });
+    form.addEventListener('change', function(e) {
+      if (!form.contains(e.target)) return;
+      clearTimeout(debounceTimer);
+      refreshPreview();
+    });
+
+    refreshPreview();
+  })();
+  </script>
+
+{% if show_error_panel %}
+  {# A refused submit must move the page to the panel, not leave the
+     owner looking at the same scroll position a save would. #}
+  <script nonce="{{ csp_nonce }}">
+  (function() {
+    var panel = document.querySelector('[data-submit-error-panel]');
+    if (!panel) return;
+    panel.scrollIntoView({block: 'start'});
+    panel.focus();
+  })();
+  </script>
+{% endif %}
 
 {% endblock %}

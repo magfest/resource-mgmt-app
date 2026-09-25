@@ -29,6 +29,8 @@ from ..helpers import (
     get_unified_audit_events,
     require_work_item_view,
 )
+from .preview import PHONE_LINE_NOT_CHOSEN
+from .spaces import review_space_facts
 
 
 @work_bp.get("/<event>/<dept>/techops/item/<public_id>")
@@ -56,6 +58,12 @@ def techops_work_item_detail(event: str, dept: str, public_id: str):
             selectinload(WorkItem.lines)
                 .joinedload(WorkLine.techops_detail)
                 .joinedload(TechOpsLineDetail.routed_approval_group),
+            selectinload(WorkItem.lines)
+                .joinedload(WorkLine.techops_detail)
+                .joinedload(TechOpsLineDetail.space),
+            selectinload(WorkItem.lines)
+                .joinedload(WorkLine.techops_detail)
+                .joinedload(TechOpsLineDetail.parent_line),
             selectinload(WorkItem.comments),
             joinedload(WorkItem.techops_detail),
         )
@@ -90,6 +98,11 @@ def techops_work_item_detail(event: str, dept: str, public_id: str):
     can_view_audit = user_ctx.is_super_admin or perms.is_worktype_admin
     audit_events = get_unified_audit_events(work_item) if can_view_audit else []
 
+    # Per-line facts a reviewer needs but no line stores directly: the
+    # space's display name (matching what the requester saw) and whether
+    # the item's own department still holds that space for this event.
+    space_facts = review_space_facts(work_item, ctx.department.id, ctx.event_cycle)
+
     return render_template(
         "techops/work_item_detail.html",
         ctx=ctx,
@@ -105,4 +118,6 @@ def techops_work_item_detail(event: str, dept: str, public_id: str):
         audit_events=audit_events,
         can_view_audit=can_view_audit,
         user_ctx=user_ctx,
+        space_facts=space_facts,
+        phone_line_not_chosen=PHONE_LINE_NOT_CHOSEN,
     )

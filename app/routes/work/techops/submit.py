@@ -58,9 +58,7 @@ def techops_request_submit(event: str, dept: str, public_id: str):
 
     if not work_item:
         flash("TechOps request not found.", "error")
-        return redirect(url_for(
-            "work.techops_portfolio_landing", event=event, dept=dept,
-        ))
+        return redirect(url_for("work.department_home", event=event, dept=dept))
 
     perms = build_work_item_perms(work_item, ctx)
     if not perms.can_submit:

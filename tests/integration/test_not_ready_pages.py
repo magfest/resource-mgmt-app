@@ -58,4 +58,4 @@ def test_real_techops_portfolio_route_is_not_shadowed(app):
 
     endpoint, _ = adapter.match("/TST2026/TESTDEPT/techops")
 
-    assert endpoint == "work.techops_portfolio_landing"
+    assert endpoint == "work.techops_portfolio_redirect"

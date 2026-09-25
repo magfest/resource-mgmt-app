@@ -121,6 +121,7 @@
            must add an explicit branch here before they can be
            activated end-to-end. #}
         {% set card_url = none %}
+        {% set card_note = none %}
         {% set url_slug = card.url_slug %}
         {% if url_slug == 'budget' %}
           {# Skip portfolio page and go straight to create confirmation if no primary exists #}
@@ -130,14 +131,24 @@
             {% set card_url = url_for('work.portfolio_landing', event=event_cycle.code, dept=department.code, work_type_slug=url_slug) %}
           {% endif %}
         {% elif url_slug == 'techops' %}
-          {# TechOps doesn't have a primary/supplemental distinction —
-             the portfolio landing handles both create and list. #}
-          {% set card_url = url_for('work.techops_portfolio_landing', event=event_cycle.code, dept=department.code) %}
+          {# A department holds one TechOps request per event, so /techops
+             has no page; it only redirects. Link at the destination
+             directly and spare the common path a redirect hop. #}
+          {% if card.primary_item %}
+            {% set card_url = url_for('work.techops_work_item_detail', event=event_cycle.code, dept=department.code, public_id=card.primary_item.public_id) %}
+          {% elif card.can_edit %}
+            {% set card_url = url_for('work.techops_request_new', event=event_cycle.code, dept=department.code) %}
+          {% else %}
+            {# View-only, nothing started. The new-request form would 403
+               and /techops would bounce straight back to this page.
+               "Coming soon" here would claim TechOps is unbuilt. #}
+            {% set card_note = 'Not started yet' %}
+          {% endif %}
         {% elif url_slug == 'contracts' %}
           {% set card_url = url_for('work.contracts_placeholder', event=event_cycle.code, dept=department.code) %}
         {% elif url_slug == 'supply' %}
-          {# Supply mirrors TechOps: the portfolio landing handles both
-             create and list, so cards point at the supply cab's route. #}
+          {# Supply allows unlimited orders per event, so its landing page
+             is a real list and handles both create and browse. #}
           {% set card_url = url_for('work.supply_portfolio_landing', event=event_cycle.code, dept=department.code) %}
         {% endif %}
 
@@ -149,6 +160,8 @@
               Open {{ card.singular_name }}
             {% endif %}
           </a>
+        {% elif card_note %}
+          <span class="muted small" style="font-style: italic;">{{ card_note }}</span>
         {% else %}
           <span class="muted small" style="font-style: italic;">Coming soon</span>
         {% endif %}

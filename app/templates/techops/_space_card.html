@@ -1,0 +1,377 @@
+{# templates/techops/_space_card.html
+   One space card, driven entirely by `card` (see space_cards() in
+   app/routes/work/techops/spaces.py). On a validation failure the route
+   overlays the posted answers onto card identity before this template
+   ever runs (spaces.redisplay_cards) — this file never reads a
+   separate `answers` variable, so there is one source of truth for what
+   the card shows.
+
+   The server renders each conditional block (needs/nothing, WiFi's
+   description/decline fields) in the display state that matches
+   `card`'s current answer, not expanded-then-hidden: rendering
+   everything and hiding the wrong half afterward is what caused a
+   flash of every branch at once before the script ran. The script block
+   at the bottom of work_item_form.html keeps that state in sync as the
+   requester picks radios or fills in gear; nothing here requires
+   scripting to be completable, since an unanswered radio pair and a
+   correctly-hidden field are both valid HTML on their own.
+
+   WiFi sits first in the needs-block, un-boxed: nearly every room needs
+   only WiFi, so it must read as the lead answer, not one of three equal
+   boxes. Ethernet and phone are collapsed <details> below it, since most
+   rooms never touch them; a <details> needs no script to expand or
+   collapse, only script to keep its badge current as the requester
+   types (see work_item_form.html's updateEthernetBadge/updatePhoneBadge).
+   Each badge's count follows one rule, stated once in spaces.py's
+   count_filled_drops / count_filled_phone docstrings: a row counts when
+   any of its inputs holds a non-blank value. #}
+
+{% macro render_drop(sid, n, drop) %}
+<div class="space-card-row" data-drop-row>
+  <div class="space-card-row-header">DROP {{ n }}</div>
+  <div class="space-card-field">
+    <label for="space_{{ sid }}_ETHERNET_drop_{{ n }}_location">Where in the room?</label>
+    <input type="text" id="space_{{ sid }}_ETHERNET_drop_{{ n }}_location"
+           name="space_{{ sid }}_ETHERNET_drop_{{ n }}_location" maxlength="500"
+           placeholder="e.g. front-left tech table, back wall by the door"
+           value="{{ drop.location }}">
+  </div>
+  <div class="space-card-field">
+    <label for="space_{{ sid }}_ETHERNET_drop_{{ n }}_usage">What is it for?</label>
+    <textarea id="space_{{ sid }}_ETHERNET_drop_{{ n }}_usage"
+              name="space_{{ sid }}_ETHERNET_drop_{{ n }}_usage" rows="2"
+              maxlength="2000"
+              placeholder="What plugs in, who uses it, bandwidth needs">{{ drop.usage }}</textarea>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro render_handset(prefix, h, handset) %}
+<div class="space-card-field" data-handset-row>
+  <label for="{{ prefix }}_handset_{{ h }}_location">Desk phone {{ h }}</label>
+  <input type="text" id="{{ prefix }}_handset_{{ h }}_location"
+         name="{{ prefix }}_handset_{{ h }}_location" maxlength="500"
+         placeholder="Where does this handset sit? e.g. front counter, position 3"
+         value="{{ handset.location }}">
+</div>
+{% endmacro %}
+
+{% macro render_phone_line(sid, n, line) %}
+{% set prefix = 'space_' ~ sid ~ '_PHONE_line_' ~ n %}
+{% set handset_rows = line.handsets + ({'location': ''},) %}
+{# Only offered once another space's line owns a number: with nothing to
+   share, a select with one option ("a new number") is noise, so the
+   field falls back to a plain hidden input carrying the line's own
+   source unchanged. #}
+{% set other_owning_lines = (share_options or [])|rejectattr('space_id', 'equalto', sid)|list %}
+{% set is_sharing = line.source != source_new %}
+<div class="space-card-row" data-phone-line-row>
+  <div class="space-card-row-header">Phone line {{ n }}</div>
+  {% if other_owning_lines %}
+    {% set ns = namespace(known=(line.source == source_new)) %}
+    <div class="space-card-field">
+      <label for="{{ prefix }}_source">Number</label>
+      <select id="{{ prefix }}_source" name="{{ prefix }}_source" data-phone-source
+              data-source-new="{{ source_new }}">
+        <option value="{{ source_new }}" {% if line.source == source_new %}selected{% endif %}>
+          A new number just for this space
+        </option>
+        {% for opt in other_owning_lines %}
+          {% set opt_value = opt.space_id ~ ':' ~ opt.index %}
+          {% if line.source == opt_value %}{% set ns.known = true %}{% endif %}
+          <option value="{{ opt_value }}" {% if line.source == opt_value %}selected{% endif %}>
+            Same number as {{ opt.display_name }} - Line {{ opt.index }}
+          </option>
+        {% endfor %}
+        {% if not ns.known %}
+          {# line.source names no option on this request: a blank,
+             unresolved orphan rebuilt by spaces._redisplay_extras, or a share
+             pointing at a line that dropped off since. Kept as its own
+             selected option, value unchanged, so an unedited resave
+             posts the same unresolved source back rather than quietly
+             becoming a new number; validate() then asks the requester
+             to re-pick. #}
+          <option value="{{ line.source }}" selected>
+            {% if line.source %}A previously shared line that is no longer available{% else %}Choose a line to share{% endif %}
+          </option>
+        {% endif %}
+      </select>
+    </div>
+  {% else %}
+    <input type="hidden" name="{{ prefix }}_source" value="{{ line.source }}">
+  {% endif %}
+  {# A sharing line's purpose is inherited from the line it shares;
+     expand_to_lines() never emits a PHONE_NUMBER row for it, so a
+     purpose typed here would be silently ignored. Hidden rather than
+     removed: with scripting off, switching the select above does not
+     re-hide it, and a value left behind here is still just ignored, not
+     wrong. #}
+  <div class="space-card-field" data-phone-purpose-field
+       {% if is_sharing %}style="display: none;"{% endif %}>
+    <label for="{{ prefix }}_purpose">Purpose</label>
+    <select id="{{ prefix }}_purpose" name="{{ prefix }}_purpose">
+      <option value="" {% if not line.purpose %}selected{% endif %}>Choose one</option>
+      <option value="VOICE" {% if line.purpose == 'VOICE' %}selected{% endif %}>Voice</option>
+      <option value="TEXT" {% if line.purpose == 'TEXT' %}selected{% endif %}>Text</option>
+      <option value="BOTH" {% if line.purpose == 'BOTH' %}selected{% endif %}>Voice and text</option>
+    </select>
+  </div>
+  <label class="space-card-field" style="display: flex; gap: 6px; align-items: center;">
+    <input type="checkbox" name="{{ prefix }}_internal_only" value="1"
+           {% if line.internal_only %}checked{% endif %}>
+    Internal only, no outside calls
+  </label>
+  <div class="space-card-field">
+    <label for="{{ prefix }}_usage">What is this line for?</label>
+    <textarea id="{{ prefix }}_usage" name="{{ prefix }}_usage" rows="2"
+              maxlength="2000">{{ line.usage }}</textarea>
+  </div>
+  <div class="space-card-field">
+    <label for="{{ prefix }}_caller_id_name">Caller ID name</label>
+    <input type="text" id="{{ prefix }}_caller_id_name"
+           name="{{ prefix }}_caller_id_name" maxlength="15"
+           value="{{ line.caller_id_name }}">
+  </div>
+  <div class="space-card-field">
+    <label for="{{ prefix }}_voicemail_slack_channel">Voicemail Slack channel</label>
+    <input type="text" id="{{ prefix }}_voicemail_slack_channel"
+           name="{{ prefix }}_voicemail_slack_channel" maxlength="256"
+           value="{{ line.voicemail_slack_channel }}">
+  </div>
+  <div class="space-card-field">
+    <label for="{{ prefix }}_text_slack_channel">Text Slack channel</label>
+    <input type="text" id="{{ prefix }}_text_slack_channel"
+           name="{{ prefix }}_text_slack_channel" maxlength="256"
+           value="{{ line.text_slack_channel }}">
+  </div>
+  <div class="space-card-field">
+    <label for="{{ prefix }}_forward_target">Forward to</label>
+    <input type="text" id="{{ prefix }}_forward_target"
+           name="{{ prefix }}_forward_target" maxlength="256"
+           value="{{ line.forward_target }}">
+  </div>
+  <div class="muted small mb-8">All handsets on this line ring the same number.</div>
+  <div data-handsets-container data-prefix="{{ prefix }}"
+       data-next-index="{{ (handset_rows|length) + 1 }}">
+    {% for handset in handset_rows %}
+      {{ render_handset(prefix, loop.index, handset) }}
+    {% endfor %}
+  </div>
+  <button type="button" class="btn btn-muted" data-add-handset="{{ prefix }}">
+    + Add another desk phone
+  </button>
+  <template data-handset-template="{{ prefix }}">
+    {{ render_handset(prefix, '__IDX__', {'location': ''}) }}
+  </template>
+</div>
+{% endmacro %}
+
+{% set sid = card.space.id %}
+{# blocked_space_ids is only set on a refused-SUBMIT redisplay
+   (edit.py/create.py); |default([]) covers the GET render and the
+   add-space/draft-save redisplays, which pass nothing. Membership comes
+   from validate()'s ValidationError.space_id, not from matching this
+   card's own display_name against the error text, so two same-prefixed
+   room names cannot mark the wrong card. #}
+{% set is_blocked = sid in (blocked_space_ids|default([])) %}
+<div class="space-card{% if card.answer %} space-card-answered{% endif %}{% if is_blocked %} space-card-blocked{% endif %}"
+     id="space-card-{{ sid }}"
+     data-space-card="{{ sid }}">
+  <input type="hidden" name="space_ids" value="{{ sid }}">
+  <div class="space-card-header">
+    <div class="space-card-title">
+      <strong>{{ card.display_name }}</strong>
+      {% if is_blocked %}
+        <span class="badge-blocked" data-blocked-badge>Needs attention</span>
+      {% endif %}
+      <div class="muted small">{{ card.space.code }}</div>
+    </div>
+    <label class="space-answer">
+      <input type="radio" name="space_{{ sid }}_answer" value="NEEDS"
+             data-space-answer-radio
+             {% if card.answer == 'NEEDS' %}checked{% endif %}>
+      Needs services
+    </label>
+    <label class="space-answer">
+      <input type="radio" name="space_{{ sid }}_answer" value="NOTHING"
+             data-space-answer-radio
+             {% if card.answer == 'NOTHING' %}checked{% endif %}>
+      Nothing needed
+    </label>
+  </div>
+
+  <div class="space-card-body" data-space-card-body>
+
+    {% if card.shared_with %}
+      <div class="callout callout-warning mb-8">
+        <strong>Shared space.</strong>
+        {{ card.display_name }} is also assigned to {{ card.shared_with|join(', ') }}
+        this event. Answer for your own needs. TechOps will confirm anything
+        room-wide with {{ card.shared_with|join(', ') }} before approving it.
+      </div>
+    {% endif %}
+
+    {% if not card.is_assigned %}
+      <div class="callout callout-warning mb-8">
+        This space is not currently assigned to your department. TechOps
+        will confirm it belongs on this request before approving it.
+      </div>
+    {% endif %}
+
+    {# "Nothing needed" branch. Hidden unless the NOTHING radio is
+       currently checked, so an unanswered card shows neither this block
+       nor the needs block below, only the two radios in the header. #}
+    <div data-nothing-needed-block
+         {% if card.answer != 'NOTHING' %}style="display: none;"{% endif %}>
+      <div class="space-card-field">
+        <label for="space_{{ sid }}_no_services_reason">
+          Why does this space need nothing? (optional)
+        </label>
+        <textarea id="space_{{ sid }}_no_services_reason"
+                  name="space_{{ sid }}_no_services_reason" rows="2"
+                  maxlength="2000">{{ card.no_services_reason }}</textarea>
+      </div>
+    </div>
+
+    {# "Needs services" branch. Hidden unless the NEEDS radio is
+       currently checked; see the nothing-needed block's comment above. #}
+    <div data-needs-block
+         {% if card.answer != 'NEEDS' %}style="display: none;"{% endif %}>
+
+      <div class="space-wifi-row" data-service-subsection="WIFI">
+        <div class="space-card-row-header">WiFi staff access/coverage</div>
+        {% if card.wifi_forced %}
+          <div class="callout callout-warning mb-8">
+            This space has wired gear, so WiFi needs an answer. Declining it
+            needs a reason.
+          </div>
+        {% endif %}
+        {# A radio pair, not a checkbox: "declined" and "never answered"
+           both leave a checkbox unticked with nothing to tell them
+           apart. Neither radio defaults checked here; `wifi_forced`
+           explains why a decline needs a reason (the callout above), it
+           does not pre-select an answer the requester has not given. #}
+        <label class="space-card-field" style="display: flex; gap: 6px; align-items: center;">
+          <input type="radio" name="space_{{ sid }}_WIFI_enabled" value="1"
+                 data-wifi-answer-radio
+                 {% if card.wifi_requested is true %}checked{% endif %}>
+          WiFi needed in this space
+        </label>
+        <label class="space-card-field" style="display: flex; gap: 6px; align-items: center;">
+          <input type="radio" name="space_{{ sid }}_WIFI_enabled" value="0"
+                 data-wifi-answer-radio
+                 {% if card.wifi_requested is false %}checked{% endif %}>
+          No WiFi needed here
+        </label>
+        {# Shown whenever "No WiFi needed here" is selected, whether or not
+           a reason is required. validate() still requires the reason only
+           for a forced space (invariant 2); asking is not the same as
+           requiring, so this field's visibility does not depend on
+           wifi_forced. #}
+        <div class="space-card-field" data-wifi-declined-field
+             {% if card.wifi_requested is not false %}style="display: none;"{% endif %}>
+          <label for="space_{{ sid }}_WIFI_declined_reason">Why decline WiFi here?</label>
+          <input type="text" id="space_{{ sid }}_WIFI_declined_reason"
+                 name="space_{{ sid }}_WIFI_declined_reason" maxlength="500"
+                 value="{{ card.wifi_declined_reason }}">
+        </div>
+        <div class="space-card-field" data-wifi-description-field
+             {% if card.wifi_requested is not true %}style="display: none;"{% endif %}>
+          <label for="space_{{ sid }}_WIFI_description">Who and what is on this WiFi?</label>
+          <textarea id="space_{{ sid }}_WIFI_description"
+                    name="space_{{ sid }}_WIFI_description" rows="2"
+                    maxlength="2000"
+                    placeholder="Staff laptops, badge scanners, streaming, attendees on network">{{ card.wifi_description }}</textarea>
+        </div>
+      </div>
+
+      <details class="space-collapsible" data-service-subsection="ETHERNET"
+               {% if card.drops %}open{% endif %}>
+        <summary class="space-collapsible-summary">
+          <span class="space-collapsible-heading">
+            <span class="space-card-row-header">Hardwired ethernet</span>
+            {% if card.ethernet_description %}
+              <span class="muted small">{{ card.ethernet_description }}</span>
+            {% endif %}
+          </span>
+          <span class="muted small" data-ethernet-count>&middot; {{ card.ethernet_count }} drop{{ 's' if card.ethernet_count != 1 else '' }}</span>
+        </summary>
+        <div class="space-collapsible-body">
+          {# Rendered rows are exactly the saved/posted drops, no trailing
+             blank: a filled Drop 1 next to an empty Drop 2 read as a saved
+             row to delete, and no-script row support was dropped two
+             rounds ago, so nothing needs that blank to add a row. #}
+          <div data-drops-container data-space-id="{{ sid }}"
+               data-next-index="{{ (card.drops|length) + 1 }}">
+            {% for drop in card.drops %}
+              {{ render_drop(sid, loop.index, drop) }}
+            {% endfor %}
+          </div>
+          <button type="button" class="btn btn-muted" data-add-drop="{{ sid }}">
+            {{ '+ Add another drop' if card.drops else '+ Add a drop' }}
+          </button>
+          <template data-drop-template="{{ sid }}">
+            {{ render_drop(sid, '__IDX__', {'location': '', 'usage': ''}) }}
+          </template>
+        </div>
+      </details>
+
+      <details class="space-collapsible" data-service-subsection="PHONE"
+               {% if card.phone_lines %}open{% endif %}>
+        <summary class="space-collapsible-summary">
+          <span class="space-collapsible-heading">
+            <span class="space-card-row-header">Phone System (Hotliner)</span>
+            {% if card.phone_description %}
+              <span class="muted small">{{ card.phone_description }}</span>
+            {% endif %}
+          </span>
+          <span class="muted small" data-phone-count>&middot; {{ card.phone_line_count }} line{{ 's' if card.phone_line_count != 1 else '' }}{% if card.phone_handset_count %}, {{ card.phone_handset_count }} handset{{ 's' if card.phone_handset_count != 1 else '' }}{% endif %}</span>
+        </summary>
+        <div class="space-collapsible-body">
+          {% if not (share_options or [])|rejectattr('space_id', 'equalto', sid)|list %}
+            <div class="muted small mb-8">
+              Sharing another room's number becomes an option here once you've
+              saved a draft with that room's own line filled in.
+            </div>
+          {% endif %}
+          {# Same no-trailing-blank rule as the ethernet drops above. #}
+          <div data-phone-lines-container data-space-id="{{ sid }}"
+               data-next-index="{{ (card.phone_lines|length) + 1 }}">
+            {% for line in card.phone_lines %}
+              {{ render_phone_line(sid, loop.index, line) }}
+            {% endfor %}
+          </div>
+          <button type="button" class="btn btn-muted" data-add-phone-line="{{ sid }}">
+            {{ '+ Add another phone line' if card.phone_lines else '+ Add a phone line' }}
+          </button>
+          <template data-phone-line-template="{{ sid }}">
+            {{ render_phone_line(sid, '__IDX__', {
+                  'source': 'NEW', 'purpose': none, 'internal_only': False,
+                  'usage': '', 'caller_id_name': '', 'voicemail_slack_channel': '',
+                  'text_slack_channel': '', 'forward_target': '', 'handsets': ()}) }}
+          </template>
+        </div>
+      </details>
+
+    </div>
+
+    <div class="space-card-field">
+      <label for="space_{{ sid }}_notes">Special requests for this room (optional)</label>
+      <textarea id="space_{{ sid }}_notes" name="space_{{ sid }}_notes" rows="2"
+                maxlength="2000"
+                placeholder="Anything unusual about this space, like load-in windows, locked hours, or cable runs that can't cross a doorway">{{ card.notes }}</textarea>
+    </div>
+
+    <div class="btn-row mt-8">
+      {# A real submit, not a client-side collapse: item 2 fixed the old
+         button lying about saving. Posts save_space_id so the route knows
+         to redirect back to this card (?open=<sid>) instead of the read-
+         only detail page. Collapsing here is the script's job (item 4's
+         header-click toggle covers it too, with no save attached). #}
+      <button type="submit" class="btn btn-muted" name="save_space_id" value="{{ sid }}">
+        Save this space
+      </button>
+    </div>
+    <div class="space-card-summary" data-space-card-summary hidden></div>
+  </div>
+</div>

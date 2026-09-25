@@ -1,0 +1,27 @@
+{# templates/macros/techops_line_facts.html #}
+{# Shared rendering for per-line facts a TechOps reviewer needs but no
+   line stores as display text: which space it is installed in, and what
+   a desk phone rings. Used by work_item_detail.html, line_review.html,
+   and quick_review.html so the wording cannot drift across the three the
+   way space_display_names() once drifted across its three callers
+   (spaces.py's docstring). #}
+
+{% macro render_line_space(detail, space_facts) %}
+  {%- if detail is none or detail.space_id is none -%}
+    <span class="muted">Department-wide</span>
+  {%- else -%}
+    {%- set fact = space_facts.get(detail.space_id) -%}
+    {{ fact.display_name if fact else 'Unknown space' }}
+    {%- if fact and not fact.is_assigned %}
+      <div class="pill pill-warning" style="margin-top:4px; font-size:11px;">Not assigned to this department</div>
+    {%- endif -%}
+  {%- endif -%}
+{% endmacro %}
+
+{% macro render_phone_ring(detail, phone_line_not_chosen) %}
+  {%- if detail.parent_line -%}
+    Rings the number on line {{ detail.parent_line.line_number }}.
+  {%- else -%}
+    {{ phone_line_not_chosen }}
+  {%- endif -%}
+{% endmacro %}

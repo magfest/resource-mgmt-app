@@ -5,6 +5,7 @@ from flask import abort
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.models import (
+    TechOpsLineDetail,
     WorkItem,
     WorkLine,
     BudgetLineDetail,
@@ -48,7 +49,10 @@ def get_work_item_by_public_id(event: str, dept: str, public_id: str, work_type_
         # get_line_detail() / get_line_amount_cents() don't N+1.
         selectinload(WorkItem.lines).joinedload(WorkLine.contract_detail),
         selectinload(WorkItem.lines).joinedload(WorkLine.supply_detail),
-        selectinload(WorkItem.lines).joinedload(WorkLine.techops_detail),
+        selectinload(WorkItem.lines).joinedload(WorkLine.techops_detail)
+            .joinedload(TechOpsLineDetail.space),
+        selectinload(WorkItem.lines).joinedload(WorkLine.techops_detail)
+            .joinedload(TechOpsLineDetail.parent_line),
         # Eager load comments
         selectinload(WorkItem.comments),
     ).first()

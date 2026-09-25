@@ -17,6 +17,43 @@ from datetime import datetime
 from app import db
 
 
+def compose_combined_name(names: list[str]) -> str:
+    """Compose one name for a combined space from its members' names.
+
+    Takes the members' shared leading words, then joins the differing tails
+    with "/": ["Chesapeake 4", "Chesapeake 5"] becomes "Chesapeake 4/5"; three
+    slices of one room compose to exactly what the venue calls that room,
+    e.g. ["RiverView 1", "RiverView 2", "RiverView 3"] to "RiverView 1/2/3".
+    Falls back to joining full names with " + " when no leading word is
+    shared, which a fold always has except for a room whose slices carry no
+    common prefix to begin with. A single name is returned unchanged.
+
+    Lives in app/models, not app/routes/spaces/: `spaces_for_department()`
+    must import nothing from app.routes, and `build_space_rows()` needs the
+    same rule, so the one function both call has to sit somewhere neither
+    import path runs through.
+    """
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+
+    word_lists = [name.split() for name in names]
+    shortest = min(len(words) for words in word_lists)
+    shared = 0
+    while shared < shortest and len({words[shared] for words in word_lists}) == 1:
+        shared += 1
+
+    # A prefix that consumes an entire member's name leaves that member no
+    # tail to join. Fall back rather than produce "Chesapeake /5".
+    if shared == 0 or shared == shortest:
+        return " + ".join(names)
+
+    prefix = " ".join(word_lists[0][:shared])
+    tails = "/".join(" ".join(words[shared:]) for words in word_lists)
+    return f"{prefix} {tails}"
+
+
 class Venue(db.Model):
     """A physical venue. MAGFest runs events at roughly five of these."""
     __tablename__ = "venues"

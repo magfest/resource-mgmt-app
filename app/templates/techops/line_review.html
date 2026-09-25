@@ -1,6 +1,7 @@
 {# templates/techops/line_review.html #}
 {% extends "layout/base.html" %}
 {% from "macros/status_pill.html" import render_status_pill %}
+{% from "macros/techops_line_facts.html" import render_line_space, render_phone_ring %}
 
 {% block title %}Line {{ line.line_number }} Review - {{ work_item.public_id }}{% endblock %}
 
@@ -86,9 +87,44 @@
           {% endif %}
         </div>
 
-        {% if is_per_instance %}
-          {# Per-instance line: location + usage. RADIO_CHANNEL reuses
-             the location column for channel name, so labels diverge. #}
+        <div class="meta" style="margin-top: 12px;">
+          <div><strong>Space:</strong></div>
+          <div>{{ render_line_space(detail, space_facts) }}</div>
+        </div>
+
+        {% if st and st.code == "NO_SERVICES" %}
+          <div class="meta" style="margin-top: 12px;">
+            <div><strong>Reason:</strong></div>
+            <div style="white-space: pre-wrap;">{{ detail.description if detail and detail.description else 'No reason given.' }}</div>
+          </div>
+        {% elif st and st.code == "PHONE_NUMBER" %}
+          <div class="meta" style="margin-top: 12px;">
+            <div>
+              <strong>Purpose:</strong>
+              {% if detail.purpose == "VOICE" %}Voice
+              {% elif detail.purpose == "TEXT" %}Text
+              {% elif detail.purpose == "BOTH" %}Voice &amp; text
+              {% else %}<span class="muted">Not yet chosen</span>
+              {% endif %}
+              {% if detail.internal_only %}(internal only){% endif %}
+            </div>
+          </div>
+          <div class="meta" style="margin-top: 12px;">
+            <div><strong>Usage:</strong></div>
+            <div style="white-space: pre-wrap;">{{ detail.usage if detail and detail.usage else '-' }}</div>
+          </div>
+        {% elif st and st.code == "DESK_PHONE" %}
+          <div class="meta" style="margin-top: 12px;">
+            <div><strong>Location:</strong></div>
+            <div>{{ detail.location if detail and detail.location else '-' }}</div>
+          </div>
+          <div class="meta" style="margin-top: 12px;">
+            <div><strong>Rings:</strong></div>
+            <div>{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
+          </div>
+        {% elif is_per_instance %}
+          {# Remaining per-instance case: ETHERNET (RADIO_CHANNEL reuses
+             the location column for channel name, so its label diverges). #}
           {% if st.code == "RADIO_CHANNEL" %}
             <div class="meta" style="margin-top: 12px;">
               <div><strong>Channel name:</strong></div>

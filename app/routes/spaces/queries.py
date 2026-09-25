@@ -8,12 +8,16 @@ the route layer, not the framework.
 
 The alias, availability and fold rules here must agree with
 `build_space_rows()` in `helpers.py`, which computes the same three things
-for the Spaces admin page.
+for the Spaces admin page. Both call `compose_combined_name()`
+(`app/models/spaces.py`) for a folded primary's name, so the two pages
+never drift onto two different names for the same combined space.
 """
 from __future__ import annotations
 
 from app import db
-from app.models import Space, SpaceAssignment, SpaceEventOverride
+from app.models import (
+    Space, SpaceAssignment, SpaceEventOverride, compose_combined_name,
+)
 
 
 def spaces_for_department(department_id: int, event_cycle_id: int) -> list[dict]:
@@ -25,9 +29,11 @@ def spaces_for_department(department_id: int, event_cycle_id: int) -> list[dict]
 
     Returns:
         Dicts with keys `space` (the Space row), `display_name` (this
-        event's alias or space.name), `is_available`, `unavailable_reason`,
-        and `covers`: a room's active slices, or a primary slice's active
-        folded members, empty when the assignment carries neither.
+        event's alias; else, for a folded primary, its members composed
+        with `compose_combined_name()`; else space.name), `is_available`,
+        `unavailable_reason`, and `covers`: a room's active slices, or a
+        primary slice's active folded members, empty when the assignment
+        carries neither.
     """
     assigned = (
         db.session.query(Space)
@@ -89,12 +95,20 @@ def spaces_for_department(department_id: int, event_cycle_id: int) -> list[dict]
         # A held space is a room or a slice, never both, so at most one of
         # these two lookups returns anything; the concatenation stays
         # ordered because each side is already sorted the same way.
-        covers = (children_by_parent_id.get(space.id, [])
-                 + folded_by_primary_id.get(space.id, []))
+        folded = folded_by_primary_id.get(space.id, [])
+        covers = children_by_parent_id.get(space.id, []) + folded
+        if override and override.alias:
+            display_name = override.alias
+        elif folded:
+            # A room's own slices (children_by_parent_id) are not a
+            # combine; only a fold names one space after several.
+            display_name = compose_combined_name(
+                [space.name] + [member.name for member in folded])
+        else:
+            display_name = space.name
         entries.append({
             "space": space,
-            "display_name": (override.alias if override and override.alias
-                             else space.name),
+            "display_name": display_name,
             "is_available": override.is_available if override else True,
             "unavailable_reason": (override.unavailable_reason
                                    if override else None),

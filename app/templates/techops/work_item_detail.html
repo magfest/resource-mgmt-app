@@ -4,6 +4,7 @@
 {% from "macros/checkout_banner.html" import render_checkout_banner %}
 {% from "macros/comments.html" import render_comments %}
 {% from "macros/audit_log.html" import render_audit_log with context %}
+{% from "macros/techops_line_facts.html" import render_line_space, render_phone_ring %}
 
 {% block title %}{{ work_item.public_id }} - TechOps Request{% endblock %}
 
@@ -17,7 +18,9 @@
     <span style="margin: 0 6px;">&rsaquo;</span>
     <a href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">{{ ctx.department.name }}</a>
     <span style="margin: 0 6px;">&rsaquo;</span>
-    <a href="{{ url_for('work.techops_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">TechOps</a>
+    {# Not a link: TechOps has no page of its own. The department holds one
+       request per event, so its own crumb one step back is the section. #}
+    <span>TechOps</span>
     <span style="margin: 0 6px;">&rsaquo;</span>
     <span>{{ work_item.public_id }}</span>
   </nav>
@@ -127,8 +130,8 @@
     {% endif %}
 
     <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
-    <a class="btn" href="{{ url_for('work.techops_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
-      &larr; Back to TechOps Portfolio
+    <a class="btn" href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+      &larr; Back to {{ ctx.department.name }}
     </a>
   </div>
 
@@ -177,6 +180,7 @@
             <tr>
               <th style="width: 50px;">#</th>
               <th style="width: 180px;">Service</th>
+              <th style="width: 160px;">Space</th>
               <th>Details</th>
               <th style="width: 140px;">Status</th>
               <th style="width: 140px;">Reviewer</th>
@@ -202,18 +206,33 @@
                   {% endif %}
                 </td>
                 <td>
+                  {{ render_line_space(detail, space_facts) }}
+                </td>
+                <td>
                   {% if detail %}
-                    {% if st and st.instance_noun %}
-                      {# Per-instance line: show location + usage with
-                         service-appropriate labels (RADIO_CHANNEL repurposes
-                         the location column for the channel name). #}
-                      {% if st.code == "RADIO_CHANNEL" %}
-                        <div><strong>Channel:</strong> {{ detail.location or '-' }}</div>
-                        <div><strong>Use:</strong> {{ detail.usage or '-' }}</div>
-                      {% else %}
-                        <div><strong>Location:</strong> {{ detail.location or '-' }}</div>
-                        <div><strong>Usage:</strong> {{ detail.usage or '-' }}</div>
-                      {% endif %}
+                    {% if st and st.code == "RADIO_CHANNEL" %}
+                      <div><strong>Channel:</strong> {{ detail.location or '-' }}</div>
+                      <div><strong>Use:</strong> {{ detail.usage or '-' }}</div>
+                    {% elif st and st.code == "PHONE_NUMBER" %}
+                      <div>
+                        <strong>Purpose:</strong>
+                        {% if detail.purpose == "VOICE" %}Voice
+                        {% elif detail.purpose == "TEXT" %}Text
+                        {% elif detail.purpose == "BOTH" %}Voice &amp; text
+                        {% else %}<span class="muted">Not yet chosen</span>
+                        {% endif %}
+                        {% if detail.internal_only %}(internal only){% endif %}
+                      </div>
+                      <div><strong>Usage:</strong> {{ detail.usage or '-' }}</div>
+                    {% elif st and st.code == "DESK_PHONE" %}
+                      <div><strong>Location:</strong> {{ detail.location or '-' }}</div>
+                      <div>{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
+                    {% elif st and st.code == "NO_SERVICES" %}
+                      <div><strong>Reason:</strong> {{ detail.description or 'No reason given.' }}</div>
+                    {% elif st and st.instance_noun %}
+                      {# Remaining per-instance case: ETHERNET. #}
+                      <div><strong>Location:</strong> {{ detail.location or '-' }}</div>
+                      <div><strong>Usage:</strong> {{ detail.usage or '-' }}</div>
                     {% elif detail.description %}
                       {{ detail.description }}
                     {% else %}

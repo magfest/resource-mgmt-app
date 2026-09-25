@@ -9,6 +9,7 @@ coming-soon fallback for not-yet-built worktypes.
 from . import portfolio
 from . import create
 from . import edit
+from . import preview
 from . import submit
 from . import view
 from . import admin
