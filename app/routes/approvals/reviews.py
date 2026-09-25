@@ -47,6 +47,7 @@ from . import approvals_bp
 from .helpers import (
     is_reviewer_for_line,
     can_respond_to_work_item,
+    can_view_work_item_lines,
     get_review_for_line,
     get_or_create_review,
     apply_review_decision,
@@ -134,7 +135,10 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         routed_group = get_line_routing_approval_group(line)
         routed_group_id = routed_group.id if routed_group else None
         is_in_routed_group = routed_group_id and routed_group_id in user_ctx.approval_group_ids
-        is_requester = can_respond_to_work_item(work_item, ctx, user_ctx)
+        # The read predicate, not can_respond_to_work_item. This is a view
+        # guard, and view-only is the default shape of a membership grant, so
+        # gating it on edit locked out most of the requesting department.
+        is_requester = can_view_work_item_lines(work_item, ctx, user_ctx)
 
         if not is_in_routed_group and not is_requester:
             abort(403, "You do not have permission to view this line.")
@@ -192,6 +196,16 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         and can_respond_to_work_item(work_item, ctx, user_ctx)
     )
 
+    # Keyed off the grant, not off whether any button happens to be showing.
+    # An editor looking at a line that is not awaiting them also sees no
+    # buttons; telling them they have view-only access would be false.
+    is_view_only_member = (
+        not is_admin
+        and not can_review
+        and not can_respond_to_work_item(work_item, ctx, user_ctx)
+        and can_view_work_item_lines(work_item, ctx, user_ctx)
+    )
+
     # Polymorphic line detail + total. For non-monetary worktypes
     # (TECHOPS) get_line_amount_cents returns 0, which the templates
     # that don't render an amount column simply ignore.
@@ -233,6 +247,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         perms=perms,
         user_ctx=user_ctx,
         is_admin=is_admin,
+        is_view_only_member=is_view_only_member,
         work_item=work_item,
         line=line,
         detail=detail,

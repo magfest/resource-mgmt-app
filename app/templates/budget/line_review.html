@@ -403,6 +403,8 @@
         {% endif %}
       {% endif %}
 
+      {% include "components/_view_only_notice.html" %}
+
       {# Reviewer Group Review Decision Form #}
       <div id="review-form-ag" {% if is_admin %}style=""{% endif %}>
         {% if can_decide %}
