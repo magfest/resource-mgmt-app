@@ -164,8 +164,19 @@ def techops_request_update(event: str, dept: str, public_id: str):
     errors = parse_errors + validate(answers, has_space_cards=bool(answers.spaces))
 
     if errors:
-        for err in errors:
-            flash(err, "error")
+        # The submit-refusal panel renders only for a refused SUBMIT, not
+        # for a draft save that also happens to fail (a missing contact
+        # name, say): a save must never look like the outcome the owner
+        # reported, a refused submit landing back on the form unmarked.
+        show_error_panel = answers.action == ACTION_SUBMIT
+        # The panel replaces the flash for a refused submit; flashing the
+        # same errors here too showed every problem twice, once as a flash
+        # and once as the panel's own bullet. A draft-save failure has no
+        # panel, so it still flashes, same as any other save-time error
+        # (a permission failure, say) that the panel does not cover.
+        if not show_error_panel:
+            for err in errors:
+                flash(err, "error")
         # `cards` reflects the draft as last saved to the database; on a
         # validation failure `answers` is what the requester just typed
         # and has not been persisted. redisplay_cards() overlays the
@@ -177,11 +188,6 @@ def techops_request_update(event: str, dept: str, public_id: str):
         # have no card concept.
         display_cards = redisplay_cards(cards, answers, offerable_by_id)
         service_types_list = active_service_types()
-        # The submit-refusal panel renders only for a refused SUBMIT, not
-        # for a draft save that also happens to fail (a missing contact
-        # name, say): a save must never look like the outcome the owner
-        # reported, a refused submit landing back on the form unmarked.
-        show_error_panel = answers.action == ACTION_SUBMIT
         blocking_errors = panel_entries(errors) if show_error_panel else []
         blocked_space_ids = {
             entry["space_id"] for entry in blocking_errors

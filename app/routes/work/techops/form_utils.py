@@ -18,6 +18,7 @@ diffing against existing rows would add code without adding value.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from app import db
@@ -88,6 +89,21 @@ MAX_DEPARTMENT_WIDE_INSTANCES = 50
 
 # Caller ID as the phone system displays it.
 MAX_CALLER_ID_LENGTH = 15
+
+# ---------------------------------------------------------------------------
+# Phone-line refusals, deliberately off for this pass. The phone block is
+# being redesigned next phase and its validation was blocking review of
+# everything else on the form. Every phone-line rule this flag gates
+# still exists in code, guarded rather than deleted, and comes back by
+# flipping this back to True when the phone block is rebuilt. Parsing
+# (_parse_phone_lines) and expand_to_lines() are untouched: only the
+# refusal is suppressed, so a half-filled phone line still previews and
+# still saves. Gated call sites: _validate_phone_line (purpose, sharing-
+# source, handset location) and the caller ID length check in
+# _parse_phone_lines below. The tests these rules had are skipped, not
+# deleted, with `reason` pointing back at this flag.
+PHONE_VALIDATION_ENABLED = False
+# ---------------------------------------------------------------------------
 
 
 class ValidationError(str):
@@ -241,7 +257,8 @@ def _parse_phone_lines(space_id: int, form: "MultiDict",
         # instead of hidden by a cut.
         caller_id_raw = (form.get(f"{prefix}_caller_id_name") or "").strip()
         caller_id_name = caller_id_raw.upper()
-        if len(caller_id_raw) > MAX_CALLER_ID_LENGTH:
+        # Gated by PHONE_VALIDATION_ENABLED; see that flag's comment.
+        if PHONE_VALIDATION_ENABLED and len(caller_id_raw) > MAX_CALLER_ID_LENGTH:
             errors.append(
                 f"{label} phone line {n}: caller ID name is at most "
                 f"{MAX_CALLER_ID_LENGTH} characters.")
@@ -513,7 +530,32 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
         for line in space.phone_lines:
             _validate_phone_line(name, sid, line, owners, all_keys, errors)
 
-    if not answers.no_services_needed and not expand_to_lines(answers):
+        # A space marked NEEDS is the requester's own answer, not an
+        # omission; expand_to_lines() is the one place that knows whether
+        # that answer produced anything. Checked against this space alone
+        # (department_wide and no_services_needed stripped) so a real line
+        # elsewhere on the request cannot mask this card's emptiness.
+        space_only = replace(
+            answers, spaces=(space,), department_wide=(),
+            no_services_needed=False,
+        )
+        if not expand_to_lines(space_only):
+            errors.append(ValidationError(
+                f"{name} is marked as needing services, but nothing has "
+                "been requested for it. Add a service, or choose "
+                "\"Nothing needed\".",
+                sid,
+            ))
+
+    # Only when nothing on the request was answered at all: a space marked
+    # NEEDS that itself produces no lines already gets its own error above,
+    # naming the card, so this generic message would otherwise repeat that
+    # error without saying where to look.
+    answered_spaces = [
+        s for s in answers.spaces if s.answer in (ANSWER_NEEDS, ANSWER_NOTHING)
+    ]
+    if (not answers.no_services_needed and not answered_spaces
+            and not expand_to_lines(answers)):
         errors.append(ValidationError(
             "This request would create no lines. Answer at least one "
             "space, or say the department needs nothing."
@@ -536,7 +578,11 @@ def _validate_phone_line(
     real space ids and line indexes; nothing is parsed out of it, so a
     malformed source ("banana", "1:", an oversized number) just fails to
     match and cannot raise.
+
+    Gated by PHONE_VALIDATION_ENABLED; see that flag's comment for why.
     """
+    if not PHONE_VALIDATION_ENABLED:
+        return
     if line.source == SOURCE_NEW:
         if line.purpose not in PURPOSES:
             errors.append(ValidationError(

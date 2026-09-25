@@ -33,12 +33,14 @@ from app.models import (
     WORK_ITEM_STATUS_DRAFT,
 )
 from app.routes.work.techops.form_utils import (
+    ACTION_SUBMIT,
     audit_draft_edit,
     capture_form_snapshot,
     capture_state_snapshot,
     replace_lines,
     replace_spaces,
     upsert_request_detail,
+    validate,
 )
 from app.routes.work.techops.line_grain import (
     EthernetDrop,
@@ -46,6 +48,7 @@ from app.routes.work.techops.line_grain import (
     PhoneLine,
     RequestAnswers,
     SpaceAnswer,
+    expand_to_lines,
 )
 from app.seeds.bootstrap import (
     seed_approval_groups,
@@ -222,6 +225,36 @@ def test_a_handset_resolves_to_the_right_number_when_a_text_line_is_dropped(
     text_number = next(d for d in numbers if d.purpose == "TEXT")
     assert handsets[0].parent_line_id == voice_number.work_line_id
     assert handsets[0].parent_line_id != text_number.work_line_id
+
+
+def test_a_half_filled_phone_line_saves_what_expand_to_lines_planned(
+    app, techops_draft, two_spaces
+):
+    """PHONE_VALIDATION_ENABLED is off (form_utils.py). A line with no
+    purpose, sharing a number that does not exist, and a handset with no
+    location must pass validate() and, once saved, produce exactly the
+    rows expand_to_lines() itself would plan; replace_lines() has no
+    second implementation of the grain rules to drift from that one.
+    """
+    owner = two_spaces[0]
+    space = _space(space_id=owner.id, wifi_requested=True, phone_lines=(
+        PhoneLine(index=1, source="9999:1", purpose=None, internal_only=False,
+                  handsets=(PhoneHandset(location=""),)),
+    ))
+    answers = _answers([space], action=ACTION_SUBMIT)
+    assert validate(answers, has_space_cards=True) == []
+
+    planned = expand_to_lines(answers)
+    replace_lines(techops_draft, answers)
+    db.session.flush()
+
+    saved_codes = [
+        d.service_type.code for d in
+        (db.session.query(TechOpsLineDetail)
+         .join(TechOpsLineDetail.work_line)
+         .order_by(TechOpsLineDetail.work_line_id).all())
+    ]
+    assert saved_codes == [line.service_code for line in planned]
 
 
 def test_a_draft_resave_does_not_violate_the_parent_line_id_fk(

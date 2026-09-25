@@ -331,6 +331,59 @@ def test_a_draft_save_refused_for_an_unrelated_reason_still_shows_no_panel(
     assert 'data-submit-error-panel' not in body
 
 
+def test_a_refused_submit_shows_each_problem_exactly_once(app, client, techops_portfolio):
+    """The reported duplication bug: a refused submit used to flash every
+    validate() error above the panel that already listed it, so the owner
+    saw "nothing has been requested for it" once as a red flash and once
+    as the panel's only bullet. Counted, not just checked present, since
+    `in` would pass even with the duplicate still there.
+    """
+    _login(client, "test:admin")
+    room = techops_portfolio["room"]
+    response = client.post(techops_portfolio["new_request_url"], data={
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "submit",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_WIFI_enabled": "0",
+        f"space_{room.id}_WIFI_declined_reason": "No coverage needed",
+        # No drops, no phone lines: the space answers NEEDS but requests
+        # nothing, the owner's actual reported case.
+    })
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert body.count("nothing has been requested for it") == 1
+    assert "flash-message" not in body
+
+
+def test_a_needs_services_space_with_nothing_requested_names_and_marks_its_card(
+        app, client, techops_portfolio):
+    """The owner's reported case: a space answered "Needs services",
+    declined WiFi with a reason, no drops, no phone lines. That produces
+    zero lines, but the space WAS answered, so the error must name the
+    room and mark its card, not point at the generic "answer at least one
+    space" message, which is for a request where nothing was answered."""
+    _login(client, "test:admin")
+    room = techops_portfolio["room"]
+    response = client.post(techops_portfolio["new_request_url"], data={
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "submit",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_WIFI_enabled": "0",
+        f"space_{room.id}_WIFI_declined_reason": "No coverage needed",
+    })
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _panel_html(body)
+    assert "Expo Hall E" in panel
+    assert "nothing has been requested for it" in panel
+    assert "This request would create no lines" not in body
+    assert "space-card-blocked" in _card_class_attr(body, room.id)
+
+
 def test_a_refused_submit_still_preserves_typed_values(app, client, techops_portfolio):
     """redisplay_cards() must keep doing its job once the refusal also
     renders a panel: the panel is additive, not a replacement for the

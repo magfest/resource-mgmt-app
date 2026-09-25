@@ -5,6 +5,7 @@ convenience; this one is the rule.
 """
 from dataclasses import replace
 
+import pytest
 from werkzeug.datastructures import MultiDict
 
 from app.routes.work.techops.form_utils import (
@@ -15,6 +16,11 @@ from app.routes.work.techops.line_grain import (
     expand_to_lines,
 )
 from tests.unit.test_techops_line_grain import _answers, _space
+
+# Phone-line refusals are off for this pass; see PHONE_VALIDATION_ENABLED
+# in form_utils.py. These tests are the spec for when the rules come back,
+# not dead weight, so they are skipped rather than deleted.
+PHONE_VALIDATION_SKIP = "phone validation off; see PHONE_VALIDATION_ENABLED in form_utils.py"
 
 
 def test_submitting_with_an_unanswered_space_is_rejected_by_name():
@@ -67,6 +73,7 @@ def test_declining_wifi_is_fine_when_a_reason_is_given():
                     has_space_cards=True) == []
 
 
+@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
 def test_a_phone_line_with_no_purpose_is_rejected():
     space = _space(phone_lines=(PhoneLine(index=1, source="NEW", purpose=None,
                                           internal_only=False, usage="Front"),))
@@ -74,6 +81,7 @@ def test_a_phone_line_with_no_purpose_is_rejected():
     assert any("purpose" in e.lower() for e in errors)
 
 
+@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
 def test_sharing_a_line_that_does_not_exist_is_rejected():
     space = _space(space_id=2, display_name="Regdesk B",
                    phone_lines=(PhoneLine(index=1, source="9:1", purpose=None,
@@ -83,6 +91,7 @@ def test_sharing_a_line_that_does_not_exist_is_rejected():
     assert any("Regdesk B" in e and "does not exist" in e for e in errors)
 
 
+@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
 def test_an_orphaned_handsets_blank_source_is_rejected_not_silently_new():
     """End to end through parse_form, not the dataclass shortcut: a source
     field posted empty (as _space_card.html now renders an orphaned
@@ -104,6 +113,7 @@ def test_an_orphaned_handsets_blank_source_is_rejected_not_silently_new():
     assert any("does not exist" in e for e in errors)
 
 
+@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
 def test_sharing_a_line_that_itself_shares_is_rejected():
     """A chain has no owner at the end of it, so nothing provisions."""
     owner = _space(space_id=1, phone_lines=(
@@ -146,6 +156,7 @@ def test_a_needs_space_half_filled_saves_as_a_draft_without_error():
                     has_space_cards=True) == []
 
 
+@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
 def test_a_handset_with_no_location_is_rejected_on_submit():
     space = _space(display_name="Regdesk C", phone_lines=(
         PhoneLine(index=1, source="NEW", purpose="VOICE",
@@ -215,16 +226,47 @@ def test_missing_contact_name_is_rejected_even_on_a_draft():
     assert any("name" in e.lower() for e in errors)
 
 
-def test_submitting_a_request_that_would_create_no_lines_is_rejected():
-    """A space answered NEEDS with nothing filled in produces no work at
-    all. Without this rule a department submits an empty request and
-    TechOps has nothing to review and no affirmation that nothing is
-    wanted. Deleting the rule passed all 81 techops tests.
+def test_a_needs_space_with_nothing_requested_gets_its_own_named_error():
+    """The owner's actual case: a room answered "Needs services", declined
+    WiFi with a reason, no drops, no phone lines. That is a real answer,
+    not an omission, so the error must name the room and point at the
+    remedy rather than the generic "answer at least one space" message,
+    which assumes nothing was answered at all.
     """
-    answers = _answers([_space(display_name="Expo Hall E", answer="NEEDS")],
-                       action=ACTION_SUBMIT)
+    space = _space(display_name="Expo Hall E", answer="NEEDS",
+                  wifi_requested=False, wifi_declined_reason="No coverage needed")
+    answers = _answers([space], action=ACTION_SUBMIT)
     errors = validate(answers, has_space_cards=True)
-    assert any("no lines" in e for e in errors)
+    matches = [e for e in errors if "Expo Hall E" in e]
+    assert len(matches) == 1
+    assert "nothing has been requested" in matches[0]
+    assert "Nothing needed" in matches[0]
+    assert not any("no lines" in e for e in errors)
+    # The space attaches to this error, same as every other per-space
+    # ValidationError, so the panel can link and mark the card.
+    assert next(e for e in errors if "Expo Hall E" in e).space_id == space.space_id
+
+
+def test_the_generic_no_lines_message_does_not_fire_alongside_the_named_one():
+    """A space answered NEEDS with nothing requested is caught by its own
+    error; the generic request-level message would say something false
+    (that no space was answered) about a request where one clearly was."""
+    space = _space(display_name="Expo Hall E", answer="NEEDS",
+                  wifi_requested=False, wifi_declined_reason="No coverage needed")
+    answers = _answers([space], action=ACTION_SUBMIT)
+    errors = validate(answers, has_space_cards=True)
+    assert not any(e.startswith("This request would create no lines") for e in errors)
+
+
+def test_the_no_lines_rule_fires_only_when_no_space_is_answered_at_all():
+    """The generic message is for the situation it was written for: a
+    request where nothing at all was answered, not a specific card left
+    empty. A completely unanswered space still gets its own "say whether"
+    error too; both are correct here since neither names a wrong cause."""
+    space = _space(display_name="Expo Hall E", answer="")
+    answers = _answers([space], action=ACTION_SUBMIT)
+    errors = validate(answers, has_space_cards=True)
+    assert any(e.startswith("This request would create no lines") for e in errors)
 
 
 def test_the_no_lines_rule_does_not_fire_when_the_department_needs_nothing():
@@ -236,3 +278,24 @@ def test_the_no_lines_rule_does_not_fire_when_the_department_needs_nothing():
     errors = validate(answers, has_space_cards=False)
     assert not any("no lines" in e for e in errors)
     assert [line.service_code for line in expand_to_lines(answers)] == ["NO_SERVICES"]
+
+
+def test_a_half_filled_phone_line_no_longer_blocks_a_submit():
+    """PHONE_VALIDATION_ENABLED is off (form_utils.py): a line missing its
+    purpose, sharing a line that does not exist, and a handset with no
+    location must all pass validate() now. expand_to_lines() still returns
+    a DESK_PHONE for the handset (its owner does not exist, so
+    parent_index is None), proving expansion runs unchanged; only the
+    refusal is gone.
+    """
+    space = _space(display_name="Regdesk A", wifi_requested=True,
+                  phone_lines=(
+        PhoneLine(index=1, source="9:1", purpose=None, internal_only=False,
+                  handsets=(PhoneHandset(location=""),)),
+    ))
+    answers = _answers([space], action=ACTION_SUBMIT)
+    errors = validate(answers, has_space_cards=True)
+    assert errors == []
+    lines = expand_to_lines(answers)
+    assert [line.service_code for line in lines] == ["WIFI", "DESK_PHONE"]
+    assert lines[1].parent_index is None

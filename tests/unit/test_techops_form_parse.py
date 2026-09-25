@@ -4,6 +4,7 @@ Field names carry the real space id, so there is no synthetic key to
 reconcile. Every bound is checked here: SQLite enforces none of them and
 Postgres enforces all of them.
 """
+import pytest
 from werkzeug.datastructures import MultiDict
 
 from app.routes.work.techops.form_utils import (
@@ -369,6 +370,8 @@ def test_too_many_handsets_is_an_error_naming_the_bound():
     assert any(str(MAX_HANDSETS_PER_LINE) in e for e in errors)
 
 
+@pytest.mark.skip(
+    reason="phone validation off; see PHONE_VALIDATION_ENABLED in form_utils.py")
 def test_an_over_length_caller_id_is_an_error_and_is_not_truncated():
     form = _base()
     form.add("space_ids", "412")
