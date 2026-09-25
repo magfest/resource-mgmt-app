@@ -1,5 +1,6 @@
 {# templates/techops/line_review.html #}
 {% extends "layout/base.html" %}
+{% from "macros/checkout_banner.html" import render_checkout_action with context %}
 {% from "macros/status_pill.html" import render_status_pill %}
 {% from "macros/techops_line_facts.html" import render_line_space, render_phone_ring %}
 
@@ -318,19 +319,21 @@
             </form>
           </div>
         </section>
-      {% elif can_review and not has_checkout and status == "PENDING" %}
+      {# perms.can_checkout, not "I do not hold it": the latter is also true
+         when another reviewer holds it, and this callout then duplicated the
+         "Under Active Review" banner above while heading it "Checkout
+         Required", which is the opposite of what was true. #}
+      {% elif can_review and perms.can_checkout and status == "PENDING" %}
         <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
           <strong>Checkout Required</strong>
           <div class="muted" style="margin-top:4px;">
             You must start a review session to make decisions on this request.
           </div>
-          <div style="margin-top: 12px;">
-            <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}" style="display: inline;">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="return_to" value="{{ request.full_path }}">
-              <button type="submit" class="btn btn-primary">Start Reviewing</button>
-            </form>
-          </div>
+          {# The macro, not a hand-rolled form: the old markup rendered the
+             button whenever the viewer did not hold the lock, including when
+             another reviewer did, and that POST always refused. The macro
+             keys off perms.can_checkout and says who is holding it instead. #}
+          {{ render_checkout_action(work_item, perms, ctx, work_type_slug='techops') }}
         </div>
       {% endif %}
 
