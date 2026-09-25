@@ -205,10 +205,10 @@ class TechOpsRequestSpace(db.Model):
     )
 
     # NEEDS, NOTHING, or NULL for a card the requester has opened but not
-    # yet answered. NULL was added for the Task 10 picker: a picked space
-    # has no other record of being on the request (unlike an assigned
-    # space, which reappears from the department's assignment list on its
-    # own), so an unanswered picked card has to persist to survive a
+    # yet answered. A space added through the picker has no other record
+    # of being on the request, unlike an assigned space, which reappears
+    # from the department's assignment list on its own. So an unanswered
+    # picked card has to persist to survive a
     # reload. validate() still refuses a SUBMIT with any space this way.
     answer = db.Column(db.String(8), nullable=True)
 

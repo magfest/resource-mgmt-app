@@ -166,8 +166,8 @@ def techops_request_update(event: str, dept: str, public_id: str):
     if errors:
         # The submit-refusal panel renders only for a refused SUBMIT, not
         # for a draft save that also happens to fail (a missing contact
-        # name, say): a save must never look like the outcome the owner
-        # reported, a refused submit landing back on the form unmarked.
+        # name, say). A refused submit and a successful save both land back
+        # on this form, so without the panel the two are indistinguishable.
         show_error_panel = answers.action == ACTION_SUBMIT
         # The panel replaces the flash for a refused submit; flashing the
         # same errors here too showed every problem twice, once as a flash

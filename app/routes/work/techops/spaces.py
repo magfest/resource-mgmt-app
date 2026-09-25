@@ -62,7 +62,7 @@ def offerable_spaces(event_cycle) -> list[Space]:
     EventCycle.venue_id is nullable and nothing in app/seeds populates it.
     An event with no venue offers nothing here; the route is responsible
     for telling the requester to contact the Hotels request channel
-    instead of rendering an empty picker with no explanation (Task 9).
+    instead of rendering an empty picker with no explanation.
     """
     if event_cycle.venue_id is None:
         return []
@@ -309,8 +309,8 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
     """Every space a TechOps request may show a card for, in display order.
 
     The base set is the department's assigned spaces plus any space this
-    request already holds (picked earlier via the Task 10 picker, or held
-    from before that task existed). Every other offerable space is a
+    request already holds, whether added through the picker or assigned
+    and later unassigned. Every other offerable space is a
     picker candidate, not an automatic card; picker_candidates() computes
     that set. An assigned room's entry comes from spaces_for_department()
     instead, so a folded combination shows one card already aliased for
@@ -346,8 +346,8 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
     covered_ids = {child.id for entry in assigned_entries
                   for child in entry["covers"]}
 
-    # Task 10: an offerable space that is neither assigned nor already on
-    # this request is a picker candidate (picker_candidates(), below), not
+    # An offerable space that is neither assigned nor already on this
+    # request is a picker candidate (picker_candidates(), below), not
     # an automatic card. Only a space this request already holds — a
     # TechOpsRequestSpace row, or a line referencing it — is added here
     # alongside the assigned set. That keeps showing a space picked on an
@@ -399,9 +399,9 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
         answer = SpaceAnswer(
             space_id=space.id,
             display_name=entry["display_name"],
-            # row.answer is nullable (Task 10 picker: a picked-but-not-
-            # yet-answered card persists a row with answer NULL), so a
-            # held row and no row at all both normalize to "" here.
+            # row.answer is nullable: a space added through the picker
+            # persists with answer NULL until it is answered. A held row
+            # and no row at all both normalize to "" here.
             answer=(row.answer or "") if row else "",
             no_services_reason=(row.no_services_reason or "") if row else "",
             wifi_requested=wifi_requested,
@@ -551,7 +551,7 @@ def review_space_facts(work_item, department_id: int, event_cycle) -> dict[int, 
 def picker_candidates(cards: list[dict], offerable: list[Space]) -> list[Space]:
     """Offerable spaces not already shown as a card, in display order.
 
-    This is what the Task 10 picker offers: every offerable_spaces() entry
+    This is what the picker offers: every offerable_spaces() entry
     space_cards() left out because the department neither holds it nor has
     already added it to this request.
     """

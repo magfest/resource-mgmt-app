@@ -63,7 +63,7 @@ if TYPE_CHECKING:
 ACTION_SAVE_DRAFT = "save_draft"
 ACTION_SUBMIT = "submit"
 
-# Posted by the Task 10 picker's own submit button. Treated like a draft
+# Posted by the space picker's own submit button. Treated like a draft
 # save by validate() (anything but ACTION_SUBMIT skips the per-space
 # checks), but create.py/edit.py render the form again afterward instead
 # of redirecting to the detail page, so the just-picked, still-unanswered
@@ -672,8 +672,8 @@ def replace_spaces(work_item: "WorkItem", answers: "RequestAnswers") -> None:
     and a re-save of the same card would otherwise collide with itself.
 
     Every space on the request gets a row, answered or not; `answer` is
-    nullable for exactly this. Before the Task 10 picker, skipping an
-    unanswered card was safe: it was always an assigned space, which
+    nullable for exactly this. Skipping an unanswered card used to be
+    safe, when every card was an assigned space, which
     reappears on reload from the department's assignment list regardless
     of any row here. A space added through the picker has no such other
     record, so an unanswered pick written nowhere vanished on the next
@@ -827,8 +827,8 @@ def capture_state_snapshot(work_item: "WorkItem") -> dict:
 
     spaces = sorted(
         (
-            # `answer` is nullable now (Task 10 picker); normalized to ""
-            # here so an unanswered row compares equal to
+            # `answer` is nullable; normalized to "" here so an
+            # unanswered row compares equal to
             # capture_form_snapshot's SpaceAnswer.answer, which is always
             # a string. Comparing None against "" would report a change
             # on every save of a card nobody has touched yet. wifi_requested
@@ -890,9 +890,9 @@ def capture_form_snapshot(answers: "RequestAnswers") -> dict:
                 space.wifi_declined_reason, space.notes,
             )
             for space in answers.spaces
-            # replace_spaces() now stores every space, answered or not
-            # (Task 10 picker); matching that here is what keeps this
-            # snapshot comparable to the ORM one.
+            # replace_spaces() stores every space, answered or not, so
+            # matching that here is what keeps this snapshot comparable to
+            # the ORM one.
         ),
         key=lambda s: s["space_id"],
     )

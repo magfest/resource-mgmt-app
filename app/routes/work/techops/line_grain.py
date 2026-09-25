@@ -7,9 +7,9 @@ JavaScript, is a defect: the requester would count lines the server does
 not create, and nothing would fail.
 
 Plain Python. No Flask, no database, no application context. The eleven
-invariants in the spec's Line grain section are checked against this file.
-Task 3 implements invariants 1, 2, 3, 9, 10, and 11; Task 4 adds phone
-handling for invariants 4 through 8.
+invariants below are checked against this file. Invariants 1, 2, 3, 9, 10
+and 11 govern WiFi, ethernet and the department-wide services; 4 through 8
+govern phone numbers and handsets.
 """
 from __future__ import annotations
 
@@ -55,7 +55,8 @@ class PhoneHandset:
 
 @dataclass(frozen=True)
 class PhoneLine:
-    # 1-based position within its own space. Half of the sharing key Task 4 reads.
+    # 1-based position within its own space. Half of the sharing key a
+    # handset in another space uses to name the number it rings.
     index: int
     # SOURCE_NEW, or "<space_id>:<line_index>" naming the line it shares.
     source: str
@@ -259,9 +260,9 @@ def _expand_space(
     the combined list and resolves them once every space has run.
     """
     # A card with no answer yet produces no lines, whatever has been typed
-    # into its fields. Persisting a picked-but-unanswered space (Task 10)
-    # means this state can now reach a real save rather than only an
-    # in-progress form; without this guard, filling in a field before
+    # into its fields. An unanswered space persists, so this state reaches
+    # a real save rather than only an in-progress form; without this guard,
+    # filling in a field before
     # choosing "Needs services" or "Nothing needed" would create real
     # WorkLines the requester never committed to.
     if space.answer not in (ANSWER_NEEDS, ANSWER_NOTHING):
