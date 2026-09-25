@@ -38,7 +38,9 @@
     <span style="margin: 0 6px;">&rsaquo;</span>
     <a href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">{{ ctx.department.name }}</a>
     <span style="margin: 0 6px;">&rsaquo;</span>
-    <a href="{{ url_for('work.techops_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">TechOps</a>
+    {# Not a link: TechOps has no page of its own. The department holds one
+       request per event, so its own crumb one step back is the section. #}
+    <span>TechOps</span>
     <span style="margin: 0 6px;">&rsaquo;</span>
     {% if is_edit %}
       <a href="{{ url_for('work.techops_work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">{{ work_item.public_id }}</a>
@@ -375,7 +377,10 @@
       <button type="submit" name="action" value="submit" class="btn btn-primary">
         Submit for TechOps Review
       </button>
-      <a class="btn btn-muted" href="{% if is_edit %}{{ url_for('work.techops_work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}{% else %}{{ url_for('work.techops_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}{% endif %}">
+      {# Cancelling a new request goes to the department home, not back to
+         /techops: that URL redirects to this same form when no request
+         exists, so Cancel would return the requester to what they left. #}
+      <a class="btn btn-muted" href="{% if is_edit %}{{ url_for('work.techops_work_item_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}{% else %}{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}{% endif %}">
         Cancel
       </a>
     </div>

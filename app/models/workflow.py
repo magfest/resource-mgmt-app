@@ -94,6 +94,12 @@ class WorkTypeConfig(db.Model):
     )
 
     # Feature flags
+    # This does not govern how many items a portfolio may hold; no runtime
+    # code reads it. It is False for both TECHOPS (one request per event)
+    # and SUPPLY (unlimited orders), so it cannot tell those apart.
+    # Cardinality lives in each work type's own routes: TechOps relies on
+    # perms.can_create_primary, Supply deliberately bypasses that gate (see
+    # the module docstring in app/routes/work/supply/order.py).
     supports_supplementary = db.Column(db.Boolean, nullable=False, default=True)
     supports_fixed_costs = db.Column(db.Boolean, nullable=False, default=False)
 

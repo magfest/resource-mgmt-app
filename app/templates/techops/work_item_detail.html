@@ -18,7 +18,9 @@
     <span style="margin: 0 6px;">&rsaquo;</span>
     <a href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">{{ ctx.department.name }}</a>
     <span style="margin: 0 6px;">&rsaquo;</span>
-    <a href="{{ url_for('work.techops_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">TechOps</a>
+    {# Not a link: TechOps has no page of its own. The department holds one
+       request per event, so its own crumb one step back is the section. #}
+    <span>TechOps</span>
     <span style="margin: 0 6px;">&rsaquo;</span>
     <span>{{ work_item.public_id }}</span>
   </nav>
@@ -128,8 +130,8 @@
     {% endif %}
 
     <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
-    <a class="btn" href="{{ url_for('work.techops_portfolio_landing', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
-      &larr; Back to TechOps Portfolio
+    <a class="btn" href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
+      &larr; Back to {{ ctx.department.name }}
     </a>
   </div>
 
