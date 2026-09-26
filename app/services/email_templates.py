@@ -92,6 +92,33 @@ EMAIL_TEMPLATE_VARIABLES = {
 }
 
 
+# Work type codes, lower case, as they appear in a prefixed template key.
+# Hardcoded rather than queried: this runs on every template edit page load,
+# and the set changes only when a work type is added, which is a code change
+# anyway (route package, templates, seed).
+_WORK_TYPE_KEY_PREFIXES = frozenset(
+    {"budget", "contract", "supply", "techops", "av"}
+)
+
+
+def variables_for_template_key(template_key: str) -> dict[str, str]:
+    """Return the documented variables for a template key.
+
+    EMAIL_TEMPLATE_VARIABLES is keyed by kind, and a key may carry a work-type
+    prefix. `submission_confirmation` splits into `submission` plus
+    `confirmation`, so the left side is stripped only when it names a real work
+    type; anything else is looked up whole.
+    """
+    if template_key in EMAIL_TEMPLATE_VARIABLES:
+        return EMAIL_TEMPLATE_VARIABLES[template_key]
+
+    prefix, _, kind = template_key.partition("_")
+    if kind and prefix in _WORK_TYPE_KEY_PREFIXES:
+        return EMAIL_TEMPLATE_VARIABLES.get(kind, {})
+
+    return {}
+
+
 @dataclass
 class RenderedEmail:
     """Result of rendering an email template."""

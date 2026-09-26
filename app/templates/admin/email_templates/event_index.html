@@ -25,7 +25,16 @@
 </div>
 
 <div style="overflow-x: auto;">
-  <table>
+  {# Counts join outbox and notification_logs on template_key. The budget
+   templates were renamed on 25 September 2026 and their history kept the old
+   keys, so the Sent column starts from that date. #}
+<div class="muted small mb-16">
+  Sent counts for the budget templates start from when they were
+  renamed on 25 September 2026. Earlier sends are recorded under their
+  previous keys.
+</div>
+
+<table>
     <thead>
       <tr>
         <th style="width: 170px;">Template</th>

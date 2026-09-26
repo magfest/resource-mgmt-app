@@ -25,7 +25,7 @@ from app.services.email_templates import (
     get_template,
     validate_jinja2_template,
     preview_template,
-    EMAIL_TEMPLATE_VARIABLES,
+    variables_for_template_key,
 )
 from app.services.email import build_message_parts, send_via_ses, write_notification_log
 from .helpers import (
@@ -91,7 +91,7 @@ def edit_email_template(template_id: int):
     email_template = _get_template_or_404(template_id)
 
     # Get available variables for this template
-    variables = EMAIL_TEMPLATE_VARIABLES.get(email_template.template_key, {})
+    variables = variables_for_template_key(email_template.template_key)
 
     return render_budget_admin_page(
         "admin/email_templates/form.html",
@@ -193,7 +193,7 @@ def preview_email_template(template_id: int):
         return redirect(url_for(".edit_email_template", template_id=template_id))
 
     # Get available variables for this template
-    variables = EMAIL_TEMPLATE_VARIABLES.get(email_template.template_key, {})
+    variables = variables_for_template_key(email_template.template_key)
 
     flash("Preview rendered below", "success")
 

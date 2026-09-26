@@ -361,3 +361,28 @@ def test_the_base_editor_says_its_wording_is_shared(app, client, seed_workflow_d
 
     assert "shared by every event" in body.lower()
     assert EVENTS_ROOT in body
+
+
+def test_the_page_with_the_sent_column_explains_the_reset_counts(
+    app, client, seed_workflow_data
+):
+    """The note belongs where the Sent column is. That is the per-event index
+    (event_index.html:38), not the base wording list, which has no counts at
+    all: its columns are Key, Name, Subject, Status, Last Updated, Actions."""
+    cycle = seed_workflow_data["cycle"]
+    _login(client, "test:admin")
+
+    resp = client.get(f"/admin/config/email-templates/events/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert b"renamed on 25 September 2026" in resp.data
+
+
+def test_the_base_wording_list_does_not_mention_counts(app, client, seed_workflow_data):
+    """It has no Sent column, so the note would describe something absent."""
+    _login(client, "test:admin")
+
+    resp = client.get("/admin/config/email-templates/")
+
+    assert resp.status_code == 200
+    assert b"renamed on 25 September 2026" not in resp.data

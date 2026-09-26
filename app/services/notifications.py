@@ -827,9 +827,11 @@ def send_submission_reminders(
         return summary
 
     # The reminder audience is BUDGET-only by construction; the audience query
-    # above filters on the BUDGET work type. There is no work-type variant of
-    # this template to resolve.
-    template_key = 'submission_reminder'
+    # above filters on the BUDGET work type. Resolve anyway rather than writing
+    # the literal: BUDGET's rows carry a budget_ prefix, and enqueue_email
+    # resolves this key through get_effective_template, so a literal blocks
+    # every recipient with nothing but a per-recipient log line.
+    template_key = resolve_template_key('submission_reminder', 'BUDGET')
 
     for target in targets:
         if not target.recipient_emails:

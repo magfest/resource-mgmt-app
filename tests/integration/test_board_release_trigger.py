@@ -256,7 +256,7 @@ def _unfinalize(client, item, reason="numbers changed"):
 
 
 def _release_rows():
-    return db.session.query(EmailOutbox).filter_by(template_key="finalized").all()
+    return db.session.query(EmailOutbox).filter_by(template_key="budget_finalized").all()
 
 
 def test_a_dark_finalized_template_stops_the_release(app, client, seed_draft_work_item):

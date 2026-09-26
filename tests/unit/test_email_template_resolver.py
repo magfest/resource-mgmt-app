@@ -7,7 +7,7 @@ from app.services.email_templates import get_effective_template
 
 
 def _seed(app, **override_kwargs):
-    # Not "finalized": seed_workflow_data already seeds that key and
+    # Not "budget_finalized": seed_workflow_data already seeds that key and
     # template_key is unique.
     t = EmailTemplate(
         template_key="dispatched", name="Dispatched", subject="Base subject",
@@ -115,3 +115,29 @@ def test_untracked_override_stays_not_stale_after_base_version_bumps(
         t.version = 4
         db.session.commit()
         assert get_effective_template("dispatched", cycle.id).is_stale is False
+
+
+class TestBudgetResolvesToItsOwnRows:
+    """After the key normalisation BUDGET stops relying on the fallback."""
+
+    def test_every_budget_kind_resolves_to_a_prefixed_key(self, app):
+        from app.services.email_enqueue import resolve_template_key
+
+        kinds = ("submitted", "dispatched", "needs_attention",
+                 "response_received", "submission_confirmation",
+                 "finalized", "submission_reminder")
+        for kind in kinds:
+            db.session.add(EmailTemplate(
+                template_key=f"budget_{kind}", name=f"Budget {kind}",
+                subject="s", body_text="b", is_active=True,
+            ))
+        db.session.commit()
+
+        for kind in kinds:
+            assert resolve_template_key(kind, "BUDGET") == f"budget_{kind}"
+
+    def test_a_work_type_with_no_row_still_falls_back(self, app):
+        """The fallback stays. PR 2 decides what to do about it per kind."""
+        from app.services.email_enqueue import resolve_template_key
+
+        assert resolve_template_key("submitted", "TECHOPS") == "submitted"
