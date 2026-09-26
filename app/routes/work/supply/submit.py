@@ -83,9 +83,13 @@ def supply_order_submit(event: str, dept: str, public_id: str):
     # commit covers the status change and its emails.
     from app.services.notifications import (
         announce_work_item_event,
+        notify_submission_confirmation,
         notify_work_item_submitted,
     )
     notify_work_item_submitted(work_item)
+    # The department hears that their request arrived. Queued in the same
+    # transaction as the status change, like the notification above.
+    notify_submission_confirmation(work_item)
 
     db.session.commit()
 
