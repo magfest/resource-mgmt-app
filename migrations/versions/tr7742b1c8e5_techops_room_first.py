@@ -156,8 +156,14 @@ def upgrade():
     # Room-first splits PHONE into PHONE_NUMBER and DESK_PHONE. The row
     # stays for rollback and historical line preservation, matching the
     # BANDWIDTH precedent in seed_techops_service_types.
-    conn.execute(sa.text(
-        "UPDATE techops_service_types SET is_active = 0 WHERE code = 'PHONE'"))
+    # Bound parameter, not a literal 0. PostgreSQL does not cast integer to
+    # boolean, so "SET is_active = 0" is a DatatypeMismatch there while SQLite
+    # accepts it. The driver adapts a Python bool for both.
+    conn.execute(
+        sa.text("UPDATE techops_service_types SET is_active = :inactive "
+                "WHERE code = 'PHONE'"),
+        {"inactive": False},
+    )
 
     techops_net_id = conn.execute(sa.text(
         "SELECT id FROM approval_groups WHERE code = 'TECHOPS_NET'")).scalar()
@@ -191,13 +197,16 @@ def upgrade():
              sort_order, instance_noun, created_at, updated_at)
         VALUES
             ('PHONE_NUMBER', 'Phone number', :phone_number_desc,
-             :net_id, 1, 41, 'phone line', :now, :now),
+             :net_id, :active, 41, 'phone line', :now, :now),
             ('DESK_PHONE', 'Desk phone', :desk_phone_desc,
-             :net_id, 1, 42, 'desk phone', :now, :now),
+             :net_id, :active, 42, 'desk phone', :now, :now),
             ('NO_SERVICES', 'No services needed', :no_services_desc,
-             :gen_id, 1, 70, NULL, :now, :now)
+             :gen_id, :active, 70, NULL, :now, :now)
     """), {
         "net_id": techops_net_id, "gen_id": techops_gen_id, "now": now,
+        # Same reason as the UPDATE above: a literal 1 in an INSERT is an
+        # integer, and PostgreSQL will not put one in a boolean column.
+        "active": True,
         "phone_number_desc": phone_number_desc,
         "desk_phone_desc": desk_phone_desc,
         "no_services_desc": no_services_desc,
@@ -212,8 +221,11 @@ def downgrade():
     conn.execute(sa.text(
         "DELETE FROM techops_service_types "
         "WHERE code IN ('PHONE_NUMBER', 'DESK_PHONE', 'NO_SERVICES')"))
-    conn.execute(sa.text(
-        "UPDATE techops_service_types SET is_active = 1 WHERE code = 'PHONE'"))
+    conn.execute(
+        sa.text("UPDATE techops_service_types SET is_active = :active "
+                "WHERE code = 'PHONE'"),
+        {"active": True},
+    )
 
     op.drop_table('techops_request_spaces')
     with op.batch_alter_table('techops_request_details', schema=None) as batch_op:
