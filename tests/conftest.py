@@ -174,7 +174,7 @@ def seed_workflow_data(app):
     # seeding its template asserts against an empty queue and proves nothing.
     # Seed the template the path resolves, and assert a row exists.
     db.session.add(EmailTemplate(
-        template_key="finalized", name="Budget Finalized",
+        template_key="budget_finalized", name="Budget Finalized",
         subject="Your budget is finalized",
         body_text="Your budget request has been finalized.",
         is_active=True,
@@ -254,7 +254,7 @@ def seed_workflow_data(app):
         "spend_type": st,
         "portfolio": portfolio,
         "finalized_template": EmailTemplate.query.filter_by(
-            template_key="finalized").one(),
+            template_key="budget_finalized").one(),
     }
 
 

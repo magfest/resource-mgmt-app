@@ -21,7 +21,7 @@ def _finalized_item_with_queued_release(data, status=OUTBOX_STATUS_QUEUED):
     item.finalized_at = datetime.utcnow()
     now = datetime.utcnow()
     db.session.add(EmailOutbox(
-        template_key="finalized", recipient_email="a@example.org",
+        template_key="budget_finalized", recipient_email="a@example.org",
         work_item_id=item.id, event_cycle_id=data["cycle"].id,
         status=status, dedup_key="k-release",
         dispatch_at=now, created_at=now, attempt_count=0))
@@ -48,7 +48,7 @@ def test_unfinalize_logs_the_cancelled_release_email(
     assert row.dedup_key is None
 
     log = db.session.query(NotificationLog).filter_by(
-        template_key="finalized", status=NOTIF_STATUS_CANCELLED).one()
+        template_key="budget_finalized", status=NOTIF_STATUS_CANCELLED).one()
     assert log.recipient_email == "a@example.org"
 
 

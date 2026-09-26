@@ -23,7 +23,7 @@ def _hold_one_budget(data):
 
 def _override(cycle, **kwargs):
     template = db.session.query(EmailTemplate).filter_by(
-        template_key="finalized").one()
+        template_key="budget_finalized").one()
     assert template.is_active is True, "the base row must stay live"
     db.session.add(EmailTemplateEventOverride(
         email_template_id=template.id, event_cycle_id=cycle.id, **kwargs))

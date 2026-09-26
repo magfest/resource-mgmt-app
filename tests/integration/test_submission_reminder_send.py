@@ -275,3 +275,82 @@ def test_cli_missing_template_exits_2(app, seeded):
     assert result.exit_code == 2
     db.session.rollback()
     assert db.session.query(EmailOutbox).count() == 0
+
+
+def test_reminder_resolves_the_normalised_budget_key(app, seed_workflow_data):
+    """cli.py looked the key up directly, bypassing resolve_template_key, so
+    the rename made it exit 2 with "not found. Run migrations."."""
+    from app import db
+    from app.models import EmailTemplate
+    from app.services.email_enqueue import resolve_template_key
+
+    db.session.add(EmailTemplate(
+        template_key="budget_submission_reminder",
+        name="Budget Submission Reminder",
+        subject="[MAGFest Budget] Reminder",
+        body_text="A reminder.", is_active=True,
+    ))
+    db.session.commit()
+
+    key = resolve_template_key("submission_reminder", "BUDGET")
+
+    assert key == "budget_submission_reminder"
+    assert EmailTemplate.query.filter_by(template_key=key).one() is not None
+
+
+def test_reminders_queue_on_a_migrated_database(seeded):
+    """The orchestrator must resolve its key, not hardcode it.
+
+    enqueue_email resolves the template through get_effective_template
+    (email_enqueue.py:87), so a literal 'submission_reminder' blocks every
+    recipient once the row is named budget_submission_reminder. The CLI's
+    preflight passing is not enough; it guards a path that then queues nothing.
+    """
+    from app.models import EmailOutbox, EmailTemplate
+
+    row = EmailTemplate.query.filter_by(template_key="submission_reminder").one()
+    row.template_key = "budget_submission_reminder"
+    db.session.commit()
+
+    summary = send_submission_reminders(seeded["cycle"], dry_run=False)
+
+    assert summary.rows_blocked == 0, (
+        f"blocked {summary.rows_blocked} rows; the key was not resolved"
+    )
+    assert summary.rows_queued > 0
+    assert EmailOutbox.query.filter_by(
+        template_key="budget_submission_reminder").count() == summary.rows_queued
+
+
+def test_dry_run_still_renders_a_sample_on_a_migrated_database(app, seeded):
+    """The dry run is the only preview before --send. render_email_template
+    took a literal key, so on a migrated database it returned None and the
+    `if rendered:` guard swallowed it: no sample, no explanation."""
+    from app.models import EmailTemplate
+
+    row = EmailTemplate.query.filter_by(template_key="submission_reminder").one()
+    row.template_key = "budget_submission_reminder"
+    db.session.commit()
+
+    runner = app.test_cli_runner()
+    result = runner.invoke(args=["send-submission-reminders", "REM2026"])
+
+    assert result.exit_code == 0, result.output
+    assert "Sample rendered email (first target):" in result.output
+
+
+def test_the_inactive_message_names_the_key_it_looked_for(app, seeded):
+    """An operator told 'submission_reminder' is inactive goes looking for a
+    row that no longer exists."""
+    from app.models import EmailTemplate
+
+    row = EmailTemplate.query.filter_by(template_key="submission_reminder").one()
+    row.template_key = "budget_submission_reminder"
+    row.is_active = False
+    db.session.commit()
+
+    runner = app.test_cli_runner()
+    result = runner.invoke(args=["send-submission-reminders", "REM2026"])
+
+    assert result.exit_code == 2
+    assert "budget_submission_reminder" in result.output

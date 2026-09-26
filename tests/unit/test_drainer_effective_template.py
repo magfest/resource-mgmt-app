@@ -73,12 +73,12 @@ def test_a_deferred_row_whose_window_closed_is_cancelled(app, seed_draft_work_it
         data = seed_draft_work_item
         cycle = data["cycle"]
         template = db.session.query(EmailTemplate).filter_by(
-            template_key="finalized").one()
+            template_key="budget_finalized").one()
         db.session.add(EmailTemplateEventOverride(
             email_template_id=template.id, event_cycle_id=cycle.id,
             send_window_end=datetime.utcnow() - timedelta(days=1)))
         row = EmailOutbox(
-            template_key="finalized", recipient_email="a@example.org",
+            template_key="budget_finalized", recipient_email="a@example.org",
             work_item_id=data["work_item"].id,
             event_cycle_id=cycle.id, status=OUTBOX_STATUS_QUEUED,
             dispatch_at=datetime.utcnow(), created_at=datetime.utcnow(),
@@ -111,14 +111,14 @@ def test_an_open_window_gets_past_the_send_time_check(app, seed_draft_work_item)
         data = seed_draft_work_item
         cycle = data["cycle"]
         template = db.session.query(EmailTemplate).filter_by(
-            template_key="finalized").one()
+            template_key="budget_finalized").one()
         now = datetime.utcnow()
         db.session.add(EmailTemplateEventOverride(
             email_template_id=template.id, event_cycle_id=cycle.id,
             send_window_start=now - timedelta(days=1),
             send_window_end=now + timedelta(days=1)))
         row = EmailOutbox(
-            template_key="finalized", recipient_email="a@example.org",
+            template_key="budget_finalized", recipient_email="a@example.org",
             work_item_id=data["work_item"].id,
             event_cycle_id=cycle.id, status=OUTBOX_STATUS_QUEUED,
             dispatch_at=now, created_at=now, attempt_count=0)
