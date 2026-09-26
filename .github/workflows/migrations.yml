@@ -76,8 +76,10 @@ jobs:
       # would ever reach. A rollback is the worst moment to discover a
       # migration cannot run.
       - name: Downgrade one revision and upgrade again
+        # "-- -1" not "-1": click parses a leading dash as an option and
+        # fails with "No such option: -1" before alembic ever sees it.
         run: |
-          flask db downgrade -1
+          flask db downgrade -- -1
           flask db upgrade
 
       # The real protection is every step above: a migration that puts an
