@@ -170,9 +170,13 @@ def upgrade():
     techops_gen_id = conn.execute(sa.text(
         "SELECT id FROM approval_groups WHERE code = 'TECHOPS_GEN'")).scalar()
     if techops_net_id is None or techops_gen_id is None:
-        raise RuntimeError(
-            "approval_groups TECHOPS_NET and TECHOPS_GEN must exist before "
-            "this migration runs; seed approval groups first.")
+        # Return, do not raise. A database with no approval groups is a fresh
+        # one, and `flask seed` creates all nine service types moments later.
+        # The rows below exist to bring EXISTING databases forward, not to
+        # provision new ones. Raising here made a new environment impossible
+        # to build, because app.json runs `flask db upgrade` before `flask
+        # seed`. Same shape as k4m9p2q7r1s6.
+        return
 
     # created_at/updated_at are NOT NULL with no server default (app-side
     # default only), so the raw insert must supply them. Descriptions go
@@ -191,26 +195,36 @@ def upgrade():
         "A space the department confirmed needs nothing. Reviewed so "
         "an empty room does not go unanswered."
     )
-    conn.execute(sa.text("""
-        INSERT INTO techops_service_types
-            (code, name, description, default_approval_group_id, is_active,
-             sort_order, instance_noun, created_at, updated_at)
-        VALUES
-            ('PHONE_NUMBER', 'Phone number', :phone_number_desc,
-             :net_id, :active, 41, 'phone line', :now, :now),
-            ('DESK_PHONE', 'Desk phone', :desk_phone_desc,
-             :net_id, :active, 42, 'desk phone', :now, :now),
-            ('NO_SERVICES', 'No services needed', :no_services_desc,
-             :gen_id, :active, 70, NULL, :now, :now)
-    """), {
-        "net_id": techops_net_id, "gen_id": techops_gen_id, "now": now,
-        # Same reason as the UPDATE above: a literal 1 in an INSERT is an
-        # integer, and PostgreSQL will not put one in a boolean column.
-        "active": True,
-        "phone_number_desc": phone_number_desc,
-        "desk_phone_desc": desk_phone_desc,
-        "no_services_desc": no_services_desc,
-    })
+    # One guarded insert per row. The seed creates these same three codes
+    # (app/seeds/bootstrap.py), so an unconditional INSERT collides with the
+    # unique index on code whenever the seed has already run.
+    new_types = (
+        ("PHONE_NUMBER", "Phone number", phone_number_desc,
+         techops_net_id, 41, "phone line"),
+        ("DESK_PHONE", "Desk phone", desk_phone_desc,
+         techops_net_id, 42, "desk phone"),
+        ("NO_SERVICES", "No services needed", no_services_desc,
+         techops_gen_id, 70, None),
+    )
+    for code, name, description, group_id, sort_order, instance_noun in new_types:
+        exists = conn.execute(
+            sa.text("SELECT id FROM techops_service_types WHERE code = :c"),
+            {"c": code},
+        ).scalar()
+        if exists is not None:
+            continue
+        conn.execute(
+            sa.text(
+                "INSERT INTO techops_service_types "
+                "(code, name, description, default_approval_group_id, "
+                " is_active, sort_order, instance_noun, created_at, updated_at) "
+                "VALUES (:c, :n, :d, :g, :active, :s, :i, :now, :now)"
+            ),
+            {"c": code, "n": name, "d": description, "g": group_id,
+             # Bound Python bool, not a literal 1: PostgreSQL will not put an
+             # integer in a boolean column.
+             "active": True, "s": sort_order, "i": instance_noun, "now": now},
+        )
 
 
 def downgrade():
