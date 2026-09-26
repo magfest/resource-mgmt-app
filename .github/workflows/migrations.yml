@@ -1,0 +1,104 @@
+# Runs every migration against PostgreSQL, which the test suite never does.
+#
+# pytest builds its schema with db.create_all() on SQLite, so no migration is
+# ever executed by the suite and no migration ever meets PostgreSQL before a
+# deploy does. That gap let "UPDATE ... SET is_active = 0" reach staging in
+# September 2026: SQLite stores booleans as 0/1 and accepts it, PostgreSQL
+# raises DatatypeMismatch, and the release command crash-looped.
+name: Migrations
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  postgres-upgrade:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Match the Heroku Postgres major version in use. Bump this when the
+        # addon is upgraded, or CI stops testing what production runs.
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: rms_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      APP_ENV: development
+      SECRET_KEY: ci-migration-secret-key
+      DEV_LOGIN_ENABLED: "false"
+      FLASK_SKIP_DOTENV: "1"
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/rms_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Two stages on purpose. tr7742b1c8e5 refuses to run unless the
+      # TECHOPS_NET and TECHOPS_GEN approval groups exist, and those come from
+      # `flask seed`, not from a migration. An environment that already has
+      # them upgrades in one step; a new database has to be seeded part-way.
+      #
+      # SEED_POINT is the revision immediately before the first migration that
+      # depends on seeded rows. When a new migration adds such a dependency,
+      # move this pin to the revision before it, or this job goes green while
+      # testing less than it claims.
+      - name: Upgrade to the last migration that needs no seeded data
+        run: flask db upgrade sp5539947d06
+
+      - name: Seed reference data
+        run: flask seed
+
+      - name: Upgrade to head
+        run: flask db upgrade
+
+      - name: Show the resulting head
+        run: flask db current
+
+      # The boolean bug above had a twin in downgrade() that no forward run
+      # would ever reach. A rollback is the worst moment to discover a
+      # migration cannot run.
+      - name: Downgrade one revision and upgrade again
+        run: |
+          flask db downgrade -1
+          flask db upgrade
+
+      # The real protection is every step above: a migration that puts an
+      # integer in a boolean column raises DatatypeMismatch when it runs, so
+      # reaching this point is the proof. This only catches a chain that
+      # "succeeded" without building anything.
+      - name: Smoke check that the schema actually built
+        run: |
+          python - <<'PY'
+          import os, sys
+          import sqlalchemy as sa
+
+          engine = sa.create_engine(os.environ["DATABASE_URL"])
+          with engine.connect() as conn:
+              rows = conn.execute(sa.text("""
+                  SELECT table_name, column_name
+                  FROM information_schema.columns
+                  WHERE table_schema = 'public' AND data_type = 'boolean'
+                  ORDER BY table_name, column_name
+              """)).fetchall()
+          print(f"{len(rows)} boolean columns survived the migration chain")
+          if not rows:
+              sys.exit("No boolean columns found; the schema did not build")
+          PY
