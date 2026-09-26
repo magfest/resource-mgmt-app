@@ -303,15 +303,20 @@ retries, and suppression.
 
 | Trigger | Audience | Function (`app/services/notifications.py`) |
 |---------|----------|--------------------------------------------|
-| Request submitted | Work-type admins | `notify_work_item_submitted` (`:58`) |
-| Request submitted | The submitter, as a receipt | `notify_submission_confirmation` (`:79`) |
-| Lines dispatched, or a line rerouted by an admin | Members of each routed approval group | `notify_work_item_dispatched` (`:133`) |
-| Line marked NEEDS_INFO or NEEDS_ADJUSTMENT | Department members | `notify_needs_attention` (`:163`) |
-| Requester responded to a kickback | The reviewer who asked | `notify_response_received` (`:184`) |
-| Board release, or finalize after board approval | Department members | `notify_work_item_finalized` (`:241`) |
+| Request submitted | Work-type admins when `uses_dispatch` is set, otherwise the routed approval groups | `notify_work_item_submitted` (`:67`) |
+| Request submitted | Department members, division members, and the TechOps primary contact | `notify_submission_confirmation` (`:88`) |
+| Lines dispatched, or a line rerouted by an admin | Members of each routed approval group | `notify_work_item_dispatched` (`:178`) |
+| Line marked NEEDS_INFO or NEEDS_ADJUSTMENT | Department members | `notify_needs_attention` (`:208`) |
+| Requester responded to a kickback | The reviewer who asked | `notify_response_received` (`:229`) |
+| Board release, or finalize after board approval | Department members | `notify_work_item_finalized` (`:286`) |
+
+Each row is resolved against a `{work_type}_{kind}` template. A work type with
+no row of its own sends nothing; since `em3315c9a74b` there is no shared
+fallback to reach. `notify_submission_confirmation` logs a warning when it
+refuses; the others block at enqueue and log per recipient.
 
 One unreachable recipient does not cost the others their email. Each recipient
-row is enqueued inside a savepoint (`notifications.py:272`).
+row is enqueued inside a savepoint (`notifications.py:258`).
 
 ## Key routes
 

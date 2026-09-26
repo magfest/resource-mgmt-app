@@ -102,31 +102,6 @@ class TestSubmissionConfirmation:
         assert context["line_count"] == 1
         assert context["total_requested_dollars"] == 50.0
 
-    def test_skipped_for_non_budget_worktype(self, app, seed_draft_work_item):
-        """
-        Non-BUDGET worktypes (e.g. TECHOPS) get a silent zero — the
-        submit route stays worktype-neutral and the function gates
-        itself.
-        """
-        data = seed_draft_work_item
-        # Re-point the portfolio's work_type to a new non-BUDGET type.
-        techops_wt = WorkType(code="TECHOPS", name="TechOps", is_active=True)
-        db.session.add(techops_wt)
-        db.session.flush()
-        db.session.add(WorkTypeConfig(
-            work_type_id=techops_wt.id, url_slug="techops",
-            public_id_prefix="TOPS", line_detail_type="techops",
-            routing_strategy=ROUTING_STRATEGY_CATEGORY,
-            uses_dispatch=False, has_admin_final=False,
-        ))
-        data["portfolio"].work_type_id = techops_wt.id
-        db.session.commit()
-
-        queued = notify_submission_confirmation(data["work_item"])
-
-        assert queued == 0
-        assert db.session.query(EmailOutbox).count() == 0
-
     def test_recipients_include_division_members(
         self, app, seed_draft_work_item, seed_submission_confirmation_template,
     ):

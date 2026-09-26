@@ -6,8 +6,6 @@ needs a row of its own, or it queues nothing and logs one line per recipient.
 """
 from __future__ import annotations
 
-import pytest
-
 from app import db
 from app.models import EmailTemplate
 from app.services.email_templates import get_template
