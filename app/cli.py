@@ -113,7 +113,7 @@ def register_cli(app: Flask) -> None:
         Exit codes:
           0  Success (dry-run completed, or the queue run finished)
           1  Event code didn't resolve, or event inactive in non-interactive mode
-          2  Template 'submission_reminder' not found or inactive
+          2  The resolved budget reminder template is missing or inactive
         """
         import sys
         from app.models import EventCycle, EmailTemplate
@@ -148,18 +148,22 @@ def register_cli(app: Flask) -> None:
                 sys.exit(1)
 
         # Guard missing/inactive template.
+        # resolve_template_key, not a literal: the budget rows carry a
+        # budget_ prefix, and a literal here exits 2 on a migrated database.
+        from app.services.email_enqueue import resolve_template_key
+        reminder_key = resolve_template_key('submission_reminder', 'BUDGET')
         template = EmailTemplate.query.filter_by(
-            template_key='submission_reminder',
+            template_key=reminder_key,
         ).first()
         if template is None:
             click.echo(
-                "Email template 'submission_reminder' not found. Run migrations.",
+                f"Email template '{reminder_key}' not found. Run migrations.",
                 err=True,
             )
             sys.exit(2)
         if not template.is_active:
             click.echo(
-                "Email template 'submission_reminder' is inactive (is_active=False) "
+                f"Email template '{reminder_key}' is inactive (is_active=False) "
                 "in the email_templates table. Re-activate before sending.",
                 err=True,
             )
@@ -196,7 +200,7 @@ def register_cli(app: Flask) -> None:
                 dept = db.session.get(Department, first_with_recipients.department_id)
                 # Pass the cycle: a preview rendered from the base wording
                 # would show text this event is not going to send.
-                rendered = render_email_template('submission_reminder', {
+                rendered = render_email_template(reminder_key, {
                     'department': dept,
                     'event_cycle': cycle,
                     'base_url': 'https://budget.magfest.org',
