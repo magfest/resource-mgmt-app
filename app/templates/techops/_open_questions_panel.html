@@ -1,0 +1,43 @@
+{# Renders when a submit carries unanswered phone questions. This is not
+   the refusal panel: the request is acceptable and can be sent as it
+   stands. The prominent action is the one that produces a complete
+   request, and sending as-is is a plain link, so the easy click is the one
+   the phone team benefits from. A refusal and a set of questions can
+   arrive together; the refusal panel sits above this one and is the thing
+   that actually blocks. #}
+{% set questions = open_questions|default([]) %}
+{% if questions %}
+<div class="callout callout-warning open-questions-panel" data-open-questions-panel tabindex="-1">
+  <strong>
+    {{ questions|length }} question{{ 's' if questions|length != 1 else '' }}
+    {{ 'are' if questions|length != 1 else 'is' }} still unanswered
+  </strong>
+  <div class="muted small" style="margin: 2px 0 8px;">
+    TechOps can start without these, but each blank is something the phone
+    team has to chase down. Please fill them in if you can.
+  </div>
+  <ul class="submit-error-list">
+    {% for entry in questions %}
+      <li>
+        {% if entry.space_id %}
+          <a href="#space-card-{{ entry.space_id }}">{{ entry.message }}</a>
+        {% else %}
+          {{ entry.message }}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+  {# The acknowledgement rides a hidden field rather than the button's own
+     name, because a button posts one name and this submit needs two. The
+     field stays empty for every other button on the form, so Save Draft
+     and a corrected Submit are unaffected. #}
+  <input type="hidden" name="open_questions_acknowledged" value=""
+         data-acknowledge-questions>
+  <div style="display: flex; gap: 16px; align-items: center; margin-top: 8px;">
+    <a class="btn btn-primary"
+       href="#space-card-{{ questions[0].space_id }}">Fill these in</a>
+    <button type="submit" name="action" value="submit" class="btn-link"
+            data-submit-anyway>Submit anyway</button>
+  </div>
+</div>
+{% endif %}
