@@ -87,43 +87,82 @@ def notify_work_item_submitted(work_item: WorkItem) -> int:
 
 def notify_submission_confirmation(work_item: WorkItem) -> int:
     """
-    Send the submitting department a confirmation that their BUDGET
-    request was received.
+    Send the submitting department a confirmation that their request was
+    received.
 
     Audience: same dept-member set used for needs_attention / finalized
     (direct department memberships + members of the department's
     division), so dept leadership gets a paper trail even when a
     deputy clicked Submit.
 
-    BUDGET-only. The 'submitted' template (which targets budget admins
-    so they can dispatch) intentionally does NOT cover this audience.
-    For non-BUDGET worktypes this function is a silent no-op so
-    submit-route callers can stay worktype-neutral.
+    Every work type that has a template of its own, which since
+    em3315c9a74b means a {work_type}_submission_confirmation row. A work
+    type without one gets nothing and a warning: falling back would reach
+    budget wording and tell a TechOps department their "budget request is
+    waiting for a budget admin to dispatch it".
 
-    The email body shows the requester-set line count and total — the
-    template wording explicitly frames these as "requested" so they
-    cannot be misread as an approval.
+    The 'submitted' template targets reviewers or admins and deliberately
+    does not cover this audience.
+
+    total_requested_dollars travels for BUDGET only. TechOps carries no
+    money and Supply never shows a requester a price, so sending 0.00
+    would read as a decision rather than an absence. The budget wording
+    frames its numbers as "requested" so they cannot be read as approval.
 
     Returns: Number of outbox rows queued.
     """
     portfolio = work_item.portfolio
     work_type = portfolio.work_type if portfolio else None
-    if work_type is None or work_type.code != 'BUDGET':
+    if work_type is None:
+        return 0
+
+    # Refuse rather than fall back. resolve_template_key returns the bare kind
+    # when a work type has no row of its own, and em3315c9a74b removed the bare
+    # rows, so a fallback here would either find nothing or, worse, find a
+    # budget-worded row and tell a TechOps department their "budget request is
+    # waiting for a budget admin to dispatch it".
+    template_key = resolve_template_key('submission_confirmation', work_type.code)
+    if not template_key.startswith(f"{work_type.code.lower()}_"):
+        logger.warning(
+            "No %s_submission_confirmation template; %s gets no receipt",
+            work_type.code.lower(), work_item.public_id,
+        )
         return 0
 
     line_count = 0
     total_requested_cents = 0
     for line in work_item.lines:
-        detail = line.budget_detail
-        if not detail:
-            continue
         line_count += 1
-        total_requested_cents += int(detail.unit_price_cents * detail.quantity)
+        detail = line.budget_detail
+        if detail:
+            total_requested_cents += int(detail.unit_price_cents * detail.quantity)
 
     recipients = _get_department_member_emails(
         department_id=portfolio.department_id,
         event_cycle_id=portfolio.event_cycle_id,
     )
+
+    # TechOps asks for a primary contact on every request
+    # (primary_contact_email is nullable=False on TechOpsRequestDetail), so
+    # write to them even when they are not a department member. The detail row
+    # itself is optional on the work item, hence the getattr.
+    detail = getattr(work_item, 'techops_detail', None)
+    contact = getattr(detail, 'primary_contact_email', None) if detail else None
+    if contact:
+        # Casefold both sides. The requester types this by hand and nothing
+        # lower-cases it (form_utils.py:431 only strips), while User.email is
+        # returned verbatim, so "Heather@Magfest.Org" against a stored
+        # "heather@magfest.org" would queue two rows and send both.
+        known = {r.casefold() for r in recipients}
+        if contact.casefold() not in known:
+            recipients = list(recipients) + [contact]
+
+    extra_context = {'line_count': line_count}
+    if work_type.code == 'BUDGET':
+        # TechOps carries no money, and Supply is requester-facing and never
+        # shows prices (supply/portfolio.py:28). Sending 0.00 would read as a
+        # decision rather than an absence.
+        extra_context['total_requested_dollars'] = total_requested_cents / 100
 
     return _enqueue_emails(
         recipients=recipients,
@@ -132,10 +171,7 @@ def notify_submission_confirmation(work_item: WorkItem) -> int:
         empty_recipients_msg=(
             "No department member recipients found for submission_confirmation"
         ),
-        extra_context={
-            'line_count': line_count,
-            'total_requested_dollars': total_requested_cents / 100,
-        },
+        extra_context=extra_context,
     )
 
 

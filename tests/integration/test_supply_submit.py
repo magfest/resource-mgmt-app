@@ -340,3 +340,48 @@ class TestSupplySubmitDeactivatedItem:
 
         db.session.refresh(work_item)
         assert work_item.status == WORK_ITEM_STATUS_DRAFT
+
+
+class TestSupplySubmitQueuesTheReceipt:
+    """The ordering department must hear that their order arrived.
+
+    notify_submission_confirmation had one call site, the BUDGET submit route,
+    which rejects any line without a budget_detail. Supply's route called only
+    notify_work_item_submitted, so the department got nothing.
+    """
+
+    def test_submit_queues_a_supply_submission_confirmation(
+        self, app, client, seed_workflow_data
+    ):
+        from app.models import DepartmentMembership, EmailOutbox, EmailTemplate
+
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category)
+
+        db.session.add(DepartmentMembership(
+            user_id=seed_workflow_data["admin"].id, department_id=dept.id,
+            event_cycle_id=cycle.id,
+        ))
+        for key in ("supply_submitted", "supply_submission_confirmation"):
+            db.session.add(EmailTemplate(
+                template_key=key, name=key, subject="[MAGFest Supply] x",
+                body_text="Body.", is_active=True,
+            ))
+        db.session.commit()
+
+        work_item = _make_draft_order(wt, cycle, dept)
+        _add_line(work_item, item, quantity=2, notes="for tech booth")
+        _set_pickup_details(work_item)
+
+        _login(client, "test:admin")
+        response = client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/submit"
+        )
+
+        assert response.status_code == 302
+        assert EmailOutbox.query.filter_by(
+            template_key="supply_submission_confirmation").count() > 0
