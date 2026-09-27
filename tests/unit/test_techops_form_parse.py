@@ -8,7 +8,6 @@ import pytest
 from werkzeug.datastructures import MultiDict
 
 from app.routes.work.techops.form_utils import (
-    MAX_CALLER_ID_LENGTH,
     MAX_DEPARTMENT_WIDE_INSTANCES,
     MAX_HANDSETS_PER_LINE,
     MAX_INT4,
@@ -259,15 +258,11 @@ def test_a_phone_line_becomes_a_phone_line():
     form.add("space_412_answer", "NEEDS")
     form.add("space_412_PHONE_line_1_purpose", "VOICE")
     form.add("space_412_PHONE_line_1_usage", "Front counter")
-    form.add("space_412_PHONE_line_1_caller_id_name", "regdesk")
     answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
     assert errors == []
     lines = answers.spaces[0].phone_lines
     assert len(lines) == 1
     assert lines[0].index == 1
-    assert lines[0].purpose == "VOICE"
-    # Upper-cased on the way in, per the phone system's display convention.
-    assert lines[0].caller_id_name == "REGDESK"
 
 
 def test_an_untouched_phone_line_slot_is_not_a_line():
@@ -368,23 +363,6 @@ def test_too_many_handsets_is_an_error_naming_the_bound():
         form.add(f"space_412_PHONE_line_1_handset_{h}_location", f"Position {h}")
     answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
     assert any(str(MAX_HANDSETS_PER_LINE) in e for e in errors)
-
-
-@pytest.mark.skip(
-    reason="phone validation off; see PHONE_VALIDATION_ENABLED in form_utils.py")
-def test_an_over_length_caller_id_is_an_error_and_is_not_truncated():
-    form = _base()
-    form.add("space_ids", "412")
-    form.add("space_412_answer", "NEEDS")
-    form.add("space_412_PHONE_line_1_purpose", "VOICE")
-    form.add("space_412_PHONE_line_1_usage", "Front counter")
-    long_name = "a" * (MAX_CALLER_ID_LENGTH + 5)
-    form.add("space_412_PHONE_line_1_caller_id_name", long_name)
-    answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
-    assert any(str(MAX_CALLER_ID_LENGTH) in e for e in errors)
-    # Not silently shortened: the full (upper-cased) value survives so the
-    # requester sees exactly what they typed on the redraw.
-    assert answers.spaces[0].phone_lines[0].caller_id_name == long_name.upper()
 
 
 def test_a_sharing_line_defaults_to_new_when_source_is_blank():
@@ -510,3 +488,50 @@ def test_the_pickers_blank_placeholder_does_not_count_toward_the_space_bound():
     answers, errors = parse_form(form, names)
     assert len(answers.spaces) == 100
     assert not any("at most" in e for e in errors)
+
+
+def test_every_new_phone_field_reaches_the_dataclass():
+    form = _base()
+    form.add("space_ids", "412")
+    form.add("space_412_answer", "NEEDS")
+    form.add("space_412_PHONE_line_1_dial_in", "1")
+    form.add("space_412_PHONE_line_1_texts", "1")
+    form.add("space_412_PHONE_line_1_voice_delivery", "DESK_PHONE")
+    form.add("space_412_PHONE_line_1_no_answer", "VOICEMAIL")
+    form.add("space_412_PHONE_line_1_text_slack_channel", "#regdesk-texts")
+    answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
+    line = answers.spaces[0].phone_lines[0]
+    assert errors == []
+    assert (line.dial_in, line.dial_out, line.texts) == (True, False, True)
+    assert line.voice_delivery == "DESK_PHONE"
+    assert line.no_answer == "VOICEMAIL"
+    assert line.text_slack_channel == "#regdesk-texts"
+
+
+def test_an_untouched_trailing_slot_is_not_a_phone_line():
+    """Incomplete lines are created now rather than refused, so a slot read
+    as touched becomes a phantom line on the request and a phantom question
+    for the phone team."""
+    form = _base()
+    form.add("space_ids", "412")
+    form.add("space_412_answer", "NEEDS")
+    # A fresh trailing slot posts source=NEW, which is what the hidden
+    # input and the select's first option both carry. A blank source is an
+    # orphaned share, which is a real answer and is covered separately.
+    form.add("space_412_PHONE_line_1_source", "NEW")
+    for suffix in ("voice_delivery", "no_answer", "usage",
+                   "text_slack_channel", "voicemail_slack_channel",
+                   "forward_target", "handset_1_location"):
+        form.add(f"space_412_PHONE_line_1_{suffix}", "")
+    answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
+    assert answers.spaces[0].phone_lines == ()
+
+
+def test_a_single_ticked_box_makes_the_slot_a_real_line():
+    form = _base()
+    form.add("space_ids", "412")
+    form.add("space_412_answer", "NEEDS")
+    form.add("space_412_PHONE_line_1_texts", "1")
+    answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
+    assert len(answers.spaces[0].phone_lines) == 1
+    assert answers.spaces[0].phone_lines[0].texts is True

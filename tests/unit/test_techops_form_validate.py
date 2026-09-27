@@ -12,15 +12,13 @@ from app.routes.work.techops.form_utils import (
     ACTION_SAVE_DRAFT, ACTION_SUBMIT, parse_form, validate,
 )
 from app.routes.work.techops.line_grain import (
+    QUESTION_CAPABILITIES, QUESTION_VOICEMAIL_SLACK,
+    QUESTION_VOICE_DELIVERY,
+    VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_NONE, VOICE_DELIVERY_VOICEMAIL,
     EthernetDrop, PhoneHandset, PhoneLine, RequestAnswers, SpaceAnswer,
     expand_to_lines,
 )
 from tests.unit.test_techops_line_grain import _answers, _space
-
-# Phone-line refusals are off for this pass; see PHONE_VALIDATION_ENABLED
-# in form_utils.py. These tests are the spec for when the rules come back,
-# not dead weight, so they are skipped rather than deleted.
-PHONE_VALIDATION_SKIP = "phone validation off; see PHONE_VALIDATION_ENABLED in form_utils.py"
 
 
 def test_submitting_with_an_unanswered_space_is_rejected_by_name():
@@ -73,25 +71,28 @@ def test_declining_wifi_is_fine_when_a_reason_is_given():
                     has_space_cards=True) == []
 
 
-@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
-def test_a_phone_line_with_no_purpose_is_rejected():
-    space = _space(phone_lines=(PhoneLine(index=1, source="NEW", purpose=None,
-                                          internal_only=False, usage="Front"),))
-    errors = validate(_answers([space], action=ACTION_SUBMIT), has_space_cards=True)
-    assert any("purpose" in e.lower() for e in errors)
+def test_a_line_that_does_nothing_is_recorded_not_refused():
+    """No calls, no texts, no delivery. The requester stopped mid-thought;
+    the phone team gets the line and the question, not a wall."""
+    space = _space(display_name="Regdesk A", phone_lines=(
+        PhoneLine(index=1, source="NEW", usage="Not sure yet"),))
+    errors = validate(_answers([space], action=ACTION_SUBMIT),
+                      has_space_cards=True)
+    assert not any("phone line" in e.lower() for e in errors)
+    number = expand_to_lines(_answers([space]))[0]
+    # Two questions, not one: nothing says what the number does, and the
+    # voice question was on screen and left blank.
+    assert number.config["open_questions"] == [
+        QUESTION_CAPABILITIES, QUESTION_VOICE_DELIVERY]
 
 
-@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
 def test_sharing_a_line_that_does_not_exist_is_rejected():
     space = _space(space_id=2, display_name="Regdesk B",
-                   phone_lines=(PhoneLine(index=1, source="9:1", purpose=None,
-                                          internal_only=False,
-                                          handsets=(PhoneHandset("Counter"),)),))
+                   phone_lines=(PhoneLine(index=1, source="9:1", handsets=(PhoneHandset("Counter"),)),))
     errors = validate(_answers([space], action=ACTION_SUBMIT), has_space_cards=True)
     assert any("Regdesk B" in e and "does not exist" in e for e in errors)
 
 
-@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
 def test_an_orphaned_handsets_blank_source_is_rejected_not_silently_new():
     """End to end through parse_form, not the dataclass shortcut: a source
     field posted empty (as _space_card.html now renders an orphaned
@@ -103,7 +104,6 @@ def test_an_orphaned_handsets_blank_source_is_rejected_not_silently_new():
         ("action", ACTION_SUBMIT),
         ("space_ids", "412"),
         ("space_412_answer", "NEEDS"),
-        ("space_412_PHONE_line_1_purpose", "VOICE"),
         ("space_412_PHONE_line_1_usage", "Front counter"),
         ("space_412_PHONE_line_1_source", ""),
     ])
@@ -113,13 +113,12 @@ def test_an_orphaned_handsets_blank_source_is_rejected_not_silently_new():
     assert any("does not exist" in e for e in errors)
 
 
-@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
 def test_sharing_a_line_that_itself_shares_is_rejected():
     """A chain has no owner at the end of it, so nothing provisions."""
     owner = _space(space_id=1, phone_lines=(
-        PhoneLine(index=1, source="3:1", purpose=None, internal_only=False),))
+        PhoneLine(index=1, source="3:1", ),))
     sharer = _space(space_id=2, display_name="Regdesk B", phone_lines=(
-        PhoneLine(index=1, source="1:1", purpose=None, internal_only=False),))
+        PhoneLine(index=1, source="1:1", ),))
     errors = validate(_answers([owner, sharer], action=ACTION_SUBMIT),
                       has_space_cards=True)
     # The sharer's own error, not the owner's separate "does not exist"
@@ -149,21 +148,39 @@ def test_a_needs_space_half_filled_saves_as_a_draft_without_error():
     space = _space(
         answer="NEEDS",
         ethernet_drops=(EthernetDrop(location="Back", usage=""),),
-        phone_lines=(PhoneLine(index=1, source="NEW", purpose=None,
-                                internal_only=False),),
+        phone_lines=(PhoneLine(index=1, source="NEW", ),),
     )
     assert validate(_answers([space], action=ACTION_SAVE_DRAFT),
                     has_space_cards=True) == []
 
 
-@pytest.mark.skip(reason=PHONE_VALIDATION_SKIP)
-def test_a_handset_with_no_location_is_rejected_on_submit():
-    space = _space(display_name="Regdesk C", phone_lines=(
-        PhoneLine(index=1, source="NEW", purpose="VOICE",
-                  internal_only=False,
-                  handsets=(PhoneHandset(location=""),)),))
-    errors = validate(_answers([space], action=ACTION_SUBMIT), has_space_cards=True)
-    assert any("Regdesk C" in e and "handset" in e.lower() for e in errors)
+def test_sharing_a_text_only_number_is_refused():
+    """Invariant 7 drops handsets on a text-only number, so the sharing line
+    produces nothing and the space would vanish. Nothing survives to carry a
+    question, which is why this refuses rather than records."""
+    owner = _space(space_id=1, phone_lines=(
+        PhoneLine(index=1, source="NEW", texts=True,
+                  text_slack_channel="#texts",
+                  voice_delivery=VOICE_DELIVERY_NONE),))
+    sharer = _space(space_id=2, display_name="Regdesk B", phone_lines=(
+        PhoneLine(index=1, source="1:1", handsets=()),))
+    errors = validate(_answers([owner, sharer], action=ACTION_SUBMIT),
+                      has_space_cards=True)
+    assert any("Regdesk B" in e and "no voice" in e.lower() for e in errors)
+
+
+def test_sharing_a_line_whose_voice_is_unanswered_is_not_refused():
+    """An owner who has not answered the voice question may still end up
+    with a desk phone. Refusing here blocks a request that expands fine."""
+    owner = _space(space_id=1, phone_lines=(
+        PhoneLine(index=1, source="NEW", texts=True,
+                  text_slack_channel="#texts"),))
+    sharer = _space(space_id=2, display_name="Regdesk B", phone_lines=(
+        PhoneLine(index=1, source="1:1",
+                  handsets=(PhoneHandset("Counter"),)),))
+    errors = validate(_answers([owner, sharer], action=ACTION_SUBMIT),
+                      has_space_cards=True)
+    assert not any("phone line" in e for e in errors)
 
 
 def test_missing_contact_email_is_rejected_even_on_a_draft():
@@ -281,21 +298,18 @@ def test_the_no_lines_rule_does_not_fire_when_the_department_needs_nothing():
 
 
 def test_a_half_filled_phone_line_no_longer_blocks_a_submit():
-    """PHONE_VALIDATION_ENABLED is off (form_utils.py): a line missing its
-    purpose, sharing a line that does not exist, and a handset with no
-    location must all pass validate() now. expand_to_lines() still returns
-    a DESK_PHONE for the handset (its owner does not exist, so
-    parent_index is None), proving expansion runs unchanged; only the
-    refusal is gone.
-    """
+    """A line whose questions are unanswered still submits. Nothing here is
+    a broken reference; what is missing is information, and information is
+    recorded on the line rather than refused."""
     space = _space(display_name="Regdesk A", wifi_requested=True,
-                  phone_lines=(
-        PhoneLine(index=1, source="9:1", purpose=None, internal_only=False,
-                  handsets=(PhoneHandset(location=""),)),
+                   phone_lines=(
+        PhoneLine(index=1, source="NEW", dial_in=True,
+                  voice_delivery=VOICE_DELIVERY_VOICEMAIL,
+                  voicemail_slack_channel=""),
     ))
     answers = _answers([space], action=ACTION_SUBMIT)
-    errors = validate(answers, has_space_cards=True)
-    assert errors == []
+    assert validate(answers, has_space_cards=True) == []
+
     lines = expand_to_lines(answers)
-    assert [line.service_code for line in lines] == ["WIFI", "DESK_PHONE"]
-    assert lines[1].parent_index is None
+    assert [line.service_code for line in lines] == ["WIFI", "PHONE_NUMBER"]
+    assert lines[1].config["open_questions"] == [QUESTION_VOICEMAIL_SLACK]

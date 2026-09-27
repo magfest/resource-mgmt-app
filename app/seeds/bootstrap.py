@@ -452,8 +452,8 @@ def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dic
         (
             "PHONE_NUMBER",
             "Phone number",
-            "One number to configure. Purpose, caller ID, and how calls are "
-            "delivered. Handsets are requested separately.",
+            "One phone number and the desk phones that ring it. Say what "
+            "it needs to do and where the phones sit.",
             "TECHOPS_NET", 41, "phone line", True,
         ),
         (

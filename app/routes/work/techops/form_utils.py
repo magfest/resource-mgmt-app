@@ -39,11 +39,19 @@ from .line_grain import (
     EthernetDrop,
     PhoneHandset,
     PhoneLine,
-    PURPOSES,
+    VOICE_DELIVERY_NONE,
+    QUESTION_CAPABILITIES,
+    QUESTION_FORWARD_TARGET,
+    QUESTION_HANDSETS,
+    QUESTION_LOCATION,
+    QUESTION_NO_ANSWER,
+    QUESTION_TEXT_SLACK,
+    QUESTION_VOICEMAIL_SLACK,
     RequestAnswers,
     SOURCE_NEW,
     SpaceAnswer,
     expand_to_lines,
+    phone_open_questions,
     wifi_is_forced,
 )
 
@@ -87,23 +95,6 @@ MAX_PHONE_LINES_PER_SPACE = 10
 MAX_HANDSETS_PER_LINE = 20
 MAX_DEPARTMENT_WIDE_INSTANCES = 50
 
-# Caller ID as the phone system displays it.
-MAX_CALLER_ID_LENGTH = 15
-
-# ---------------------------------------------------------------------------
-# Phone-line refusals, deliberately off for this pass. The phone block is
-# being redesigned next phase and its validation was blocking review of
-# everything else on the form. Every phone-line rule this flag gates
-# still exists in code, guarded rather than deleted, and comes back by
-# flipping this back to True when the phone block is rebuilt. Parsing
-# (_parse_phone_lines) and expand_to_lines() are untouched: only the
-# refusal is suppressed, so a half-filled phone line still previews and
-# still saves. Gated call sites: _validate_phone_line (purpose, sharing-
-# source, handset location) and the caller ID length check in
-# _parse_phone_lines below. The tests these rules had are skipped, not
-# deleted, with `reason` pointing back at this flag.
-PHONE_VALIDATION_ENABLED = False
-# ---------------------------------------------------------------------------
 
 
 class ValidationError(str):
@@ -122,6 +113,42 @@ class ValidationError(str):
         obj = str.__new__(cls, message)
         obj.space_id = space_id
         return obj
+
+
+QUESTION_LABELS = {
+    QUESTION_CAPABILITIES: "what the number needs to do",
+    QUESTION_TEXT_SLACK: "Hotliner Slack channel",
+    QUESTION_VOICEMAIL_SLACK: "voicemail Slack channel",
+    QUESTION_FORWARD_TARGET: "forward number",
+    QUESTION_NO_ANSWER: "what happens if nobody picks up",
+    QUESTION_HANDSETS: "where the desk phone sits",
+    QUESTION_LOCATION: "where the desk phone sits",
+}
+
+
+def open_question_entries(answers: "RequestAnswers") -> list[dict]:
+    """List the questions this request would reach a reviewer carrying.
+
+    Shaped like panel_entries() so both panels render from one template
+    idiom. This is not a validation result: a request carrying questions is
+    acceptable and submits. A sharing line is skipped; it owns no number,
+    so its only gap is where its handsets sit, which the placeholder line
+    records for the reviewer.
+    """
+    entries = []
+    for space in answers.spaces:
+        if space.answer != ANSWER_NEEDS:
+            continue
+        for line in space.phone_lines:
+            if line.source != SOURCE_NEW:
+                continue
+            for key in phone_open_questions(line):
+                entries.append({
+                    "message": (f"{space.display_name}, phone line "
+                                f"{line.index}: {QUESTION_LABELS[key]}"),
+                    "space_id": space.space_id,
+                })
+    return entries
 
 
 def panel_entries(errors: list[str]) -> list[dict]:
@@ -222,22 +249,23 @@ def _parse_phone_lines(space_id: int, form: "MultiDict",
     `index` is the loop position `n`, never a value read out of the form:
     there is no `..._index` field, so two lines in one space cannot
     collide on the sharing key `line_grain._sharing_key` builds from it.
-    A line whose purpose, usage, and handsets are all blank is an
-    untouched slot, not a line, and is skipped.
+    A line with every field blank is an untouched slot, not a line, and
+    is skipped.
     """
     lines = []
     overflow = False
     for n in range(1, MAX_PHONE_LINES_PER_SPACE + 2):
         prefix = f"space_{space_id}_PHONE_line_{n}"
-        purpose = (form.get(f"{prefix}_purpose") or "").strip() or None
+        dial_in = form.get(f"{prefix}_dial_in") == "1"
+        dial_out = form.get(f"{prefix}_dial_out") == "1"
+        texts = form.get(f"{prefix}_texts") == "1"
+        voice_delivery = (form.get(f"{prefix}_voice_delivery") or "").strip()
+        no_answer = (form.get(f"{prefix}_no_answer") or "").strip()
         usage = (form.get(f"{prefix}_usage") or "").strip()
+        voicemail = (form.get(f"{prefix}_voicemail_slack_channel") or "").strip()
+        text_channel = (form.get(f"{prefix}_text_slack_channel") or "").strip()
+        forward = (form.get(f"{prefix}_forward_target") or "").strip()
         handsets = _parse_handsets(space_id, n, form, errors, label)
-
-        if purpose is None and not usage and not handsets:
-            continue
-        if n > MAX_PHONE_LINES_PER_SPACE:
-            overflow = True
-            break
 
         # A source field posted but empty is a preserved orphan:
         # _redisplay_extras leaves one blank when its share target no
@@ -252,27 +280,35 @@ def _parse_phone_lines(space_id: int, form: "MultiDict",
         else:
             source = SOURCE_NEW
 
-        # Upper-cased and recorded, never truncated: a silently shortened
-        # caller ID is wrong on every call, so length errors are surfaced
-        # instead of hidden by a cut.
-        caller_id_raw = (form.get(f"{prefix}_caller_id_name") or "").strip()
-        caller_id_name = caller_id_raw.upper()
-        # Gated by PHONE_VALIDATION_ENABLED; see that flag's comment.
-        if PHONE_VALIDATION_ENABLED and len(caller_id_raw) > MAX_CALLER_ID_LENGTH:
-            errors.append(
-                f"{label} phone line {n}: caller ID name is at most "
-                f"{MAX_CALLER_ID_LENGTH} characters.")
+        # Every field, not a representative few. An incomplete line is
+        # created rather than refused, so a slot wrongly read as touched
+        # becomes a phantom line and a phantom question for the phone team.
+        #
+        # `source` counts only when it is not SOURCE_NEW. The control posts
+        # a value for every rendered slot, including the trailing blank one,
+        # so counting a plain "NEW" would make every card grow a phantom
+        # line on each save. Picking a share, or a blank left by an orphaned
+        # handset, is a real answer and does count.
+        if not any((dial_in, dial_out, texts, voice_delivery, no_answer,
+                    usage, voicemail, text_channel, forward, handsets,
+                    source != SOURCE_NEW)):
+            continue
+        if n > MAX_PHONE_LINES_PER_SPACE:
+            overflow = True
+            break
 
         lines.append(PhoneLine(
             index=n,
             source=source,
-            purpose=purpose,
-            internal_only=form.get(f"{prefix}_internal_only") == "1",
+            dial_in=dial_in,
+            dial_out=dial_out,
+            texts=texts,
+            voice_delivery=voice_delivery,
+            no_answer=no_answer,
             usage=usage,
-            caller_id_name=caller_id_name,
-            voicemail_slack_channel=(form.get(f"{prefix}_voicemail_slack_channel") or "").strip(),
-            text_slack_channel=(form.get(f"{prefix}_text_slack_channel") or "").strip(),
-            forward_target=(form.get(f"{prefix}_forward_target") or "").strip(),
+            voicemail_slack_channel=voicemail,
+            text_slack_channel=text_channel,
+            forward_target=forward,
             handsets=handsets,
         ))
     if overflow:
@@ -444,7 +480,7 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
     A draft saves in any state. Only a submit demands completeness: a
     requester mid-thought must be able to leave and come back, so every
     per-space check below is skipped outright for a non-submit action.
-    Storage bounds (caller ID length, per-space counts) are enforced in
+    Storage bounds (per-space and per-line counts) are enforced in
     parse_form instead, since those apply regardless of action.
 
     Each ValidationError is also its message text (see the class), so
@@ -571,44 +607,44 @@ def _validate_phone_line(
     all_keys: set,
     errors: list[str],
 ) -> None:
-    """Check one phone line's purpose, sharing reference, and handsets.
+    """Refuse a share reference that cannot resolve.
 
-    Only reached from validate() once a submit is underway. A sharing
-    line's source is compared as a plain string against keys built from
-    real space ids and line indexes; nothing is parsed out of it, so a
-    malformed source ("banana", "1:", an oversized number) just fails to
-    match and cannot raise.
+    A missing answer is not refused; it is recorded on the line as a
+    question for the phone team. These four are different. Nothing is
+    missing, a pointer aims at something that is not there, and letting one
+    through provisions a number the department is billed for and did not
+    ask for.
 
-    Gated by PHONE_VALIDATION_ENABLED; see that flag's comment for why.
+    A sharing line's source is compared as a plain string against keys built
+    from real space ids and line indexes; nothing is parsed out of it, so a
+    malformed source fails to match and cannot raise.
     """
-    if not PHONE_VALIDATION_ENABLED:
-        return
     if line.source == SOURCE_NEW:
-        if line.purpose not in PURPOSES:
-            errors.append(ValidationError(
-                f"{name}, phone line {line.index}: give the line's purpose.",
-                space_id,
-            ))
-    elif line.source not in all_keys:
+        return
+    if line.source not in all_keys:
         errors.append(ValidationError(
             f"{name}, phone line {line.index}: shares a line that does "
-            "not exist.",
+            "not exist. Pick the number it should ring.",
             space_id,
         ))
-    elif line.source not in owners:
+        return
+    if line.source not in owners:
         errors.append(ValidationError(
             f"{name}, phone line {line.index}: shares a line that itself "
             "shares a number, so nothing would provision.",
             space_id,
         ))
-
-    for handset_no, handset in enumerate(line.handsets, start=1):
-        if not handset.location:
-            errors.append(ValidationError(
-                f"{name}, phone line {line.index}, handset {handset_no}: "
-                "where does it sit?",
-                space_id,
-            ))
+        return
+    # Explicitly no voice, matching the rule expand_to_lines applies when
+    # it drops handsets. An owner who has not answered the voice question
+    # yet keeps its sharer's handsets, so refusing here would block a
+    # request that expands fine.
+    if owners[line.source].voice_delivery == VOICE_DELIVERY_NONE:
+        errors.append(ValidationError(
+            f"{name}, phone line {line.index}: shares a number set to no "
+            "voice, which has no handsets to place.",
+            space_id,
+        ))
 
 
 def upsert_request_detail(

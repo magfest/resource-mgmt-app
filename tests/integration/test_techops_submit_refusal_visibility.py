@@ -407,3 +407,73 @@ def test_a_refused_submit_still_preserves_typed_values(app, client, techops_port
     assert "Just-typed drop location" in body
     assert "Just-typed drop usage" in body
     assert "Just-typed per-space notes" in body
+
+
+def test_a_first_submit_with_open_questions_shows_the_panel_and_does_not_send(
+        app, client, techops_portfolio):
+    """An unanswered Hotliner channel is not a declined text service. The
+    submit stops once to ask, and says so, rather than refusing."""
+    _login(client, "test:admin")
+    room = techops_portfolio["room"]
+    response = client.post(techops_portfolio["new_request_url"], data={
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "submit",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_WIFI_enabled": "1",
+        f"space_{room.id}_PHONE_line_1_source": "NEW",
+        f"space_{room.id}_PHONE_line_1_texts": "1",
+        f"space_{room.id}_PHONE_line_1_voice_delivery": "NONE",
+    })
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "still unanswered" in body
+    assert "Hotliner Slack channel" in body
+    assert techops_portfolio["latest_item"]() is None or \
+        techops_portfolio["latest_item"]().status == WORK_ITEM_STATUS_DRAFT
+
+
+def test_open_questions_do_not_block_a_submit_once_acknowledged(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    room = techops_portfolio["room"]
+    response = client.post(techops_portfolio["new_request_url"], data={
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "submit",
+        "open_questions_acknowledged": "1",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_WIFI_enabled": "1",
+        f"space_{room.id}_PHONE_line_1_source": "NEW",
+        f"space_{room.id}_PHONE_line_1_texts": "1",
+        f"space_{room.id}_PHONE_line_1_voice_delivery": "NONE",
+    })
+    assert response.status_code == 302
+    assert techops_portfolio["latest_item"]().status == WORK_ITEM_STATUS_SUBMITTED
+
+
+def test_a_draft_save_never_shows_the_questions_panel(
+        app, client, techops_portfolio):
+    """Questions are a property of the answers, so a draft carries them.
+    The panel is submit-only; a draft that rendered it would look like a
+    refused submit, which is the bug this module exists for."""
+    _login(client, "test:admin")
+    room = techops_portfolio["room"]
+    response = client.post(techops_portfolio["new_request_url"], data={
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "save_draft",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_PHONE_line_1_source": "NEW",
+        f"space_{room.id}_PHONE_line_1_texts": "1",
+    })
+    # A successful draft save redirects. Following it is what makes this
+    # assertion mean anything; blanking the body on a non-200 asserted
+    # nothing at all.
+    assert response.status_code == 302
+    body = client.get(response.headers["Location"]).get_data(as_text=True)
+    assert "still unanswered" not in body
+    assert techops_portfolio["latest_item"]().status == WORK_ITEM_STATUS_DRAFT

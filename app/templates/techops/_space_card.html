@@ -51,106 +51,177 @@
   <label for="{{ prefix }}_handset_{{ h }}_location">Desk phone {{ h }}</label>
   <input type="text" id="{{ prefix }}_handset_{{ h }}_location"
          name="{{ prefix }}_handset_{{ h }}_location" maxlength="500"
-         placeholder="Where does this handset sit? e.g. front counter, position 3"
+         placeholder="Where does this phone sit? e.g. front counter, position 3"
          value="{{ handset.location }}">
 </div>
 {% endmacro %}
 
-{% macro render_phone_line(sid, n, line) %}
+{# The phone block is a reveal chain: each question appears once the one
+   above it is answered. Every revealable block carries data-reveal-any as
+   "trigger=VALUE" pairs, space separated, and shows when ANY pair matches.
+   Two pairs is not decoration: the forward number and the voicemail
+   channel are each reachable from the delivery choice or the no-answer
+   choice, and rendering them twice would put two inputs of one name on
+   the page. The vocabulary lives here; the script only compares strings,
+   so a new delivery option needs no script change.
+
+   The hidden attribute is set server side from the same answers, so a
+   refused submit comes back with the right blocks already open. #}
+{% macro render_phone_source(sid, n, line) %}
 {% set prefix = 'space_' ~ sid ~ '_PHONE_line_' ~ n %}
-{% set handset_rows = line.handsets + ({'location': ''},) %}
-{# Only offered once another space's line owns a number: with nothing to
-   share, a select with one option ("a new number") is noise, so the
-   field falls back to a plain hidden input carrying the line's own
-   source unchanged. #}
 {% set other_owning_lines = (share_options or [])|rejectattr('space_id', 'equalto', sid)|list %}
-{% set is_sharing = line.source != source_new %}
-<div class="space-card-row" data-phone-line-row>
-  <div class="space-card-row-header">Phone line {{ n }}</div>
-  {% if other_owning_lines %}
-    {% set ns = namespace(known=(line.source == source_new)) %}
-    <div class="space-card-field">
-      <label for="{{ prefix }}_source">Number</label>
-      <select id="{{ prefix }}_source" name="{{ prefix }}_source" data-phone-source
-              data-source-new="{{ source_new }}">
-        <option value="{{ source_new }}" {% if line.source == source_new %}selected{% endif %}>
-          A new number just for this space
+{% if other_owning_lines %}
+  {% set ns = namespace(known=(line.source == source_new)) %}
+  <div class="space-card-field">
+    <label for="{{ prefix }}_source">Number</label>
+    <select id="{{ prefix }}_source" name="{{ prefix }}_source" data-phone-source
+            data-phone-source-field
+            data-source-new="{{ source_new }}">
+      <option value="{{ source_new }}" {% if line.source == source_new %}selected{% endif %}>
+        A new number just for this space
+      </option>
+      {% for opt in other_owning_lines %}
+        {% set opt_value = opt.space_id ~ ':' ~ opt.index %}
+        {% if line.source == opt_value %}{% set ns.known = true %}{% endif %}
+        <option value="{{ opt_value }}" {% if line.source == opt_value %}selected{% endif %}>
+          Same number as {{ opt.display_name }} - Phone {{ opt.index }}
         </option>
-        {% for opt in other_owning_lines %}
-          {% set opt_value = opt.space_id ~ ':' ~ opt.index %}
-          {% if line.source == opt_value %}{% set ns.known = true %}{% endif %}
-          <option value="{{ opt_value }}" {% if line.source == opt_value %}selected{% endif %}>
-            Same number as {{ opt.display_name }} - Line {{ opt.index }}
-          </option>
-        {% endfor %}
-        {% if not ns.known %}
-          {# line.source names no option on this request: a blank,
-             unresolved orphan rebuilt by spaces._redisplay_extras, or a share
-             pointing at a line that dropped off since. Kept as its own
-             selected option, value unchanged, so an unedited resave
-             posts the same unresolved source back rather than quietly
-             becoming a new number; validate() then asks the requester
-             to re-pick. #}
-          <option value="{{ line.source }}" selected>
-            {% if line.source %}A previously shared line that is no longer available{% else %}Choose a line to share{% endif %}
-          </option>
-        {% endif %}
-      </select>
-    </div>
-  {% else %}
-    <input type="hidden" name="{{ prefix }}_source" value="{{ line.source }}">
-  {% endif %}
-  {# A sharing line's purpose is inherited from the line it shares;
-     expand_to_lines() never emits a PHONE_NUMBER row for it, so a
-     purpose typed here would be silently ignored. Hidden rather than
-     removed: with scripting off, switching the select above does not
-     re-hide it, and a value left behind here is still just ignored, not
-     wrong. #}
-  <div class="space-card-field" data-phone-purpose-field
-       {% if is_sharing %}style="display: none;"{% endif %}>
-    <label for="{{ prefix }}_purpose">Purpose</label>
-    <select id="{{ prefix }}_purpose" name="{{ prefix }}_purpose">
-      <option value="" {% if not line.purpose %}selected{% endif %}>Choose one</option>
-      <option value="VOICE" {% if line.purpose == 'VOICE' %}selected{% endif %}>Voice</option>
-      <option value="TEXT" {% if line.purpose == 'TEXT' %}selected{% endif %}>Text</option>
-      <option value="BOTH" {% if line.purpose == 'BOTH' %}selected{% endif %}>Voice and text</option>
+      {% endfor %}
+      {% if not ns.known %}
+        {# line.source names no option on this request: a blank, unresolved
+           orphan rebuilt by spaces._redisplay_extras, or a share pointing
+           at a line that dropped off since. Kept as its own selected
+           option, value unchanged, so an unedited resave posts the same
+           unresolved source back rather than quietly becoming a new
+           number; validate() then asks the requester to re-pick. #}
+        <option value="{{ line.source }}" selected>
+          {% if line.source %}A phone that is no longer on this request{% else %}Choose a phone to share with{% endif %}
+        </option>
+      {% endif %}
     </select>
   </div>
-  <label class="space-card-field" style="display: flex; gap: 6px; align-items: center;">
-    <input type="checkbox" name="{{ prefix }}_internal_only" value="1"
-           {% if line.internal_only %}checked{% endif %}>
-    Internal only, no outside calls
+{% else %}
+  <input type="hidden" name="{{ prefix }}_source" value="{{ line.source }}"
+         data-phone-source-field>
+{% endif %}
+{% endmacro %}
+
+{% macro render_presets(prefix) %}
+{# A shortcut through the controls below, never a stored answer. Each
+   preset sets only what its own label settles and leaves the one thing
+   it cannot know: where the phone sits, which cell, which channel. The
+   pairs live here so the script stays free of phone vocabulary. #}
+<div class="space-card-field">
+  <label>What do you need here?</label>
+  <div class="phone-presets">
+    <button type="button" class="btn btn-muted" data-phone-preset="DESK"
+            data-preset-set="dial_in=1 dial_out=1 voice_delivery=DESK_PHONE">
+      A phone on a desk
+    </button>
+    <button type="button" class="btn btn-muted" data-phone-preset="FORWARD"
+            data-preset-set="dial_in=1 dial_out=0 voice_delivery=FORWARD">
+      A number that rings a cell
+    </button>
+    <button type="button" class="btn btn-muted" data-phone-preset="VOICEMAIL"
+            data-preset-set="dial_in=1 dial_out=0 voice_delivery=VOICEMAIL">
+      A number that just takes messages
+    </button>
+    <button type="button" class="btn btn-muted" data-phone-preset="TEXTS"
+            data-preset-set="dial_in=0 dial_out=0 texts=1 voice_delivery=NONE">
+      A texting line
+    </button>
+  </div>
+  <div class="muted small">
+    Pick the closest one and we will fill in the rest, or answer below yourself.
+  </div>
+</div>
+{% endmacro %}
+
+{% macro render_capabilities(prefix, line) %}
+<fieldset class="space-card-field">
+  <legend>What does this number need to do?</legend>
+  {# Change 2: the word carrying both boxes is defined before them. Read
+     underneath, it arrives after the requester has already guessed. #}
+  <div class="muted small mb-8">
+    Outside means anyone not on the MAGFest phone system, including cell
+    phones and hotel rooms. Leave both unticked for a phone that only
+    reaches other MAGFest rooms.
+  </div>
+  <label class="space-card-check">
+    <input type="checkbox" name="{{ prefix }}_dial_in" value="1"
+           {% if line.dial_in %}checked{% endif %}>
+    Accept calls from outside
   </label>
-  <div class="space-card-field">
-    <label for="{{ prefix }}_usage">What is this line for?</label>
-    <textarea id="{{ prefix }}_usage" name="{{ prefix }}_usage" rows="2"
-              maxlength="2000">{{ line.usage }}</textarea>
-  </div>
-  <div class="space-card-field">
-    <label for="{{ prefix }}_caller_id_name">Caller ID name</label>
-    <input type="text" id="{{ prefix }}_caller_id_name"
-           name="{{ prefix }}_caller_id_name" maxlength="15"
-           value="{{ line.caller_id_name }}">
-  </div>
-  <div class="space-card-field">
-    <label for="{{ prefix }}_voicemail_slack_channel">Voicemail Slack channel</label>
-    <input type="text" id="{{ prefix }}_voicemail_slack_channel"
-           name="{{ prefix }}_voicemail_slack_channel" maxlength="256"
-           value="{{ line.voicemail_slack_channel }}">
-  </div>
-  <div class="space-card-field">
-    <label for="{{ prefix }}_text_slack_channel">Text Slack channel</label>
-    <input type="text" id="{{ prefix }}_text_slack_channel"
-           name="{{ prefix }}_text_slack_channel" maxlength="256"
-           value="{{ line.text_slack_channel }}">
-  </div>
-  <div class="space-card-field">
-    <label for="{{ prefix }}_forward_target">Forward to</label>
-    <input type="text" id="{{ prefix }}_forward_target"
-           name="{{ prefix }}_forward_target" maxlength="256"
-           value="{{ line.forward_target }}">
-  </div>
-  <div class="muted small mb-8">All handsets on this line ring the same number.</div>
+  <label class="space-card-check">
+    <input type="checkbox" name="{{ prefix }}_dial_out" value="1"
+           {% if line.dial_out %}checked{% endif %}>
+    Make calls to outside
+  </label>
+  <label class="space-card-check">
+    <input type="checkbox" name="{{ prefix }}_texts" value="1"
+           data-reveal-trigger="texts"
+           {% if line.texts %}checked{% endif %}>
+    Send and receive texts
+  </label>
+</fieldset>
+<div class="space-card-field" data-reveal-any="texts=1"
+     {% if not line.texts %}hidden{% endif %}>
+  <label for="{{ prefix }}_text_slack_channel">Hotliner Slack channel</label>
+  <input type="text" id="{{ prefix }}_text_slack_channel"
+         name="{{ prefix }}_text_slack_channel" maxlength="256"
+         placeholder="#your-channel, or leave blank if it still needs creating"
+         value="{{ line.text_slack_channel }}">
+</div>
+{% endmacro %}
+
+{% macro render_voice_delivery(prefix, line) %}
+{% set d = line.voice_delivery %}
+{% set na = line.no_answer %}
+<div class="space-card-field">
+  <label for="{{ prefix }}_voice_delivery">How is the voice used?</label>
+  <select id="{{ prefix }}_voice_delivery" name="{{ prefix }}_voice_delivery"
+          data-reveal-trigger="voice_delivery">
+    <option value="" {% if not d %}selected{% endif %}>Choose one</option>
+    <option value="DESK_PHONE" {% if d == 'DESK_PHONE' %}selected{% endif %}>Desk phone</option>
+    <option value="FORWARD" {% if d == 'FORWARD' %}selected{% endif %}>Forward to a cell</option>
+    <option value="VOICEMAIL" {% if d == 'VOICEMAIL' %}selected{% endif %}>Direct to voicemail</option>
+    <option value="NONE" {% if d == 'NONE' %}selected{% endif %}>No voice, texts only</option>
+  </select>
+</div>
+<div class="space-card-field" data-reveal-any="voice_delivery=DESK_PHONE voice_delivery=FORWARD"
+     {% if d not in ('DESK_PHONE', 'FORWARD') %}hidden{% endif %}>
+  <label for="{{ prefix }}_no_answer">If nobody picks up</label>
+  <select id="{{ prefix }}_no_answer" name="{{ prefix }}_no_answer"
+          data-reveal-trigger="no_answer">
+    <option value="" {% if not na %}selected{% endif %}>Choose one</option>
+    <option value="VOICEMAIL" {% if na == 'VOICEMAIL' %}selected{% endif %}>Send to voicemail</option>
+    <option value="FORWARD" {% if na == 'FORWARD' %}selected{% endif %}>Forward to a cell</option>
+    <option value="RING" {% if na == 'RING' %}selected{% endif %}>Keep ringing</option>
+  </select>
+</div>
+<div class="space-card-field" data-reveal-any="voice_delivery=FORWARD no_answer=FORWARD"
+     {% if d != 'FORWARD' and na != 'FORWARD' %}hidden{% endif %}>
+  <label for="{{ prefix }}_forward_target">Forward to</label>
+  <input type="text" id="{{ prefix }}_forward_target"
+         name="{{ prefix }}_forward_target" maxlength="256"
+         placeholder="Names and numbers, e.g. Ada 301-555-0100"
+         value="{{ line.forward_target }}">
+</div>
+<div class="space-card-field" data-reveal-any="voice_delivery=VOICEMAIL no_answer=VOICEMAIL"
+     {% if d != 'VOICEMAIL' and na != 'VOICEMAIL' %}hidden{% endif %}>
+  <label for="{{ prefix }}_voicemail_slack_channel">Voicemail Slack channel</label>
+  <input type="text" id="{{ prefix }}_voicemail_slack_channel"
+         name="{{ prefix }}_voicemail_slack_channel" maxlength="256"
+         placeholder="#your-channel, or leave blank if it still needs creating"
+         value="{{ line.voicemail_slack_channel }}">
+</div>
+{% endmacro %}
+
+{% macro render_handsets(prefix, line, is_sharing) %}
+{% set handset_rows = line.handsets + ({'location': ''},) %}
+<div data-handsets-wrapper data-reveal-any="voice_delivery=DESK_PHONE"
+     {% if not is_sharing and line.voice_delivery != 'DESK_PHONE' %}hidden{% endif %}>
+  <div class="muted small mb-8">All desk phones here ring the same number.</div>
   <div data-handsets-container data-prefix="{{ prefix }}"
        data-next-index="{{ (handset_rows|length) + 1 }}">
     {% for handset in handset_rows %}
@@ -160,9 +231,48 @@
   <button type="button" class="btn btn-muted" data-add-handset="{{ prefix }}">
     + Add another desk phone
   </button>
+  {# Its own token, not __IDX__. This template sits inside the phone-line
+     template, and cloning a phone line replaces its token across the whole
+     subtree; one shared token means adding a line consumes this
+     placeholder and every desk phone after it posts the same field name. #}
   <template data-handset-template="{{ prefix }}">
-    {{ render_handset(prefix, '__IDX__', {'location': ''}) }}
+    {{ render_handset(prefix, '__HIDX__', {'location': ''}) }}
   </template>
+</div>
+{% endmacro %}
+
+{% macro render_phone_line(sid, n, line) %}
+{% set prefix = 'space_' ~ sid ~ '_PHONE_line_' ~ n %}
+{% set is_sharing = line.source != source_new %}
+<div class="space-card-row" data-phone-line-row data-prefix="{{ prefix }}"
+     data-source-new="{{ source_new }}">
+  <div class="space-card-row-header">Phone {{ n }}</div>
+  {{ render_phone_source(sid, n, line) }}
+  {# Both branches are always in the DOM. The Number select switches
+     between them in the browser; rendering only one would leave a
+     requester who changes it mid-edit with the wrong fields until they
+     saved. A sharing line owns no number, so capabilities, delivery and
+     the channels belong to the line it shares. #}
+  <div data-sharing-note class="muted small mb-8"
+       {% if not is_sharing %}hidden{% endif %}>
+    Same number, extra desk phones. Calls, texts and voicemail are set once
+    on the phone this shares with, so all that is needed here is where the
+    phones go.
+  </div>
+  <div data-owning-line {% if is_sharing %}hidden{% endif %}>
+    {{ render_presets(prefix) }}
+    {{ render_capabilities(prefix, line) }}
+    {{ render_voice_delivery(prefix, line) }}
+    {# Ahead of the handsets on purpose. render_handsets ends in a nested
+       <template>, and any named field after it reads as escaping the
+       phone-line template it sits inside. #}
+    <div class="space-card-field">
+      <label for="{{ prefix }}_usage">What is this phone for?</label>
+      <textarea id="{{ prefix }}_usage" name="{{ prefix }}_usage" rows="2"
+                maxlength="2000">{{ line.usage }}</textarea>
+    </div>
+  </div>
+  {{ render_handsets(prefix, line, is_sharing) }}
 </div>
 {% endmacro %}
 
@@ -325,7 +435,7 @@
               <span class="muted small">{{ card.phone_description }}</span>
             {% endif %}
           </span>
-          <span class="muted small" data-phone-count>&middot; {{ card.phone_line_count }} line{{ 's' if card.phone_line_count != 1 else '' }}{% if card.phone_handset_count %}, {{ card.phone_handset_count }} handset{{ 's' if card.phone_handset_count != 1 else '' }}{% endif %}</span>
+          <span class="muted small" data-phone-count>&middot; {{ card.phone_line_count }} phone{{ 's' if card.phone_line_count != 1 else '' }}{% if card.phone_handset_count %}, {{ card.phone_handset_count }} desk phone{{ 's' if card.phone_handset_count != 1 else '' }}{% endif %}</span>
         </summary>
         <div class="space-collapsible-body">
           {% if not (share_options or [])|rejectattr('space_id', 'equalto', sid)|list %}
@@ -342,12 +452,12 @@
             {% endfor %}
           </div>
           <button type="button" class="btn btn-muted" data-add-phone-line="{{ sid }}">
-            {{ '+ Add another phone line' if card.phone_lines else '+ Add a phone line' }}
+            {{ '+ Add another phone' if card.phone_lines else '+ Add a phone' }}
           </button>
           <template data-phone-line-template="{{ sid }}">
             {{ render_phone_line(sid, '__IDX__', {
                   'source': 'NEW', 'purpose': none, 'internal_only': False,
-                  'usage': '', 'caller_id_name': '', 'voicemail_slack_channel': '',
+                  'usage': '', 'voicemail_slack_channel': '',
                   'text_slack_channel': '', 'forward_target': '', 'handsets': ()}) }}
           </template>
         </div>

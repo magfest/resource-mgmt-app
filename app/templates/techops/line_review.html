@@ -1,3 +1,4 @@
+{% from "techops/_phone_number_config.html" import render_phone_number_config, render_desk_phone_location, question_badge with context %}
 {# templates/techops/line_review.html #}
 {% extends "layout/base.html" %}
 {% from "macros/checkout_banner.html" import render_checkout_action with context %}
@@ -100,24 +101,11 @@
           </div>
         {% elif st and st.code == "PHONE_NUMBER" %}
           <div class="meta" style="margin-top: 12px;">
-            <div>
-              <strong>Purpose:</strong>
-              {% if detail.purpose == "VOICE" %}Voice
-              {% elif detail.purpose == "TEXT" %}Text
-              {% elif detail.purpose == "BOTH" %}Voice &amp; text
-              {% else %}<span class="muted">Not yet chosen</span>
-              {% endif %}
-              {% if detail.internal_only %}(internal only){% endif %}
-            </div>
-          </div>
-          <div class="meta" style="margin-top: 12px;">
-            <div><strong>Usage:</strong></div>
-            <div style="white-space: pre-wrap;">{{ detail.usage if detail and detail.usage else '-' }}</div>
+            {{ render_phone_number_config(detail) }}
           </div>
         {% elif st and st.code == "DESK_PHONE" %}
           <div class="meta" style="margin-top: 12px;">
-            <div><strong>Location:</strong></div>
-            <div>{{ detail.location if detail and detail.location else '-' }}</div>
+            {{ render_desk_phone_location(detail) }}
           </div>
           <div class="meta" style="margin-top: 12px;">
             <div><strong>Rings:</strong></div>

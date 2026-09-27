@@ -139,6 +139,35 @@
             background: #f6f6f6;
         }
 
+        /* A submit that must not compete with the action beside it. The
+           open-questions panel offers "fill these in" as a button and
+           "submit anyway" as this, so the easy click is the one that
+           produces a complete request. */
+        .btn-link {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #1d4ed8;
+            text-decoration: underline;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        /* Four presets sit side by side on a laptop and stack on a phone,
+           so no request needs a horizontal scroll to read its options. */
+        .phone-presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 4px 0 6px;
+        }
+
+        .space-card-check {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
         .btn-disabled,
         button.btn:disabled {
             background: #f0f0f0;

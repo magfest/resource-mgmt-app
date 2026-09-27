@@ -63,6 +63,7 @@
   </div>
 
   <form method="post" action="{{ form_action }}">
+{% include "techops/_open_questions_panel.html" %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     {# ─────────────────────────────────────────────────────── #}
@@ -426,8 +427,12 @@
   (function() {
     var sections = document.querySelectorAll('[data-service-section]');
 
-    function cloneFromTemplate(template, nextIdx) {
-      var html = template.innerHTML.split('__IDX__').join(String(nextIdx));
+    // The token is named by the caller because repeating groups nest: the
+    // handset repeater lives inside the phone-line template, and a single
+    // shared token would have a phone-line clone consume the handset
+    // placeholder.
+    function cloneFromTemplate(template, nextIdx, token) {
+      var html = template.innerHTML.split(token || '__IDX__').join(String(nextIdx));
       var wrapper = document.createElement('div');
       wrapper.innerHTML = html.trim();
       return wrapper.firstElementChild;
@@ -496,15 +501,97 @@
       });
     }
 
+    // Counts a row the way _parse_phone_lines does: any answer at all makes
+    // it a line. Reading one field, as this did when a purpose select
+    // existed, undercounts a row whose only answer is a ticked box.
     function filledPhoneLineRows(root) {
       return Array.prototype.filter.call(root.querySelectorAll('[data-phone-line-row]'), function(row) {
         var usage = row.querySelector('textarea');
-        var purposeField = row.querySelector('[data-phone-purpose-field] select');
+        var delivery = row.querySelector('[data-reveal-trigger="voice_delivery"]');
+        var hasCapability = Array.prototype.some.call(row.querySelectorAll('input[type="checkbox"]'), function(c) {
+          return c.checked;
+        });
         var hasHandset = Array.prototype.some.call(row.querySelectorAll('[data-handset-row] input'), function(h) {
           return !!h.value.trim();
         });
-        return !!((usage && usage.value.trim()) || (purposeField && purposeField.value) || hasHandset);
+        return !!((usage && usage.value.trim()) || hasCapability
+                  || (delivery && delivery.value) || hasHandset);
       });
+    }
+
+    // A block shows when any of its "trigger=VALUE" pairs matches that
+    // trigger's current value. The phone vocabulary lives in the template;
+    // this only compares strings, so a new delivery option needs no change
+    // here.
+    // A trigger inside a hidden block contributes nothing. Choosing "no
+    // voice" hides the no-answer question, and its leftover value would
+    // otherwise keep a voicemail channel on screen for a number that
+    // carries no voice. The server clears the same values in
+    // line_grain._phone_config; this keeps the form agreeing with it.
+    function currentTriggerValue(row, name) {
+      var el = row.querySelector('[data-reveal-trigger="' + name + '"]');
+      if (!el) return '';
+      var owner = el.closest('[data-reveal-any]');
+      if (owner && owner.hidden) return '';
+      if (el.type === 'checkbox') return el.checked ? '1' : '';
+      return el.value;
+    }
+
+    // Sharing is a layout switch, not a field reveal: it swaps which half
+    // of the row applies. The reveal vocabulary has no negation, so this
+    // one branch is handled directly rather than as a trigger pair.
+    function isSharing(row) {
+      var field = row.querySelector('[data-phone-source-field]');
+      if (!field) return false;
+      return field.value !== row.getAttribute('data-source-new');
+    }
+
+    function applyReveals(row) {
+      var sharing = isSharing(row);
+      var owning = row.querySelector('[data-owning-line]');
+      var note = row.querySelector('[data-sharing-note]');
+      if (owning) owning.hidden = sharing;
+      if (note) note.hidden = !sharing;
+      var blocks = row.querySelectorAll('[data-reveal-any]');
+      // Repeat until nothing moves: hiding a block can hide a trigger
+      // inside it, which changes what the blocks below it should show.
+      for (var pass = 0; pass < blocks.length + 1; pass++) {
+        var changed = false;
+        Array.prototype.forEach.call(blocks, function(block) {
+          var pairs = (block.getAttribute('data-reveal-any') || '').split(' ');
+          var show = Array.prototype.some.call(pairs, function(pair) {
+            var bits = pair.split('=');
+            return bits.length === 2 && currentTriggerValue(row, bits[0]) === bits[1];
+          });
+          // A sharing line has no delivery of its own, so its handsets
+          // are always the point of the row.
+          if (sharing && block.hasAttribute('data-handsets-wrapper')) show = true;
+          if (block.hidden === show) { block.hidden = !show; changed = true; }
+        });
+        if (!changed) return;
+      }
+    }
+
+    // A preset writes through the real controls rather than storing
+    // anything of its own, so there is still one answer per question and
+    // the requester can see and change what it chose.
+    function applyPreset(button) {
+      var row = button.closest('[data-phone-line-row]');
+      if (!row) return;
+      var prefix = row.getAttribute('data-prefix');
+      (button.getAttribute('data-preset-set') || '').split(' ').forEach(function(pair) {
+        var bits = pair.split('=');
+        if (bits.length !== 2) return;
+        var field = row.querySelector('[name="' + prefix + '_' + bits[0] + '"]');
+        if (!field) return;
+        if (field.type === 'checkbox') { field.checked = bits[1] === '1'; }
+        else { field.value = bits[1]; }
+      });
+      applyReveals(row);
+    }
+
+    function applyAllReveals(root) {
+      Array.prototype.forEach.call((root || document).querySelectorAll('[data-phone-line-row]'), applyReveals);
     }
 
     function pluralize(n, noun) {
@@ -531,8 +618,8 @@
       details.querySelectorAll('[data-handset-row] input').forEach(function(h) {
         if (h.value.trim()) handsetCount += 1;
       });
-      var text = pluralize(lineCount, 'line');
-      if (handsetCount) text += ', ' + pluralize(handsetCount, 'handset');
+      var text = pluralize(lineCount, 'phone');
+      if (handsetCount) text += ', ' + pluralize(handsetCount, 'desk phone');
       badge.textContent = '· ' + text;
     }
 
@@ -707,12 +794,7 @@
 
       var sourceSelect = e.target.closest('[data-phone-source]');
       if (sourceSelect) {
-        var row = sourceSelect.closest('[data-phone-line-row]');
-        var purposeField = row ? row.querySelector('[data-phone-purpose-field]') : null;
-        if (purposeField) {
-          var isNew = sourceSelect.options[sourceSelect.selectedIndex].getAttribute('value') === sourceSelect.getAttribute('data-source-new');
-          purposeField.style.display = isNew ? '' : 'none';
-        }
+        applyReveals(sourceSelect.closest('[data-phone-line-row]'));
         return;
       }
     });
@@ -733,6 +815,27 @@
 
     document.addEventListener('input', function(e) {
       updateBadgeFor(e.target);
+    });
+
+    document.addEventListener('change', function(e) {
+      var phoneRow = e.target.closest('[data-phone-line-row]');
+      if (phoneRow) applyReveals(phoneRow);
+    });
+
+    document.addEventListener('click', function(e) {
+      var preset = e.target.closest('[data-phone-preset]');
+      if (preset) applyPreset(preset);
+    });
+
+    applyAllReveals(document);
+
+    // "Submit anyway" needs to post both the submit action and the
+    // acknowledgement. A button carries one name, so the second rides a
+    // hidden field this sets on the way through.
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('[data-submit-anyway]')) return;
+      var field = document.querySelector('[data-acknowledge-questions]');
+      if (field) field.value = '1';
     });
 
     // Delegated so rows added by a previous clone are covered too.
@@ -767,7 +870,7 @@
           if (prow) {
             pcontainer.appendChild(prow);
             pcontainer.setAttribute('data-next-index', String(pNextIdx + 1));
-            addPhone.textContent = '+ Add another phone line';
+            addPhone.textContent = '+ Add another phone';
             var phoneDetails = pcontainer.closest('[data-service-subsection="PHONE"]');
             if (phoneDetails) updatePhoneBadge(phoneDetails);
           }
@@ -782,7 +885,7 @@
         var htemplate = document.querySelector('template[data-handset-template="' + prefix + '"]');
         if (hcontainer && htemplate) {
           var hNextIdx = parseInt(hcontainer.getAttribute('data-next-index') || '1', 10);
-          var hrow = cloneFromTemplate(htemplate, hNextIdx);
+          var hrow = cloneFromTemplate(htemplate, hNextIdx, '__HIDX__');
           if (hrow) {
             hcontainer.appendChild(hrow);
             hcontainer.setAttribute('data-next-index', String(hNextIdx + 1));
