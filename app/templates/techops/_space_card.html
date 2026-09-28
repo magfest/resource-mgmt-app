@@ -294,7 +294,6 @@
       {% if is_blocked %}
         <span class="badge-blocked" data-blocked-badge>Needs attention</span>
       {% endif %}
-      <div class="muted small">{{ card.space.code }}</div>
     </div>
     <label class="space-answer">
       <input type="radio" name="space_{{ sid }}_answer" value="NEEDS"
@@ -349,7 +348,12 @@
          {% if card.answer != 'NEEDS' %}style="display: none;"{% endif %}>
 
       <div class="space-wifi-row" data-service-subsection="WIFI">
-        <div class="space-card-row-header">WiFi staff access/coverage</div>
+        <div class="space-card-row-header">WiFi coverage / access</div>
+      <div class="muted small mb-8">
+        Staff and event ops. Attendee access is rare and needs a specific
+        reason. If you think your space needs it, say why and TechOps will talk
+        it through with you.
+      </div>
         {% if card.wifi_forced %}
           <div class="callout callout-warning mb-8">
             This space has wired gear, so WiFi needs an answer. Declining it
@@ -380,7 +384,8 @@
            wifi_forced. #}
         <div class="space-card-field" data-wifi-declined-field
              {% if card.wifi_requested is not false %}style="display: none;"{% endif %}>
-          <label for="space_{{ sid }}_WIFI_declined_reason">Why decline WiFi here?</label>
+          <label for="space_{{ sid }}_WIFI_declined_reason">Why is WiFi not needed here?</label>
+          <div class="muted small">TechOps needs this on record so nobody adds it back by mistake.</div>
           <input type="text" id="space_{{ sid }}_WIFI_declined_reason"
                  name="space_{{ sid }}_WIFI_declined_reason" maxlength="500"
                  value="{{ card.wifi_declined_reason }}">
@@ -391,7 +396,7 @@
           <textarea id="space_{{ sid }}_WIFI_description"
                     name="space_{{ sid }}_WIFI_description" rows="2"
                     maxlength="2000"
-                    placeholder="Staff laptops, badge scanners, streaming, attendees on network">{{ card.wifi_description }}</textarea>
+                    placeholder="Staff laptops, badge scanners, streaming">{{ card.wifi_description }}</textarea>
         </div>
       </div>
 
@@ -440,8 +445,8 @@
         <div class="space-collapsible-body">
           {% if not (share_options or [])|rejectattr('space_id', 'equalto', sid)|list %}
             <div class="muted small mb-8">
-              Sharing another room's number becomes an option here once you've
-              saved a draft with that room's own line filled in.
+              To have two rooms share one number, fill in the first room and
+              save, then the second room can point at it.
             </div>
           {% endif %}
           {# Same no-trailing-blank rule as the ethernet drops above. #}
@@ -479,7 +484,7 @@
          only detail page. Collapsing here is the script's job (item 4's
          header-click toggle covers it too, with no save attached). #}
       <button type="submit" class="btn btn-muted" name="save_space_id" value="{{ sid }}">
-        Save this space
+        Save this room
       </button>
     </div>
     <div class="space-card-summary" data-space-card-summary hidden></div>

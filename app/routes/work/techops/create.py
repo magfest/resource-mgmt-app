@@ -285,7 +285,12 @@ def techops_request_create(event: str, dept: str):
     # read-only detail page. save_space_id (set only by a per-card save)
     # carries the requester back to the card they were just on instead of
     # the top of the form.
-    flash("Draft saved.", "success")
+    # Saying what did not happen is the only thing on the page that marks
+    # the difference between saving a room and sending the request.
+    if answers.save_space_id is not None:
+        flash("Room information saved. Request not submitted yet.", "success")
+    else:
+        flash("Draft saved. Request not submitted yet.", "success")
     edit_url = url_for(
         "work.techops_request_edit",
         event=event, dept=dept, public_id=work_item.public_id,

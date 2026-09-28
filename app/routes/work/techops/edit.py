@@ -315,7 +315,13 @@ def techops_request_update(event: str, dept: str, public_id: str):
     # since a long form gets saved often and a requester mid-answer
     # should not be thrown off it. save_space_id (only set by a per-card
     # save) carries the requester back to the card they were on.
-    flash("Draft updated.", "success")
+    # A per-room save is the one that reads as finishing: it is the last
+    # thing a requester clicks on their last room. Saying what did not
+    # happen is the only thing on the page that marks the difference.
+    if answers.save_space_id is not None:
+        flash("Room information saved. Request not submitted yet.", "success")
+    else:
+        flash("Draft updated. Request not submitted yet.", "success")
     edit_url = url_for(
         "work.techops_request_edit",
         event=event, dept=dept, public_id=work_item.public_id,

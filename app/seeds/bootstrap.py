@@ -414,12 +414,11 @@ def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dic
     service_types_data = [
         (
             "WIFI",
-            "WiFi access/coverage",
+            "WiFi coverage / access",
             (
-                "WiFi coverage for staff or attendees in a specific area "
-                "or for a use case. Call out heavy bandwidth needs "
-                "(streaming, large transfers, attendees on network) in "
-                "the description."
+                "Staff and event ops WiFi for a space. Attendee access is "
+                "rare and needs a specific reason. Call out heavy bandwidth "
+                "needs such as streaming or large transfers."
             ),
             "TECHOPS_NET", 10, None, True,
         ),
@@ -466,13 +465,22 @@ def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dic
         (
             "RADIO_CHANNEL",
             "Dedicated radio channel",
-            "Reserved channel on the event radio system",
+            (
+                "Most departments use the general channel, and there are "
+                "shared channels free for a quick side conversation. "
+                "Dedicated channels suit teams with constant traffic, like "
+                "concert security or logistics. If you think one would "
+                "help, ask here."
+            ),
             "TECHOPS_GEN", 50, "channel", True,
         ),
         (
             "OTHER",
-            "Other / consultation",
-            "Anything not covered above, including general consultation requests",
+            "Something else, or ask TechOps for advice",
+            (
+                "Anything not covered above. Use this to ask TechOps to talk "
+                "something through with you."
+            ),
             "TECHOPS_GEN", 60, None, True,
         ),
         (
