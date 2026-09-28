@@ -62,6 +62,34 @@
     </div>
   </div>
 
+{# A department head fills this in once a year with no memory of last time.
+   The questions below were understandable on their own; what was missing was
+   the frame around them. Someone unsure whether a thing is on the menu does
+   not order it, so without the first paragraph an unsure requester answers
+   "Nothing needed" for a room that needs a phone. No links: the other forms
+   move every year and are listed on the department head checklist instead. #}
+<div class="callout" style="margin-bottom: 16px;">
+  <div style="margin-bottom: 6px;">
+    <strong>What TechOps covers:</strong> network, phones, radios, and other
+    non-AV tech requests. Everything else has its own form, listed on your
+    department head checklist. AV goes to the A/V request form. Laptops, power
+    cables, office supplies and PPE go to the Supply ordering system. Tables,
+    chairs and room setup go to the hotel request form.
+  </div>
+  <div style="margin-bottom: 6px;">
+    <strong>After you submit:</strong> TechOps reviews everything and will
+    email you with any questions within a couple of weeks of the deadline, so
+    keep an eye on your inbox. Anything else, ask in
+    <strong>#super-techops-requests</strong>.
+  </div>
+  <div>
+    <strong>If you are not sure, do not guess.</strong> Leave it blank and
+    TechOps will follow up, or say what you are unsure about in the room's
+    special requests box. A blank we can ask about beats a guess we cannot
+    spot.
+  </div>
+</div>
+
   <form method="post" action="{{ form_action }}">
 {% include "techops/_open_questions_panel.html" %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

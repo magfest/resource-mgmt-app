@@ -8,7 +8,7 @@
    save" label and its own Save Draft button, for a no-script browser)
    was dropped along with the rest of the scripting-off design. #}
 <div class="order-preview-counter muted small" data-preview-counter>
-  {{ rows|length }} order lines
+  {{ rows|length }} TechOps item{{ '' if rows|length == 1 else 's' }}
 </div>
 
 {% if rows %}

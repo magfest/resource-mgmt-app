@@ -1128,7 +1128,7 @@ def test_the_preview_names_the_service_the_space_and_the_ring_target(
                        data=one_space_payload).get_data(as_text=True)
     assert "Expo Hall E" in body
     assert "Rings the number on line" in body
-    assert "4 order lines" in body
+    assert "4 TechOps items" in body
 
 
 def test_the_preview_rows_are_ordered_and_columned_correctly(
@@ -1145,7 +1145,7 @@ def test_the_preview_rows_are_ordered_and_columned_correctly(
                        data=one_space_payload).get_data(as_text=True)
     rows = _preview_rows(body)
     assert [row[1] for row in rows] == [
-        "WiFi access/coverage", "Hardwired ethernet", "Phone number", "Desk phone",
+        "WiFi coverage / access", "Hardwired ethernet", "Phone number", "Desk phone",
     ]
     assert [row[0] for row in rows] == ["1", "2", "3", "4"]
     assert all(row[2] == "Expo Hall E" for row in rows)

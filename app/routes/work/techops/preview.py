@@ -41,7 +41,17 @@ PHONE_LINE_NOT_CHOSEN = "Rings a number not yet requested."
 _PURPOSE_LABELS = {
     PURPOSE_VOICE: "Voice",
     PURPOSE_TEXT: "Text",
-    PURPOSE_BOTH: "Voice & text",
+    PURPOSE_BOTH: "Voice and text",
+}
+
+# The requester never answers a question called "purpose"; it is worked out
+# from what they said the number must do. Naming it here sent them looking
+# for a field that does not exist.
+_DELIVERY_LABELS = {
+    "DESK_PHONE": "desk phone",
+    "FORWARD": "forwards to a cell",
+    "VOICEMAIL": "straight to voicemail",
+    "NONE": "no voice",
 }
 
 
@@ -58,9 +68,20 @@ def _spec_for(entry: PlannedLine, ring_line_number: int | None) -> str:
     if code == SERVICE_ETHERNET:
         return f"{entry.location or '—'} — {entry.usage or '—'}"
     if code == SERVICE_PHONE_NUMBER:
-        label = _PURPOSE_LABELS.get(entry.purpose, "Purpose not yet chosen")
+        cfg = entry.config or {}
+        label = _PURPOSE_LABELS.get(entry.purpose, "Nothing chosen yet")
+        delivery = _DELIVERY_LABELS.get(cfg.get("voice_delivery"))
+        if delivery:
+            label += f", {delivery}"
         if entry.internal_only:
             label += " (internal only)"
+        # Shown here so a requester sees, before submitting, the same gap the
+        # phone team will see afterwards.
+        open_questions = cfg.get("open_questions") or []
+        if open_questions:
+            label += f" — {len(open_questions)} question"
+            label += "s" if len(open_questions) != 1 else ""
+            label += " unanswered"
         return f"{label} — {entry.usage}" if entry.usage else label
     if code == SERVICE_DESK_PHONE:
         ring = (f"Rings the number on line {ring_line_number}."

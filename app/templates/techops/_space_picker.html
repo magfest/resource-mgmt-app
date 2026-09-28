@@ -38,7 +38,7 @@
         <select id="space-picker-select" name="space_ids" data-space-picker>
           <option value="">Choose a space&hellip;</option>
           {% for space in picker_options %}
-            <option value="{{ space.id }}">{{ space.name }} ({{ space.code }})</option>
+            <option value="{{ space.id }}">{{ space.name }}</option>
           {% endfor %}
         </select>
       </div>
