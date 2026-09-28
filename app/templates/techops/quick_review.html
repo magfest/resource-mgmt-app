@@ -1,3 +1,4 @@
+{% from "techops/_phone_number_config.html" import render_phone_number_config, render_desk_phone_location, question_badge with context %}
 {# templates/techops/quick_review.html #}
 {# Inline reviewer page: lists every line with Approve / Reject / Need
    Info buttons that fire AJAX requests against the existing per-line
@@ -145,10 +146,11 @@
                       {% endif %}
                     </strong>
                     {% if detail.internal_only %}(internal only){% endif %}
+                    {{ question_badge(detail) }}
                   </div>
                   <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
                 {% elif st and st.code == "DESK_PHONE" %}
-                  <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
+                  <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong>{{ question_badge(detail) }}</div>
                   <div class="muted small">{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
                 {% elif st and st.code == "NO_SERVICES" %}
                   <div style="font-size: 13px; max-width: 360px;"><strong>Reason:</strong> {{ (detail.description or 'No reason given.')[:120] }}{% if detail.description and detail.description|length > 120 %}...{% endif %}</div>

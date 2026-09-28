@@ -31,6 +31,7 @@ from app.routes.work.techops.form_utils import (
     ACTION_SUBMIT, replace_lines, replace_spaces,
 )
 from app.routes.work.techops.line_grain import (
+    VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_NONE,
     PhoneHandset,
     PhoneLine,
     RequestAnswers,
@@ -394,9 +395,8 @@ def two_rooms_one_with_an_owned_line(app):
         additional_notes="", no_services_needed=False, action="save_draft",
         spaces=(
             SpaceAnswer(space_id=room_a.id, display_name="Room A", answer="NEEDS",
-                       phone_lines=(PhoneLine(index=1, source="NEW", purpose="VOICE",
-                                              internal_only=False, usage="Front desk",
-                                              caller_id_name="ROOMA", handsets=()),)),
+                       phone_lines=(PhoneLine(dial_in=True, dial_out=True, voice_delivery=VOICE_DELIVERY_DESK_PHONE, index=1, source="NEW", usage="Front desk",
+                                              handsets=()),)),
             SpaceAnswer(space_id=room_b.id, display_name="Room B", answer="NEEDS"),
         ),
     )
@@ -452,9 +452,8 @@ def request_with_a_two_handset_line(app, techops_portfolio):
         additional_notes="", no_services_needed=False, action="save_draft",
         spaces=(
             SpaceAnswer(space_id=room.id, display_name="Expo Hall E", answer="NEEDS",
-                       phone_lines=(PhoneLine(
-                           index=1, source="NEW", purpose="VOICE", internal_only=False,
-                           usage="Front desk", caller_id_name="EXPOE",
+                       phone_lines=(PhoneLine(dial_in=True, dial_out=True, voice_delivery=VOICE_DELIVERY_DESK_PHONE, 
+                           index=1, source="NEW", usage="Front desk",
                            handsets=(PhoneHandset(location="Position 1"),
                                     PhoneHandset(location="Position 2"))),)),
         ),
@@ -514,8 +513,12 @@ def test_no_clone_placeholder_escapes_its_template(app, client, techops_portfoli
     body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
     outside = re.sub(r"<template\b.*?</template>", "", body, flags=re.S)
     assert not re.findall(r'name="([^"]*__IDX__[^"]*)"', outside)
+    assert not re.findall(r'name="([^"]*__HIDX__[^"]*)"', outside)
     # Guard against the assertion passing because the markers are gone.
     assert re.findall(r'name="([^"]*__IDX__[^"]*)"', body)
+    # The handset repeater nests inside the phone-line template and needs a
+    # token of its own; a shared one is consumed by the outer clone.
+    assert re.findall(r'name="([^"]*__HIDX__[^"]*)"', body)
 
 
 def test_a_failed_submit_preserves_every_kind_of_just_typed_space_field(
@@ -536,7 +539,6 @@ def test_a_failed_submit_preserves_every_kind_of_just_typed_space_field(
         f"space_{room.id}_ETHERNET_drop_1_location": "Just-typed drop location",
         f"space_{room.id}_ETHERNET_drop_1_usage": "Just-typed drop usage",
         f"space_{room.id}_PHONE_line_1_purpose": "VOICE",
-        f"space_{room.id}_PHONE_line_1_caller_id_name": "typedcid",
         f"space_{room.id}_PHONE_line_1_handset_1_location": "Just-typed handset location",
         f"space_{room.id}_notes": "Just-typed per-space notes",
     })
@@ -546,8 +548,6 @@ def test_a_failed_submit_preserves_every_kind_of_just_typed_space_field(
     assert "Just-typed drop usage" in body
     assert "Just-typed handset location" in body
     assert "Just-typed per-space notes" in body
-    # caller_id_name is upper-cased at parse time.
-    assert "TYPEDCID" in body
     # Exactly the typed drop, no trailing blank row (item 2): a second,
     # never-typed drop row here is the regression the owner reported.
     assert f'name="space_{room.id}_ETHERNET_drop_1_location"' in body
@@ -1056,8 +1056,14 @@ def one_space_payload(techops_portfolio):
         f"space_{room_id}_WIFI_description": "Staff laptops",
         f"space_{room_id}_ETHERNET_drop_1_location": "Back wall",
         f"space_{room_id}_ETHERNET_drop_1_usage": "Switch uplink",
-        f"space_{room_id}_PHONE_line_1_purpose": "VOICE",
-        f"space_{room_id}_PHONE_line_1_caller_id_name": "EXPOE",
+        # A complete line: reachable both ways, rings a desk phone that has
+        # somewhere to sit, and says what happens when nobody answers. An
+        # incomplete one would stop at the open-questions panel instead of
+        # submitting, which is not what these tests are about.
+        f"space_{room_id}_PHONE_line_1_dial_in": "1",
+        f"space_{room_id}_PHONE_line_1_dial_out": "1",
+        f"space_{room_id}_PHONE_line_1_voice_delivery": "DESK_PHONE",
+        f"space_{room_id}_PHONE_line_1_no_answer": "RING",
         f"space_{room_id}_PHONE_line_1_handset_1_location": "Front counter",
     }
 
@@ -1489,7 +1495,6 @@ def test_saving_one_card_on_an_existing_draft_redirects_back_to_it_too(
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
         f"space_{room.id}_PHONE_line_1_purpose": "VOICE",
-        f"space_{room.id}_PHONE_line_1_caller_id_name": "EXPOE",
         "save_space_id": str(room.id),
     })
     assert response.status_code == 302
@@ -1714,8 +1719,8 @@ def test_phone_badge_reports_lines_and_handsets(
 
     assert "open" in _opening_tag(body, 'data-service-subsection="PHONE"')
     badge = re.search(r'data-phone-count>([^<]*)<', body).group(1)
-    assert "1 line" in badge
-    assert "2 handsets" in badge
+    assert "1 phone" in badge
+    assert "2 desk phones" in badge
 
 
 def test_a_card_with_no_gear_shows_a_zero_count_and_no_ethernet_or_phone_form(
@@ -1730,7 +1735,7 @@ def test_a_card_with_no_gear_shows_a_zero_count_and_no_ethernet_or_phone_form(
     ethernet_badge = re.search(r'data-ethernet-count>([^<]*)<', body).group(1)
     phone_badge = re.search(r'data-phone-count>([^<]*)<', body).group(1)
     assert "0 drops" in ethernet_badge
-    assert "0 lines" in phone_badge
+    assert "0 phones" in phone_badge
 
 
 def test_radio_channel_and_other_collapse_and_open_with_saved_content(
@@ -1828,9 +1833,12 @@ def test_filled_phone_line_rows_reads_the_scoped_purpose_select_and_handsets(
     _login(client, "test:admin")
     body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
     fn_src = _extract_js_function(body, "filledPhoneLineRows")
-    assert "'[data-phone-purpose-field] select'" in fn_src
     assert "row.querySelector('select')" not in fn_src
+    assert '[data-reveal-trigger="voice_delivery"]' in fn_src
     assert "data-handset-row" in fn_src
+    # A row whose only answer is a ticked capability box is a line to the
+    # parser, so it must be one to the badge as well.
+    assert 'input[type="checkbox"]' in fn_src
 
 
 def test_zero_drops_renders_no_drop_rows_with_a_singular_add_button(
@@ -1886,7 +1894,7 @@ def test_zero_phone_lines_renders_no_line_rows_with_a_singular_add_button(
         app, client, techops_portfolio):
     """Same rule as the drop container, applied to phone lines: nothing
     saved means nothing rendered, and the button names the state
-    correctly ("+ Add a phone line")."""
+    correctly ("+ Add a phone")."""
     _login(client, "test:admin")
     room = techops_portfolio["room"]
     body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
@@ -1896,7 +1904,7 @@ def test_zero_phone_lines_renders_no_line_rows_with_a_singular_add_button(
         r'data-phone-lines-container[^>]*data-next-index="(\d+)"', body)
     assert match.group(1) == "1"
     btn = re.search(r'data-add-phone-line="\d+">\s*([^<]+?)\s*</button>', body).group(1)
-    assert btn == "+ Add a phone line"
+    assert btn == "+ Add a phone"
 
 
 def test_one_saved_phone_line_renders_exactly_one_line_row(
@@ -1911,17 +1919,17 @@ def test_one_saved_phone_line_renders_exactly_one_line_row(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
-        f"space_{room.id}_PHONE_line_1_purpose": "VOICE",
+        f"space_{room.id}_PHONE_line_1_voice_delivery": "DESK_PHONE",
         f"space_{room.id}_PHONE_line_1_usage": "Front desk",
     })
     body = client.get(_edit_url(techops_portfolio)).get_data(as_text=True)
 
-    assert f'name="space_{room.id}_PHONE_line_1_purpose"' in body
-    assert f'name="space_{room.id}_PHONE_line_2_purpose"' not in body
+    assert f'name="space_{room.id}_PHONE_line_1_usage"' in body
+    assert f'name="space_{room.id}_PHONE_line_2_usage"' not in body
     match = re.search(
         r'data-phone-lines-container[^>]*data-next-index="(\d+)"', body)
     assert match.group(1) == "2"
-    assert "+ Add another phone line" in body
+    assert "+ Add another phone" in body
 
 
 def test_radio_channel_section_has_no_phantom_row_when_empty(
@@ -2012,3 +2020,162 @@ def test_the_disclosure_marker_swaps_between_open_and_closed(app, client, techop
     assert "open" in _opening_tag(body, 'data-service-subsection="PHONE"')
     assert "\\25B8" in body  # closed-state glyph, defined once in base.html
     assert "\\25BE" in body  # open-state glyph
+
+
+def test_the_desk_phone_repeater_is_gated_on_the_delivery_choice(
+        app, client, techops_portfolio):
+    """Three of the four voice choices place no physical phone, so the
+    handset repeater must not be part of the page a requester always sees."""
+    _login(client, "test:admin")
+    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
+    assert 'data-reveal-any="voice_delivery=DESK_PHONE"' in body
+    assert 'data-reveal-trigger="voice_delivery"' in body
+    assert 'data-reveal-any="texts=1"' in body
+    # The forward number hangs off either the delivery choice or the
+    # no-answer choice, which is why a block names more than one pair.
+    assert 'data-reveal-any="voice_delivery=FORWARD no_answer=FORWARD"' in body
+
+
+def test_a_refused_submit_returns_the_capability_boxes_still_ticked(
+        app, client, techops_portfolio):
+    """An unchecked checkbox posts nothing, so a redisplay rebuilt from
+    defaults silently clears what the requester ticked."""
+    _login(client, "test:admin")
+    room = techops_portfolio["room"]
+    response = client.post(techops_portfolio["new_request_url"], data={
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "submit",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_WIFI_enabled": "1",
+        f"space_{room.id}_PHONE_line_1_source": "NEW",
+        f"space_{room.id}_PHONE_line_1_dial_in": "1",
+        f"space_{room.id}_PHONE_line_1_texts": "1",
+        f"space_{room.id}_PHONE_line_1_voice_delivery": "VOICEMAIL",
+        # Line 2 is what refuses: a share naming a line that does not exist
+        # is the only thing left that blocks a submit. Line 1 is the one
+        # whose ticked boxes have to survive the round trip.
+        f"space_{room.id}_PHONE_line_2_source": "9999:1",
+    })
+    body = html.unescape(response.get_data(as_text=True))
+    assert "does not exist" in body
+    assert re.search(
+        rf'name="space_{room.id}_PHONE_line_1_dial_in"[^>]*checked', body)
+    assert re.search(
+        rf'name="space_{room.id}_PHONE_line_1_texts"[^>]*checked', body)
+    assert re.search(r'value="VOICEMAIL"[^>]*selected', body)
+
+
+def test_the_purpose_dropdown_is_gone_from_the_form(app, client,
+                                                    techops_portfolio):
+    """Purpose is derived from the capability answers now. Leaving the old
+    control on the page would ask the same question twice and store only
+    one of the answers."""
+    _login(client, "test:admin")
+    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
+    assert "_purpose" not in body
+    assert "_internal_only" not in body
+
+
+def test_both_halves_of_a_phone_line_are_in_the_dom_for_the_source_switch(
+        app, client, two_rooms_one_with_an_owned_line):
+    """Sharing is a layout switch the browser makes when the Number select
+    changes, so both halves have to be present from the first render. A
+    server-rendered-only branch leaves a requester who switches mid-edit
+    looking at the wrong fields until they save."""
+    _login(client, "test:admin")
+    body = client.get(
+        two_rooms_one_with_an_owned_line["edit_url"]).get_data(as_text=True)
+    assert "data-owning-line" in body
+    assert "data-sharing-note" in body
+    assert "data-handsets-wrapper" in body
+    # The script needs to read the chosen source from either control, and
+    # to know which value means "a new number".
+    assert "data-phone-source-field" in body
+    assert re.search(r'data-phone-line-row[^>]*data-source-new="NEW"', body,
+                     re.S)
+
+
+def _template_body(html: str, attr: str) -> str:
+    """Return one <template>'s inner HTML, counting nested templates.
+
+    A non-greedy regex stops at the first </template>, which is the nested
+    handset one, so it returns a fragment of the phone-line template and
+    silently hides what this module is checking.
+    """
+    open_at = html.index(attr)
+    cursor = html.index(">", open_at) + 1
+    body_start, depth = cursor, 1
+    while depth:
+        nxt_open = html.find("<template", cursor)
+        nxt_close = html.index("</template>", cursor)
+        if nxt_open != -1 and nxt_open < nxt_close:
+            depth += 1
+            cursor = nxt_open + len("<template")
+        else:
+            depth -= 1
+            cursor = nxt_close + len("</template>")
+    return html[body_start:cursor - len("</template>")]
+
+
+def test_cloning_a_phone_line_leaves_its_handset_template_usable(
+        app, client, techops_portfolio):
+    """The handset repeater lives inside the phone-line template, and the
+    clone helper replaces its token across the whole subtree. Sharing one
+    token means adding a phone line consumes the handset placeholder, and
+    every desk phone added after that posts the same field name, so only
+    the first survives the save.
+    """
+    _login(client, "test:admin")
+    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
+
+    line_tpl = _template_body(body, "data-phone-line-template")
+    # Exactly what cloneFromTemplate does when the first line is added.
+    cloned = line_tpl.replace("__IDX__", "1")
+    handset_tpl = _template_body(cloned, "data-handset-template")
+
+    names = re.findall(r'name="([^"]*handset[^"]*)"', handset_tpl)
+    assert names, "handset template has no field to clone"
+    assert any("__" in n for n in names), (
+        "the cloned line's handset template has no placeholder left, so "
+        "every desk phone added to it posts one field name: " + repr(names))
+
+
+def test_a_phone_starts_with_what_you_want_not_how_it_behaves(
+        app, client, techops_portfolio):
+    """A department head asks for a phone, not for a configured number.
+    The four presets are the common requests; each fills only what its own
+    label implies and leaves the rest to be answered."""
+    _login(client, "test:admin")
+    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
+    for intent in ("DESK", "FORWARD", "VOICEMAIL", "TEXTS"):
+        assert f'data-phone-preset="{intent}"' in body
+    # Buttons, not inputs: a preset is a shortcut through the real
+    # controls, never a fifth place the answer is stored.
+    assert 'name="space_1_PHONE_line_1_preset"' not in body
+    assert re.search(r'<button[^>]*type="button"[^>]*data-phone-preset', body)
+
+
+def test_outside_is_defined_before_the_boxes_that_use_it(
+        app, client, techops_portfolio):
+    """"Outside" carried the whole meaning of two checkboxes and was
+    explained underneath them, so a requester guessed before reading."""
+    _login(client, "test:admin")
+    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
+    hint = body.index("not on the MAGFest phone system")
+    first_box = body.index("_dial_in")
+    assert hint < first_box, "the definition must come before the checkboxes"
+
+
+def test_the_requester_form_says_desk_phone_not_handset(
+        app, client, techops_portfolio):
+    """One word for one object. Handset and line are reviewer vocabulary;
+    a department head reading three names for one thing assumes they are
+    three things."""
+    _login(client, "test:admin")
+    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
+    stripped = re.sub(r"<(script|style)\b.*?</\1>", " ", body, flags=re.S)
+    visible = re.sub(r"<[^>]+>", " ", stripped)
+    assert "handset" not in visible.lower()
+    assert "phone line" not in visible.lower()

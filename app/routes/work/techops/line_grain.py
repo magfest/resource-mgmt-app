@@ -29,6 +29,34 @@ PURPOSE_TEXT = "TEXT"
 PURPOSE_BOTH = "BOTH"
 PURPOSES = (PURPOSE_VOICE, PURPOSE_TEXT, PURPOSE_BOTH)
 
+# What happens to a call that arrives. NONE is an explicit "this number
+# carries no voice", which an unanswered dropdown ("") is not.
+VOICE_DELIVERY_DESK_PHONE = "DESK_PHONE"
+VOICE_DELIVERY_FORWARD = "FORWARD"
+VOICE_DELIVERY_VOICEMAIL = "VOICEMAIL"
+VOICE_DELIVERY_NONE = "NONE"
+VOICE_DELIVERIES = (
+    VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_FORWARD,
+    VOICE_DELIVERY_VOICEMAIL, VOICE_DELIVERY_NONE,
+)
+
+NO_ANSWER_VOICEMAIL = "VOICEMAIL"
+NO_ANSWER_FORWARD = "FORWARD"
+NO_ANSWER_RING = "RING"
+NO_ANSWERS = (NO_ANSWER_VOICEMAIL, NO_ANSWER_FORWARD, NO_ANSWER_RING)
+
+# Keys recorded in config["open_questions"]. These are questions the phone
+# team still has to ask, not validation results: a request carrying them is
+# acceptable and submits.
+QUESTION_CAPABILITIES = "capabilities"
+QUESTION_TEXT_SLACK = "text_slack_channel"
+QUESTION_VOICEMAIL_SLACK = "voicemail_slack_channel"
+QUESTION_FORWARD_TARGET = "forward_target"
+QUESTION_VOICE_DELIVERY = "voice_delivery"
+QUESTION_NO_ANSWER = "no_answer"
+QUESTION_HANDSETS = "handsets"
+QUESTION_LOCATION = "location"
+
 SOURCE_NEW = "NEW"
 
 # The department-wide "no TechOps services needed" affirmation. Same
@@ -60,10 +88,15 @@ class PhoneLine:
     index: int
     # SOURCE_NEW, or "<space_id>:<line_index>" naming the line it shares.
     source: str
-    purpose: str | None
-    internal_only: bool
+    # Reachability from outside. Calling between rooms needs neither.
+    dial_in: bool = False
+    dial_out: bool = False
+    texts: bool = False
+    # One of VOICE_DELIVERIES, or "" while the question is unanswered.
+    voice_delivery: str = ""
+    # One of NO_ANSWERS, or "" when unanswered or never shown.
+    no_answer: str = ""
     usage: str = ""
-    caller_id_name: str = ""
     voicemail_slack_channel: str = ""
     text_slack_channel: str = ""
     forward_target: str = ""
@@ -153,18 +186,131 @@ def _owns_a_number(line: PhoneLine) -> bool:
     return line.source == SOURCE_NEW
 
 
+def asks_no_answer(line: PhoneLine) -> bool:
+    """The no-answer question is shown for a ringing delivery only.
+
+    Direct-to-voicemail already says what happens, and a number with no
+    voice has nothing to answer. This is the same rule the form applies in
+    _space_card.html; both read it from here so they cannot drift.
+    """
+    return line.voice_delivery in (VOICE_DELIVERY_DESK_PHONE,
+                                   VOICE_DELIVERY_FORWARD)
+
+
+def has_voice(line: PhoneLine) -> bool:
+    """A delivery choice is what says the number carries voice at all.
+
+    An empty string is an unanswered question, not a decline; both leave the
+    number without voice for now, and the unanswered case is recorded as a
+    question rather than refused.
+    """
+    return bool(line.voice_delivery) and line.voice_delivery != VOICE_DELIVERY_NONE
+
+
+def derive_purpose(line: PhoneLine) -> str | None:
+    """Compute the stored purpose from what the requester asked the number to do.
+
+    Purpose is not a question on the form. Three capability answers carry
+    more than the enum, and asking both is what made the old dropdown read
+    as deciding nothing.
+    """
+    voice = has_voice(line)
+    if voice and line.texts:
+        return PURPOSE_BOTH
+    if voice:
+        return PURPOSE_VOICE
+    if line.texts:
+        return PURPOSE_TEXT
+    return None
+
+
+def derive_internal_only(line: PhoneLine) -> bool:
+    # This is not "no calls". It is a number that carries voice and reaches
+    # nothing outside, which is a room phone that dials other rooms.
+    return has_voice(line) and not line.dial_in and not line.dial_out
+
+
+def phone_open_questions(line: PhoneLine) -> list[str]:
+    """Name every field the form showed this line and left blank.
+
+    A requester who leaves the Hotliner channel blank has not declined
+    texts; the channel often has to be created first. Refusing the submit
+    treated a pending decision as a withdrawn request.
+
+    A sharing line is not passed here. It owns no number, so it has no
+    capabilities, delivery, or channels of its own; its only question is
+    where its handsets sit, recorded on the handset lines themselves.
+    """
+    questions: list[str] = []
+    voice = has_voice(line)
+
+    if not voice and not line.texts and line.voice_delivery:
+        return [QUESTION_CAPABILITIES]
+
+    if line.texts and not line.text_slack_channel:
+        questions.append(QUESTION_TEXT_SLACK)
+    # The delivery select is always on screen for a line that owns its
+    # number, so a blank is a question. Without this a requester who ticks
+    # texts and stops has a text-only number with nothing flagged.
+    if not line.voice_delivery:
+        questions.append(QUESTION_VOICE_DELIVERY)
+        if not line.texts:
+            questions.insert(0, QUESTION_CAPABILITIES)
+        return questions
+    if not voice:
+        return questions
+
+    if line.voice_delivery == VOICE_DELIVERY_VOICEMAIL:
+        if not line.voicemail_slack_channel:
+            questions.append(QUESTION_VOICEMAIL_SLACK)
+        return questions
+
+    if line.voice_delivery == VOICE_DELIVERY_FORWARD and not line.forward_target:
+        questions.append(QUESTION_FORWARD_TARGET)
+    if line.voice_delivery == VOICE_DELIVERY_DESK_PHONE and not line.handsets:
+        questions.append(QUESTION_HANDSETS)
+
+    # The no-answer question is hidden for direct-to-voicemail and no-voice,
+    # so it is only unanswered here when it was actually on screen.
+    if not line.no_answer:
+        questions.append(QUESTION_NO_ANSWER)
+    elif line.no_answer == NO_ANSWER_VOICEMAIL and not line.voicemail_slack_channel:
+        questions.append(QUESTION_VOICEMAIL_SLACK)
+    elif (line.no_answer == NO_ANSWER_FORWARD and not line.forward_target
+          and QUESTION_FORWARD_TARGET not in questions):
+        questions.append(QUESTION_FORWARD_TARGET)
+    return questions
+
+
 def _phone_config(line: PhoneLine) -> dict:
     # Invariant 8. dial_in and dial_out are written here rather than read
-    # from the form, so a crafted POST cannot set them on an internal-only
-    # line. Pass 2 adds voice_delivery and no_answer.
-    return {
-        "caller_id_name": line.caller_id_name,
-        "voicemail_slack_channel": line.voicemail_slack_channel,
-        "text_slack_channel": line.text_slack_channel,
-        "forward_target": line.forward_target,
-        "dial_in": False if line.internal_only else True,
-        "dial_out": False if line.internal_only else True,
+    # from the form, so a crafted POST cannot set outside calling on a
+    # number whose voice was never asked for.
+    voice = has_voice(line)
+    # A value left behind by a question that stopped being asked is not an
+    # answer. Switching delivery to "no voice" hides the no-answer question
+    # and both voice channels, so their previous values describe a form the
+    # requester is no longer looking at.
+    no_answer = line.no_answer if asks_no_answer(line) else ""
+    wants_voicemail = voice and (
+        line.voice_delivery == VOICE_DELIVERY_VOICEMAIL
+        or no_answer == NO_ANSWER_VOICEMAIL)
+    wants_forward = voice and (
+        line.voice_delivery == VOICE_DELIVERY_FORWARD
+        or no_answer == NO_ANSWER_FORWARD)
+    config = {
+        "voicemail_slack_channel": line.voicemail_slack_channel if wants_voicemail else "",
+        "text_slack_channel": line.text_slack_channel if line.texts else "",
+        "forward_target": line.forward_target if wants_forward else "",
+        "voice_delivery": line.voice_delivery or None,
+        "no_answer": no_answer or None,
+        "dial_in": line.dial_in and line.voice_delivery != VOICE_DELIVERY_NONE,
+        "dial_out": line.dial_out and line.voice_delivery != VOICE_DELIVERY_NONE,
     }
+    questions = phone_open_questions(line)
+    if questions:
+        config["open_questions"] = questions
+    return config
 
 
 def expand_to_lines(answers: RequestAnswers) -> list[PlannedLine]:
@@ -228,7 +374,12 @@ def expand_to_lines(answers: RequestAnswers) -> list[PlannedLine]:
         if line.service_code == SERVICE_DESK_PHONE:
             key = pending_parent.get(index)
             owner = number_index_by_key.get(key) if key is not None else None
-            if owner is not None and lines[owner].purpose == PURPOSE_TEXT:
+            # Explicitly no voice, not merely derived text-only. An owner
+            # who has not answered the voice question yet may still end up
+            # with a desk phone, and dropping the sharer's handset here
+            # would lose that space from the request with no trace.
+            owner_cfg = (lines[owner].config or {}) if owner is not None else {}
+            if owner_cfg.get("voice_delivery") == VOICE_DELIVERY_NONE:
                 continue
         keep.append((index, line))
 
@@ -311,15 +462,21 @@ def _expand_space(
                 service_code=SERVICE_PHONE_NUMBER,
                 space_id=space.space_id,
                 usage=phone.usage or None,
-                purpose=phone.purpose,
-                internal_only=phone.internal_only,
+                purpose=derive_purpose(phone),
+                internal_only=derive_internal_only(phone),
                 config=_phone_config(phone),
             ))
         # Handsets are emitted even for a sharing line and even for a
         # text-only line; invariant 7 drops them in expand_to_lines, once
         # the owner's purpose (inherited for a sharing line) is known.
         ring_key = own_key if owns else phone.source
-        for handset in phone.handsets:
+        # A delivery that places no phone emits no handsets, however many
+        # locations are still sitting in the posted form. The inputs stay
+        # in the DOM once hidden, and an emitted row would survive every
+        # later edit without ever being visible.
+        places_handsets = (
+            phone.voice_delivery == VOICE_DELIVERY_DESK_PHONE if owns else True)
+        for handset in (phone.handsets if places_handsets else ()):
             handset_keys[len(lines)] = ring_key
             lines.append(PlannedLine(
                 service_code=SERVICE_DESK_PHONE,
@@ -328,6 +485,23 @@ def _expand_space(
                 # Usage is not copied from the parent. A reviewer follows
                 # the parent reference; two copies of one sentence drift.
                 usage=None,
+            ))
+
+        # A desk phone with nowhere stated, and a shared line with no
+        # handset at all, both produced nothing before; the shared case
+        # lost the space from the request with no trace. Emit the handset
+        # the answer implies and carry the question on it.
+        wants_a_handset = (
+            phone.voice_delivery == VOICE_DELIVERY_DESK_PHONE if owns else True
+        )
+        if wants_a_handset and not phone.handsets:
+            handset_keys[len(lines)] = ring_key
+            lines.append(PlannedLine(
+                service_code=SERVICE_DESK_PHONE,
+                space_id=space.space_id,
+                location=None,
+                usage=None,
+                config={"open_questions": [QUESTION_LOCATION]},
             ))
 
     return lines, handset_keys, number_positions

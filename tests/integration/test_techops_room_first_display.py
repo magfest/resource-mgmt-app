@@ -39,6 +39,7 @@ from app.models import (
 )
 from app.routes.work.techops.form_utils import replace_lines
 from app.routes.work.techops.line_grain import (
+    VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_NONE, VOICE_DELIVERY_VOICEMAIL,
     DepartmentWideAnswer,
     PhoneHandset,
     PhoneLine,
@@ -175,8 +176,10 @@ def techops_reviewable_request(app):
         SpaceAnswer(space_id=primary.id, display_name="RiverView 1/2/3",
                    answer="NEEDS", wifi_requested=True,
                    wifi_description="Badge scanners", phone_lines=(
-                       PhoneLine(index=1, source="NEW", purpose="VOICE",
-                                internal_only=False, usage="Will-call desk"),
+                       PhoneLine(dial_in=True, dial_out=True,
+                                 voice_delivery=VOICE_DELIVERY_VOICEMAIL,
+                                 voicemail_slack_channel="#will-call",
+                                 index=1, source="NEW", usage="Will-call desk"),
                    )),
         # Line 3: a handset that shares the number above, but sits
         # physically in a space the department does not hold — its own
@@ -184,7 +187,6 @@ def techops_reviewable_request(app):
         SpaceAnswer(space_id=unheld.id, display_name="Expo Hall Z",
                    answer="NEEDS", phone_lines=(
                        PhoneLine(index=1, source=f"{primary.id}:1",
-                                purpose=None, internal_only=False,
                                 handsets=(PhoneHandset(location="Counter 1"),)),
                    )),
         # Line 4: NO_SERVICES with a stated reason.
@@ -344,3 +346,71 @@ def test_line_review_page_shows_the_composed_space_name(app, client, techops_rev
     r = techops_reviewable_request
     body = client.get(r["line_review_url"](r["wifi_line_number"])).get_data(as_text=True)
     assert "RiverView 1/2/3" in body
+
+
+# ---------------------------------------------------------------------
+# Phone configuration on the reviewer views
+# ---------------------------------------------------------------------
+
+def test_the_reviewer_sees_the_whole_phone_configuration(
+        app, client, techops_reviewable_request):
+    """Delivery, no-answer and the channels were written to config and
+    rendered nowhere, so the requester answered questions nobody read."""
+    _login(client, "test:admin")
+    r = techops_reviewable_request
+    body = client.get(r["detail_url"]).get_data(as_text=True)
+    row = _line_row(body, r["phone_number_line_number"])
+    assert "Direct to voicemail" in row
+    assert "#will-call" in row
+    assert "In and out" in row
+
+
+def test_an_open_question_reads_as_a_question_not_an_empty_value(
+        app, client, techops_reviewable_request):
+    """An empty value reads as "nothing needed here", which is what sent
+    the phone team chasing blanks they could not see."""
+    r = techops_reviewable_request
+    detail = r["work_item"].lines[0].techops_detail
+    detail = next(l.techops_detail for l in r["work_item"].lines
+                  if l.line_number == r["phone_number_line_number"])
+    detail.config = dict(detail.config or {},
+                         voicemail_slack_channel="",
+                         open_questions=["voicemail_slack_channel"])
+    db.session.commit()
+
+    _login(client, "test:admin")
+    body = client.get(r["detail_url"]).get_data(as_text=True)
+    row = _line_row(body, r["phone_number_line_number"])
+    assert "Not given, ask the requester" in row
+    assert "1 open question" in row
+
+
+def test_a_line_with_no_open_questions_renders_no_badge(
+        app, client, techops_reviewable_request):
+    """Lines written before this work have no key at all, and config may be
+    None. Absent, None and [] must all read as nothing to ask."""
+    r = techops_reviewable_request
+    line = next(l for l in r["work_item"].lines
+                if l.line_number == r["phone_number_line_number"])
+    _login(client, "test:admin")
+    for cfg in (None, {}, {"open_questions": []}):
+        line.techops_detail.config = cfg
+        db.session.commit()
+        body = client.get(r["detail_url"]).get_data(as_text=True)
+        row = _line_row(body, r["phone_number_line_number"])
+        assert "open question" not in row
+
+
+def test_a_placeholder_handset_announces_itself_on_the_reviewer_view(
+        app, client, techops_reviewable_request):
+    r = techops_reviewable_request
+    line = next(l for l in r["work_item"].lines
+                if l.line_number == r["handset_line_number"])
+    line.techops_detail.location = None
+    line.techops_detail.config = {"open_questions": ["location"]}
+    db.session.commit()
+
+    _login(client, "test:admin")
+    body = client.get(r["detail_url"]).get_data(as_text=True)
+    row = _line_row(body, r["handset_line_number"])
+    assert "Not given, ask the requester" in row

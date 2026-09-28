@@ -1,0 +1,69 @@
+{# One definition, three callers (work_item_detail, line_review,
+   quick_review), so the reviewer views cannot drift apart.
+
+   A field named in config.open_questions renders as a question rather than
+   an empty value. The two are not the same: an empty value reads as
+   "nothing needed here", and that is what sent the phone team chasing
+   blanks they could not see. config may be absent or None on rows written
+   before the phone block was rebuilt, so every read goes through a
+   default. #}
+{% set DELIVERY_WORDS = {
+     'DESK_PHONE': 'Desk phone', 'FORWARD': 'Forward to a cell',
+     'VOICEMAIL': 'Direct to voicemail', 'NONE': 'No voice, texts only'} %}
+{% set NO_ANSWER_WORDS = {
+     'VOICEMAIL': 'Send to voicemail', 'FORWARD': 'Forward to a cell',
+     'RING': 'Keep ringing'} %}
+{% set PURPOSE_WORDS = {
+     'VOICE': 'Voice', 'TEXT': 'Text', 'BOTH': 'Voice and text'} %}
+
+{% macro question_badge(detail) %}
+  {% set questions = (detail.config or {}).get('open_questions') or [] %}
+  {% if questions %}
+    <span class="badge-blocked">{{ questions|length }} open question{{ 's' if questions|length != 1 else '' }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro phone_field(detail, label, key, value) %}
+  {% set questions = (detail.config or {}).get('open_questions') or [] %}
+  <div>
+    <strong>{{ label }}:</strong>
+    {% if key in questions %}
+      <span class="muted">Not given, ask the requester</span>
+    {% else %}
+      {{ value if value else '-' }}
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro render_phone_number_config(detail) %}
+  {% set cfg = detail.config or {} %}
+  <div>{{ question_badge(detail) }}</div>
+  {{ phone_field(detail, 'Purpose', 'capabilities',
+                 PURPOSE_WORDS.get(detail.purpose)) }}
+  <div>
+    <strong>Calls:</strong>
+    {% if detail.internal_only %}Internal only, no outside calls
+    {% elif cfg.get('dial_in') and cfg.get('dial_out') %}In and out
+    {% elif cfg.get('dial_in') %}Incoming only
+    {% elif cfg.get('dial_out') %}Outgoing only
+    {% else %}<span class="muted">-</span>{% endif %}
+  </div>
+  {{ phone_field(detail, 'Voice', 'capabilities',
+                 DELIVERY_WORDS.get(cfg.get('voice_delivery'))) }}
+  {{ phone_field(detail, 'If nobody picks up', 'no_answer',
+                 NO_ANSWER_WORDS.get(cfg.get('no_answer'))) }}
+  {{ phone_field(detail, 'Forward to', 'forward_target',
+                 cfg.get('forward_target')) }}
+  {{ phone_field(detail, 'Voicemail Slack', 'voicemail_slack_channel',
+                 cfg.get('voicemail_slack_channel')) }}
+  {{ phone_field(detail, 'Texts Slack', 'text_slack_channel',
+                 cfg.get('text_slack_channel')) }}
+  {# Passes no value: the handsets are their own DESK_PHONE lines. This row
+     exists only to say a desk phone was asked for and never placed. #}
+  {{ phone_field(detail, 'Desk phones', 'handsets', None) }}
+  <div><strong>Usage:</strong> {{ detail.usage or '-' }}</div>
+{% endmacro %}
+
+{% macro render_desk_phone_location(detail) %}
+  {{ phone_field(detail, 'Location', 'location', detail.location) }}
+{% endmacro %}

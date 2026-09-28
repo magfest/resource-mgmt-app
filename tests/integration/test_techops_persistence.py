@@ -43,6 +43,10 @@ from app.routes.work.techops.form_utils import (
     validate,
 )
 from app.routes.work.techops.line_grain import (
+    NO_ANSWER_RING,
+    VOICE_DELIVERY_DESK_PHONE,
+    VOICE_DELIVERY_VOICEMAIL,
+    VOICE_DELIVERY_NONE,
     EthernetDrop,
     PhoneHandset,
     PhoneLine,
@@ -81,16 +85,27 @@ def _answers(spaces=(), department_wide=(), action="SAVE_DRAFT",
     )
 
 
-def _voice_line(index=1, source="NEW", handsets=1, purpose="VOICE", **kw):
+def _voice_line(index=1, source="NEW", handsets=1, **kw):
     return PhoneLine(
-        index=index, source=source, purpose=purpose,
-        internal_only=kw.pop("internal_only", False),
+        index=index, source=source,
+        dial_in=kw.pop("dial_in", True),
+        dial_out=kw.pop("dial_out", True),
+        texts=kw.pop("texts", False),
+        voice_delivery=kw.pop("voice_delivery", VOICE_DELIVERY_DESK_PHONE),
+        no_answer=kw.pop("no_answer", NO_ANSWER_RING),
         usage=kw.pop("usage", "Front counter"),
-        caller_id_name=kw.pop("caller_id_name", "REGDESK"),
         handsets=tuple(PhoneHandset(location=f"Position {n}")
                        for n in range(1, handsets + 1)),
         **kw,
     )
+
+
+def _number_only_line(index=1, source="NEW", **kw):
+    """A number with no physical phone: voicemail delivery, so the desk
+    phone branch never applies and no placeholder handset is implied."""
+    return _voice_line(index=index, source=source, handsets=0,
+                       voice_delivery=VOICE_DELIVERY_VOICEMAIL,
+                       voicemail_slack_channel="#vm", **kw)
 
 
 @pytest.fixture(scope="function")
@@ -165,7 +180,7 @@ def two_spaces(app):
 def test_a_handset_ends_up_pointing_at_its_number(app, techops_draft, two_spaces):
     owner, sharer = two_spaces
     answers = _answers([
-        _space(space_id=owner.id, phone_lines=(_voice_line(handsets=0),)),
+        _space(space_id=owner.id, phone_lines=(_number_only_line(),)),
         _space(space_id=sharer.id,
                phone_lines=(_voice_line(index=1, source=f"{owner.id}:1",
                                         handsets=1),)),
@@ -199,14 +214,13 @@ def test_a_handset_resolves_to_the_right_number_when_a_text_line_is_dropped(
     owner, sharer = two_spaces
     answers = _answers([
         _space(space_id=owner.id, phone_lines=(
-            _voice_line(index=1, purpose="VOICE", handsets=0),
-            _voice_line(index=2, purpose="TEXT", handsets=0),
+            _number_only_line(index=1),
+            _voice_line(index=2, handsets=0, texts=True,
+                        voice_delivery=VOICE_DELIVERY_NONE),
         )),
         _space(space_id=sharer.id, phone_lines=(
-            _voice_line(index=1, source=f"{owner.id}:2", purpose=None,
-                       handsets=1),
-            _voice_line(index=2, source=f"{owner.id}:1", purpose=None,
-                       handsets=1),
+            _voice_line(index=1, source=f"{owner.id}:2", handsets=1),
+            _voice_line(index=2, source=f"{owner.id}:1", handsets=1),
         )),
     ])
     replace_lines(techops_draft, answers)
@@ -230,16 +244,15 @@ def test_a_handset_resolves_to_the_right_number_when_a_text_line_is_dropped(
 def test_a_half_filled_phone_line_saves_what_expand_to_lines_planned(
     app, techops_draft, two_spaces
 ):
-    """PHONE_VALIDATION_ENABLED is off (form_utils.py). A line with no
-    purpose, sharing a number that does not exist, and a handset with no
-    location must pass validate() and, once saved, produce exactly the
-    rows expand_to_lines() itself would plan; replace_lines() has no
-    second implementation of the grain rules to drift from that one.
+    """A line whose questions are unanswered must pass validate() and,
+    once saved, produce exactly the rows expand_to_lines() itself would
+    plan; replace_lines() has no second implementation of the grain rules
+    to drift from that one.
     """
     owner = two_spaces[0]
     space = _space(space_id=owner.id, wifi_requested=True, phone_lines=(
-        PhoneLine(index=1, source="9999:1", purpose=None, internal_only=False,
-                  handsets=(PhoneHandset(location=""),)),
+        PhoneLine(index=1, source="NEW", dial_in=True,
+                  voice_delivery=VOICE_DELIVERY_DESK_PHONE),
     ))
     answers = _answers([space], action=ACTION_SUBMIT)
     assert validate(answers, has_space_cards=True) == []

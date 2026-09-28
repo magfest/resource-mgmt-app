@@ -32,6 +32,7 @@ from .form_utils import (
     ACTION_SUBMIT,
     active_service_types,
     department_wide_redisplay,
+    open_question_entries,
     panel_entries,
     parse_form,
     replace_lines,
@@ -155,12 +156,21 @@ def techops_request_create(event: str, dept: str):
     answers, parse_errors = parse_form(request.form, offerable)
     errors = parse_errors + validate(answers, has_space_cards=bool(answers.spaces))
 
-    if errors:
+    # Questions do not refuse the request; they interrupt it once. The
+    # requester can fill them in or send it as it stands, and the phone team
+    # sees whichever they chose. Computed only for a submit: a draft
+    # carrying questions is the mid-thought state drafts exist for.
+    open_questions = []
+    if (answers.action == ACTION_SUBMIT
+            and not request.form.get("open_questions_acknowledged")):
+        open_questions = open_question_entries(answers)
+
+    if errors or open_questions:
         # The submit-refusal panel renders only for a refused SUBMIT, not
         # for a draft save that also happens to fail (a missing contact
         # name, say). A refused submit and a successful save both land back
         # on this form, so without the panel the two are indistinguishable.
-        show_error_panel = answers.action == ACTION_SUBMIT
+        show_error_panel = bool(errors) and answers.action == ACTION_SUBMIT
         # The panel replaces the flash for a refused submit; flashing the
         # same errors here too showed every problem twice, once as a flash
         # and once as the panel's own bullet. A draft-save failure has no
@@ -220,6 +230,7 @@ def techops_request_create(event: str, dept: str):
             show_error_panel=show_error_panel,
             blocking_errors=blocking_errors,
             blocked_space_ids=blocked_space_ids,
+            open_questions=open_questions,
         )
 
     work_item = WorkItem(

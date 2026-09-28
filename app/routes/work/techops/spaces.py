@@ -27,6 +27,8 @@ from .line_grain import (
     EthernetDrop,
     PhoneHandset,
     PhoneLine,
+    PURPOSE_BOTH,
+    PURPOSE_TEXT,
     SOURCE_NEW,
     SpaceAnswer,
     wifi_is_forced,
@@ -233,10 +235,16 @@ def _redisplay_extras(work_item) -> dict[int, dict]:
                 phone_lines.append(PhoneLine(
                     index=next_index,
                     source=SOURCE_NEW,
-                    purpose=detail.purpose,
-                    internal_only=detail.internal_only,
+                    # An unticked checkbox posts nothing, so a redisplay
+                    # rebuilt from defaults would silently clear what the
+                    # requester ticked. texts comes back through the stored
+                    # purpose, which is the only place it was written.
+                    dial_in=bool(cfg.get("dial_in")),
+                    dial_out=bool(cfg.get("dial_out")),
+                    texts=detail.purpose in (PURPOSE_TEXT, PURPOSE_BOTH),
+                    voice_delivery=cfg.get("voice_delivery") or "",
+                    no_answer=cfg.get("no_answer") or "",
                     usage=detail.usage or "",
-                    caller_id_name=cfg.get("caller_id_name", ""),
                     voicemail_slack_channel=cfg.get("voicemail_slack_channel", ""),
                     text_slack_channel=cfg.get("text_slack_channel", ""),
                     forward_target=cfg.get("forward_target", ""),
@@ -266,8 +274,7 @@ def _redisplay_extras(work_item) -> dict[int, dict]:
                 continue
             emitted.add(key)
             phone_lines.append(PhoneLine(
-                index=next_index, source=source, purpose=None,
-                internal_only=False, handsets=tuple(bucket[key]),
+                index=next_index, source=source, handsets=tuple(bucket[key]),
             ))
             next_index += 1
 

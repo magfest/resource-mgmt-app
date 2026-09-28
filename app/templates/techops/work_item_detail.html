@@ -1,3 +1,4 @@
+{% from "techops/_phone_number_config.html" import render_phone_number_config, render_desk_phone_location, question_badge with context %}
 {# templates/techops/work_item_detail.html #}
 {% extends "layout/base.html" %}
 {% from "macros/status_pill.html" import render_status_pill %}
@@ -221,18 +222,9 @@
                       <div><strong>Channel:</strong> {{ detail.location or '-' }}</div>
                       <div><strong>Use:</strong> {{ detail.usage or '-' }}</div>
                     {% elif st and st.code == "PHONE_NUMBER" %}
-                      <div>
-                        <strong>Purpose:</strong>
-                        {% if detail.purpose == "VOICE" %}Voice
-                        {% elif detail.purpose == "TEXT" %}Text
-                        {% elif detail.purpose == "BOTH" %}Voice &amp; text
-                        {% else %}<span class="muted">Not yet chosen</span>
-                        {% endif %}
-                        {% if detail.internal_only %}(internal only){% endif %}
-                      </div>
-                      <div><strong>Usage:</strong> {{ detail.usage or '-' }}</div>
+                      {{ render_phone_number_config(detail) }}
                     {% elif st and st.code == "DESK_PHONE" %}
-                      <div><strong>Location:</strong> {{ detail.location or '-' }}</div>
+                      {{ render_desk_phone_location(detail) }}
                       <div>{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
                     {% elif st and st.code == "NO_SERVICES" %}
                       <div><strong>Reason:</strong> {{ detail.description or 'No reason given.' }}</div>

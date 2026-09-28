@@ -28,6 +28,7 @@ from app.routes.work.techops.form_utils import (
     replace_spaces,
 )
 from app.routes.work.techops.line_grain import (
+    VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_NONE,
     EthernetDrop,
     PhoneHandset,
     PhoneLine,
@@ -315,13 +316,11 @@ def test_a_dangling_share_handset_survives_an_unedited_resave(
     # WiFi explicitly to keep the stored-answer assertion below meaningful.
     initial = _answers([
         SpaceAnswer(space_id=assigned.id, display_name="Assigned Room", answer="NEEDS",
-                   phone_lines=(PhoneLine(index=1, source=SOURCE_NEW, purpose="VOICE",
-                                          internal_only=False, usage="Front desk",
-                                          caller_id_name="ROOMA", handsets=()),)),
+                   phone_lines=(PhoneLine(dial_in=True, dial_out=True, voice_delivery=VOICE_DELIVERY_DESK_PHONE, index=1, source=SOURCE_NEW, usage="Front desk",
+                                          handsets=()),)),
         SpaceAnswer(space_id=unassigned.id, display_name="Unassigned Room", answer="NEEDS",
                    wifi_requested=True,
                    phone_lines=(PhoneLine(index=1, source=f"{assigned.id}:1",
-                                          purpose=None, internal_only=False,
                                           handsets=(PhoneHandset(location="B desk"),)),)),
     ])
     replace_spaces(techops_draft, initial)
@@ -335,7 +334,6 @@ def test_a_dangling_share_handset_survives_an_unedited_resave(
         SpaceAnswer(space_id=unassigned.id, display_name="Unassigned Room", answer="NEEDS",
                    wifi_requested=True,
                    phone_lines=(PhoneLine(index=1, source=f"{assigned.id}:1",
-                                          purpose=None, internal_only=False,
                                           handsets=(PhoneHandset(location="B desk"),)),)),
     ])
     replace_spaces(techops_draft, after_clear)
@@ -379,17 +377,14 @@ def test_a_share_above_an_owned_line_keeps_its_stored_order(
 
     answers = _answers([
         SpaceAnswer(space_id=assigned.id, display_name="Assigned Room", answer="NEEDS",
-                   phone_lines=(PhoneLine(index=1, source=SOURCE_NEW, purpose="VOICE",
-                                          internal_only=False, usage="Front desk",
-                                          caller_id_name="ROOMA", handsets=()),)),
+                   phone_lines=(PhoneLine(dial_in=True, dial_out=True, voice_delivery=VOICE_DELIVERY_DESK_PHONE, index=1, source=SOURCE_NEW, usage="Front desk",
+                                          handsets=()),)),
         SpaceAnswer(space_id=unassigned.id, display_name="Unassigned Room", answer="NEEDS",
                    phone_lines=(
                        PhoneLine(index=1, source=f"{assigned.id}:1",
-                                purpose=None, internal_only=False,
                                 handsets=(PhoneHandset(location="Share handset"),)),
-                       PhoneLine(index=2, source=SOURCE_NEW, purpose="VOICE",
-                                internal_only=False, usage="B's own line",
-                                caller_id_name="ROOMB", handsets=()),
+                       PhoneLine(dial_in=True, dial_out=True, voice_delivery=VOICE_DELIVERY_DESK_PHONE, index=2, source=SOURCE_NEW, usage="B's own line",
+                                handsets=()),
                    )),
     ])
     replace_spaces(techops_draft, answers)
@@ -404,7 +399,7 @@ def test_a_share_above_an_owned_line_keeps_its_stored_order(
     assert lines[0].source == f"{assigned.id}:1"
     assert lines[0].handsets[0].location == "Share handset"
     assert lines[1].source == SOURCE_NEW
-    assert lines[1].caller_id_name == "ROOMB"
+    assert lines[1].usage == "B's own line"
 
 
 def test_a_picked_but_unanswered_space_gets_a_card_and_no_lines(
