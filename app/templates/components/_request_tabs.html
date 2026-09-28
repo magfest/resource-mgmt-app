@@ -1,0 +1,35 @@
+{# The tabbed request page, shared by every work type.
+
+   Each work type declares its tabs and fills the panels; this owns the
+   markup, the styling and the toggle. A tab is
+   {id, label, count (optional), when (optional)}. `when` drops a tab
+   entirely rather than rendering it empty, which is what a requester who
+   cannot see the audit trail gets.
+
+   Budget grew this first, wrapped in one `if can_view_audit` with a
+   duplicate stacked layout underneath for everyone else. Two copies of the
+   same content drift apart. Testing the audience per tab leaves one
+   layout. #}
+{% macro request_tabs(tabs) %}
+{% set shown = tabs | selectattr_visible %}
+<nav class="request-tab-nav" role="tablist">
+  {% for tab in shown %}
+    <button type="button" role="tab"
+            class="tab-btn{{ ' active' if loop.first }}"
+            aria-selected="{{ 'true' if loop.first else 'false' }}"
+            aria-controls="panel-{{ tab.id }}"
+            data-tab="{{ tab.id }}">
+      {{ tab.label }}
+      {% if tab.count is not none and tab.count is defined %}
+        <span class="tab-count">{{ tab.count }}</span>
+      {% endif %}
+    </button>
+  {% endfor %}
+</nav>
+{% for tab in shown %}
+  <div class="tab-panel{{ ' active' if loop.first }}" id="panel-{{ tab.id }}"
+       role="tabpanel" {% if not loop.first %}hidden{% endif %}>
+    {{ caller(tab.id) }}
+  </div>
+{% endfor %}
+{% endmacro %}

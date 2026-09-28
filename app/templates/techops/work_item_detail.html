@@ -1,3 +1,4 @@
+{% from "components/_request_tabs.html" import request_tabs with context %}
 {% from "techops/_network_config.html" import render_network_config with context %}
 {% from "techops/_phone_number_config.html" import render_phone_number_config, render_desk_phone_location, question_badge with context %}
 {# templates/techops/work_item_detail.html #}
@@ -151,6 +152,25 @@
     </section>
   {% endif %}
 
+  {# Additional notes #}
+  {% if request_detail and request_detail.additional_notes %}
+    <section class="card" style="margin-bottom: 16px;">
+      <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
+        Additional Notes
+      </div>
+      <div style="white-space: pre-wrap;">{{ request_detail.additional_notes }}</div>
+    </section>
+  {% endif %}
+
+
+  {# One layout for every reader. A tab whose audience test fails does not
+     render, so a requester sees two tabs where a reviewer sees three. #}
+  {% call(tab) request_tabs([
+       {'id': 'lines', 'label': 'Requested services', 'count': work_item.lines | length},
+       {'id': 'comments', 'label': 'Comments'},
+       {'id': 'audit', 'label': 'Audit', 'when': can_view_audit},
+     ]) %}
+    {% if tab == 'lines' %}
   {# No-services banner — replaces the lines table when the requester
      declared their department needs nothing. #}
   {% if request_detail and request_detail.no_services_needed %}
@@ -167,9 +187,6 @@
   {% else %}
     {# Lines table — TechOps service requests #}
     <section class="card" style="margin-bottom: 16px;">
-      <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">
-        Requested Services
-      </div>
 
       {# Per-line Review button shows when the item is in an actionable
          state. The line_review handler does its own permission check, so
@@ -278,27 +295,11 @@
       {% endif %}
     </section>
   {% endif %}
-
-  {# Additional notes #}
-  {% if request_detail and request_detail.additional_notes %}
-    <section class="card" style="margin-bottom: 16px;">
-      <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
-        Additional Notes
-      </div>
-      <div style="white-space: pre-wrap;">{{ request_detail.additional_notes }}</div>
-    </section>
-  {% endif %}
-
-  {# Comments #}
-  <section class="card" style="margin-bottom: 16px;">
-    {{ render_comments(filtered_comments, work_item, ctx, perms, can_add_comment) }}
-  </section>
-
-  {# Audit log (admins only) #}
-  {% if can_view_audit %}
-    <section class="card" style="margin-bottom: 16px;">
+    {% elif tab == 'comments' %}
+      {{ render_comments(filtered_comments, work_item, ctx, perms, can_add_comment) }}
+    {% elif tab == 'audit' %}
       {{ render_audit_log(audit_events, csp_nonce) }}
-    </section>
-  {% endif %}
+    {% endif %}
+  {% endcall %}
 
 {% endblock %}

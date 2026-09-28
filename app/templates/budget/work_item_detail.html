@@ -3,6 +3,7 @@
 {% from "macros/status_pill.html" import render_status_pill %}
 {% from "macros/checkout_banner.html" import render_checkout_banner %}
 {% from "macros/audit_log.html" import render_audit_log with context %}
+{% from "components/_request_tabs.html" import request_tabs with context %}
 {% from "macros/extension_badge.html" import extension_badge %}
 
 {% block title %}{{ work_item.public_id }} - Budget Request{% endblock %}
@@ -367,102 +368,26 @@
     </div>
   {% endif %}
 
-  {# ================================================================ #}
-  {# TABBED LAYOUT FOR ADMINS #}
-  {# ================================================================ #}
-  {% if can_view_audit %}
-    {# Tab Navigation #}
-    <nav class="tab-nav" style="display: flex; gap: 0; margin-bottom: 0; border-radius: 8px 8px 0 0; padding: 4px 4px 0 4px;">
-      <button type="button" class="tab-btn active" data-tab="lines" style="padding: 14px 24px; border: 1px solid #ccc; border-bottom: none; background: #fff; cursor: pointer; font-size: 14px; font-weight: 600; color: #111; border-radius: 8px 8px 0 0; margin-right: 4px; position: relative; z-index: 1;">
-        Budget Lines <span class="badge" style="background: #0a66c2; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ lines | length }}</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="comments" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0; margin-right: 4px;">
-        Comments <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ filtered_comments | length }}</span>
-      </button>
-      <button type="button" class="tab-btn" data-tab="audit" style="padding: 14px 24px; border: 1px solid transparent; border-bottom: none; background: #e0e0e0; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; border-radius: 8px 8px 0 0;">
-        Audit History <span class="badge" style="background: #888; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 6px;">{{ audit_events | rejectattr('event_type', 'equalto', 'VIEW') | list | length }}</span>
-      </button>
-    </nav>
-
-    {# Tab 1: Budget Lines #}
-    <div class="tab-panel active" id="panel-lines">
-      <section class="card" style="border-radius: 0 8px 8px 8px;">
-        {% include "budget/_work_item_lines_table.html" %}
-      </section>
-    </div>
-
-    {# Tab 2: Comments #}
-    <div class="tab-panel" id="panel-comments" style="display: none;">
-      <section class="card" style="border-radius: 0 8px 8px 8px;">
-        {% include "budget/_work_item_comments.html" %}
-      </section>
-    </div>
-
-    {# Tab 3: Audit History #}
-    <div class="tab-panel" id="panel-audit" style="display: none;">
-      <section class="card" style="border-radius: 0 8px 8px 8px;">
-        {{ render_audit_log(audit_events, csp_nonce) }}
-      </section>
-    </div>
-
-  {# ================================================================ #}
-  {# STANDARD LAYOUT FOR NON-ADMINS #}
-  {# ================================================================ #}
-  {% else %}
-    {# Lines Table #}
-    <section class="card">
+  {# One layout for every reader. This was two: a tabbed one for admins
+     and a stacked copy of the same content underneath for everyone else.
+     Two copies of one page drift apart. A tab whose audience test fails
+     does not render, so a requester sees two tabs where an admin sees
+     three. #}
+  {% call(tab) request_tabs([
+       {'id': 'lines', 'label': 'Budget lines', 'count': lines | length},
+       {'id': 'comments', 'label': 'Comments'},
+       {'id': 'audit', 'label': 'Audit', 'when': can_view_audit},
+     ]) %}
+    {% if tab == 'lines' %}
       {% include "budget/_work_item_lines_table.html" %}
-    </section>
-
-    {# Request-level Comments #}
-    <section class="card" style="margin-top: 16px;">
+    {% elif tab == 'comments' %}
       {% include "budget/_work_item_comments.html" %}
-    </section>
-  {% endif %}
+    {% elif tab == 'audit' %}
+      {{ render_audit_log(audit_events, csp_nonce) }}
+    {% endif %}
+  {% endcall %}
 
 {% endblock %}
 
-{% block scripts %}
-{% if can_view_audit %}
-<script nonce="{{ csp_nonce }}">
-(function() {
-  // Tab switching
-  document.querySelectorAll('.tab-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var targetTab = this.dataset.tab;
 
-      // Update button states - inactive tabs
-      document.querySelectorAll('.tab-btn').forEach(function(b) {
-        b.classList.remove('active');
-        b.style.background = '#e0e0e0';
-        b.style.color = '#555';
-        b.style.border = '1px solid transparent';
-        b.style.borderBottom = 'none';
-      });
-
-      // Active tab button
-      this.classList.add('active');
-      this.style.background = '#fff';
-      this.style.color = '#111';
-      this.style.border = '1px solid #ccc';
-      this.style.borderBottom = 'none';
-
-      // Hide all panels
-      document.querySelectorAll('.tab-panel').forEach(function(panel) {
-        panel.style.display = 'none';
-        panel.classList.remove('active');
-      });
-
-      // Show target panel
-      var targetPanel = document.getElementById('panel-' + targetTab);
-      if (targetPanel) {
-        targetPanel.style.display = 'block';
-        targetPanel.classList.add('active');
-      }
-    });
-  });
-})();
-</script>
-{% endif %}
-{% endblock %}
 
