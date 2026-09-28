@@ -162,6 +162,53 @@
             margin: 4px 0 6px;
         }
 
+        /* Tabs on a request page. Shared by every work type; see
+           components/_request_tabs.html. */
+        .request-tab-nav {
+            display: flex;
+            gap: 4px;
+            padding: 4px 4px 0 4px;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .tab-btn {
+            padding: 12px 22px;
+            border: 1px solid transparent;
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            background: #e9e9e9;
+            color: #555;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: -1px;
+        }
+
+        .tab-btn.active {
+            background: #fff;
+            color: #111;
+            border-color: #ccc;
+        }
+
+        .tab-count {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 8px;
+            border-radius: 10px;
+            background: #0a66c2;
+            color: #fff;
+            font-size: 12px;
+        }
+
+        .tab-panel {
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            background: #fff;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
         .space-card-check {
             display: flex;
             gap: 6px;
@@ -1205,6 +1252,26 @@
 
 {# Core JS for CSP-compliant event handling. See docs/security.md #}
 <script nonce="{{ csp_nonce }}">
+  // Request page tabs. The styling lives in CSS, so switching is a class
+  // and an attribute rather than the pile of inline style assignments this
+  // replaced. Delegated, so a page can render tabs anywhere.
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    var nav = btn.closest('.request-tab-nav');
+    if (!nav) return;
+    Array.prototype.forEach.call(nav.querySelectorAll('.tab-btn'), function(b) {
+      var on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      var panel = document.getElementById('panel-' + b.getAttribute('data-tab'));
+      if (panel) {
+        panel.classList.toggle('active', on);
+        panel.hidden = !on;
+      }
+    });
+  });
+
 (function() {
   // Prevent double-click on form submissions
   document.addEventListener('submit', function(e) {

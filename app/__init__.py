@@ -222,6 +222,17 @@ def create_app() -> Flask:
     import math
     import re
 
+    @app.template_filter("selectattr_visible")
+    def selectattr_visible(tabs):
+        """Keep the tabs this reader is allowed to see.
+
+        A tab with no `when` key is for everyone; requiring one on each
+        would make the common case noisy. Returns a list so a caller can
+        ask for `loop.first` and get the first VISIBLE tab, not the first
+        declared one.
+        """
+        return [t for t in tabs if t.get("when", True)]
+
     @app.template_filter('format_qty')
     def format_qty(value):
         """Format quantity - show as rounded-up integer."""
