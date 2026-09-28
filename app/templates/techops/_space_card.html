@@ -26,25 +26,6 @@
    count_filled_drops / count_filled_phone docstrings: a row counts when
    any of its inputs holds a non-blank value. #}
 
-{% macro render_drop(sid, n, drop) %}
-<div class="space-card-row" data-drop-row>
-  <div class="space-card-row-header">DROP {{ n }}</div>
-  <div class="space-card-field">
-    <label for="space_{{ sid }}_ETHERNET_drop_{{ n }}_location">Where in the room?</label>
-    <input type="text" id="space_{{ sid }}_ETHERNET_drop_{{ n }}_location"
-           name="space_{{ sid }}_ETHERNET_drop_{{ n }}_location" maxlength="500"
-           placeholder="e.g. front-left tech table, back wall by the door"
-           value="{{ drop.location }}">
-  </div>
-  <div class="space-card-field">
-    <label for="space_{{ sid }}_ETHERNET_drop_{{ n }}_usage">What is it for?</label>
-    <textarea id="space_{{ sid }}_ETHERNET_drop_{{ n }}_usage"
-              name="space_{{ sid }}_ETHERNET_drop_{{ n }}_usage" rows="2"
-              maxlength="2000"
-              placeholder="What plugs in, who uses it, bandwidth needs">{{ drop.usage }}</textarea>
-  </div>
-</div>
-{% endmacro %}
 
 {% macro render_handset(prefix, h, handset) %}
 <div class="space-card-field" data-handset-row>
@@ -244,7 +225,7 @@
 {% macro render_phone_line(sid, n, line) %}
 {% set prefix = 'space_' ~ sid ~ '_PHONE_line_' ~ n %}
 {% set is_sharing = line.source != source_new %}
-<div class="space-card-row" data-phone-line-row data-prefix="{{ prefix }}"
+<div class="space-card-row" data-phone-line-row data-reveal-scope data-prefix="{{ prefix }}"
      data-source-new="{{ source_new }}">
   <div class="space-card-row-header">Phone {{ n }}</div>
   {{ render_phone_source(sid, n, line) }}
@@ -401,33 +382,124 @@
       </div>
 
       <details class="space-collapsible" data-service-subsection="ETHERNET"
-               {% if card.drops %}open{% endif %}>
+               {% if card.network_needed %}open{% endif %}>
         <summary class="space-collapsible-summary">
           <span class="space-collapsible-heading">
-            <span class="space-card-row-header">Hardwired ethernet</span>
+            <span class="space-card-row-header">Wired network</span>
             {% if card.ethernet_description %}
               <span class="muted small">{{ card.ethernet_description }}</span>
             {% endif %}
           </span>
-          <span class="muted small" data-ethernet-count>&middot; {{ card.ethernet_count }} drop{{ 's' if card.ethernet_count != 1 else '' }}</span>
+          <span class="muted small" data-ethernet-count>
+            {%- if card.network_needed == "YES" %}&middot; needed
+            {%- elif card.network_needed == "NO" %}&middot; not needed
+            {%- elif card.network_needed == "UNSURE" %}&middot; not sure
+            {%- else %}&middot; unanswered{% endif -%}
+          </span>
         </summary>
-        <div class="space-collapsible-body">
-          {# Rendered rows are exactly the saved/posted drops, no trailing
-             blank: a filled Drop 1 next to an empty Drop 2 read as a saved
-             row to delete, and no-script row support was dropped two
-             rounds ago, so nothing needs that blank to add a row. #}
-          <div data-drops-container data-space-id="{{ sid }}"
-               data-next-index="{{ (card.drops|length) + 1 }}">
-            {% for drop in card.drops %}
-              {{ render_drop(sid, loop.index, drop) }}
-            {% endfor %}
+        <div class="space-collapsible-body" data-reveal-scope>
+          {# The gate is required and has three answers. "Not sure" completes
+             it, so a requester who does not yet know what gear is coming is
+             never pushed into a guess to get past it. The detail below only
+             applies to a yes. #}
+          <div class="space-card-field">
+            <label>Does anything here need a network cable?</label>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_needed" value="YES"
+                     data-reveal-trigger="network_needed"
+                     {% if card.network_needed == "YES" %}checked{% endif %}>
+              Yes, something needs to plug in
+            </label>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_needed" value="NO"
+                     data-reveal-trigger="network_needed"
+                     {% if card.network_needed == "NO" %}checked{% endif %}>
+              No, WiFi is enough
+            </label>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_needed" value="UNSURE"
+                     data-reveal-trigger="network_needed"
+                     {% if card.network_needed == "UNSURE" %}checked{% endif %}>
+              Not sure yet
+            </label>
           </div>
-          <button type="button" class="btn btn-muted" data-add-drop="{{ sid }}">
-            {{ '+ Add another drop' if card.drops else '+ Add a drop' }}
-          </button>
-          <template data-drop-template="{{ sid }}">
-            {{ render_drop(sid, '__IDX__', {'location': '', 'usage': ''}) }}
-          </template>
+
+          <div data-reveal-any="network_needed=YES"
+               {% if card.network_needed != "YES" %}hidden{% endif %}>
+            <fieldset class="space-card-field">
+              <legend>What kind of things?</legend>
+            <label class="space-card-check">
+              <input type="checkbox" name="space_{{ sid }}_NETWORK_kinds" value="COMPUTERS"
+                     {% if "COMPUTERS" in (card.network_kinds or []) %}checked{% endif %}>
+              Laptops or desktops
+            </label>
+            <label class="space-card-check">
+              <input type="checkbox" name="space_{{ sid }}_NETWORK_kinds" value="STREAMING"
+                     {% if "STREAMING" in (card.network_kinds or []) %}checked{% endif %}>
+              Streaming or capture gear
+            </label>
+            <label class="space-card-check">
+              <input type="checkbox" name="space_{{ sid }}_NETWORK_kinds" value="SCANNERS"
+                     {% if "SCANNERS" in (card.network_kinds or []) %}checked{% endif %}>
+              Badge scanners or printers
+            </label>
+            <label class="space-card-check">
+              <input type="checkbox" name="space_{{ sid }}_NETWORK_kinds" value="CONSOLES"
+                     {% if "CONSOLES" in (card.network_kinds or []) %}checked{% endif %}>
+              Consoles or arcade hardware
+            </label>
+            <label class="space-card-check">
+              <input type="checkbox" name="space_{{ sid }}_NETWORK_kinds" value="OTHER"
+                     {% if "OTHER" in (card.network_kinds or []) %}checked{% endif %}>
+              Something else
+            </label>
+            </fieldset>
+            <fieldset class="space-card-field">
+              <legend>Roughly how many?</legend>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_count" value="1-2"
+                     {% if card.network_count == "1-2" %}checked{% endif %}> 1-2
+            </label>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_count" value="3-5"
+                     {% if card.network_count == "3-5" %}checked{% endif %}> 3-5
+            </label>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_count" value="6-10"
+                     {% if card.network_count == "6-10" %}checked{% endif %}> 6-10
+            </label>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_count" value="10+"
+                     {% if card.network_count == "10+" %}checked{% endif %}> 10+
+            </label>
+            </fieldset>
+            <fieldset class="space-card-field">
+              <legend>What are they mostly doing?</legend>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_traffic" value="INTERNET"
+                     {% if card.network_traffic == "INTERNET" %}checked{% endif %}>
+              Using the internet
+            </label>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_traffic" value="LOCAL"
+                     {% if card.network_traffic == "LOCAL" %}checked{% endif %}>
+              Talking to each other locally
+            </label>
+            <label class="space-card-check">
+              <input type="radio" name="space_{{ sid }}_NETWORK_traffic" value="UNSURE"
+                     {% if card.network_traffic == "UNSURE" %}checked{% endif %}>
+              Not sure
+            </label>
+            </fieldset>
+          </div>
+
+          <div class="space-card-field" data-reveal-any="network_needed=YES network_needed=UNSURE"
+               {% if card.network_needed not in ("YES", "UNSURE") %}hidden{% endif %}>
+            <label for="space_{{ sid }}_NETWORK_notes">Anything else we should know? (optional)</label>
+            <textarea id="space_{{ sid }}_NETWORK_notes"
+                      name="space_{{ sid }}_NETWORK_notes" rows="3" maxlength="2000"
+                      placeholder="If you are a stage or a complex department, a link to a network diagram or doc is welcome. Give techops@magfest.org read access.">{{ card.network_notes }}</textarea>
+          </div>
         </div>
       </details>
 

@@ -249,7 +249,7 @@ def test_the_form_renders_exactly_one_card_for_the_assigned_space(app, client,
     # Both conditional blocks are in the DOM (nothing here requires
     # scripting), but a brand-new, unanswered card shows neither: item 1
     # of the post-review fixes. Server-rendered, not script-hidden.
-    assert "Hardwired ethernet" in body
+    assert "Wired network" in body
     assert re.search(r'data-needs-block\s+style="display:\s*none;"', body)
     assert re.search(r'data-nothing-needed-block\s+style="display:\s*none;"', body)
 
@@ -319,6 +319,7 @@ def test_posting_a_space_at_another_venue_is_rejected(app, client,
         "action": "SUBMIT",
         "space_ids": str(other_venue_space.id),
         f"space_{other_venue_space.id}_answer": "NEEDS",
+        f"space_{other_venue_space.id}_NETWORK_needed": "NO",
     }, follow_redirects=True)
     body = html.unescape(response.get_data(as_text=True))
     assert "not available at this event" in body
@@ -534,10 +535,11 @@ def test_a_failed_submit_preserves_every_kind_of_just_typed_space_field(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "1",
         f"space_{room.id}_WIFI_description": "Just-typed WiFi description",
-        f"space_{room.id}_ETHERNET_drop_1_location": "Just-typed drop location",
-        f"space_{room.id}_ETHERNET_drop_1_usage": "Just-typed drop usage",
+        f"space_{room.id}_NETWORK_needed": "YES",
+        f"space_{room.id}_NETWORK_notes": "Just-typed network notes",
         f"space_{room.id}_PHONE_line_1_purpose": "VOICE",
         f"space_{room.id}_PHONE_line_1_handset_1_location": "Just-typed handset location",
         f"space_{room.id}_notes": "Just-typed per-space notes",
@@ -545,13 +547,10 @@ def test_a_failed_submit_preserves_every_kind_of_just_typed_space_field(
     body = html.unescape(response.get_data(as_text=True))
 
     assert "Just-typed WiFi description" in body
-    assert "Just-typed drop usage" in body
+    assert "Just-typed network notes" in body
     assert "Just-typed handset location" in body
     assert "Just-typed per-space notes" in body
-    # Exactly the typed drop, no trailing blank row (item 2): a second,
-    # never-typed drop row here is the regression the owner reported.
-    assert f'name="space_{room.id}_ETHERNET_drop_1_location"' in body
-    assert f'name="space_{room.id}_ETHERNET_drop_2_location"' not in body
+    assert f'name="space_{room.id}_NETWORK_notes"' in body
 
 
 def test_wifi_radios_show_what_was_just_submitted_not_the_forced_default(
@@ -569,6 +568,7 @@ def test_wifi_radios_show_what_was_just_submitted_not_the_forced_default(
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "YES",
         f"space_{room.id}_ETHERNET_drop_1_location": "Back wall",
         f"space_{room.id}_ETHERNET_drop_1_usage": "Switch uplink",
         # WIFI_enabled deliberately omitted: neither radio was posted.
@@ -593,6 +593,7 @@ def test_wifi_description_field_shows_only_for_an_explicit_needed_answer(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "1",
     })
     body = response.get_data(as_text=True)
@@ -609,6 +610,7 @@ def test_wifi_description_field_hidden_for_an_unanswered_wifi_question(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         # WIFI_enabled omitted: unanswered.
     })
     body = response.get_data(as_text=True)
@@ -631,6 +633,7 @@ def test_wifi_decline_reason_field_shows_on_a_plain_decline_with_no_gear(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "0",
     })
     body = response.get_data(as_text=True)
@@ -647,6 +650,7 @@ def test_wifi_decline_reason_field_shows_when_the_space_is_forced(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "0",
         f"space_{room.id}_ETHERNET_drop_1_location": "Back wall",
         f"space_{room.id}_ETHERNET_drop_1_usage": "Switch uplink",
@@ -670,6 +674,7 @@ def test_the_forced_wifi_banner_no_longer_claims_wifi_was_auto_included(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "YES",
         f"space_{room.id}_ETHERNET_drop_1_location": "Back wall",
         f"space_{room.id}_ETHERNET_drop_1_usage": "Switch uplink",
     })
@@ -689,6 +694,7 @@ def test_wifi_decline_reason_field_hidden_when_wifi_is_needed_not_declined(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "1",
     })
     body = response.get_data(as_text=True)
@@ -709,6 +715,7 @@ def test_submit_rejects_a_needs_card_with_no_wifi_answer_on_a_forced_space(
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "YES",
         f"space_{room.id}_ETHERNET_drop_1_location": "Back wall",
         f"space_{room.id}_ETHERNET_drop_1_usage": "Switch uplink",
     })
@@ -730,6 +737,7 @@ def test_submit_rejects_a_needs_card_with_no_wifi_answer_and_no_gear(
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
     })
     body = html.unescape(response.get_data(as_text=True))
     assert "Expo Hall E: say whether this space needs WiFi." in body
@@ -920,11 +928,13 @@ def test_adding_a_space_on_a_new_request_redirects_to_the_edit_page_losslessly(
         "action": "add_space",
         "space_ids": [str(room.id), str(unassigned_offerable_space.id)],
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_notes": "Sentinel per-space notes",
         f"space_{room.id}_WIFI_enabled": "1",
         f"space_{room.id}_WIFI_description": "Sentinel wifi description",
-        f"space_{room.id}_ETHERNET_drop_1_location": "Sentinel drop location",
-        f"space_{room.id}_ETHERNET_drop_1_usage": "Sentinel drop usage",
+        f"space_{room.id}_NETWORK_needed": "YES",
+        f"space_{room.id}_NETWORK_notes": "Sentinel drop location",
+        
         "service_RADIO_CHANNEL_instance_1_location": "Sentinel channel name",
         "service_RADIO_CHANNEL_instance_1_usage": "Sentinel channel usage",
     })
@@ -945,7 +955,7 @@ def test_adding_a_space_on_a_new_request_redirects_to_the_edit_page_losslessly(
     assert "Sentinel per-space notes" in body
     assert "Sentinel wifi description" in body
     assert "Sentinel drop location" in body
-    assert "Sentinel drop usage" in body
+    assert "Sentinel drop location" in body
     assert "Sentinel channel name" in body
     assert "Sentinel channel usage" in body
     # Nothing else was offerable at this venue, so with the just-added
@@ -1052,10 +1062,13 @@ def one_space_payload(techops_portfolio):
         "action": "save_draft",
         "space_ids": str(room_id),
         f"space_{room_id}_answer": "NEEDS",
+        f"space_{room_id}_NETWORK_needed": "NO",
         f"space_{room_id}_WIFI_enabled": "1",
         f"space_{room_id}_WIFI_description": "Staff laptops",
-        f"space_{room_id}_ETHERNET_drop_1_location": "Back wall",
-        f"space_{room_id}_ETHERNET_drop_1_usage": "Switch uplink",
+        f"space_{room_id}_NETWORK_needed": "YES",
+        f"space_{room_id}_NETWORK_kinds": "COMPUTERS",
+        f"space_{room_id}_NETWORK_count": "3-5",
+        f"space_{room_id}_NETWORK_traffic": "LOCAL",
         # A complete line: reachable both ways, rings a desk phone that has
         # somewhere to sit, and says what happens when nobody answers. An
         # incomplete one would stop at the open-questions panel instead of
@@ -1107,6 +1120,7 @@ def test_the_preview_survives_a_half_finished_draft(app, client,
     response = client.post(techops_portfolio["preview_url"], data={
         "space_ids": str(techops_portfolio["space_id"]),
         f"space_{techops_portfolio['space_id']}_answer": "NEEDS",
+        f"space_{techops_portfolio['space_id']}_NETWORK_needed": "NO",
         f"space_{techops_portfolio['space_id']}_PHONE_line_1_source": "999:1",
         f"space_{techops_portfolio['space_id']}_PHONE_line_1_handset_count": "1",
         f"space_{techops_portfolio['space_id']}_PHONE_line_1_handset_1_location": "Desk",
@@ -1145,7 +1159,7 @@ def test_the_preview_rows_are_ordered_and_columned_correctly(
                        data=one_space_payload).get_data(as_text=True)
     rows = _preview_rows(body)
     assert [row[1] for row in rows] == [
-        "WiFi coverage / access", "Hardwired ethernet", "Phone number", "Desk phone",
+        "WiFi coverage / access", "Wired network", "Phone number", "Desk phone",
     ]
     assert [row[0] for row in rows] == ["1", "2", "3", "4"]
     assert all(row[2] == "Expo Hall E" for row in rows)
@@ -1317,6 +1331,7 @@ def test_the_preview_still_shows_a_line_for_a_room_archived_after_it_was_held(
             "action": "save_draft",
             "space_ids": str(room.id),
             f"space_{room.id}_answer": "NEEDS",
+            f"space_{room.id}_NETWORK_needed": "NO",
             f"space_{room.id}_WIFI_enabled": "1",
             f"space_{room.id}_WIFI_description": "Badge scanners",
         }).get_data(as_text=True)
@@ -1384,6 +1399,7 @@ def test_the_preview_shows_the_events_alias_not_the_venue_catalog_name(
             "action": "save_draft",
             "space_ids": str(room.id),
             f"space_{room.id}_answer": "NEEDS",
+            f"space_{room.id}_NETWORK_needed": "NO",
             f"space_{room.id}_WIFI_enabled": "1",
             f"space_{room.id}_WIFI_description": "Badge scanners",
         }).get_data(as_text=True)
@@ -1403,6 +1419,7 @@ def test_the_no_script_fallback_also_shows_the_events_alias(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "1",
         f"space_{room.id}_WIFI_description": "Badge scanners",
     })
@@ -1465,6 +1482,7 @@ def test_saving_one_card_persists_and_redirects_to_the_edit_form_at_that_card(
         "primary_contact_email": "ada@magfest.org",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "1",
         f"space_{room.id}_WIFI_description": "Save-this-space sentinel",
         "save_space_id": str(room.id),
@@ -1494,6 +1512,7 @@ def test_saving_one_card_on_an_existing_draft_redirects_back_to_it_too(
         "primary_contact_email": "ada@magfest.org",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_PHONE_line_1_purpose": "VOICE",
         "save_space_id": str(room.id),
     })
@@ -1684,12 +1703,11 @@ def test_wifi_is_unboxed_and_first_ethernet_and_phone_collapse_untouched(
     assert "open" not in _opening_tag(body, 'data-service-subsection="PHONE"')
 
 
-def test_ethernet_badge_reports_the_saved_drop_count_and_opens(
+def test_the_wired_network_badge_reports_the_answer_and_opens(
         app, client, techops_portfolio):
-    """Item 3: a collapsed section holding content must say so. Breaks if
-    the badge stops naming a unit ("2 drops"), or if a card with saved
-    drops renders its ethernet <details> collapsed, hiding them from a
-    requester who did not think to click."""
+    """A collapsed section holding an answer must say so. The badge reports
+    what the room said rather than a row count, because the room now gives
+    one answer and the network team decides how many drops it takes."""
     _login(client, "test:admin")
     room = techops_portfolio["room"]
     client.post(techops_portfolio["new_request_url"], data={
@@ -1697,16 +1715,14 @@ def test_ethernet_badge_reports_the_saved_drop_count_and_opens(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
-        f"space_{room.id}_ETHERNET_drop_1_location": "Front left",
-        f"space_{room.id}_ETHERNET_drop_1_usage": "Tech table",
-        f"space_{room.id}_ETHERNET_drop_2_location": "Back wall",
-        f"space_{room.id}_ETHERNET_drop_2_usage": "Router feed",
+        f"space_{room.id}_NETWORK_needed": "YES",
+        f"space_{room.id}_NETWORK_kinds": "COMPUTERS",
     })
     body = client.get(_edit_url(techops_portfolio)).get_data(as_text=True)
 
     assert "open" in _opening_tag(body, 'data-service-subsection="ETHERNET"')
     badge = re.search(r'data-ethernet-count>([^<]*)<', body).group(1)
-    assert "2 drops" in badge
+    assert "needed" in badge
 
 
 def test_phone_badge_reports_lines_and_handsets(
@@ -1725,16 +1741,15 @@ def test_phone_badge_reports_lines_and_handsets(
 
 def test_a_card_with_no_gear_shows_a_zero_count_and_no_ethernet_or_phone_form(
         app, client, techops_portfolio):
-    """Item 3, reversed from the old rule: an empty section's badge used to
-    stay blank, which is exactly what the owner said reads as "nothing
-    here to check." The badge must now always show a number. Breaks if an
-    untouched card's badge goes blank instead of reading "0 drops"/"0
-    lines"."""
+    """An empty section's badge used to stay blank, which reads as "nothing
+    here to check". Every badge must say something. Wired network reports
+    the room's answer, because the room gives one; phones report a count,
+    because a room can have several."""
     _login(client, "test:admin")
     body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
     ethernet_badge = re.search(r'data-ethernet-count>([^<]*)<', body).group(1)
     phone_badge = re.search(r'data-phone-count>([^<]*)<', body).group(1)
-    assert "0 drops" in ethernet_badge
+    assert "unanswered" in ethernet_badge
     assert "0 phones" in phone_badge
 
 
@@ -1781,45 +1796,6 @@ def test_radio_channel_and_other_collapse_and_open_with_saved_content(
     assert "data-service-count" not in other_section
 
 
-def test_the_saved_ethernet_badge_agrees_with_what_the_script_would_count(
-        app, client, techops_portfolio):
-    """Item 3's own drift guard, made explicit: the server renders the
-    badge from card.ethernet_count (spaces.count_filled_drops); the
-    script recomputes it from the DOM via filledDropRows. Both apply the
-    same rule — a row counts when either its location or its usage is
-    non-blank — so the server's rendered count for a saved draft must
-    equal a straight count of rows that rule would keep. This suite runs
-    no JS, so filledDropRows' own source is checked directly below for
-    the rule it must implement; this test checks the server's number
-    against the same rule applied by hand to what was actually saved.
-    Breaks if the two rules diverge: a drop with only usage filled (no
-    location) must still count, matching form_utils._parse_drops."""
-    _login(client, "test:admin")
-    room = techops_portfolio["room"]
-    # Drop 1: location only. Drop 2: usage only. Both must count.
-    client.post(techops_portfolio["new_request_url"], data={
-        "primary_contact_name": "Ada", "primary_contact_email": "ada@magfest.org",
-        "action": "save_draft",
-        "space_ids": str(room.id),
-        f"space_{room.id}_answer": "NEEDS",
-        f"space_{room.id}_ETHERNET_drop_1_location": "Front left",
-        f"space_{room.id}_ETHERNET_drop_1_usage": "",
-        f"space_{room.id}_ETHERNET_drop_2_location": "",
-        f"space_{room.id}_ETHERNET_drop_2_usage": "Router feed",
-    })
-    body = client.get(_edit_url(techops_portfolio)).get_data(as_text=True)
-    badge = re.search(r'data-ethernet-count>([^<]*)<', body).group(1)
-    assert "2 drops" in badge
-
-    fn_src = _extract_js_function(body, "filledDropRows")
-    # The bug this guards: checking only the location input undercounts a
-    # drop whose usage is filled but whose location is still blank.
-    assert "row.querySelector('input[type=\"text\"]')" in fn_src
-    assert "row.querySelector('textarea')" in fn_src
-    assert "loc.value.trim()" in fn_src and "use.value.trim()" in fn_src
-    assert "||" in fn_src.split("return")[-1]
-
-
 def test_filled_phone_line_rows_reads_the_scoped_purpose_select_and_handsets(
         app, client, techops_portfolio):
     """The pre-existing filledPhoneLineRows read `row.querySelector('select')`
@@ -1839,55 +1815,6 @@ def test_filled_phone_line_rows_reads_the_scoped_purpose_select_and_handsets(
     # A row whose only answer is a ticked capability box is a line to the
     # parser, so it must be one to the badge as well.
     assert 'input[type="checkbox"]' in fn_src
-
-
-def test_zero_drops_renders_no_drop_rows_with_a_singular_add_button(
-        app, client, techops_portfolio):
-    """Item 2's empty-section case: an untouched card must show no drop
-    row at all, and the button must read "+ Add a drop", not "...another
-    drop" naming a row that does not exist yet. The container's own
-    next-index must start at 1, not 2, with nothing rendered to clone
-    against."""
-    _login(client, "test:admin")
-    room = techops_portfolio["room"]
-    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
-
-    assert f'name="space_{room.id}_ETHERNET_drop_1_location"' not in body
-    match = re.search(
-        r'data-drops-container[^>]*data-next-index="(\d+)"', body)
-    assert match.group(1) == "1"
-    # Scoped to the button's own rendered text, not the whole page: the
-    # script sets the same string client-side after a click, which would
-    # make a body-wide "not in" assertion pass for the wrong reason.
-    btn = re.search(r'data-add-drop="\d+">\s*([^<]+?)\s*</button>', body).group(1)
-    assert btn == "+ Add a drop"
-
-
-def test_one_saved_drop_renders_exactly_one_drop_row(
-        app, client, techops_portfolio):
-    """The regression the owner reported: a section holding one drop must
-    render exactly one drop row, Drop 1, with no Drop 2 placeholder to be
-    mistaken for a saved row and "deleted". The next-index must pick up
-    at 2, past the one real row."""
-    _login(client, "test:admin")
-    room = techops_portfolio["room"]
-    client.post(techops_portfolio["new_request_url"], data={
-        "primary_contact_name": "Ada", "primary_contact_email": "ada@magfest.org",
-        "action": "save_draft",
-        "space_ids": str(room.id),
-        f"space_{room.id}_answer": "NEEDS",
-        f"space_{room.id}_ETHERNET_drop_1_location": "Front left",
-        f"space_{room.id}_ETHERNET_drop_1_usage": "Tech table",
-    })
-    body = client.get(_edit_url(techops_portfolio)).get_data(as_text=True)
-
-    assert f'name="space_{room.id}_ETHERNET_drop_1_location"' in body
-    assert f'name="space_{room.id}_ETHERNET_drop_2_location"' not in body
-    match = re.search(
-        r'data-drops-container[^>]*data-next-index="(\d+)"', body)
-    assert match.group(1) == "2"
-    btn = re.search(r'data-add-drop="\d+">\s*([^<]+?)\s*</button>', body).group(1)
-    assert btn == "+ Add another drop"
 
 
 def test_zero_phone_lines_renders_no_line_rows_with_a_singular_add_button(
@@ -1919,6 +1846,7 @@ def test_one_saved_phone_line_renders_exactly_one_line_row(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_PHONE_line_1_voice_delivery": "DESK_PHONE",
         f"space_{room.id}_PHONE_line_1_usage": "Front desk",
     })
@@ -2011,6 +1939,7 @@ def test_the_disclosure_marker_swaps_between_open_and_closed(app, client, techop
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_PHONE_line_1_purpose": "VOICE",
         f"space_{room.id}_PHONE_line_1_usage": "Front desk",
     })
@@ -2048,6 +1977,7 @@ def test_a_refused_submit_returns_the_capability_boxes_still_ticked(
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "1",
         f"space_{room.id}_PHONE_line_1_source": "NEW",
         f"space_{room.id}_PHONE_line_1_dial_in": "1",

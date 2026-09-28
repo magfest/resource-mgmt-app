@@ -1,0 +1,51 @@
+{# One definition, three callers, so the reviewer views cannot drift.
+
+   A request saved before the drop repeater was replaced holds one ETHERNET
+   line per drop, with a location and a use and no config. Those lines are
+   still valid and are not migrated, so this renders either shape: the new
+   answer when config is there, the old location and use when it is not. #}
+{% set KIND_WORDS = {
+     'COMPUTERS': 'Laptops or desktops',
+     'STREAMING': 'Streaming or capture gear',
+     'SCANNERS': 'Badge scanners or printers',
+     'CONSOLES': 'Consoles or arcade hardware',
+     'OTHER': 'Something else'} %}
+{% set TRAFFIC_WORDS = {
+     'INTERNET': 'Mostly internet',
+     'LOCAL': 'Mostly local network',
+     'UNSURE': 'Not sure'} %}
+
+{% macro render_network_config(detail) %}
+  {% set cfg = detail.config or {} %}
+  {% set questions = cfg.get('open_questions') or [] %}
+  {% if cfg %}
+    {% if questions %}
+      <div><span class="badge-blocked">{{ questions|length }} open question{{ 's' if questions|length != 1 else '' }}</span></div>
+    {% endif %}
+    <div>
+      <strong>Needs a cable:</strong>
+      {% if 'network_unsure' in questions %}
+        <span class="muted">Requester is not sure. Ask before planning.</span>
+      {% else %}Yes{% endif %}
+    </div>
+    <div>
+      <strong>What:</strong>
+      {% if 'kinds' in questions %}
+        <span class="muted">Not given, ask the requester</span>
+      {% elif cfg.get('kinds') %}
+        {%- for k in cfg.get('kinds') -%}
+          {{ KIND_WORDS.get(k, k) }}{{ ', ' if not loop.last }}
+        {%- endfor -%}
+      {% else %}-{% endif %}
+    </div>
+    <div><strong>Roughly how many:</strong> {{ cfg.get('rough_count') or '-' }}</div>
+    <div><strong>Traffic:</strong> {{ TRAFFIC_WORDS.get(cfg.get('traffic'), '-') }}</div>
+    <div><strong>Notes:</strong></div>
+    <div style="white-space: pre-wrap;">{{ detail.usage or '-' }}</div>
+  {% else %}
+    {# Saved before the rebuild: one line per drop. #}
+    <div><strong>Drop location:</strong> {{ detail.location or '-' }}</div>
+    <div><strong>What it is for:</strong></div>
+    <div style="white-space: pre-wrap;">{{ detail.usage or '-' }}</div>
+  {% endif %}
+{% endmacro %}

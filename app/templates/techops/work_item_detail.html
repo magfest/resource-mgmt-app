@@ -1,3 +1,4 @@
+{% from "techops/_network_config.html" import render_network_config with context %}
 {% from "techops/_phone_number_config.html" import render_phone_number_config, render_desk_phone_location, question_badge with context %}
 {# templates/techops/work_item_detail.html #}
 {% extends "layout/base.html" %}
@@ -228,6 +229,10 @@
                       <div>{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
                     {% elif st and st.code == "NO_SERVICES" %}
                       <div><strong>Reason:</strong> {{ detail.description or 'No reason given.' }}</div>
+                    {% elif st and st.code == "ETHERNET" %}
+                      <div class="meta" style="margin-top: 12px;">
+                        {{ render_network_config(detail) }}
+                      </div>
                     {% elif st and st.instance_noun %}
                       {# Remaining per-instance case: ETHERNET. #}
                       <div><strong>Location:</strong> {{ detail.location or '-' }}</div>

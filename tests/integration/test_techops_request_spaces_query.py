@@ -28,8 +28,8 @@ from app.routes.work.techops.form_utils import (
     replace_spaces,
 )
 from app.routes.work.techops.line_grain import (
+    NETWORK_YES,
     VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_NONE,
-    EthernetDrop,
     PhoneHandset,
     PhoneLine,
     RequestAnswers,
@@ -72,7 +72,11 @@ def _card_to_answer(card):
         wifi_requested=card["wifi_requested"],
         wifi_declined_reason=card["wifi_declined_reason"],
         wifi_description=card["wifi_description"],
-        ethernet_drops=card["drops"],
+        network_needed=card["network_needed"],
+        network_kinds=card["network_kinds"],
+        network_count=card["network_count"],
+        network_traffic=card["network_traffic"],
+        network_notes=card["network_notes"],
         phone_lines=card["phone_lines"],
         notes=card["notes"],
     )
@@ -417,7 +421,7 @@ def test_a_picked_but_unanswered_space_gets_a_card_and_no_lines(
 
     answers = _answers([
         SpaceAnswer(space_id=unassigned.id, display_name="Unassigned Room", answer="",
-                   ethernet_drops=(EthernetDrop(location="Wall", usage="Switch"),)),
+                   network_needed=NETWORK_YES, network_kinds=("COMPUTERS",)),
     ])
     replace_spaces(techops_draft, answers)
     replace_lines(techops_draft, answers)

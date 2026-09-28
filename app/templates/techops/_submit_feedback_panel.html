@@ -1,0 +1,90 @@
+{# What a refused or interrupted submit says back, in one place.
+
+   These were two panels in two places: the refusal above the breadcrumb,
+   outside the form, and the questions inside it. Separated by the whole
+   page header they read as two unrelated systems complaining, and the
+   questions panel offered "Submit anyway" even while a refusal stood. The
+   route refuses on any error, so that button silently did nothing.
+
+   Blockers and questions are different things and say so. A blocker stops
+   the submit; a question is recorded on the line and chased later. The
+   submit-anyway action exists only when nothing blocks, because that is
+   the only time it works. #}
+{% set blockers = blocking_errors|default([]) if show_error_panel else [] %}
+{% set questions = open_questions|default([]) %}
+{% if blockers or questions %}
+<div class="callout {{ 'callout-danger' if blockers else 'callout-warning' }}"
+     data-submit-feedback-panel tabindex="-1">
+  <strong>
+    {% if blockers and questions %}
+      {{ blockers|length + questions|length }} things to sort out before this goes to TechOps
+    {% elif blockers %}
+      {{ blockers|length }} problem{{ 's' if blockers|length != 1 else '' }} kept this from submitting
+    {% else %}
+      {{ questions|length }} question{{ 's' if questions|length != 1 else '' }}
+      {{ 'are' if questions|length != 1 else 'is' }} still unanswered
+    {% endif %}
+  </strong>
+  <div class="muted small" style="margin: 2px 0 8px;">Nothing you typed was lost.</div>
+
+  {% if blockers %}
+    <div style="margin-bottom: 8px;">
+      {% if questions %}<strong class="small">Fix these first</strong>{% endif %}
+      <ul class="submit-error-list">
+        {% for entry in blockers %}
+          <li>
+            {% if entry.space_id %}
+              <a href="#space-card-{{ entry.space_id }}">{{ entry.message }}</a>
+            {% else %}
+              {{ entry.message }}
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if questions %}
+    <div style="margin-bottom: 8px;">
+      {% if blockers %}
+        <strong class="small">TechOps will ask about these</strong>
+        <div class="muted small">
+          These do not stop you submitting once the {{ 'items' if blockers|length != 1 else 'item' }}
+          above {{ 'are' if blockers|length != 1 else 'is' }} fixed.
+        </div>
+      {% else %}
+        <div class="muted small">
+          TechOps can start without these, but each blank is something the
+          phone team has to chase down. Please fill them in if you can.
+        </div>
+      {% endif %}
+      <ul class="submit-error-list">
+        {% for entry in questions %}
+          <li>
+            {% if entry.space_id %}
+              <a href="#space-card-{{ entry.space_id }}">{{ entry.message }}</a>
+            {% else %}
+              {{ entry.message }}
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {# The acknowledgement rides a hidden field rather than the button's own
+     name, because a button posts one name and this submit needs two. #}
+  <input type="hidden" name="open_questions_acknowledged" value=""
+         data-acknowledge-questions>
+  <div style="display: flex; gap: 16px; align-items: center; margin-top: 8px;">
+    <a class="btn btn-primary"
+       href="#space-card-{{ (blockers or questions)[0].space_id }}">
+      {{ 'Fix these' if blockers else 'Fill these in' }}
+    </a>
+    {% if questions and not blockers %}
+      <button type="submit" name="action" value="{{ action_submit|default('submit') }}"
+              class="btn-link" data-submit-anyway>Submit anyway</button>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

@@ -154,6 +154,14 @@
                   <div class="muted small">{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
                 {% elif st and st.code == "NO_SERVICES" %}
                   <div style="font-size: 13px; max-width: 360px;"><strong>Reason:</strong> {{ (detail.description or 'No reason given.')[:120] }}{% if detail.description and detail.description|length > 120 %}...{% endif %}</div>
+                {% elif st and st.code == "ETHERNET" %}
+                  <div style="font-size: 13px;">
+                    <strong>{{ 'Wired network' }}</strong>
+                    {% if (detail.config or {}).get('open_questions') %}
+                      <span class="badge-blocked">{{ (detail.config or {}).get('open_questions')|length }} open question{{ 's' if (detail.config or {}).get('open_questions')|length != 1 else '' }}</span>
+                    {% endif %}
+                  </div>
+                  <div class="muted small">{{ (detail.usage or detail.location or '-')[:120] }}</div>
                 {% elif st and st.instance_noun %}
                   <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
                   <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
