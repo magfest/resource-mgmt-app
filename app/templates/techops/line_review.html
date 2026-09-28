@@ -1,3 +1,4 @@
+{% from "techops/_network_config.html" import render_network_config with context %}
 {% from "techops/_phone_number_config.html" import render_phone_number_config, render_desk_phone_location, question_badge with context %}
 {# templates/techops/line_review.html #}
 {% extends "layout/base.html" %}
@@ -110,6 +111,10 @@
           <div class="meta" style="margin-top: 12px;">
             <div><strong>Rings:</strong></div>
             <div>{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
+          </div>
+        {% elif st and st.code == "ETHERNET" %}
+          <div class="meta" style="margin-top: 12px;">
+            {{ render_network_config(detail) }}
           </div>
         {% elif is_per_instance %}
           {# Remaining per-instance case: ETHERNET (RADIO_CHANNEL reuses

@@ -84,6 +84,7 @@ def test_saving_one_room_says_the_request_is_not_submitted(
         "primary_contact_email": "ada@magfest.org",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_wifi_requested": "1",
         "save_space_id": str(room.id),
     }, follow_redirects=True)

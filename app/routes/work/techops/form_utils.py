@@ -36,7 +36,8 @@ from .line_grain import (
     ANSWER_NEEDS,
     ANSWER_NOTHING,
     DepartmentWideAnswer,
-    EthernetDrop,
+    NETWORK_ANSWERS,
+    NETWORK_KINDS,
     PhoneHandset,
     PhoneLine,
     VOICE_DELIVERY_NONE,
@@ -144,8 +145,8 @@ def open_question_entries(answers: "RequestAnswers") -> list[dict]:
                 continue
             for key in phone_open_questions(line):
                 entries.append({
-                    "message": (f"{space.display_name}, phone line "
-                                f"{line.index}: {QUESTION_LABELS[key]}"),
+                    "message": (f"{space.display_name}, phone {line.index}: "
+                                f"{QUESTION_LABELS[key]}"),
                     "space_id": space.space_id,
                 })
     return entries
@@ -193,29 +194,23 @@ def _space_id_or_none(raw: str) -> int | None:
     return value
 
 
-def _parse_drops(space_id: int, form: "MultiDict",
-                 errors: list[str], label: str) -> tuple:
-    """Walk one space's ethernet drop fields into EthernetDrop entries.
+def _parse_network(space_id: int, form: "MultiDict") -> dict:
+    """Walk one space's network answers.
 
-    A row with only one of location/usage filled survives as a partial
-    row; the draft is half-finished, not invalid. Only a row past the
-    bound is an error.
+    The gate is kept verbatim, including blank. Blank and "no" are
+    different answers, and collapsing them would let an untouched card read
+    as a room that needs nothing wired.
     """
-    drops = []
-    overflow = False
-    for idx in range(1, MAX_DROPS_PER_SPACE + 2):
-        loc = (form.get(f"space_{space_id}_ETHERNET_drop_{idx}_location") or "").strip()
-        use = (form.get(f"space_{space_id}_ETHERNET_drop_{idx}_usage") or "").strip()
-        if not loc and not use:
-            continue
-        if idx > MAX_DROPS_PER_SPACE:
-            overflow = True
-            break
-        drops.append(EthernetDrop(location=loc, usage=use))
-    if overflow:
-        errors.append(
-            f"{label}: at most {MAX_DROPS_PER_SPACE} ethernet drops per space.")
-    return tuple(drops)
+    prefix = f"space_{space_id}_NETWORK"
+    kinds = tuple(
+        k for k in form.getlist(f"{prefix}_kinds") if k in NETWORK_KINDS)
+    return {
+        "network_needed": (form.get(f"{prefix}_needed") or "").strip(),
+        "network_kinds": kinds,
+        "network_count": (form.get(f"{prefix}_count") or "").strip(),
+        "network_traffic": (form.get(f"{prefix}_traffic") or "").strip(),
+        "network_notes": (form.get(f"{prefix}_notes") or "").strip(),
+    }
 
 
 def _parse_handsets(space_id: int, line_n: int, form: "MultiDict",
@@ -360,7 +355,7 @@ def _parse_space(space_id: int, display_name: str, form: "MultiDict",
         wifi_requested=wifi_requested,
         wifi_declined_reason=wifi_declined_reason,
         wifi_description=(form.get(f"space_{space_id}_WIFI_description") or "").strip(),
-        ethernet_drops=_parse_drops(space_id, form, errors, display_name),
+        **_parse_network(space_id, form),
         phone_lines=_parse_phone_lines(space_id, form, errors, display_name),
         notes=(form.get(f"space_{space_id}_notes") or "").strip(),
     )
@@ -555,13 +550,15 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
                 sid,
             ))
 
-        for drop_no, drop in enumerate(space.ethernet_drops, start=1):
-            if not drop.location:
-                errors.append(ValidationError(
-                    f"{name}, drop {drop_no}: where in the room?", sid))
-            if not drop.usage:
-                errors.append(ValidationError(
-                    f"{name}, drop {drop_no}: what is it for?", sid))
+        # The gate takes thought, and a question that takes thought with no
+        # consequence for skipping gets skipped. "Not sure" completes it, so
+        # nobody is pushed into a guess to get past this.
+        if space.network_needed not in NETWORK_ANSWERS:
+            errors.append(ValidationError(
+                f"{name}: say whether anything here needs a network cable. "
+                "\"Not sure yet\" is a fine answer.",
+                sid,
+            ))
 
         for line in space.phone_lines:
             _validate_phone_line(name, sid, line, owners, all_keys, errors)
@@ -623,14 +620,14 @@ def _validate_phone_line(
         return
     if line.source not in all_keys:
         errors.append(ValidationError(
-            f"{name}, phone line {line.index}: shares a line that does "
+            f"{name}, phone {line.index}: shares a phone that does "
             "not exist. Pick the number it should ring.",
             space_id,
         ))
         return
     if line.source not in owners:
         errors.append(ValidationError(
-            f"{name}, phone line {line.index}: shares a line that itself "
+            f"{name}, phone {line.index}: shares a phone that itself "
             "shares a number, so nothing would provision.",
             space_id,
         ))
@@ -641,7 +638,7 @@ def _validate_phone_line(
     # request that expands fine.
     if owners[line.source].voice_delivery == VOICE_DELIVERY_NONE:
         errors.append(ValidationError(
-            f"{name}, phone line {line.index}: shares a number set to no "
+            f"{name}, phone {line.index}: shares a number set to no "
             "voice, which has no handsets to place.",
             space_id,
         ))

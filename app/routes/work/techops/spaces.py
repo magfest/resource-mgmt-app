@@ -24,7 +24,7 @@ from app.models import (
 )
 from app.routes.spaces.queries import spaces_for_department
 from .line_grain import (
-    EthernetDrop,
+    NETWORK_YES,
     PhoneHandset,
     PhoneLine,
     PURPOSE_BOTH,
@@ -187,14 +187,41 @@ def _redisplay_extras(work_item) -> dict[int, dict]:
                 position += 1
                 owner_position[detail.work_line_id] = (space_id, position)
 
+    def _network_answer_from(ethernet_rows) -> dict:
+        """Rebuild a room's network answer from its saved ETHERNET lines.
+
+        A request saved before the drop repeater was replaced holds one line
+        per drop, each with a location and a use and no config. Those lines
+        stay valid, and replace_lines rewrites them in the new shape the next
+        time the room is saved, so no data migration is needed. What matters
+        here is that the requester reopens the form and sees their own words
+        rather than an empty question.
+        """
+        if not ethernet_rows:
+            return {"needed": "", "kinds": (), "count": "", "traffic": "",
+                    "notes": ""}
+        cfg = ethernet_rows[0].config or {}
+        if cfg or len(ethernet_rows) == 1 and not ethernet_rows[0].location:
+            return {
+                "needed": NETWORK_YES,
+                "kinds": tuple(cfg.get("kinds") or ()),
+                "count": cfg.get("rough_count") or "",
+                "traffic": cfg.get("traffic") or "",
+                "notes": ethernet_rows[0].usage or "",
+            }
+        carried = "; ".join(
+            " - ".join(part for part in (d.location, d.usage) if part)
+            for d in ethernet_rows
+        )
+        return {"needed": NETWORK_YES, "kinds": (), "count": "", "traffic": "",
+                "notes": carried}
+
     extras: dict[int, dict] = {}
     for space_id, rows in by_space.items():
         wifi_line = next(
             (d for d in rows if d.service_type.code == "WIFI"), None)
-        drops = tuple(
-            EthernetDrop(location=d.location or "", usage=d.usage or "")
-            for d in rows if d.service_type.code == "ETHERNET"
-        )
+        ethernet = [d for d in rows if d.service_type.code == "ETHERNET"]
+        network = _network_answer_from(ethernet)
 
         # Handsets physically in this space, grouped by the line they ring:
         # one this same space owns, one owned elsewhere, or unresolved
@@ -280,29 +307,15 @@ def _redisplay_extras(work_item) -> dict[int, dict]:
 
         extras[space_id] = {
             "wifi_description": (wifi_line.description or "") if wifi_line else "",
-            "drops": drops,
+            "network": network,
             "phone_lines": tuple(phone_lines),
         }
     return extras
 
 
-def count_filled_drops(drops: tuple) -> int:
-    """Count ethernet drops with content, for a card's collapsed badge.
-
-    The rule: a row counts toward this count when any of its inputs
-    holds a non-blank value. `drops` already obeys it by construction;
-    form_utils._parse_drops drops an all-blank row before it ever
-    reaches a SpaceAnswer, and _redisplay_extras only reconstructs rows
-    that were actually saved. work_item_form.html's script-side twin
-    (filledDropRows) restates the same rule against live, unsaved DOM
-    state, where that filtering has not happened yet.
-    """
-    return len(drops)
-
-
 def count_filled_phone(phone_lines: tuple) -> tuple[int, int]:
     """Count phone lines and their handsets with content, for a card's
-    collapsed badge. Same rule and reasoning as count_filled_drops.
+    collapsed badge. A row counts when any of its inputs is non-blank.
 
     `phone_lines` already holds only lines form_utils._parse_phone_lines
     kept (a line with no purpose, usage, or handset is skipped there),
@@ -339,9 +352,9 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
     an unanswered card), and the fields the card template redisplays:
     `answer`, `no_services_reason`, `wifi_requested` (True/False/None, a
     plain read of `TechOpsRequestSpace.wifi_requested`), `wifi_declined_reason`,
-    `wifi_description`, `drops`, `phone_lines`, `notes`, `wifi_forced`, the
+    `wifi_description`, the network answer, `phone_lines`, `notes`, the
     collapsed-badge counts `ethernet_count`, `phone_line_count`, and
-    `phone_handset_count` (see count_filled_drops / count_filled_phone),
+    `phone_handset_count` (see count_filled_phone),
     and `ethernet_description` / `phone_description` (see
     collapsible_descriptions), the catalog sentence each section's closed
     summary shows.
@@ -390,7 +403,12 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
     extras = _redisplay_extras(work_item)
     answer_rows = ({row.space_id: row for row in work_item.techops_spaces}
                   if work_item is not None else {})
-    no_extras = {"wifi_description": "", "drops": (), "phone_lines": ()}
+    no_extras = {
+        "wifi_description": "",
+        "network": {"needed": "", "kinds": (), "count": "", "traffic": "",
+                    "notes": ""},
+        "phone_lines": (),
+    }
     descriptions = collapsible_descriptions()
 
     cards = []
@@ -414,7 +432,11 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
             wifi_requested=wifi_requested,
             wifi_declined_reason=(row.wifi_declined_reason or "") if row else "",
             wifi_description=extra["wifi_description"],
-            ethernet_drops=extra["drops"],
+            network_needed=extra["network"]["needed"],
+            network_kinds=extra["network"]["kinds"],
+            network_count=extra["network"]["count"],
+            network_traffic=extra["network"]["traffic"],
+            network_notes=extra["network"]["notes"],
             phone_lines=extra["phone_lines"],
             notes=(row.notes or "") if row else "",
         )
@@ -430,8 +452,11 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
             "wifi_requested": answer.wifi_requested,
             "wifi_declined_reason": answer.wifi_declined_reason,
             "wifi_description": answer.wifi_description,
-            "drops": answer.ethernet_drops,
-            "ethernet_count": count_filled_drops(answer.ethernet_drops),
+            "network_needed": answer.network_needed,
+            "network_kinds": answer.network_kinds,
+            "network_count": answer.network_count,
+            "network_traffic": answer.network_traffic,
+            "network_notes": answer.network_notes,
             "ethernet_description": descriptions.get("ETHERNET", ""),
             "phone_lines": answer.phone_lines,
             "phone_line_count": phone_line_count,
@@ -490,8 +515,11 @@ def redisplay_cards(cards: list[dict], answers,
             "wifi_requested": posted.wifi_requested,
             "wifi_declined_reason": posted.wifi_declined_reason,
             "wifi_description": posted.wifi_description,
-            "drops": posted.ethernet_drops,
-            "ethernet_count": count_filled_drops(posted.ethernet_drops),
+            "network_needed": posted.network_needed,
+            "network_kinds": posted.network_kinds,
+            "network_count": posted.network_count,
+            "network_traffic": posted.network_traffic,
+            "network_notes": posted.network_notes,
             "phone_lines": posted.phone_lines,
             "phone_line_count": posted_line_count,
             "phone_handset_count": posted_handset_count,
@@ -517,8 +545,11 @@ def redisplay_cards(cards: list[dict], answers,
             "wifi_requested": posted.wifi_requested,
             "wifi_declined_reason": posted.wifi_declined_reason,
             "wifi_description": posted.wifi_description,
-            "drops": posted.ethernet_drops,
-            "ethernet_count": count_filled_drops(posted.ethernet_drops),
+            "network_needed": posted.network_needed,
+            "network_kinds": posted.network_kinds,
+            "network_count": posted.network_count,
+            "network_traffic": posted.network_traffic,
+            "network_notes": posted.network_notes,
             "ethernet_description": descriptions.get("ETHERNET", ""),
             "phone_lines": posted.phone_lines,
             "phone_line_count": new_line_count,

@@ -47,6 +47,20 @@ _PURPOSE_LABELS = {
 # The requester never answers a question called "purpose"; it is worked out
 # from what they said the number must do. Naming it here sent them looking
 # for a field that does not exist.
+_KIND_LABELS = {
+    "COMPUTERS": "laptops or desktops",
+    "STREAMING": "streaming or capture gear",
+    "SCANNERS": "badge scanners or printers",
+    "CONSOLES": "consoles or arcade hardware",
+    "OTHER": "something else",
+}
+
+_TRAFFIC_LABELS = {
+    "INTERNET": "mostly internet",
+    "LOCAL": "mostly local network",
+    "UNSURE": "traffic not known",
+}
+
 _DELIVERY_LABELS = {
     "DESK_PHONE": "desk phone",
     "FORWARD": "forwards to a cell",
@@ -66,7 +80,24 @@ def _spec_for(entry: PlannedLine, ring_line_number: int | None) -> str:
     if code == SERVICE_WIFI:
         return entry.description or "—"
     if code == SERVICE_ETHERNET:
-        return f"{entry.location or '—'} — {entry.usage or '—'}"
+        cfg = entry.config or {}
+        if not cfg:
+            # Saved before the drop repeater was replaced: one line per drop.
+            return f"{entry.location or '—'} — {entry.usage or '—'}"
+        questions = cfg.get("open_questions") or []
+        if "network_unsure" in questions:
+            return "Not sure yet — TechOps will follow up"
+        bits = []
+        if cfg.get("kinds"):
+            bits.append(", ".join(_KIND_LABELS.get(k, k) for k in cfg["kinds"]))
+        elif "kinds" in questions:
+            bits.append("nothing listed yet")
+        if cfg.get("rough_count"):
+            bits.append(f"{cfg['rough_count']} things")
+        if cfg.get("traffic"):
+            bits.append(_TRAFFIC_LABELS.get(cfg["traffic"], cfg["traffic"]))
+        spec = ", ".join(bits) or "—"
+        return f"{spec} — {entry.usage}" if entry.usage else spec
     if code == SERVICE_PHONE_NUMBER:
         cfg = entry.config or {}
         label = _PURPOSE_LABELS.get(entry.purpose, "Nothing chosen yet")

@@ -424,13 +424,12 @@ def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dic
         ),
         (
             "ETHERNET",
-            "Hardwired ethernet",
+            "Wired network",
             (
-                "Wired network drop at a specific location for a specific "
-                "use. Call out heavy bandwidth needs (streaming, large "
-                "transfers) in the per-drop usage notes."
+                "Tell us what needs a cable and what it does. The network "
+                "team works out how many drops that takes."
             ),
-            "TECHOPS_NET", 20, "drop", True,
+            "TECHOPS_NET", 20, None, True,
         ),
         (
             # Deactivated: bandwidth concerns moved into WIFI / ETHERNET

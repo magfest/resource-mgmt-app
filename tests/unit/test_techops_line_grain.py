@@ -9,12 +9,14 @@ from dataclasses import replace
 import pytest
 
 from app.routes.work.techops.line_grain import (
+    NETWORK_NO, NETWORK_UNSURE, NETWORK_YES,
+    QUESTION_NETWORK_KINDS, QUESTION_NETWORK_UNSURE,
     NO_ANSWER_FORWARD, NO_ANSWER_RING, NO_ANSWER_VOICEMAIL,
     QUESTION_CAPABILITIES, QUESTION_VOICE_DELIVERY, QUESTION_HANDSETS,
     QUESTION_LOCATION, QUESTION_VOICEMAIL_SLACK, phone_open_questions,
     VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_FORWARD,
     VOICE_DELIVERY_NONE, VOICE_DELIVERY_VOICEMAIL, DepartmentWideAnswer,
-    EthernetDrop, PhoneHandset, PhoneLine, RequestAnswers, SpaceAnswer,
+    PhoneHandset, PhoneLine, RequestAnswers, SpaceAnswer,
     derive_internal_only, derive_purpose, expand_to_lines,
 )
 
@@ -23,7 +25,9 @@ def _space(space_id=1, **kwargs):
     defaults = dict(
         space_id=space_id, display_name=f"Space {space_id}", answer="NEEDS",
         no_services_reason="", wifi_requested=False,
-        wifi_declined_reason="", wifi_description="", ethernet_drops=(),
+        wifi_declined_reason="", wifi_description="",
+        network_needed="", network_kinds=(), network_count="",
+        network_traffic="", network_notes="",
         phone_lines=(), notes="",
     )
     defaults.update(kwargs)
@@ -86,8 +90,7 @@ def test_invariant_2_an_unanswered_wifi_question_produces_no_line_even_when_forc
     "unanswered" a plain bool could represent) triggered exactly this
     auto-add; the tri-state default is now `None`, and this locks down
     that it produces nothing, matching an explicit decline."""
-    space = _space(ethernet_drops=(EthernetDrop(location="Back wall",
-                                                usage="Tech table"),))
+    space = _space(network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
     lines = expand_to_lines(_answers([space]))
     assert [line.service_code for line in lines] == ["ETHERNET"]
 
@@ -100,8 +103,7 @@ def test_invariant_2_an_explicit_wifi_answer_creates_a_line_on_a_forced_space():
     still gets its WIFI line alongside the gear's own lines.
     """
     space = _space(wifi_requested=True, wifi_description="Badge scanners",
-                   ethernet_drops=(EthernetDrop(location="Back wall",
-                                                usage="Tech table"),))
+                   network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
     lines = expand_to_lines(_answers([space]))
     assert [line.service_code for line in lines] == ["WIFI", "ETHERNET"]
     assert lines[0].description == "Badge scanners"
@@ -109,27 +111,29 @@ def test_invariant_2_an_explicit_wifi_answer_creates_a_line_on_a_forced_space():
 
 def test_invariant_2_a_declined_wifi_produces_no_line():
     space = _space(wifi_requested=False, wifi_declined_reason="Wired only",
-                   ethernet_drops=(EthernetDrop(location="Back wall",
-                                                usage="Tech table"),))
+                   network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
     lines = expand_to_lines(_answers([space]))
     assert [line.service_code for line in lines] == ["ETHERNET"]
 
 
-def test_invariant_3_each_drop_is_its_own_line():
-    space = _space(ethernet_drops=(
-        EthernetDrop(location="Front", usage="Scanner"),
-        EthernetDrop(location="Back", usage="Printer"),
-    ))
-    lines = expand_to_lines(_answers([space]))
-    ethernet = [line for line in lines if line.service_code == "ETHERNET"]
-    assert [line.location for line in ethernet] == ["Front", "Back"]
+def test_invariant_3_a_room_that_needs_wiring_is_one_line():
+    """Was one line per drop. The requester no longer counts drops, because
+    counting them is a network plan they have no way to make; the network
+    team decides that from what the room says it has."""
+    space = _space(network_needed=NETWORK_YES,
+                   network_kinds=("COMPUTERS", "STREAMING"),
+                   network_count="6-10", network_traffic="INTERNET")
+    ethernet = [l for l in expand_to_lines(_answers([space]))
+                if l.service_code == "ETHERNET"]
+    assert len(ethernet) == 1
+    assert ethernet[0].config["kinds"] == ["COMPUTERS", "STREAMING"]
 
 
 def test_invariant_9_nothing_needed_is_one_line_and_no_others():
     space = _space(answer="NOTHING",
                    no_services_reason="Crates only",
                    wifi_requested=True,
-                   ethernet_drops=(EthernetDrop(location="x", usage="y"),))
+                   network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
     lines = expand_to_lines(_answers([space]))
     assert [line.service_code for line in lines] == ["NO_SERVICES"]
     assert lines[0].description == "Crates only"
@@ -494,3 +498,58 @@ def test_handsets_typed_then_abandoned_do_not_become_lines():
     codes = [l.service_code for l in
              expand_to_lines(_answers([_space(phone_lines=(line,))]))]
     assert codes == ["PHONE_NUMBER"]
+
+
+def _wired(**kw):
+    """A room that answered yes to needing a cable, fully described."""
+    defaults = dict(network_needed=NETWORK_YES,
+                    network_kinds=("COMPUTERS", "SCANNERS"),
+                    network_count="3-5", network_traffic="LOCAL",
+                    network_notes="")
+    defaults.update(kw)
+    return _space(**defaults)
+
+
+def test_a_wired_room_produces_one_ethernet_line_not_one_per_drop():
+    """The network team decides how many drops that takes. A requester
+    counting drops was specifying an installation plan they have no way to
+    make."""
+    lines = expand_to_lines(_answers([_wired(network_notes="Stage left rack")]))
+    assert [l.service_code for l in lines] == ["ETHERNET"]
+    line = lines[0]
+    assert line.location is None
+    assert line.usage == "Stage left rack"
+    assert line.config["kinds"] == ["COMPUTERS", "SCANNERS"]
+    assert line.config["rough_count"] == "3-5"
+    assert line.config["traffic"] == "LOCAL"
+
+
+def test_a_room_that_needs_no_cable_produces_no_ethernet_line():
+    lines = expand_to_lines(_answers([_space(network_needed=NETWORK_NO)]))
+    assert [l.service_code for l in lines] == []
+
+
+def test_not_sure_still_produces_a_line_carrying_the_question():
+    """Required to answer, allowed not to know. Without a line there is
+    nothing for the network team to chase."""
+    lines = expand_to_lines(_answers([_space(network_needed=NETWORK_UNSURE)]))
+    assert [l.service_code for l in lines] == ["ETHERNET"]
+    assert lines[0].config["open_questions"] == [QUESTION_NETWORK_UNSURE]
+
+
+def test_yes_with_no_device_kinds_is_a_question_not_a_refusal():
+    lines = expand_to_lines(_answers([_wired(network_kinds=())]))
+    assert lines[0].config["open_questions"] == [QUESTION_NETWORK_KINDS]
+
+
+def test_an_unanswered_gate_produces_no_line():
+    """Nothing was said, so nothing is planned. validate() is what refuses
+    this on submit, not a silent default here."""
+    assert expand_to_lines(_answers([_space(network_needed="")])) == []
+
+
+def test_wired_gear_still_forces_a_wifi_answer():
+    from app.routes.work.techops.line_grain import wifi_is_forced
+    assert wifi_is_forced(_wired()) is True
+    assert wifi_is_forced(_space(network_needed=NETWORK_NO)) is False
+    assert wifi_is_forced(_space(phone_lines=(_voice_line(),))) is True

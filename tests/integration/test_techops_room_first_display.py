@@ -414,3 +414,65 @@ def test_a_placeholder_handset_announces_itself_on_the_reviewer_view(
     body = client.get(r["detail_url"]).get_data(as_text=True)
     row = _line_row(body, r["handset_line_number"])
     assert "Not given, ask the requester" in row
+
+
+# ---------------------------------------------------------------------
+# Requests saved before the drop repeater was replaced
+# ---------------------------------------------------------------------
+
+def _old_style_ethernet(work_item, space_id, location, usage):
+    """One ETHERNET line in the pre-rebuild shape: a drop with a place and a
+    use, and no config. No migration rewrites these, so both the reviewer
+    views and the form have to cope with them as they are."""
+    from app.models import TechOpsLineDetail, TechOpsServiceType, WorkLine
+
+    service = TechOpsServiceType.query.filter_by(code="ETHERNET").one()
+    line = WorkLine(work_item_id=work_item.id,
+                    line_number=len(work_item.lines) + 1)
+    db.session.add(line)
+    db.session.flush()
+    db.session.add(TechOpsLineDetail(
+        work_line_id=line.id, service_type_id=service.id,
+        location=location, usage=usage, space_id=space_id, config=None))
+    db.session.commit()
+    return line
+
+
+def test_a_drop_saved_before_the_rebuild_still_renders_for_a_reviewer(
+        app, client, techops_reviewable_request):
+    """Old lines are not migrated. They stay valid, and a reviewer must see
+    the words the requester actually wrote rather than an empty answer."""
+    r = techops_reviewable_request
+    line = _old_style_ethernet(r["work_item"], r["primary_space_id"],
+                               "Back wall by the door", "Switch uplink")
+
+    _login(client, "test:admin")
+    body = client.get(r["detail_url"]).get_data(as_text=True)
+    row = _line_row(body, line.line_number)
+    assert "Back wall by the door" in row
+    assert "Switch uplink" in row
+
+
+def test_a_new_style_answer_renders_its_structure(
+        app, client, techops_reviewable_request):
+    from app.models import TechOpsLineDetail, TechOpsServiceType, WorkLine
+
+    r = techops_reviewable_request
+    service = TechOpsServiceType.query.filter_by(code="ETHERNET").one()
+    line = WorkLine(work_item_id=r["work_item"].id,
+                    line_number=len(r["work_item"].lines) + 1)
+    db.session.add(line)
+    db.session.flush()
+    db.session.add(TechOpsLineDetail(
+        work_line_id=line.id, service_type_id=service.id,
+        location=None, usage="Diagram attached", space_id=r["primary_space_id"],
+        config={"kinds": ["STREAMING"], "rough_count": "3-5",
+                "traffic": "INTERNET"}))
+    db.session.commit()
+
+    _login(client, "test:admin")
+    body = client.get(r["detail_url"]).get_data(as_text=True)
+    row = _line_row(body, line.line_number)
+    assert "Streaming or capture gear" in row
+    assert "3-5" in row
+    assert "Mostly internet" in row

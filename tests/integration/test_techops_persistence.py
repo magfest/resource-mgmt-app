@@ -43,11 +43,11 @@ from app.routes.work.techops.form_utils import (
     validate,
 )
 from app.routes.work.techops.line_grain import (
+    NETWORK_YES,
     NO_ANSWER_RING,
     VOICE_DELIVERY_DESK_PHONE,
     VOICE_DELIVERY_VOICEMAIL,
     VOICE_DELIVERY_NONE,
-    EthernetDrop,
     PhoneHandset,
     PhoneLine,
     RequestAnswers,
@@ -68,7 +68,9 @@ def _space(space_id=1, **kwargs):
     defaults = dict(
         space_id=space_id, display_name=f"Space {space_id}", answer="NEEDS",
         no_services_reason="", wifi_requested=False,
-        wifi_declined_reason="", wifi_description="", ethernet_drops=(),
+        wifi_declined_reason="", wifi_description="",
+        network_needed="", network_kinds=(), network_count="",
+        network_traffic="", network_notes="",
         phone_lines=(), notes="",
     )
     defaults.update(kwargs)
@@ -250,7 +252,8 @@ def test_a_half_filled_phone_line_saves_what_expand_to_lines_planned(
     to drift from that one.
     """
     owner = two_spaces[0]
-    space = _space(space_id=owner.id, wifi_requested=True, phone_lines=(
+    space = _space(space_id=owner.id, wifi_requested=True,
+                   network_needed="NO", phone_lines=(
         PhoneLine(index=1, source="NEW", dial_in=True,
                   voice_delivery=VOICE_DELIVERY_DESK_PHONE),
     ))
@@ -365,7 +368,7 @@ def test_a_declined_wifi_reason_survives_with_no_wifi_line(app, techops_draft,
     answers = _answers([_space(
         space_id=owner.id, wifi_requested=False,
         wifi_declined_reason="Wired tech table only",
-        ethernet_drops=(EthernetDrop(location="Back", usage="Switch"),))])
+        network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))])
     replace_spaces(techops_draft, answers)
     replace_lines(techops_draft, answers)
     db.session.commit()

@@ -142,33 +142,6 @@ def test_a_space_with_no_catalog_name_falls_back_to_a_non_empty_label():
     assert answers.spaces[0].display_name != "412"
 
 
-def test_drops_are_indexed_and_blank_rows_are_dropped():
-    form = _base()
-    form.add("space_ids", "412")
-    form.add("space_412_answer", "NEEDS")
-    form.add("space_412_ETHERNET_drop_1_location", "Front")
-    form.add("space_412_ETHERNET_drop_1_usage", "Scanner")
-    form.add("space_412_ETHERNET_drop_2_location", "")
-    form.add("space_412_ETHERNET_drop_2_usage", "")
-    answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
-    assert len(answers.spaces[0].ethernet_drops) == 1
-
-
-def test_a_partial_drop_survives_as_a_half_finished_row():
-    """A parse error would block the preview endpoint on every keystroke;
-    only validate() (Task 6) may reject a partial row on submit."""
-    form = _base()
-    form.add("space_ids", "412")
-    form.add("space_412_answer", "NEEDS")
-    form.add("space_412_ETHERNET_drop_1_location", "Front")
-    form.add("space_412_ETHERNET_drop_1_usage", "")
-    answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
-    assert errors == []
-    assert len(answers.spaces[0].ethernet_drops) == 1
-    assert answers.spaces[0].ethernet_drops[0].location == "Front"
-    assert answers.spaces[0].ethernet_drops[0].usage == ""
-
-
 def test_space_id_or_none_rejects_zero_negative_and_int4_overflow():
     """A value above int4 can never be a real Space.id, so at this one
     call site the offerable-set check below already rejects it; this test
@@ -239,17 +212,6 @@ def test_past_the_space_bound_truncates_with_an_error_naming_it():
     assert len(answers.spaces) == MAX_SPACES_PER_REQUEST
     assert any(
         f"at most {MAX_SPACES_PER_REQUEST} spaces" in e for e in errors)
-
-
-def test_too_many_drops_is_an_error_naming_the_bound():
-    form = _base()
-    form.add("space_ids", "412")
-    form.add("space_412_answer", "NEEDS")
-    for n in range(1, 40):
-        form.add(f"space_412_ETHERNET_drop_{n}_location", f"Spot {n}")
-        form.add(f"space_412_ETHERNET_drop_{n}_usage", "Gear")
-    answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
-    assert any("25" in e for e in errors)
 
 
 def test_a_phone_line_becomes_a_phone_line():
@@ -535,3 +497,33 @@ def test_a_single_ticked_box_makes_the_slot_a_real_line():
     answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
     assert len(answers.spaces[0].phone_lines) == 1
     assert answers.spaces[0].phone_lines[0].texts is True
+
+
+def test_every_network_field_reaches_the_dataclass():
+    form = _base()
+    form.add("space_ids", "412")
+    form.add("space_412_answer", "NEEDS")
+    form.add("space_412_NETWORK_needed", "YES")
+    form.add("space_412_NETWORK_kinds", "COMPUTERS")
+    form.add("space_412_NETWORK_kinds", "STREAMING")
+    form.add("space_412_NETWORK_count", "6-10")
+    form.add("space_412_NETWORK_traffic", "INTERNET")
+    form.add("space_412_NETWORK_notes", "Diagram: https://docs.example/net")
+    answers, errors = parse_form(form, offerable_spaces={412: "Expo Hall E"})
+    space = answers.spaces[0]
+    assert errors == []
+    assert space.network_needed == "YES"
+    assert space.network_kinds == ("COMPUTERS", "STREAMING")
+    assert space.network_count == "6-10"
+    assert space.network_traffic == "INTERNET"
+    assert space.network_notes == "Diagram: https://docs.example/net"
+
+
+def test_an_unanswered_cable_question_parses_as_blank_not_as_no():
+    """Blank and "no" are different answers. Collapsing them would let an
+    untouched card read as a room that needs nothing wired."""
+    form = _base()
+    form.add("space_ids", "412")
+    form.add("space_412_answer", "NEEDS")
+    answers, _ = parse_form(form, offerable_spaces={412: "Expo Hall E"})
+    assert answers.spaces[0].network_needed == ""

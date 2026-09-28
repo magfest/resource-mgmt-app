@@ -12,10 +12,11 @@ from app.routes.work.techops.form_utils import (
     ACTION_SAVE_DRAFT, ACTION_SUBMIT, parse_form, validate,
 )
 from app.routes.work.techops.line_grain import (
+    NETWORK_UNSURE, NETWORK_YES,
     QUESTION_CAPABILITIES, QUESTION_VOICEMAIL_SLACK,
     QUESTION_VOICE_DELIVERY,
     VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_NONE, VOICE_DELIVERY_VOICEMAIL,
-    EthernetDrop, PhoneHandset, PhoneLine, RequestAnswers, SpaceAnswer,
+    PhoneHandset, PhoneLine, RequestAnswers, SpaceAnswer,
     expand_to_lines,
 )
 from tests.unit.test_techops_line_grain import _answers, _space
@@ -32,7 +33,7 @@ def test_an_unanswered_wifi_question_on_a_forced_space_is_rejected_like_a_bare_d
     must be refused the same way an explicit decline with no reason is,
     since both leave TechOps without either a line or a stated reason."""
     space = _space(display_name="Regdesk A", wifi_requested=None,
-                   ethernet_drops=(EthernetDrop(location="Back", usage="AP"),))
+                   network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
     assert space.wifi_requested is None
     errors = validate(_answers([space], action=ACTION_SUBMIT), has_space_cards=True)
     assert any("Regdesk A" in e and "WiFi" in e for e in errors)
@@ -59,14 +60,14 @@ def test_an_explicit_wifi_answer_with_no_gear_is_not_rejected():
 def test_declining_wifi_without_a_reason_is_rejected():
     space = _space(display_name="Regdesk A", wifi_requested=False,
                    wifi_declined_reason="",
-                   ethernet_drops=(EthernetDrop(location="Back", usage="AP"),))
+                   network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
     errors = validate(_answers([space], action=ACTION_SUBMIT), has_space_cards=True)
     assert any("Regdesk A" in e and "WiFi" in e for e in errors)
 
 
 def test_declining_wifi_is_fine_when_a_reason_is_given():
     space = _space(wifi_requested=False, wifi_declined_reason="Wired only",
-                   ethernet_drops=(EthernetDrop(location="Back", usage="AP"),))
+                   network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
     assert validate(_answers([space], action=ACTION_SUBMIT),
                     has_space_cards=True) == []
 
@@ -147,7 +148,7 @@ def test_a_needs_space_half_filled_saves_as_a_draft_without_error():
     only SUBMIT may reject it, never SAVE_DRAFT."""
     space = _space(
         answer="NEEDS",
-        ethernet_drops=(EthernetDrop(location="Back", usage=""),),
+        network_needed=NETWORK_YES, network_kinds=("COMPUTERS",),
         phone_lines=(PhoneLine(index=1, source="NEW", ),),
     )
     assert validate(_answers([space], action=ACTION_SAVE_DRAFT),
@@ -245,13 +246,17 @@ def test_missing_contact_name_is_rejected_even_on_a_draft():
 
 def test_a_needs_space_with_nothing_requested_gets_its_own_named_error():
     """The owner's actual case: a room answered "Needs services", declined
-    WiFi with a reason, no drops, no phone lines. That is a real answer,
-    not an omission, so the error must name the room and point at the
-    remedy rather than the generic "answer at least one space" message,
-    which assumes nothing was answered at all.
+    WiFi with a reason, nothing wired, no phone lines. That is a real
+    answer, not an omission, so the error must name the room and point at
+    the remedy rather than the generic "answer at least one space"
+    message, which assumes nothing was answered at all.
+
+    The cable question is answered here so this test still measures what it
+    was written to measure; an unanswered gate is its own error.
     """
     space = _space(display_name="Expo Hall E", answer="NEEDS",
-                  wifi_requested=False, wifi_declined_reason="No coverage needed")
+                  wifi_requested=False, wifi_declined_reason="No coverage needed",
+                  network_needed="NO")
     answers = _answers([space], action=ACTION_SUBMIT)
     errors = validate(answers, has_space_cards=True)
     matches = [e for e in errors if "Expo Hall E" in e]
@@ -302,7 +307,7 @@ def test_a_half_filled_phone_line_no_longer_blocks_a_submit():
     a broken reference; what is missing is information, and information is
     recorded on the line rather than refused."""
     space = _space(display_name="Regdesk A", wifi_requested=True,
-                   phone_lines=(
+                   network_needed="NO", phone_lines=(
         PhoneLine(index=1, source="NEW", dial_in=True,
                   voice_delivery=VOICE_DELIVERY_VOICEMAIL,
                   voicemail_slack_channel=""),
@@ -313,3 +318,29 @@ def test_a_half_filled_phone_line_no_longer_blocks_a_submit():
     lines = expand_to_lines(answers)
     assert [line.service_code for line in lines] == ["WIFI", "PHONE_NUMBER"]
     assert lines[1].config["open_questions"] == [QUESTION_VOICEMAIL_SLACK]
+
+
+def test_a_needs_room_must_answer_whether_it_needs_a_cable():
+    """It takes thought, and a question that takes thought with no
+    consequence for skipping gets skipped."""
+    space = _space(space_id=7, display_name="Chesapeake 4",
+                   wifi_requested=True, network_needed="")
+    errors = validate(_answers([space], action=ACTION_SUBMIT),
+                      has_space_cards=True)
+    assert any("Chesapeake 4" in e and "cable" in e.lower() for e in errors)
+
+
+def test_not_sure_is_a_complete_answer():
+    """Required to engage, not required to know. Forcing an answer from
+    someone who does not know produces the guess this refuses to invite."""
+    space = _space(display_name="Chesapeake 4", wifi_requested=True,
+                   network_needed=NETWORK_UNSURE)
+    errors = validate(_answers([space], action=ACTION_SUBMIT),
+                      has_space_cards=True)
+    assert not any("cable" in e.lower() for e in errors)
+
+
+def test_a_draft_may_leave_the_cable_question_unanswered():
+    space = _space(network_needed="")
+    assert validate(_answers([space], action=ACTION_SAVE_DRAFT),
+                    has_space_cards=True) == []

@@ -52,6 +52,25 @@ QUESTION_CAPABILITIES = "capabilities"
 QUESTION_TEXT_SLACK = "text_slack_channel"
 QUESTION_VOICEMAIL_SLACK = "voicemail_slack_channel"
 QUESTION_FORWARD_TARGET = "forward_target"
+# The requester says what needs a cable; the network team decides how many
+# drops that takes. A parent room may need one drop with cables run between
+# sections where a broadcast stage needs four, and a department head has no
+# way to know which.
+NETWORK_YES = "YES"
+NETWORK_NO = "NO"
+NETWORK_UNSURE = "UNSURE"
+NETWORK_ANSWERS = (NETWORK_YES, NETWORK_NO, NETWORK_UNSURE)
+
+NETWORK_KINDS = ("COMPUTERS", "STREAMING", "SCANNERS", "CONSOLES", "OTHER")
+NETWORK_COUNTS = ("1-2", "3-5", "6-10", "10+")
+
+TRAFFIC_INTERNET = "INTERNET"
+TRAFFIC_LOCAL = "LOCAL"
+TRAFFIC_UNSURE = "UNSURE"
+NETWORK_TRAFFIC = (TRAFFIC_INTERNET, TRAFFIC_LOCAL, TRAFFIC_UNSURE)
+
+QUESTION_NETWORK_UNSURE = "network_unsure"
+QUESTION_NETWORK_KINDS = "kinds"
 QUESTION_VOICE_DELIVERY = "voice_delivery"
 QUESTION_NO_ANSWER = "no_answer"
 QUESTION_HANDSETS = "handsets"
@@ -68,12 +87,6 @@ NO_SERVICES_AFFIRMATION_DESCRIPTION = (
     "Department affirmed no TechOps services are needed for this event. "
     "TechOps to verify before this is finalized."
 )
-
-
-@dataclass(frozen=True)
-class EthernetDrop:
-    location: str
-    usage: str
 
 
 @dataclass(frozen=True)
@@ -116,7 +129,14 @@ class SpaceAnswer:
     wifi_requested: bool | None = None
     wifi_declined_reason: str = ""
     wifi_description: str = ""
-    ethernet_drops: tuple[EthernetDrop, ...] = ()
+    # One answer per room, not one per drop. "" means the question has not
+    # been answered; validate() refuses that on submit rather than reading
+    # it as "no".
+    network_needed: str = ""
+    network_kinds: tuple[str, ...] = ()
+    network_count: str = ""
+    network_traffic: str = ""
+    network_notes: str = ""
     phone_lines: tuple[PhoneLine, ...] = ()
     notes: str = ""
 
@@ -169,7 +189,7 @@ def wifi_is_forced(space: SpaceAnswer) -> bool:
     decide whether a WiFi line exists; that is a plain read of
     `wifi_requested` in `_expand_space`.
     """
-    return bool(space.ethernet_drops or space.phone_lines)
+    return space.network_needed == NETWORK_YES or bool(space.phone_lines)
 
 
 def _sharing_key(space_id: int, line_index: int) -> str:
@@ -228,6 +248,20 @@ def derive_internal_only(line: PhoneLine) -> bool:
     # This is not "no calls". It is a number that carries voice and reaches
     # nothing outside, which is a room phone that dials other rooms.
     return has_voice(line) and not line.dial_in and not line.dial_out
+
+
+def network_open_questions(space: SpaceAnswer) -> list[str]:
+    """Name what the network team still has to ask about this room.
+
+    "Not sure" is a complete answer to the gate and a question for them; a
+    yes with no device kinds is a room that will need a cable for something
+    nobody has said yet.
+    """
+    if space.network_needed == NETWORK_UNSURE:
+        return [QUESTION_NETWORK_UNSURE]
+    if space.network_needed == NETWORK_YES and not space.network_kinds:
+        return [QUESTION_NETWORK_KINDS]
+    return []
 
 
 def phone_open_questions(line: PhoneLine) -> list[str]:
@@ -442,13 +476,24 @@ def _expand_space(
             description=space.wifi_description or None,
         ))
 
-    # Invariant 3.
-    for drop in space.ethernet_drops:
+    # Invariant 3, restated: one line per room that needs wiring, not one
+    # per drop. The line is what the network team signs off on, and what
+    # they sign off on is "wired network for this room".
+    if space.network_needed in (NETWORK_YES, NETWORK_UNSURE):
+        config = {
+            "kinds": list(space.network_kinds),
+            "rough_count": space.network_count or None,
+            "traffic": space.network_traffic or None,
+        }
+        questions = network_open_questions(space)
+        if questions:
+            config["open_questions"] = questions
         lines.append(PlannedLine(
             service_code=SERVICE_ETHERNET,
             space_id=space.space_id,
-            location=drop.location,
-            usage=drop.usage,
+            location=None,
+            usage=space.network_notes or None,
+            config=config,
         ))
 
     handset_keys: dict[int, str] = {}

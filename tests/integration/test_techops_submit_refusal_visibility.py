@@ -68,8 +68,21 @@ def _panel_html(body):
     because that text also appears somewhere else on the page (a flashed
     message, a card field). The panel holds exactly one <ul>.
     """
-    start = body.index("data-submit-error-panel")
+    start = body.index("data-submit-feedback-panel")
     end = body.index("</ul>", start) + len("</ul>")
+    return body[start:end]
+
+
+def _feedback_panel(body):
+    """The whole panel, both groups.
+
+    _panel_html above stops at the first </ul>, which is the blockers list.
+    A combined panel has two, and "Submit anyway" also appears in a script
+    comment further down the page, so a whole-body assertion would pass or
+    fail for the wrong reason.
+    """
+    start = body.index("data-submit-feedback-panel")
+    end = body.index('<section class="card"', start)
     return body[start:end]
 
 
@@ -169,6 +182,7 @@ def _full_answer_payload(room_id):
     """A NEEDS card answered completely enough to pass validate()."""
     return {
         f"space_{room_id}_answer": "NEEDS",
+        f"space_{room_id}_NETWORK_needed": "NO",
         f"space_{room_id}_WIFI_enabled": "1",
         f"space_{room_id}_WIFI_description": "Staff laptops",
     }
@@ -199,11 +213,12 @@ def test_a_refused_submit_renders_the_panel_and_the_item_stays_draft(
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         # WiFi left unanswered: validate() refuses this on submit only.
     })
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'data-submit-error-panel' in body
+    assert 'data-submit-feedback-panel' in body
 
     db.session.refresh(item)
     assert item.status == WORK_ITEM_STATUS_DRAFT
@@ -243,6 +258,7 @@ def test_a_plain_draft_save_with_the_same_incomplete_content_renders_no_panel(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         # WiFi left unanswered, same as the refused-submit test above.
     }
     response = client.post(techops_portfolio["new_request_url"], data=payload)
@@ -252,7 +268,7 @@ def test_a_plain_draft_save_with_the_same_incomplete_content_renders_no_panel(
     assert "/edit" in response.headers["Location"]
 
     followed = client.get(response.headers["Location"])
-    assert 'data-submit-error-panel' not in followed.get_data(as_text=True)
+    assert 'data-submit-feedback-panel' not in followed.get_data(as_text=True)
 
     item = techops_portfolio["latest_item"]()
     assert item.status == WORK_ITEM_STATUS_DRAFT
@@ -268,6 +284,7 @@ def test_the_panel_names_the_blocking_space_within_its_own_markup(
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
     })
     body = response.get_data(as_text=True)
     panel = _panel_html(body)
@@ -292,6 +309,7 @@ def test_blocked_card_marker_is_keyed_by_space_id_not_name_substring(
         "action": "submit",
         "space_ids": [str(blocked.id), str(clean.id)],
         f"space_{blocked.id}_answer": "NEEDS",
+        f"space_{blocked.id}_NETWORK_needed": "NO",
         # blocked.id's WiFi is left unanswered: this is the one refusal.
         f"space_{clean.id}_answer": "NOTHING",
     })
@@ -317,18 +335,18 @@ def test_a_draft_save_refused_for_an_unrelated_reason_still_shows_no_panel(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
     }
-    # One drop past MAX_DROPS_PER_SPACE (25): a parse-time overflow error
+    # One past MAX_PHONE_LINES_PER_SPACE (10): a parse-time overflow error
     # that fires regardless of action, unlike validate()'s completeness
     # checks.
-    for n in range(1, 27):
-        payload[f"space_{room.id}_ETHERNET_drop_{n}_location"] = f"Drop {n}"
-        payload[f"space_{room.id}_ETHERNET_drop_{n}_usage"] = "Something"
+    for n in range(1, 12):
+        payload[f"space_{room.id}_PHONE_line_{n}_usage"] = f"Line {n}"
     response = client.post(techops_portfolio["new_request_url"], data=payload)
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "at most 25 ethernet drops" in body
-    assert 'data-submit-error-panel' not in body
+    assert "at most 10 phone lines" in body
+    assert 'data-submit-feedback-panel' not in body
 
 
 def test_a_refused_submit_shows_each_problem_exactly_once(app, client, techops_portfolio):
@@ -346,6 +364,7 @@ def test_a_refused_submit_shows_each_problem_exactly_once(app, client, techops_p
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "0",
         f"space_{room.id}_WIFI_declined_reason": "No coverage needed",
         # No drops, no phone lines: the space answers NEEDS but requests
@@ -372,6 +391,7 @@ def test_a_needs_services_space_with_nothing_requested_names_and_marks_its_card(
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "0",
         f"space_{room.id}_WIFI_declined_reason": "No coverage needed",
     })
@@ -396,8 +416,9 @@ def test_a_refused_submit_still_preserves_typed_values(app, client, techops_port
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
-        f"space_{room.id}_ETHERNET_drop_1_location": "Just-typed drop location",
-        f"space_{room.id}_ETHERNET_drop_1_usage": "Just-typed drop usage",
+        f"space_{room.id}_NETWORK_needed": "NO",
+        f"space_{room.id}_NETWORK_needed": "YES",
+        f"space_{room.id}_NETWORK_notes": "Just-typed drop location",
         f"space_{room.id}_notes": "Just-typed per-space notes",
         # WiFi left unanswered: guarantees the submit is refused.
     })
@@ -405,7 +426,7 @@ def test_a_refused_submit_still_preserves_typed_values(app, client, techops_port
     import html
     body = html.unescape(response.get_data(as_text=True))
     assert "Just-typed drop location" in body
-    assert "Just-typed drop usage" in body
+    assert "Just-typed drop location" in body
     assert "Just-typed per-space notes" in body
 
 
@@ -421,6 +442,7 @@ def test_a_first_submit_with_open_questions_shows_the_panel_and_does_not_send(
         "action": "submit",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "1",
         f"space_{room.id}_PHONE_line_1_source": "NEW",
         f"space_{room.id}_PHONE_line_1_texts": "1",
@@ -445,6 +467,7 @@ def test_open_questions_do_not_block_a_submit_once_acknowledged(
         "open_questions_acknowledged": "1",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_WIFI_enabled": "1",
         f"space_{room.id}_PHONE_line_1_source": "NEW",
         f"space_{room.id}_PHONE_line_1_texts": "1",
@@ -467,6 +490,7 @@ def test_a_draft_save_never_shows_the_questions_panel(
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_PHONE_line_1_source": "NEW",
         f"space_{room.id}_PHONE_line_1_texts": "1",
     })
@@ -477,3 +501,73 @@ def test_a_draft_save_never_shows_the_questions_panel(
     body = client.get(response.headers["Location"]).get_data(as_text=True)
     assert "still unanswered" not in body
     assert techops_portfolio["latest_item"]().status == WORK_ITEM_STATUS_DRAFT
+
+
+def _submit_with(client, portfolio, **extra):
+    room = portfolio["room"]
+    payload = {
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "submit",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_WIFI_enabled": "1",
+        f"space_{room.id}_WIFI_description": "Staff laptops",
+    }
+    payload.update({k.format(room=room.id): v for k, v in extra.items()})
+    return client.post(portfolio["new_request_url"], data=payload)
+
+
+def test_a_blocked_submit_does_not_offer_to_submit_anyway(
+        app, client, techops_portfolio):
+    """The route refuses while any error stands, so an acknowledgement
+    changes nothing. Offering the action anyway gave the requester a button
+    that silently did not work."""
+    _login(client, "test:admin")
+    body = _submit_with(client, techops_portfolio, **{
+        # No network answer: this refuses.
+        "space_{room}_PHONE_line_1_texts": "1",
+        "space_{room}_PHONE_line_1_voice_delivery": "NONE",
+    }).get_data(as_text=True)
+
+    panel = _feedback_panel(body)
+    assert "Fix these first" in panel
+    assert "TechOps will ask about these" in panel
+    assert "Submit anyway" not in panel
+
+
+def test_questions_alone_still_offer_to_submit_anyway(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    body = _submit_with(client, techops_portfolio, **{
+        "space_{room}_NETWORK_needed": "NO",
+        "space_{room}_PHONE_line_1_texts": "1",
+        "space_{room}_PHONE_line_1_voice_delivery": "NONE",
+    }).get_data(as_text=True)
+
+    panel = _feedback_panel(body)
+    assert "Submit anyway" in panel
+    assert "still unanswered" in panel
+    assert "Fix these first" not in panel
+
+
+def test_a_refusal_alone_shows_no_questions_group(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    body = _submit_with(client, techops_portfolio).get_data(as_text=True)
+
+    # With nothing else to group against, the heading carries it and the
+    # sub-headings would be noise.
+    panel = _feedback_panel(body)
+    assert "kept this from submitting" in panel
+    assert "Fix these first" not in panel
+    assert "TechOps will ask about these" not in panel
+    assert "Submit anyway" not in panel
+
+
+def test_the_panel_sits_inside_the_form(app, client, techops_portfolio):
+    """Its buttons post, so it has to be in the form. It also used to render
+    above the breadcrumb, which read as an unrelated system banner."""
+    _login(client, "test:admin")
+    body = _submit_with(client, techops_portfolio).get_data(as_text=True)
+    assert body.index("<form method=\"post\"") < body.index("data-submit-feedback-panel")

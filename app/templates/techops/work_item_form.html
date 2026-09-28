@@ -30,7 +30,6 @@
 
 {% block content %}
 {% include "components/_narrow_screen_banner.html" %}
-{% include "techops/_submit_error_panel.html" %}
 
   {# Breadcrumb #}
   <nav class="muted small" style="margin-bottom: 12px;">
@@ -91,7 +90,7 @@
 </div>
 
   <form method="post" action="{{ form_action }}">
-{% include "techops/_open_questions_panel.html" %}
+{% include "techops/_submit_feedback_panel.html" %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     {# ─────────────────────────────────────────────────────── #}
@@ -467,7 +466,7 @@
     }
 
     // Section 3's own RADIO_CHANNEL badge. Same non-blank-input rule as
-    // filledDropRows/filledPhoneLineRows below, applied against a channel
+    // filledPhoneLineRows below, applied against a channel
     // row's two fields. OTHER has no badge to update: see
     // work_item_form.html's comment on why one description gets no count.
     function filledInstanceRows(root) {
@@ -514,20 +513,12 @@
 
     // ---- Space cards ----
 
-    // The one place "does this card have a filled drop / phone line" is
-    // decided in script, for the collapsed summary's counts and the
-    // ethernet/phone <details> badges below. Both readers apply the same
-    // rule the server applies on submit (form_utils._parse_drops,
-    // _parse_phone_lines): a row counts when any of its inputs holds a
-    // non-blank value. `root` is a card or a single <details>, so the
-    // same functions serve the whole-card summary and a scoped badge.
-    function filledDropRows(root) {
-      return Array.prototype.filter.call(root.querySelectorAll('[data-drop-row]'), function(row) {
-        var loc = row.querySelector('input[type="text"]');
-        var use = row.querySelector('textarea');
-        return !!((loc && loc.value.trim()) || (use && use.value.trim()));
-      });
-    }
+    // The one place "does this card have a filled phone line" is decided
+    // in script, for the collapsed summary and the phone <details> badge.
+    // It applies the rule the server applies on submit
+    // (form_utils._parse_phone_lines): a row counts when any of its inputs
+    // holds a non-blank value. `root` is a card or a single <details>, so
+    // the same function serves the whole-card summary and a scoped badge.
 
     // Counts a row the way _parse_phone_lines does: any answer at all makes
     // it a line. Reading one field, as this did when a purpose select
@@ -557,8 +548,16 @@
     // carries no voice. The server clears the same values in
     // line_grain._phone_config; this keeps the form agreeing with it.
     function currentTriggerValue(row, name) {
-      var el = row.querySelector('[data-reveal-trigger="' + name + '"]');
-      if (!el) return '';
+      var all = row.querySelectorAll('[data-reveal-trigger="' + name + '"]');
+      if (!all.length) return '';
+      // A radio group has one trigger per option, so the first element is
+      // not the answer; the checked one is. A select has a single element
+      // whose value is the answer.
+      var el = all[0];
+      if (el.type === 'radio') {
+        el = Array.prototype.filter.call(all, function(r) { return r.checked; })[0];
+        if (!el) return '';
+      }
       var owner = el.closest('[data-reveal-any]');
       if (owner && owner.hidden) return '';
       if (el.type === 'checkbox') return el.checked ? '1' : '';
@@ -619,7 +618,7 @@
     }
 
     function applyAllReveals(root) {
-      Array.prototype.forEach.call((root || document).querySelectorAll('[data-phone-line-row]'), applyReveals);
+      Array.prototype.forEach.call((root || document).querySelectorAll('[data-reveal-scope]'), applyReveals);
     }
 
     function pluralize(n, noun) {
@@ -631,11 +630,14 @@
     // shown, including "0 drops": item 3 dropped the old blank-when-empty
     // behavior because an empty section with no badge at all read as one
     // that could be missed entirely.
+    // Reports the answer, not a row count. A room now gives one answer
+    // about wiring; how many drops that takes is the network team's call.
     function updateEthernetBadge(details) {
       var badge = details.querySelector('[data-ethernet-count]');
       if (!badge) return;
-      var count = filledDropRows(details).length;
-      badge.textContent = '· ' + pluralize(count, 'drop');
+      var picked = details.querySelector('[data-reveal-trigger="network_needed"]:checked');
+      var words = {YES: 'needed', NO: 'not needed', UNSURE: 'not sure'};
+      badge.textContent = '\u00b7 ' + (picked ? words[picked.value] : 'unanswered');
     }
 
     function updatePhoneBadge(details) {
@@ -654,8 +656,8 @@
     function summarizeCard(card) {
       var parts = [];
       if (card.querySelector('[data-wifi-answer-radio][value="1"]:checked')) parts.push('WiFi');
-      var dropCount = filledDropRows(card).length;
-      if (dropCount > 0) parts.push(dropCount + ' drop' + (dropCount === 1 ? '' : 's'));
+      var wired = card.querySelector('[data-reveal-trigger="network_needed"]:checked');
+      if (wired && wired.value === 'YES') parts.push('wired network');
       var phoneCount = filledPhoneLineRows(card).length;
       var handsetCount = 0;
       card.querySelectorAll('[data-phone-line-row]').forEach(function(row) {
@@ -846,8 +848,8 @@
     });
 
     document.addEventListener('change', function(e) {
-      var phoneRow = e.target.closest('[data-phone-line-row]');
-      if (phoneRow) applyReveals(phoneRow);
+      var scope = e.target.closest('[data-reveal-scope]');
+      if (scope) applyReveals(scope);
     });
 
     document.addEventListener('click', function(e) {
@@ -868,25 +870,6 @@
 
     // Delegated so rows added by a previous clone are covered too.
     document.addEventListener('click', function(e) {
-      var addDrop = e.target.closest('[data-add-drop]');
-      if (addDrop) {
-        var sid = addDrop.getAttribute('data-add-drop');
-        var container = document.querySelector('[data-drops-container][data-space-id="' + sid + '"]');
-        var template = document.querySelector('template[data-drop-template="' + sid + '"]');
-        if (container && template) {
-          var nextIdx = parseInt(container.getAttribute('data-next-index') || '1', 10);
-          var row = cloneFromTemplate(template, nextIdx);
-          if (row) {
-            container.appendChild(row);
-            container.setAttribute('data-next-index', String(nextIdx + 1));
-            addDrop.textContent = '+ Add another drop';
-            var ethernetDetails = container.closest('[data-service-subsection="ETHERNET"]');
-            if (ethernetDetails) updateEthernetBadge(ethernetDetails);
-          }
-        }
-        return;
-      }
-
       var addPhone = e.target.closest('[data-add-phone-line]');
       if (addPhone) {
         var psid = addPhone.getAttribute('data-add-phone-line');
@@ -1086,7 +1069,7 @@
      owner looking at the same scroll position a save would. #}
   <script nonce="{{ csp_nonce }}">
   (function() {
-    var panel = document.querySelector('[data-submit-error-panel]');
+    var panel = document.querySelector('[data-submit-feedback-panel]');
     if (!panel) return;
     panel.scrollIntoView({block: 'start'});
     panel.focus();
