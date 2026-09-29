@@ -1157,3 +1157,80 @@ class TestSupplyLineUpdateReturnTo:
         detail = SupplyOrderLineDetail.query.one()
         assert detail.quantity_requested == 1
         assert detail.requester_notes == "first"
+
+
+def _row_html(html: str, item_id: int) -> str:
+    """Return one catalog row's markup, stopping before the next row or the dialog."""
+    start = html.index(f'id="item-{item_id}"')
+    ends = [i for i in (html.find('class="card catalog-row"', start), html.find("<dialog", start)) if i != -1]
+    return html[start:min(ends) if ends else len(html)]
+
+
+class TestSupplyCatalogRowActions:
+    """Rows carry one button; the dialog holds the only form."""
+
+    def _order_catalog(self, client, seed_workflow_data, work_item):
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        return client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        ).get_data(as_text=True)
+
+    def _setup(self, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        return work_item, _seed_catalog()
+
+    def test_row_states_for_zero_one_and_two_lines(self, app, client, seed_workflow_data):
+        work_item, (category, popular_item, plain_item) = self._setup(seed_workflow_data)
+        third = SupplyItem(category_id=category.id, item_name="Zip Ties", unit="bag", is_active=True)
+        db.session.add(third)
+        db.session.commit()
+        _add_line(work_item, popular_item, quantity=3, notes="stage", line_number=1)
+        _add_line(work_item, third, quantity=1, notes="a", line_number=2)
+        _add_line(work_item, third, quantity=1, notes="b", line_number=3)
+
+        html = self._order_catalog(client, seed_workflow_data, work_item)
+
+        none_row = _row_html(html, plain_item.id)
+        assert "data-supply-open" in none_row and "Add to order" in none_row
+        one_row = _row_html(html, popular_item.id)
+        assert 'data-line-number="1"' in one_row and 'data-qty="3"' in one_row
+        assert ">Edit</a>" in one_row
+        two_row = _row_html(html, third.id)
+        assert "Edit on order page" in two_row
+        assert "data-supply-open" not in two_row
+
+    def test_rows_have_no_inputs_and_one_dialog(self, app, client, seed_workflow_data):
+        work_item, _ = self._setup(seed_workflow_data)
+        html = self._order_catalog(client, seed_workflow_data, work_item)
+
+        assert html.count("<dialog") == 1
+        assert 'name="quantity"' not in html.split("<dialog")[0]
+
+    def test_no_dialog_in_browse_or_submitted(self, app, client, seed_workflow_data):
+        work_item, _ = self._setup(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        browse = client.get(f"/{cycle.code}/{dept.code}/supply/catalog").get_data(as_text=True)
+        work_item.status = WORK_ITEM_STATUS_SUBMITTED
+        db.session.commit()
+        submitted = self._order_catalog(client, seed_workflow_data, work_item)
+
+        assert "<dialog" not in browse
+        assert "<dialog" not in submitted
+
+    def test_item_data_is_escaped_and_notes_keep_line_breaks(
+        self, app, client, seed_workflow_data
+    ):
+        work_item, (category, popular_item, plain_item) = self._setup(seed_workflow_data)
+        plain_item.item_name = 'Tape "Pro" <x>'
+        db.session.commit()
+        _add_line(work_item, plain_item, quantity=2, notes="line one\nline two")
+
+        html = self._order_catalog(client, seed_workflow_data, work_item)
+
+        assert 'data-name="Tape &#34;Pro&#34; &lt;x&gt;"' in html
+        assert 'data-notes="line one\nline two"' in html

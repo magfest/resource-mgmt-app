@@ -37,7 +37,6 @@
   .catalog-row-body { flex: 1 1 220px; min-width: 0; }
   .catalog-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .catalog-row-action { flex-shrink: 0; }
-  .catalog-add { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
 
   @media (max-width: 767.98px) {
     .catalog-page { --catalog-sticky-top: 0px; }
@@ -61,9 +60,8 @@
     .catalog-row { flex-wrap: wrap; }
     .catalog-row-action { flex: 1 1 100%; }
     /* a.btn in layout/base.html outranks a bare class, so this selector names the element. */
-    .catalog-row-action a.catalog-view { display: flex; width: 100%; box-sizing: border-box;
+    .catalog-row-action a.btn { display: flex; width: 100%; box-sizing: border-box;
       align-items: center; justify-content: center; min-height: 44px; padding: 0 14px; }
-    .catalog-add input[name="notes"] { flex: 1 1 100%; }
   }
 </style>
 {% endblock %}
@@ -178,20 +176,27 @@
               </div>
 
               <div class="catalog-row-action">
-                {% if can_add %}
-                  <form method="post" class="catalog-add" action="{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="item_id" value="{{ item.id }}">
-                    <div>
-                      <input type="number" name="quantity" value="1" min="1" required style="width: 64px;">
-                      {% if item.order_guidance %}
-                        <div class="muted small" style="max-width: 150px; margin-top: 2px;">{{ item.order_guidance }}</div>
-                      {% endif %}
-                    </div>
-                    <input type="text" name="notes" {% if item.notes_required %}required{% endif %}
-                           placeholder="Notes{% if item.notes_required %} (required){% endif %}" style="width: 160px;">
-                    <button type="submit" class="btn btn-primary small">Add</button>
-                  </form>
+                {% set cart_entry = in_cart.get(item.id) %}
+                {% if can_add and cart_entry and cart_entry.lines > 1 %}
+                  <a class="btn" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">Edit on order page</a>
+                {% elif can_add %}
+                  <a class="btn{% if not cart_entry %} btn-primary{% endif %}" href="{{ item_detail_url(item.id) }}"
+                     data-supply-open
+                     data-item-id="{{ item.id }}"
+                     data-name="{{ item.item_name }}"
+                     data-unit="{{ item.unit }}"
+                     data-description="{{ item.notes or '' }}"
+                     data-guidance="{{ item.order_guidance or '' }}"
+                     data-notes-required="{{ '1' if item.notes_required else '0' }}"
+                     data-limited="{{ '1' if item.is_limited else '0' }}"
+                     data-returnable="{{ '0' if item.is_expendable else '1' }}"
+                     data-popular="{{ '1' if item.is_popular else '0' }}"
+                     {% if cart_entry %}
+                     data-line-number="{{ cart_entry.line_number }}"
+                     data-qty="{{ cart_entry.qty }}"
+                     data-notes="{{ cart_entry.notes }}"
+                     data-update-url="{{ url_for('work.supply_line_update', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_number=cart_entry.line_number) }}"
+                     {% endif %}>{% if cart_entry %}Edit{% else %}Add to order{% endif %}</a>
                 {% else %}
                   <a class="btn catalog-view" href="{{ item_detail_url(item.id) }}">View &rsaquo;</a>
                 {% endif %}
@@ -214,6 +219,39 @@
       {% endif %}
     </div>
   </div>
+
+  {% if can_add %}
+    <dialog id="supply-add-dialog" class="supply-dialog" aria-labelledby="supply-dialog-title">
+      <form method="post" class="supply-dialog-form"
+            action="{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}"
+            data-add-url="{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="item_id" value="">
+        <input type="hidden" name="return_to" value="catalog">
+        <div class="supply-dialog-head">
+          <h2 id="supply-dialog-title"></h2>
+          <button type="button" class="btn" data-dialog-close aria-label="Close">&times;</button>
+        </div>
+        <p class="muted small" data-field="unit"></p>
+        <div class="supply-dialog-pills">
+          <span class="pill pill-success" data-flag="popular" hidden>Commonly ordered</span>
+          <span class="pill pill-warning" data-flag="limited" hidden>Limited</span>
+          <span class="pill pill-info" data-flag="returnable" hidden>Must be returned</span>
+        </div>
+        <p class="small" data-field="description"></p>
+        <p class="muted small" data-field="guidance"></p>
+        <label for="supply-dialog-qty" class="form-label">Quantity</label>
+        <input id="supply-dialog-qty" type="number" name="quantity" value="1" min="1" required autofocus>
+        <label for="supply-dialog-notes" class="form-label" data-field="notes-label">Notes (optional)</label>
+        <textarea id="supply-dialog-notes" name="notes" rows="3" placeholder="What is this for? e.g. Tech booth"></textarea>
+        <p class="small" data-separate-wrap hidden><a href="#" data-separate-line>Add as a separate line instead</a></p>
+        <div class="supply-dialog-actions">
+          <button type="button" class="btn" data-dialog-close>Cancel</button>
+          <button type="submit" class="btn btn-primary" data-field="submit">Add to order</button>
+        </div>
+      </form>
+    </dialog>
+  {% endif %}
 
   <div class="btn-row" style="margin-top: 24px;">
     {% if work_item %}
