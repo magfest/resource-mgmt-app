@@ -124,18 +124,27 @@ def is_line_kickback_editable(line: WorkLine, work_item: WorkItem, ctx, user_ctx
     )
 
 
+# supply_line_update's return_to field names a page, never a URL, so a crafted
+# form cannot send the requester off the site after a save.
+def _update_return_url(return_to: str, event: str, dept: str, public_id: str, item_id: int) -> str:
+    if return_to == "catalog":
+        return url_for("work.supply_catalog", event=event, dept=dept,
+                       public_id=public_id, _anchor=f"item-{item_id}")
+    if return_to == "item":
+        return url_for("work.supply_item_detail", event=event, dept=dept,
+                       item_id=item_id, order=public_id)
+    return url_for("work.supply_order_detail", event=event, dept=dept, public_id=public_id)
+
+
 @work_bp.post("/<event>/<dept>/supply/order/<public_id>/lines/<int:line_number>/update")
 def supply_line_update(event: str, dept: str, public_id: str, line_number: int):
     """Update a line's quantity/notes.
 
     Gate: normally DRAFT + can_edit — EXCEPT a kicked-back line, per
-    is_line_kickback_editable() above.
+    is_line_kickback_editable() above. Redirects per return_to; see
+    _update_return_url.
     """
     work_item, ctx, perms = _load_order(event, dept, public_id)
-    detail_url = url_for(
-        "work.supply_order_detail", event=event, dept=dept, public_id=public_id,
-    )
-
     line = _find_line(work_item, line_number)
     if not line or not line.supply_detail:
         abort(404, f"Line not found: {line_number}")
@@ -146,10 +155,15 @@ def supply_line_update(event: str, dept: str, public_id: str, line_number: int):
     if not perms.can_edit and not is_kickback_editable:
         abort(403, "You do not have permission to edit this line.")
 
+    back_url = _update_return_url(
+        request.form.get("return_to", ""), event, dept, public_id,
+        line.supply_detail.item_id,
+    )
+
     quantity = request.form.get("quantity", type=int)
     if quantity is None or quantity < 1:
         flash("Quantity must be a whole number of at least 1.", "error")
-        return redirect(detail_url)
+        return redirect(back_url)
 
     # Normalize textarea/text-input CRLF to LF before measuring/storing.
     notes = request.form.get("notes", "").replace("\r\n", "\n").strip()
@@ -157,14 +171,14 @@ def supply_line_update(event: str, dept: str, public_id: str, line_number: int):
     item = line.supply_detail.item
     if item and item.notes_required and not notes:
         flash(f"Notes are required for {item.item_name}.", "error")
-        return redirect(detail_url)
+        return redirect(back_url)
 
     line.supply_detail.quantity_requested = quantity
     line.supply_detail.requester_notes = notes or None
     db.session.commit()
 
     flash("Line updated.", "success")
-    return redirect(detail_url)
+    return redirect(back_url)
 
 
 @work_bp.post("/<event>/<dept>/supply/order/<public_id>/lines/<int:line_number>/delete")

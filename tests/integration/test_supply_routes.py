@@ -1102,3 +1102,58 @@ class TestSupplyItemDetailEditMode:
         assert 'name="item_id"' in html
         assert "Add to order" in html
         assert "Save changes" not in html
+
+
+class TestSupplyLineUpdateReturnTo:
+    """supply_line_update sends the requester back where the edit started."""
+
+    def _update(self, client, seed_workflow_data, work_item, data):
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        return client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/lines/1/update",
+            data=data,
+        )
+
+    def _setup(self, seed_workflow_data, notes_required=False):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        category, popular_item, plain_item = _seed_catalog()
+        plain_item.notes_required = notes_required
+        db.session.commit()
+        _add_line(work_item, plain_item, quantity=1, notes="first")
+        return work_item, plain_item
+
+    def test_return_to_catalog_lands_on_the_row(self, app, client, seed_workflow_data):
+        work_item, item = self._setup(seed_workflow_data)
+        response = self._update(client, seed_workflow_data, work_item,
+                                {"quantity": "4", "notes": "more", "return_to": "catalog"})
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith(
+            f"/supply/order/{work_item.public_id}/catalog#item-{item.id}")
+        assert SupplyOrderLineDetail.query.one().quantity_requested == 4
+
+    def test_return_to_item_lands_on_the_item_page(self, app, client, seed_workflow_data):
+        work_item, item = self._setup(seed_workflow_data)
+        response = self._update(client, seed_workflow_data, work_item,
+                                {"quantity": "2", "notes": "", "return_to": "item"})
+        assert response.headers["Location"].endswith(
+            f"/supply/catalog/item/{item.id}?order={work_item.public_id}")
+
+    def test_unknown_return_to_falls_back_to_order_page(self, app, client, seed_workflow_data):
+        work_item, item = self._setup(seed_workflow_data)
+        response = self._update(client, seed_workflow_data, work_item,
+                                {"quantity": "2", "return_to": "https://example.com/"})
+        location = response.headers["Location"]
+        assert location.endswith(f"/supply/order/{work_item.public_id}")
+        assert "example.com" not in location
+
+    def test_validation_error_keeps_the_return_target(self, app, client, seed_workflow_data):
+        work_item, item = self._setup(seed_workflow_data, notes_required=True)
+        response = self._update(client, seed_workflow_data, work_item,
+                                {"quantity": "5", "notes": "   ", "return_to": "catalog"})
+        assert response.headers["Location"].endswith(f"#item-{item.id}")
+        detail = SupplyOrderLineDetail.query.one()
+        assert detail.quantity_requested == 1
+        assert detail.requester_notes == "first"
