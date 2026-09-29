@@ -58,9 +58,12 @@ def _load_order(event: str, dept: str, public_id: str):
     return work_item, ctx, perms
 
 
-def _catalog_items(q: str):
-    """Shared category/item/popular-strip queries for both the in-order
-    catalog and the standalone browse view (Task 16)."""
+def _catalog_items(q: str) -> list[tuple[SupplyCategory, list[SupplyItem]]]:
+    """Return (category, items) sections for both catalog views.
+
+    Only active categories with at least one matching active item appear.
+    An active item in an inactive category is not shown anywhere.
+    """
     categories = (
         SupplyCategory.query
         .filter_by(is_active=True)
@@ -68,9 +71,7 @@ def _catalog_items(q: str):
         .all()
     )
 
-    items_query = SupplyItem.query.filter_by(is_active=True).options(
-        joinedload(SupplyItem.category)
-    )
+    items_query = SupplyItem.query.filter_by(is_active=True)
     if q:
         like = f"%{q}%"
         items_query = items_query.filter(
@@ -87,17 +88,11 @@ def _catalog_items(q: str):
     for item in items:
         items_by_category.setdefault(item.category_id, []).append(item)
 
-    # Popular strip is skipped entirely while searching.
-    popular_items = []
-    if not q:
-        popular_items = [
-            item for item in
-            SupplyItem.query.filter_by(
-                is_active=True, is_popular=True,
-            ).order_by(SupplyItem.item_name.asc()).all()
-        ]
-
-    return categories, items_by_category, popular_items
+    return [
+        (category, items_by_category[category.id])
+        for category in categories
+        if category.id in items_by_category
+    ]
 
 
 @work_bp.get("/<event>/<dept>/supply/order/<public_id>/catalog")
@@ -122,7 +117,7 @@ def supply_catalog(event: str, dept: str, public_id: str):
         entry["qty"] += d.quantity_requested or 0
 
     q = request.args.get("q", "").strip()
-    categories, items_by_category, popular_items = _catalog_items(q)
+    sections = _catalog_items(q)
 
     def catalog_url(**kwargs):
         return url_for(
@@ -142,9 +137,8 @@ def supply_catalog(event: str, dept: str, public_id: str):
         perms=perms,
         work_item=work_item,
         can_add=can_add,
-        categories=categories,
-        items_by_category=items_by_category,
-        popular_items=popular_items,
+        sections=sections,
+        catalog_total=sum(len(items) for _, items in sections),
         q=q,
         cart_count=len(work_item.lines),
         catalog_url=catalog_url,
@@ -161,14 +155,13 @@ def supply_catalog_browse(event: str, dept: str):
     units mean, what's limited, and what must be returned, without first
     starting an order. Reuses supply/catalog.html with work_item=None and
     can_add=False so add-to-cart forms and the cart strip are hidden;
-    search, jump-nav, and item name links to the detail page (Task 17)
-    all still work.
+    search, the category nav, and item links to the detail page still work.
     """
     ctx = get_portfolio_context(event, dept, "supply")
     perms = require_portfolio_view(ctx)
 
     q = request.args.get("q", "").strip()
-    categories, items_by_category, popular_items = _catalog_items(q)
+    sections = _catalog_items(q)
 
     def catalog_url(**kwargs):
         return url_for("work.supply_catalog_browse", event=event, dept=dept, **kwargs)
@@ -184,9 +177,8 @@ def supply_catalog_browse(event: str, dept: str):
         perms=perms,
         work_item=None,
         can_add=False,
-        categories=categories,
-        items_by_category=items_by_category,
-        popular_items=popular_items,
+        sections=sections,
+        catalog_total=sum(len(items) for _, items in sections),
         q=q,
         cart_count=0,
         catalog_url=catalog_url,
