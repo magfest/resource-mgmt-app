@@ -1046,3 +1046,59 @@ class TestSupplyCatalogSections:
         html = self._browse(client, seed_workflow_data).get_data(as_text=True)
 
         assert re.search(r'<script nonce="[^"]+">\s*// Catalog section highlight', html)
+
+
+class TestSupplyItemDetailEditMode:
+    """The item page edits the existing line instead of adding a second one."""
+
+    def _item_page(self, client, seed_workflow_data, work_item, item):
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        return client.get(
+            f"/{cycle.code}/{dept.code}/supply/catalog/item/{item.id}"
+            f"?order={work_item.public_id}"
+        ).get_data(as_text=True)
+
+    def test_item_on_one_line_prefills_and_posts_to_update(
+        self, app, client, seed_workflow_data
+    ):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=3, notes="for registration")
+
+        html = self._item_page(client, seed_workflow_data, work_item, plain_item)
+
+        assert f"/supply/order/{work_item.public_id}/lines/1/update" in html
+        assert 'name="return_to" value="item"' in html
+        assert 'value="3"' in html
+        assert ">for registration</textarea>" in html
+        assert "Save changes" in html
+
+    def test_item_on_two_lines_links_to_order_page(
+        self, app, client, seed_workflow_data
+    ):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=1, notes="tech booth", line_number=1)
+        _add_line(work_item, plain_item, quantity=2, notes="registration", line_number=2)
+
+        html = self._item_page(client, seed_workflow_data, work_item, plain_item)
+
+        assert "On your order as 2 lines" in html
+        assert f'href="/{seed_workflow_data["cycle"].code}/{seed_workflow_data["department"].code}/supply/order/{work_item.public_id}"' in html
+        assert 'name="quantity"' not in html
+
+    def test_item_not_in_order_keeps_add_form(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        category, popular_item, plain_item = _seed_catalog()
+
+        html = self._item_page(client, seed_workflow_data, work_item, plain_item)
+
+        assert f"/supply/order/{work_item.public_id}/lines/add" in html
+        assert 'name="item_id"' in html
+        assert "Add to order" in html
+        assert "Save changes" not in html

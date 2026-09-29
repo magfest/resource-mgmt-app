@@ -2,10 +2,10 @@
 Supply catalog — browse items and add them to a draft order (the cart).
 
 Requester-facing: never surfaces prices/costs (no unit_cost_cents is passed
-to the template). Every add creates a NEW WorkLine, even for an item
-already in the cart — intentionally never merged/deduped, since requesters
-distinguish duplicate adds via per-line notes (e.g. two spools of gaffer
-tape, one noted "for tech booth", one "for panels").
+to the template). supply_line_add always creates a NEW WorkLine. The catalog
+and item pages send an item already on one line to supply_line_update
+instead, so a second line for the same item is a deliberate choice; last
+year no order held one.
 """
 from flask import abort, flash, redirect, render_template, request, url_for
 from sqlalchemy.orm import joinedload, selectinload
@@ -95,6 +95,28 @@ def _catalog_items(q: str) -> list[tuple[SupplyCategory, list[SupplyItem]]]:
     ]
 
 
+def _cart_entries(work_item) -> dict[int, dict]:
+    """Summarize an order's lines per catalog item for the add-or-edit rule.
+
+    line_number and notes are set only when the item is on exactly one line;
+    with two or more lines the requester edits each one on the order page.
+    """
+    entries: dict[int, dict] = {}
+    singles: dict[int, tuple[int, str]] = {}
+    for line in work_item.lines:
+        detail = line.supply_detail
+        if detail is None:
+            continue
+        entry = entries.setdefault(detail.item_id, {"lines": 0, "qty": 0})
+        entry["lines"] += 1
+        entry["qty"] += detail.quantity_requested or 0
+        singles[detail.item_id] = (line.line_number, detail.requester_notes or "")
+    for item_id, entry in entries.items():
+        if entry["lines"] == 1:
+            entry["line_number"], entry["notes"] = singles[item_id]
+    return entries
+
+
 @work_bp.get("/<event>/<dept>/supply/order/<public_id>/catalog")
 def supply_catalog(event: str, dept: str, public_id: str):
     """Browse the item catalog and add items to this draft order."""
@@ -104,17 +126,7 @@ def supply_catalog(event: str, dept: str, public_id: str):
     # (mirrors order.py's own can_edit gate for mutations on this cab).
     can_add = work_item.status == WORK_ITEM_STATUS_DRAFT and perms.can_edit
 
-    # Per-item "already in this order" summary for the badge. Duplicate
-    # adds are separate lines by design (see module docstring), so the
-    # badge shows both the line count and the summed quantity.
-    in_cart: dict[int, dict[str, int]] = {}
-    for line in work_item.lines:
-        d = line.supply_detail
-        if d is None:
-            continue
-        entry = in_cart.setdefault(d.item_id, {"lines": 0, "qty": 0})
-        entry["lines"] += 1
-        entry["qty"] += d.quantity_requested or 0
+    in_cart = _cart_entries(work_item)
 
     q = request.args.get("q", "").strip()
     sections = _catalog_items(q)
@@ -215,6 +227,10 @@ def supply_item_detail(event: str, dept: str, item_id: int):
         work_item, _order_ctx, order_perms = _load_order(event, dept, order_public_id)
         can_add = work_item.status == WORK_ITEM_STATUS_DRAFT and order_perms.can_edit
 
+    cart_entry = None
+    if work_item is not None and can_add:
+        cart_entry = _cart_entries(work_item).get(item.id)
+
     if work_item is not None and can_add:
         back_url = url_for(
             "work.supply_catalog", event=event, dept=dept,
@@ -234,13 +250,17 @@ def supply_item_detail(event: str, dept: str, item_id: int):
         work_item=work_item,
         can_add=can_add,
         back_url=back_url,
+        cart_entry=cart_entry,
     )
 
 
 @work_bp.post("/<event>/<dept>/supply/order/<public_id>/lines/add")
 def supply_line_add(event: str, dept: str, public_id: str):
-    """Add one catalog item to the draft order as a NEW line (always —
-    duplicate items are intentional; notes distinguish them)."""
+    """Add one catalog item to the draft order as a new line.
+
+    Never merges with an existing line; the pages route an item already on
+    the order to supply_line_update unless the requester asks for a second line.
+    """
     work_item, ctx, perms = _load_order(event, dept, public_id)
 
     if work_item.status != WORK_ITEM_STATUS_DRAFT or not perms.can_edit:
