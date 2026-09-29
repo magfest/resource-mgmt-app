@@ -1006,6 +1006,9 @@ class TestSupplyCatalogSections:
 
         assert "No items match" in html
         assert "data-catalog-nav=" not in html
+        # No empty menu area either: no nav element, and the list takes the full width.
+        assert 'class="catalog-nav"' not in html
+        assert 'catalog-layout--empty' in html
 
     def test_browse_rows_link_to_item_detail(self, app, client, seed_workflow_data):
         _seed_supply(seed_workflow_data)

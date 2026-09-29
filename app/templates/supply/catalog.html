@@ -13,6 +13,7 @@
     display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 
   .catalog-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
+  .catalog-layout--empty { grid-template-columns: minmax(0, 1fr); }
 
   .catalog-nav { position: sticky; top: var(--catalog-sticky-top);
     max-height: calc(100vh - var(--catalog-sticky-top) - 12px); overflow-y: auto; }
@@ -108,7 +109,8 @@
     </div>
   {% endif %}
 
-  <div class="catalog-layout">
+  <div class="catalog-layout{% if not sections %} catalog-layout--empty{% endif %}">
+    {% if sections %}
     <nav class="catalog-nav" aria-label="Catalog categories">
       {% for category, category_items in sections %}
         <a href="#cat-{{ category.code }}" data-catalog-nav="{{ category.code }}">
@@ -117,6 +119,7 @@
         </a>
       {% endfor %}
     </nav>
+    {% endif %}
 
     <div>
       <div class="catalog-toolbar">
@@ -248,6 +251,7 @@
     links.forEach(function (a) {
       var on = a.getAttribute('data-catalog-nav') === code;
       a.classList.toggle('is-active', on);
+      if (on) { a.setAttribute('aria-current', 'true'); } else { a.removeAttribute('aria-current'); }
       // On phone the nav scrolls sideways; keep the active chip in view without moving the page.
       if (on && nav.scrollWidth > nav.clientWidth) {
         nav.scrollLeft = a.offsetLeft - (nav.clientWidth - a.offsetWidth) / 2;
@@ -262,9 +266,16 @@
     });
   }, { rootMargin: '-25% 0px -60% 0px' });
 
-  document.querySelectorAll('section.catalog-section[data-category]').forEach(function (s) {
-    observer.observe(s);
-  });
+  var sections = document.querySelectorAll('section.catalog-section[data-category]');
+  sections.forEach(function (s) { observer.observe(s); });
+
+  // A short last section never reaches the band, so the page bottom selects it.
+  var last = sections.length ? sections[sections.length - 1].getAttribute('data-category') : null;
+  window.addEventListener('scroll', function () {
+    if (last && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+      activate(last);
+    }
+  }, { passive: true });
 })();
 </script>
 {% endblock %}
