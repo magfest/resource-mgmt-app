@@ -38,7 +38,7 @@
       <div style="grid-column: 1 / -1;">
         <label for="description" class="form-label">Description</label>
         <textarea id="description" name="description" rows="3"
-                  placeholder="Optional description...">{{ category.description if category else '' }}</textarea>
+                  placeholder="Optional description...">{{ (category.description or '') if category else '' }}</textarea>
       </div>
 
       <div>
