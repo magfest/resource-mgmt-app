@@ -5,6 +5,8 @@ Mirrors the harness in tests/integration/test_route_migration.py: seeds an
 active SUPPLY work type + config on top of seed_workflow_data, then hits
 the portfolio landing URL directly.
 """
+import re
+
 from app import db
 from app.models import (
     SupplyCategory,
@@ -443,12 +445,10 @@ class TestSupplyCatalog:
         assert response.status_code == 200
         assert b"In order" not in response.data
 
-    def test_catalog_badge_renders_in_both_layouts_for_popular_item(
+    def test_catalog_badge_renders_once_for_popular_item(
         self, app, client, seed_workflow_data
     ):
-        """A popular item renders in the popular-cards strip AND its dense
-        category row; the (duplicated) badge block must render in both, so
-        an edit to only one copy is caught."""
+        """A popular item renders once, in its category, with its badge."""
         wt = _seed_supply(seed_workflow_data)
         cycle = seed_workflow_data["cycle"]
         dept = seed_workflow_data["department"]
@@ -462,7 +462,7 @@ class TestSupplyCatalog:
         )
 
         assert response.status_code == 200
-        assert response.data.count("In order ×5".encode("utf-8")) == 2
+        assert response.data.count("In order ×5".encode("utf-8")) == 1
 
     def test_catalog_renders_item_category_and_popular(
         self, app, client, seed_workflow_data
@@ -482,7 +482,8 @@ class TestSupplyCatalog:
         assert category.name.encode() in response.data
         assert plain_item.item_name.encode() in response.data
         assert popular_item.item_name.encode() in response.data
-        assert b"Popular" in response.data
+        assert b"<h2>Popular</h2>" not in response.data
+        assert b"Commonly ordered" in response.data
 
     def test_add_item_creates_line_and_redirects(
         self, app, client, seed_workflow_data
@@ -942,3 +943,106 @@ class TestSupplyItemRouteRedirect:
         assert response.headers["Location"].endswith(
             f"/{cycle.code}/{dept.code}/supply/order/TST2026-TESTDEPT-SUP-1"
         )
+
+
+class TestSupplyCatalogSections:
+    """One entry per item, grouped by category, with counts."""
+
+    def _browse(self, client, seed_workflow_data, q=None):
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        url = f"/{cycle.code}/{dept.code}/supply/catalog"
+        return client.get(url, query_string={"q": q} if q else None)
+
+    def test_each_item_renders_once_with_counts(self, app, client, seed_workflow_data):
+        _seed_supply(seed_workflow_data)
+        category, popular_item, plain_item = _seed_catalog()
+
+        html = self._browse(client, seed_workflow_data).get_data(as_text=True)
+
+        assert html.count(f'id="item-{popular_item.id}"') == 1
+        assert html.count(f'id="item-{plain_item.id}"') == 1
+        assert 'data-catalog-nav="OFFICE"' in html
+        assert '<span class="catalog-count">2 items</span>' in html
+        assert '<span class="catalog-total">2 items</span>' in html
+
+    def test_inactive_category_items_are_hidden_and_uncounted(
+        self, app, client, seed_workflow_data
+    ):
+        _seed_supply(seed_workflow_data)
+        _seed_catalog()
+        retired = SupplyCategory(code="OLD", name="Retired", is_active=False, sort_order=2)
+        empty = SupplyCategory(code="EMPTY", name="Nothing Here", is_active=True, sort_order=3)
+        db.session.add_all([retired, empty])
+        db.session.flush()
+        db.session.add(SupplyItem(category_id=retired.id, item_name="Fax Machine", unit="each", is_active=True))
+        db.session.commit()
+
+        html = self._browse(client, seed_workflow_data).get_data(as_text=True)
+
+        assert "Fax Machine" not in html
+        assert 'data-catalog-nav="OLD"' not in html
+        assert 'data-catalog-nav="EMPTY"' not in html
+        assert '<span class="catalog-total">2 items</span>' in html
+
+    def test_search_counts_matches_only(self, app, client, seed_workflow_data):
+        _seed_supply(seed_workflow_data)
+        _seed_catalog()
+
+        html = self._browse(client, seed_workflow_data, q="gaffer").get_data(as_text=True)
+
+        assert "Gaffer Tape" in html
+        assert "Sharpie Markers" not in html
+        assert '<span class="catalog-count">1 item</span>' in html
+
+    def test_search_with_no_match_shows_empty_state_and_no_nav(
+        self, app, client, seed_workflow_data
+    ):
+        _seed_supply(seed_workflow_data)
+        _seed_catalog()
+
+        html = self._browse(client, seed_workflow_data, q="zzz").get_data(as_text=True)
+
+        assert "No items match" in html
+        assert "data-catalog-nav=" not in html
+        # No empty menu area either: no nav element, and the list takes the full width.
+        assert 'class="catalog-nav"' not in html
+        assert 'catalog-layout--empty' in html
+
+    def test_browse_rows_link_to_item_detail(self, app, client, seed_workflow_data):
+        _seed_supply(seed_workflow_data)
+        category, popular_item, plain_item = _seed_catalog()
+
+        html = self._browse(client, seed_workflow_data).get_data(as_text=True)
+
+        assert 'class="btn catalog-view"' in html
+        assert f"/supply/catalog/item/{plain_item.id}" in html
+        assert 'name="quantity"' not in html
+
+    def test_submitted_order_rows_show_view_not_add_form(
+        self, app, client, seed_workflow_data
+    ):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        work_item.status = WORK_ITEM_STATUS_SUBMITTED
+        db.session.commit()
+        _seed_catalog()
+
+        _login(client, "test:admin")
+        html = client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        ).get_data(as_text=True)
+
+        assert 'class="btn catalog-view"' in html
+        assert 'name="quantity"' not in html
+
+    def test_highlight_script_carries_the_nonce(self, app, client, seed_workflow_data):
+        _seed_supply(seed_workflow_data)
+        _seed_catalog()
+
+        html = self._browse(client, seed_workflow_data).get_data(as_text=True)
+
+        assert re.search(r'<script nonce="[^"]+">\s*// Catalog section highlight', html)

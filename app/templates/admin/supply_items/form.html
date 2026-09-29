@@ -64,13 +64,13 @@
       <div style="grid-column: 1 / -1;">
         <label for="notes" class="form-label">Notes</label>
         <textarea id="notes" name="notes" rows="2"
-                  placeholder="Optional notes about the item...">{{ item.notes if item else '' }}</textarea>
+                  placeholder="Optional notes about the item...">{{ (item.notes or '') if item else '' }}</textarea>
       </div>
 
       <div style="grid-column: 1 / -1;">
         <label for="order_guidance" class="form-label">Order Guidance</label>
         <input id="order_guidance" name="order_guidance" type="text" maxlength="160"
-               value="{{ item.order_guidance if item else '' }}"
+               value="{{ (item.order_guidance or '') if item else '' }}"
                placeholder="e.g. 1 roll covers roughly one booth setup" />
         <div class="muted small mt-4">Shown to requesters next to the quantity field at decision time, to help once-a-year volunteers avoid over/under-ordering. Optional.</div>
       </div>
@@ -88,14 +88,14 @@
       <div>
         <label for="location_zone" class="form-label">Location Zone</label>
         <input id="location_zone" name="location_zone" type="text" maxlength="32"
-               value="{{ item.location_zone if item else '' }}"
+               value="{{ (item.location_zone or '') if item else '' }}"
                placeholder="e.g. A, B, Main" />
       </div>
 
       <div>
         <label for="bin_location" class="form-label">Bin Location</label>
         <input id="bin_location" name="bin_location" type="text" maxlength="32"
-               value="{{ item.bin_location if item else '' }}"
+               value="{{ (item.bin_location or '') if item else '' }}"
                placeholder="e.g. A-12, B-3" />
       </div>
     </div>
@@ -134,7 +134,7 @@
       <div>
         <label for="internal_type" class="form-label">Internal Type</label>
         <input id="internal_type" name="internal_type" type="text" maxlength="32"
-               value="{{ item.internal_type if item else '' }}"
+               value="{{ (item.internal_type or '') if item else '' }}"
                placeholder="e.g. consumable, equipment" />
       </div>
 
