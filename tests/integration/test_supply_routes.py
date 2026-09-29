@@ -1234,3 +1234,9 @@ class TestSupplyCatalogRowActions:
 
         assert 'data-name="Tape &#34;Pro&#34; &lt;x&gt;"' in html
         assert 'data-notes="line one\nline two"' in html
+
+    def test_dialog_script_carries_the_nonce(self, app, client, seed_workflow_data):
+        work_item, _ = self._setup(seed_workflow_data)
+        html = self._order_catalog(client, seed_workflow_data, work_item)
+
+        assert re.search(r'<script nonce="[^"]+">\s*// Supply add/edit dialog', html)

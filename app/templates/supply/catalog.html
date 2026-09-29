@@ -38,7 +38,19 @@
   .catalog-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .catalog-row-action { flex-shrink: 0; }
 
+  .supply-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+    overflow-y: auto; box-sizing: border-box; border: 1px solid #e5e5e5; border-radius: 10px; padding: 20px; }
+  .supply-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+  /* .pill sets display, which would override the hidden attribute. */
+  .supply-dialog [hidden] { display: none !important; }
+  .supply-dialog-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .supply-dialog-head h2 { margin: 0; }
+  .supply-dialog-pills { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
+  .supply-dialog input[type="number"], .supply-dialog textarea { width: 100%; box-sizing: border-box; }
+  .supply-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
   @media (max-width: 767.98px) {
+    .supply-dialog .btn { min-height: 44px; }
     .catalog-page { --catalog-sticky-top: 0px; }
     .catalog-page--order { --catalog-sticky-top: 52px; }
     .catalog-cart { padding: 8px 12px; flex-wrap: nowrap; gap: 8px; }
@@ -316,4 +328,88 @@
   }, { passive: true });
 })();
 </script>
+{% if can_add %}
+<script nonce="{{ csp_nonce }}">
+// Supply add/edit dialog. Without showModal the row buttons stay links to the item page.
+(function () {
+  var dialog = document.getElementById('supply-add-dialog');
+  if (!dialog || typeof dialog.showModal !== 'function') return;
+  var form = dialog.querySelector('form');
+  var addUrl = form.getAttribute('data-add-url');
+  var qty = form.querySelector('[name="quantity"]');
+  var notes = form.querySelector('[name="notes"]');
+  var itemId = form.querySelector('[name="item_id"]');
+  var submit = form.querySelector('[data-field="submit"]');
+  var separateWrap = form.querySelector('[data-separate-wrap]');
+
+  function setText(field, value) {
+    var el = form.querySelector('[data-field="' + field + '"]');
+    el.textContent = value || '';
+    el.hidden = !value;
+  }
+
+  function setFlag(flag, on) {
+    form.querySelector('[data-flag="' + flag + '"]').hidden = !on;
+  }
+
+  function open(button) {
+    var d = button.dataset;
+    var editing = !!d.updateUrl;
+    var required = d.notesRequired === '1';
+    document.getElementById('supply-dialog-title').textContent = d.name;
+    setText('unit', 'per ' + d.unit);
+    setText('description', d.description);
+    setText('guidance', d.guidance);
+    setFlag('popular', d.popular === '1');
+    setFlag('limited', d.limited === '1');
+    setFlag('returnable', d.returnable === '1');
+    notes.required = required;
+    form.querySelector('[data-field="notes-label"]').textContent =
+      required ? 'Notes (required)' : 'Notes (optional)';
+    itemId.value = d.itemId;
+    qty.value = editing ? d.qty : '1';
+    notes.value = editing ? d.notes : '';
+    notes.setCustomValidity('');
+    form.action = editing ? d.updateUrl : addUrl;
+    submit.textContent = editing ? 'Save changes' : 'Add to order';
+    delete form.dataset.submitted;
+    separateWrap.hidden = !editing;
+    dialog.showModal();
+    qty.focus();
+  }
+
+  document.querySelectorAll('[data-supply-open]').forEach(function (button) {
+    button.addEventListener('click', function (event) {
+      // open() runs first: if it throws, the link still navigates to the item page.
+      open(button);
+      event.preventDefault();
+    });
+  });
+
+  dialog.querySelectorAll('[data-dialog-close]').forEach(function (button) {
+    button.addEventListener('click', function () { dialog.close(); });
+  });
+
+  form.querySelector('[data-separate-line]').addEventListener('click', function (event) {
+    event.preventDefault();
+    form.action = addUrl;
+    submit.textContent = 'Add as new line';
+    separateWrap.hidden = true;
+  });
+
+  notes.addEventListener('input', function () { notes.setCustomValidity(''); });
+
+  form.addEventListener('submit', function (event) {
+    if (notes.required && !notes.value.trim()) {
+      notes.setCustomValidity('Add a note for this item.');
+      notes.reportValidity();
+      event.preventDefault();
+      // The double-submit guard in layout/base.html listens on the document
+      // and would lock this form for 5 seconds after a refused submit.
+      event.stopPropagation();
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
