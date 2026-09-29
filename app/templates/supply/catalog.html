@@ -3,6 +3,70 @@
 
 {% block title %}{% if work_item %}{{ work_item.public_id }} - Supply Catalog{% else %}Supply Catalog - {{ ctx.department.name }}{% endif %}{% endblock %}
 
+{% block head %}
+<style>
+  /* --catalog-sticky-top clears the order-mode cart strip, which is sticky above the nav. */
+  .catalog-page { --catalog-sticky-top: 12px; }
+  .catalog-page--order { --catalog-sticky-top: 76px; }
+
+  .catalog-cart { position: sticky; top: 0; z-index: 10; margin-bottom: 16px;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+  .catalog-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
+
+  .catalog-nav { position: sticky; top: var(--catalog-sticky-top);
+    max-height: calc(100vh - var(--catalog-sticky-top) - 12px); overflow-y: auto; }
+  .catalog-nav a { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px;
+    border-radius: 6px; color: #111; text-decoration: none; }
+  .catalog-nav a:hover { background: #f6f6f6; }
+  .catalog-nav a.is-active { background: #eef5ff; color: #0a66c2; font-weight: 600; }
+  .catalog-nav-count { color: #666; font-weight: normal; }
+
+  .catalog-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .catalog-total { color: #666; }
+
+  /* Rows need the margin too: adding an item redirects to #item-<id>. */
+  .catalog-section, .catalog-row { scroll-margin-top: calc(var(--catalog-sticky-top) + 8px); }
+  .catalog-section { margin-bottom: 24px; }
+  .catalog-section h2 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .catalog-count { color: #666; font-size: 14px; font-weight: normal; }
+
+  .catalog-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; margin-top: 8px; }
+  .catalog-thumb { width: 40px; height: 40px; object-fit: contain; border-radius: 4px; flex-shrink: 0; background: #f6f6f6; }
+  .catalog-row-body { flex: 1 1 220px; min-width: 0; }
+  .catalog-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .catalog-row-action { flex-shrink: 0; }
+  .catalog-add { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+
+  @media (max-width: 767.98px) {
+    .catalog-page { --catalog-sticky-top: 0px; }
+    .catalog-page--order { --catalog-sticky-top: 52px; }
+    .catalog-cart { padding: 8px 12px; flex-wrap: nowrap; gap: 8px; }
+    /* Only the order ID shortens; the item count always stays visible. */
+    .catalog-cart-label { display: flex; min-width: 0; white-space: nowrap; }
+    .catalog-cart-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .catalog-cart-count { flex-shrink: 0; }
+    .catalog-cart .btn { flex-shrink: 0; padding: 6px 10px; }
+    .catalog-cart .catalog-cart-note { display: none; }
+
+    .catalog-layout { grid-template-columns: 1fr; gap: 12px; }
+    .catalog-nav { z-index: 9; display: flex; gap: 6px; overflow-x: auto; max-height: none;
+      background: #fff; padding: 6px 0; border-bottom: 1px solid #e5e5e5;
+      box-shadow: 0 -8px 0 #fff; }
+    .catalog-nav a { flex: 0 0 auto; min-height: 44px; align-items: center; white-space: nowrap;
+      border: 1px solid #e5e5e5; border-radius: 999px; padding: 0 14px; }
+    .catalog-section, .catalog-row { scroll-margin-top: calc(var(--catalog-sticky-top) + 64px); }
+
+    .catalog-row { flex-wrap: wrap; }
+    .catalog-row-action { flex: 1 1 100%; }
+    /* a.btn in layout/base.html outranks a bare class, so this selector names the element. */
+    .catalog-row-action a.catalog-view { display: flex; width: 100%; box-sizing: border-box;
+      align-items: center; justify-content: center; min-height: 44px; padding: 0 14px; }
+    .catalog-add input[name="notes"] { flex: 1 1 100%; }
+  }
+</style>
+{% endblock %}
+
 
 {% block content %}
 <div class="catalog-page{% if work_item %} catalog-page--order{% endif %}">
@@ -23,9 +87,9 @@
 
   {% if work_item %}
     <div class="card catalog-cart">
-      <div>
-        <strong>{{ work_item.public_id }}</strong>
-        <span class="muted"> &middot; {{ cart_count }} item{% if cart_count != 1 %}s{% endif %}<span class="catalog-cart-note"> in this order</span></span>
+      <div class="catalog-cart-label">
+        <strong class="catalog-cart-id">{{ work_item.public_id }}</strong>
+        <span class="muted catalog-cart-count">&nbsp;&middot; {{ cart_count }} item{% if cart_count != 1 %}s{% endif %}<span class="catalog-cart-note"> in this order</span></span>
       </div>
       <a class="btn btn-primary" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
         Review order &rarr;
@@ -161,4 +225,46 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+// Catalog section highlight. Without this script the nav is plain anchor links.
+(function () {
+  var nav = document.querySelector('.catalog-nav');
+  if (!nav || !('IntersectionObserver' in window)) return;
+  var links = nav.querySelectorAll('a[data-catalog-nav]');
+
+  // The CSS offsets are estimates; measure the cart strip so the nav never sits under it.
+  var page = document.querySelector('.catalog-page');
+  var cart = document.querySelector('.catalog-cart');
+  function setStickyTop() {
+    if (cart) page.style.setProperty('--catalog-sticky-top', (cart.offsetHeight + 8) + 'px');
+  }
+  setStickyTop();
+  window.addEventListener('resize', setStickyTop);
+
+  function activate(code) {
+    links.forEach(function (a) {
+      var on = a.getAttribute('data-catalog-nav') === code;
+      a.classList.toggle('is-active', on);
+      // On phone the nav scrolls sideways; keep the active chip in view without moving the page.
+      if (on && nav.scrollWidth > nav.clientWidth) {
+        nav.scrollLeft = a.offsetLeft - (nav.clientWidth - a.offsetWidth) / 2;
+      }
+    });
+  }
+
+  // The band from 25% to 40% of the viewport height decides which section counts as on screen.
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) activate(entry.target.getAttribute('data-category'));
+    });
+  }, { rootMargin: '-25% 0px -60% 0px' });
+
+  document.querySelectorAll('section.catalog-section[data-category]').forEach(function (s) {
+    observer.observe(s);
+  });
+})();
+</script>
 {% endblock %}

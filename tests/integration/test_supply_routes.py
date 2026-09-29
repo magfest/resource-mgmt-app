@@ -5,6 +5,8 @@ Mirrors the harness in tests/integration/test_route_migration.py: seeds an
 active SUPPLY work type + config on top of seed_workflow_data, then hits
 the portfolio landing URL directly.
 """
+import re
+
 from app import db
 from app.models import (
     SupplyCategory,
@@ -1033,3 +1035,11 @@ class TestSupplyCatalogSections:
 
         assert 'class="btn catalog-view"' in html
         assert 'name="quantity"' not in html
+
+    def test_highlight_script_carries_the_nonce(self, app, client, seed_workflow_data):
+        _seed_supply(seed_workflow_data)
+        _seed_catalog()
+
+        html = self._browse(client, seed_workflow_data).get_data(as_text=True)
+
+        assert re.search(r'<script nonce="[^"]+">\s*// Catalog section highlight', html)
