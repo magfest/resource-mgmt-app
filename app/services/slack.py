@@ -92,9 +92,10 @@ def _log_notification(
     subject: Optional[str] = None,
     provider_message_id: Optional[str] = None,
     error: Optional[str] = None,
+    channel_id: Optional[str] = None,
 ):
     """Record Slack notification in database."""
-    channel_id = current_app.config.get('SLACK_CHANNEL_ID', '')
+    channel_id = channel_id or current_app.config.get('SLACK_CHANNEL_ID', '')
     log = NotificationLog(
         channel=SLACK_CHANNEL,
         recipient_email=f"slack:{channel_id}",
@@ -114,6 +115,7 @@ def send_slack_message(
     template_key: str,
     work_item_id: Optional[int] = None,
     blocks: Optional[List[dict]] = None,
+    channel_id: Optional[str] = None,
 ) -> bool:
     """
     Post a message to the configured Slack channel.
@@ -123,12 +125,17 @@ def send_slack_message(
         template_key: Identifier for debounce tracking (e.g. 'submitted')
         work_item_id: Optional work item ID for debounce tracking
         blocks: Optional Slack Block Kit blocks for rich formatting
+        channel_id: Overrides SLACK_CHANNEL_ID. The feedback button posts to
+            its own channel so triage is not buried under workflow posts.
 
     Returns True if sent (or safely skipped), False on error.
     """
+    channel_id = channel_id or current_app.config.get('SLACK_CHANNEL_ID')
+
     # Check debounce
     if work_item_id and _was_recently_sent(template_key, work_item_id):
         _log_notification(
+            channel_id=channel_id,
             template_key=template_key,
             status=NOTIF_STATUS_DEBOUNCED,
             work_item_id=work_item_id,
@@ -139,6 +146,7 @@ def send_slack_message(
     # Check if disabled
     if not is_slack_enabled():
         _log_notification(
+            channel_id=channel_id,
             template_key=template_key,
             status=NOTIF_STATUS_SUPPRESSED,
             work_item_id=work_item_id,
@@ -151,6 +159,7 @@ def send_slack_message(
     allowed, reason = _check_circuit_breaker()
     if not allowed:
         _log_notification(
+            channel_id=channel_id,
             template_key=template_key,
             status=NOTIF_STATUS_CIRCUIT_OPEN,
             work_item_id=work_item_id,
@@ -162,10 +171,10 @@ def send_slack_message(
 
     # Send via Slack API
     token = current_app.config.get('SLACK_BOT_TOKEN')
-    channel_id = current_app.config.get('SLACK_CHANNEL_ID')
 
     if not token or not channel_id:
         _log_notification(
+            channel_id=channel_id,
             template_key=template_key,
             status=NOTIF_STATUS_FAILED,
             work_item_id=work_item_id,
@@ -198,6 +207,7 @@ def send_slack_message(
         # Slack returns HTTP 200 even on errors — check the "ok" field
         if data.get("ok"):
             _log_notification(
+                channel_id=channel_id,
                 template_key=template_key,
                 status=NOTIF_STATUS_SENT,
                 work_item_id=work_item_id,
@@ -208,6 +218,7 @@ def send_slack_message(
         else:
             error_msg = data.get("error", "unknown error")
             _log_notification(
+                channel_id=channel_id,
                 template_key=template_key,
                 status=NOTIF_STATUS_FAILED,
                 work_item_id=work_item_id,
@@ -219,6 +230,7 @@ def send_slack_message(
 
     except Exception as e:
         _log_notification(
+            channel_id=channel_id,
             template_key=template_key,
             status=NOTIF_STATUS_FAILED,
             work_item_id=work_item_id,

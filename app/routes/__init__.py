@@ -108,6 +108,7 @@ def register_all_routes(app: Flask, helpers: RouteHelpers) -> None:
     from .dev import dev_bp
     from .auth import auth_bp
     from .spaces import spaces_bp
+    from .feedback import feedback_bp
 
     app.register_blueprint(home_bp)
     app.register_blueprint(admin_config_bp)
@@ -119,4 +120,5 @@ def register_all_routes(app: Flask, helpers: RouteHelpers) -> None:
     app.register_blueprint(dev_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(spaces_bp)
+    app.register_blueprint(feedback_bp)
 
