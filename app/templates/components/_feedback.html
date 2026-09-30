@@ -1,0 +1,137 @@
+{# components/_feedback.html: the Feedback dialog opened from the nav button.
+   Rendered only when feedback_enabled, so an environment without a feedback
+   channel shows no button rather than a form that cannot send. #}
+{% if active_user and feedback_enabled %}
+{% set _va = request.view_args or {} %}
+<style>
+  .feedback-dialog {
+    width: min(520px, calc(100vw - 32px));
+    padding: 20px;
+    border: 1px solid #d0d7e2;
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  }
+  .feedback-dialog::backdrop { background: rgba(15, 30, 50, 0.45); }
+  .feedback-dialog h2 { margin: 0 0 12px; font-size: 18px; }
+  .feedback-dialog textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 140px;
+    padding: 8px;
+    font: inherit;
+    border: 1px solid #bbb;
+    border-radius: 6px;
+    resize: vertical;
+  }
+  .feedback-disclosure { margin: 8px 0 14px; font-size: 12px; color: #4a5568; }
+  .feedback-status { min-height: 1.2em; margin: 0 0 10px; font-size: 13px; }
+  .feedback-status.is-error { color: #b91c1c; }
+  .feedback-status.is-ok { color: #15803d; }
+  .feedback-actions { display: flex; justify-content: flex-end; gap: 8px; }
+</style>
+
+<dialog id="feedback-dialog" class="feedback-dialog" aria-labelledby="feedback-title">
+  <form id="feedback-form" method="post" action="{{ url_for('feedback.submit_feedback') }}">
+    <h2 id="feedback-title">Send feedback</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="event" value="{{ _va.get('event', '') }}">
+    <input type="hidden" name="dept" value="{{ _va.get('dept', '') }}">
+    <input type="hidden" name="public_id" value="{{ _va.get('public_id', '') }}">
+    <textarea id="feedback-notes" name="notes" maxlength="4000" required aria-label="Your feedback"
+              placeholder="What happened, or what would help?"></textarea>
+    <p class="feedback-disclosure">
+      Goes to the team's Slack with your name, email, a link to this page, any message the page is showing, and your browser. No screenshot is taken.
+    </p>
+    <p id="feedback-status" class="feedback-status" role="status" aria-live="polite"></p>
+    <div class="feedback-actions">
+      <button type="button" class="btn" id="feedback-cancel">Cancel</button>
+      <button type="submit" class="btn btn-primary" id="feedback-submit">Submit</button>
+    </div>
+  </form>
+</dialog>
+
+<script nonce="{{ csp_nonce }}">
+(function() {
+  var dialog = document.getElementById('feedback-dialog');
+  var form = document.getElementById('feedback-form');
+  var notes = document.getElementById('feedback-notes');
+  var status = document.getElementById('feedback-status');
+  var submit = document.getElementById('feedback-submit');
+  var openBtn = document.getElementById('feedback-open');
+  var sending = false;
+
+  function setStatus(msg, kind) {
+    status.textContent = msg;
+    status.className = 'feedback-status' + (kind ? ' is-' + kind : '');
+  }
+
+  openBtn.addEventListener('click', function() {
+    setStatus('', null);
+    dialog.showModal();
+    notes.focus();
+  });
+  document.getElementById('feedback-cancel').addEventListener('click', function() {
+    dialog.close();
+  });
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    // base.html's document-level submit guard would lock this form for 5
+    // seconds and block a retry after a failed send. This form tracks its
+    // own in-flight state instead.
+    e.stopPropagation();
+    if (sending) return;
+    if (!notes.value.trim()) {
+      setStatus('Please write something first.', 'error');
+      return;
+    }
+    sending = true;
+    submit.disabled = true;
+    setStatus('Sending…', null);
+
+    var data = new FormData(form);
+    data.append('page_url', window.location.href);
+    data.append('viewport', window.innerWidth + 'x' + window.innerHeight);
+    data.append('page_title', document.title);
+    // Flash messages the user can still see. Success and info flashes
+    // auto-dismiss after 5 seconds, so these are mostly errors and warnings.
+    var shown = Array.prototype.map.call(
+      document.querySelectorAll('.flash-message'),
+      function(m) {
+        var label = m.querySelector('strong');
+        var body = m.querySelector('span');
+        var text = label && body ? label.textContent + ': ' + body.textContent : (m.firstElementChild || m).textContent;
+        return text.replace(/\s+/g, ' ').trim();
+      }
+    ).filter(Boolean);
+    data.append('page_messages', shown.join(' | '));
+
+    fetch(form.action, { method: 'POST', body: data, credentials: 'same-origin' })
+      .then(function(resp) {
+        // An expired session answers with a redirect to the sign-in page,
+        // which fetch follows and returns as HTML rather than JSON.
+        if (resp.redirected) {
+          return { ok: false, error: 'Your session has ended. Copy your note, reload the page, and try again.' };
+        }
+        return resp.json().catch(function() { return { ok: false }; });
+      })
+      .then(function(body) {
+        if (body.ok) {
+          notes.value = '';
+          setStatus('Thanks, the team has it.', 'ok');
+          setTimeout(function() { dialog.close(); }, 1500);
+        } else {
+          setStatus(body.error || "Couldn't send; please try again.", 'error');
+        }
+      })
+      .catch(function() {
+        setStatus("Couldn't send; please check your connection and try again.", 'error');
+      })
+      .then(function() {
+        sending = false;
+        submit.disabled = false;
+      });
+  });
+})();
+</script>
+{% endif %}

@@ -140,6 +140,9 @@
   </div>
 
   <div class="top-nav-right">
+    {% if feedback_enabled %}
+    <button type="button" class="top-nav-link top-nav-feedback" id="feedback-open">Feedback</button>
+    {% endif %}
     {# User menu #}
     <div class="top-nav-dropdown">
       <button type="button" class="top-nav-link top-nav-toggle">{{ active_user.display_name }} <span class="top-nav-caret">&#9662;</span></button>

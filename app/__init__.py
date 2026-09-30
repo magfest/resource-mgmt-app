@@ -199,6 +199,8 @@ def create_app() -> Flask:
     app.config["SLACK_ENABLED"] = os.environ.get("SLACK_ENABLED", "").lower() == "true"
     app.config["SLACK_BOT_TOKEN"] = os.environ.get("SLACK_BOT_TOKEN")
     app.config["SLACK_CHANNEL_ID"] = os.environ.get("SLACK_CHANNEL_ID")
+    # The Feedback button renders only when this is set and SLACK_ENABLED is true.
+    app.config["SLACK_FEEDBACK_CHANNEL_ID"] = os.environ.get("SLACK_FEEDBACK_CHANNEL_ID")
 
     # --- Supply catalog item images (S3) ---
     app.config["SUPPLY_IMAGE_BUCKET"] = os.environ.get("SUPPLY_IMAGE_BUCKET")
