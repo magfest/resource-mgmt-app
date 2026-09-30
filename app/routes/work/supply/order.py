@@ -160,6 +160,15 @@ def supply_line_update(event: str, dept: str, public_id: str, line_number: int):
         line.supply_detail.item_id,
     )
 
+    # supply_line_add reuses the highest line number after a delete, so a stale
+    # page can name a line that now holds another item. Refuse, never overwrite.
+    posted_item_id = request.form.get("item_id", type=int)
+    if posted_item_id is not None and posted_item_id != line.supply_detail.item_id:
+        flash("That line changed after this page loaded. Nothing was saved; please try again.", "error")
+        return redirect(_update_return_url(
+            request.form.get("return_to", ""), event, dept, public_id, posted_item_id,
+        ))
+
     quantity = request.form.get("quantity", type=int)
     if quantity is None or quantity < 1:
         flash("Quantity must be a whole number of at least 1.", "error")

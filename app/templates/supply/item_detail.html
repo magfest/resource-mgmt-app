@@ -74,6 +74,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {% if editing %}
               <input type="hidden" name="return_to" value="item">
+              <input type="hidden" name="item_id" value="{{ item.id }}">
               <p class="small" style="margin: 0 0 8px;">In your order &times;{{ cart_entry.qty }}.</p>
             {% else %}
               <input type="hidden" name="item_id" value="{{ item.id }}">

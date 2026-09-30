@@ -1240,3 +1240,62 @@ class TestSupplyCatalogRowActions:
         html = self._order_catalog(client, seed_workflow_data, work_item)
 
         assert re.search(r'<script nonce="[^"]+">\s*// Supply add/edit dialog', html)
+
+
+class TestSupplyLineUpdateStaleLine:
+    """A stale page must not overwrite a line that now holds another item."""
+
+    def test_mismatched_item_id_is_refused(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        # Line 1 now holds plain_item; the stale page still thinks it holds popular_item.
+        _add_line(work_item, plain_item, quantity=2, notes="pens for registration")
+
+        _login(client, "test:admin")
+        response = client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/lines/1/update",
+            data={"item_id": str(popular_item.id), "quantity": "9",
+                  "notes": "tape note", "return_to": "catalog"},
+        )
+
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith(f"#item-{popular_item.id}")
+        detail = SupplyOrderLineDetail.query.one()
+        assert (detail.quantity_requested, detail.requester_notes) == (2, "pens for registration")
+
+    def test_matching_item_id_still_saves(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=2, notes="first")
+
+        _login(client, "test:admin")
+        client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/lines/1/update",
+            data={"item_id": str(plain_item.id), "quantity": "3", "notes": "first",
+                  "return_to": "catalog"},
+        )
+
+        assert SupplyOrderLineDetail.query.one().quantity_requested == 3
+
+    def test_item_page_edit_form_posts_item_id(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=2, notes="first")
+
+        _login(client, "test:admin")
+        html = client.get(
+            f"/{cycle.code}/{dept.code}/supply/catalog/item/{plain_item.id}"
+            f"?order={work_item.public_id}"
+        ).get_data(as_text=True)
+
+        form = html[html.index("/lines/1/update"):]
+        assert f'name="item_id" value="{plain_item.id}"' in form[:form.index("</form>")]
