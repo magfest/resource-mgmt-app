@@ -62,18 +62,31 @@
       {% endif %}
 
       {% if can_add and work_item %}
-        <form method="post" action="{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="margin-top: 16px; max-width: 320px;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="item_id" value="{{ item.id }}">
-          <label class="form-label small">Qty
-            <input type="number" name="quantity" value="1" min="1" required>
-          </label>
-          <label class="form-label small" style="margin-top: 8px;">Notes{% if item.notes_required %} (required){% endif %}
-            <input type="text" name="notes" {% if item.notes_required %}required{% endif %}
-                   placeholder="e.g. for Tech booth">
-          </label>
-          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Add to order</button>
-        </form>
+        {% if cart_entry and cart_entry.lines > 1 %}
+          <div class="callout" style="margin-top: 16px;">
+            On your order as {{ cart_entry.lines }} lines.
+            <a href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">Edit them on the order page</a>.
+          </div>
+        {% else %}
+          {% set editing = cart_entry is not none %}
+          <form method="post" style="margin-top: 16px; max-width: 320px;"
+                action="{% if editing %}{{ url_for('work.supply_line_update', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_number=cart_entry.line_number) }}{% else %}{{ url_for('work.supply_line_add', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}{% endif %}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if editing %}
+              <input type="hidden" name="return_to" value="item">
+              <input type="hidden" name="item_id" value="{{ item.id }}">
+              <p class="small" style="margin: 0 0 8px;">In your order &times;{{ cart_entry.qty }}.</p>
+            {% else %}
+              <input type="hidden" name="item_id" value="{{ item.id }}">
+            {% endif %}
+            <label for="item-qty" class="form-label small">Quantity</label>
+            <input id="item-qty" type="number" name="quantity" value="{{ cart_entry.qty if editing else 1 }}" min="1" required>
+            <label for="item-notes" class="form-label small" style="margin-top: 8px;">Notes {% if item.notes_required %}(required){% else %}(optional){% endif %}</label>
+            <textarea id="item-notes" name="notes" rows="3" {% if item.notes_required %}required{% endif %}
+                      placeholder="What is this for? e.g. Tech booth">{{ cart_entry.notes if editing else '' }}</textarea>
+            <button type="submit" class="btn btn-primary" style="margin-top: 10px;">{% if editing %}Save changes{% else %}Add to order{% endif %}</button>
+          </form>
+        {% endif %}
       {% endif %}
 
       <div class="btn-row" style="margin-top: 20px;">

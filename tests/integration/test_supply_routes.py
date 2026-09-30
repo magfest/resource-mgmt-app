@@ -1046,3 +1046,256 @@ class TestSupplyCatalogSections:
         html = self._browse(client, seed_workflow_data).get_data(as_text=True)
 
         assert re.search(r'<script nonce="[^"]+">\s*// Catalog section highlight', html)
+
+
+class TestSupplyItemDetailEditMode:
+    """The item page edits the existing line instead of adding a second one."""
+
+    def _item_page(self, client, seed_workflow_data, work_item, item):
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        return client.get(
+            f"/{cycle.code}/{dept.code}/supply/catalog/item/{item.id}"
+            f"?order={work_item.public_id}"
+        ).get_data(as_text=True)
+
+    def test_item_on_one_line_prefills_and_posts_to_update(
+        self, app, client, seed_workflow_data
+    ):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=3, notes="for registration")
+
+        html = self._item_page(client, seed_workflow_data, work_item, plain_item)
+
+        assert f"/supply/order/{work_item.public_id}/lines/1/update" in html
+        assert 'name="return_to" value="item"' in html
+        assert 'value="3"' in html
+        assert ">for registration</textarea>" in html
+        assert "Save changes" in html
+
+    def test_item_on_two_lines_links_to_order_page(
+        self, app, client, seed_workflow_data
+    ):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=1, notes="tech booth", line_number=1)
+        _add_line(work_item, plain_item, quantity=2, notes="registration", line_number=2)
+
+        html = self._item_page(client, seed_workflow_data, work_item, plain_item)
+
+        assert "On your order as 2 lines" in html
+        assert f'href="/{seed_workflow_data["cycle"].code}/{seed_workflow_data["department"].code}/supply/order/{work_item.public_id}"' in html
+        assert 'name="quantity"' not in html
+
+    def test_item_not_in_order_keeps_add_form(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        category, popular_item, plain_item = _seed_catalog()
+
+        html = self._item_page(client, seed_workflow_data, work_item, plain_item)
+
+        assert f"/supply/order/{work_item.public_id}/lines/add" in html
+        assert 'name="item_id"' in html
+        assert "Add to order" in html
+        assert "Save changes" not in html
+
+
+class TestSupplyLineUpdateReturnTo:
+    """supply_line_update sends the requester back where the edit started."""
+
+    def _update(self, client, seed_workflow_data, work_item, data):
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        return client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/lines/1/update",
+            data=data,
+        )
+
+    def _setup(self, seed_workflow_data, notes_required=False):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        category, popular_item, plain_item = _seed_catalog()
+        plain_item.notes_required = notes_required
+        db.session.commit()
+        _add_line(work_item, plain_item, quantity=1, notes="first")
+        return work_item, plain_item
+
+    def test_return_to_catalog_lands_on_the_row(self, app, client, seed_workflow_data):
+        work_item, item = self._setup(seed_workflow_data)
+        response = self._update(client, seed_workflow_data, work_item,
+                                {"quantity": "4", "notes": "more", "return_to": "catalog"})
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith(
+            f"/supply/order/{work_item.public_id}/catalog#item-{item.id}")
+        assert SupplyOrderLineDetail.query.one().quantity_requested == 4
+
+    def test_return_to_item_lands_on_the_item_page(self, app, client, seed_workflow_data):
+        work_item, item = self._setup(seed_workflow_data)
+        response = self._update(client, seed_workflow_data, work_item,
+                                {"quantity": "2", "notes": "", "return_to": "item"})
+        assert response.headers["Location"].endswith(
+            f"/supply/catalog/item/{item.id}?order={work_item.public_id}")
+
+    def test_unknown_return_to_falls_back_to_order_page(self, app, client, seed_workflow_data):
+        work_item, item = self._setup(seed_workflow_data)
+        response = self._update(client, seed_workflow_data, work_item,
+                                {"quantity": "2", "return_to": "https://example.com/"})
+        location = response.headers["Location"]
+        assert location.endswith(f"/supply/order/{work_item.public_id}")
+        assert "example.com" not in location
+
+    def test_validation_error_keeps_the_return_target(self, app, client, seed_workflow_data):
+        work_item, item = self._setup(seed_workflow_data, notes_required=True)
+        response = self._update(client, seed_workflow_data, work_item,
+                                {"quantity": "5", "notes": "   ", "return_to": "catalog"})
+        assert response.headers["Location"].endswith(f"#item-{item.id}")
+        detail = SupplyOrderLineDetail.query.one()
+        assert detail.quantity_requested == 1
+        assert detail.requester_notes == "first"
+
+
+def _row_html(html: str, item_id: int) -> str:
+    """Return one catalog row's markup, stopping before the next row or the dialog."""
+    start = html.index(f'id="item-{item_id}"')
+    ends = [i for i in (html.find('class="card catalog-row"', start), html.find("<dialog", start)) if i != -1]
+    return html[start:min(ends) if ends else len(html)]
+
+
+class TestSupplyCatalogRowActions:
+    """Rows carry one button; the dialog holds the only form."""
+
+    def _order_catalog(self, client, seed_workflow_data, work_item):
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        return client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        ).get_data(as_text=True)
+
+    def _setup(self, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        work_item = _make_draft_order(wt, seed_workflow_data["cycle"], seed_workflow_data["department"])
+        return work_item, _seed_catalog()
+
+    def test_row_states_for_zero_one_and_two_lines(self, app, client, seed_workflow_data):
+        work_item, (category, popular_item, plain_item) = self._setup(seed_workflow_data)
+        third = SupplyItem(category_id=category.id, item_name="Zip Ties", unit="bag", is_active=True)
+        db.session.add(third)
+        db.session.commit()
+        _add_line(work_item, popular_item, quantity=3, notes="stage", line_number=1)
+        _add_line(work_item, third, quantity=1, notes="a", line_number=2)
+        _add_line(work_item, third, quantity=1, notes="b", line_number=3)
+
+        html = self._order_catalog(client, seed_workflow_data, work_item)
+
+        none_row = _row_html(html, plain_item.id)
+        assert "data-supply-open" in none_row and "Add to order" in none_row
+        one_row = _row_html(html, popular_item.id)
+        assert 'data-line-number="1"' in one_row and 'data-qty="3"' in one_row
+        assert ">Edit</a>" in one_row
+        two_row = _row_html(html, third.id)
+        assert "Edit on order page" in two_row
+        assert "data-supply-open" not in two_row
+
+    def test_rows_have_no_inputs_and_one_dialog(self, app, client, seed_workflow_data):
+        work_item, _ = self._setup(seed_workflow_data)
+        html = self._order_catalog(client, seed_workflow_data, work_item)
+
+        assert html.count("<dialog") == 1
+        assert 'name="quantity"' not in html.split("<dialog")[0]
+
+    def test_no_dialog_in_browse_or_submitted(self, app, client, seed_workflow_data):
+        work_item, _ = self._setup(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        browse = client.get(f"/{cycle.code}/{dept.code}/supply/catalog").get_data(as_text=True)
+        work_item.status = WORK_ITEM_STATUS_SUBMITTED
+        db.session.commit()
+        submitted = self._order_catalog(client, seed_workflow_data, work_item)
+
+        assert "<dialog" not in browse
+        assert "<dialog" not in submitted
+
+    def test_item_data_is_escaped_and_notes_keep_line_breaks(
+        self, app, client, seed_workflow_data
+    ):
+        work_item, (category, popular_item, plain_item) = self._setup(seed_workflow_data)
+        plain_item.item_name = 'Tape "Pro" <x>'
+        db.session.commit()
+        _add_line(work_item, plain_item, quantity=2, notes="line one\nline two")
+
+        html = self._order_catalog(client, seed_workflow_data, work_item)
+
+        assert 'data-name="Tape &#34;Pro&#34; &lt;x&gt;"' in html
+        assert 'data-notes="line one\nline two"' in html
+
+    def test_dialog_script_carries_the_nonce(self, app, client, seed_workflow_data):
+        work_item, _ = self._setup(seed_workflow_data)
+        html = self._order_catalog(client, seed_workflow_data, work_item)
+
+        assert re.search(r'<script nonce="[^"]+">\s*// Supply add/edit dialog', html)
+
+
+class TestSupplyLineUpdateStaleLine:
+    """A stale page must not overwrite a line that now holds another item."""
+
+    def test_mismatched_item_id_is_refused(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        # Line 1 now holds plain_item; the stale page still thinks it holds popular_item.
+        _add_line(work_item, plain_item, quantity=2, notes="pens for registration")
+
+        _login(client, "test:admin")
+        response = client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/lines/1/update",
+            data={"item_id": str(popular_item.id), "quantity": "9",
+                  "notes": "tape note", "return_to": "catalog"},
+        )
+
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith(f"#item-{popular_item.id}")
+        detail = SupplyOrderLineDetail.query.one()
+        assert (detail.quantity_requested, detail.requester_notes) == (2, "pens for registration")
+
+    def test_matching_item_id_still_saves(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=2, notes="first")
+
+        _login(client, "test:admin")
+        client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/lines/1/update",
+            data={"item_id": str(plain_item.id), "quantity": "3", "notes": "first",
+                  "return_to": "catalog"},
+        )
+
+        assert SupplyOrderLineDetail.query.one().quantity_requested == 3
+
+    def test_item_page_edit_form_posts_item_id(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=2, notes="first")
+
+        _login(client, "test:admin")
+        html = client.get(
+            f"/{cycle.code}/{dept.code}/supply/catalog/item/{plain_item.id}"
+            f"?order={work_item.public_id}"
+        ).get_data(as_text=True)
+
+        form = html[html.index("/lines/1/update"):]
+        assert f'name="item_id" value="{plain_item.id}"' in form[:form.index("</form>")]
