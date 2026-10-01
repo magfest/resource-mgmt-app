@@ -7,6 +7,8 @@
     pipeline_summary_cards,
     grand_total_card,
     pipeline_table_footer,
+    pipeline_table_headers,
+    pipeline_row_cells,
     amount_cell,
     stat_card,
     empty_state_no_event,
@@ -68,7 +70,7 @@
 
     {{ pipeline_summary_cards(summary, format_currency) }}
 
-    {{ grand_total_card(summary.total_cents, format_currency) }}
+    {{ grand_total_card(summary.ceiling_cents, format_currency) }}
 
     {# Data Table #}
     <section class="card">
@@ -85,12 +87,7 @@
               <th style="width: 100px;">Division</th>
               <th style="width: 70px;" class="right">Requests</th>
               <th style="width: 70px;" class="right">Lines</th>
-              <th style="width: 100px;" class="right">Draft</th>
-              <th style="width: 100px;" class="right">Submitted</th>
-              <th style="width: 100px;" class="right">Reviewer Recommended</th>
-              <th style="width: 100px;" class="right">Final Approved</th>
-              <th style="width: 100px;" class="right">Rejected</th>
-              <th style="width: 110px;" class="right">Total</th>
+              {{ pipeline_table_headers() }}
             </tr>
           </thead>
           <tbody>
@@ -109,14 +106,7 @@
                 </td>
                 <td class="right num">{{ row.request_count }}</td>
                 <td class="right num">{{ row.line_count }}</td>
-                {{ amount_cell(row.draft_cents, format_currency) }}
-                {{ amount_cell(row.submitted_cents, format_currency) }}
-                {{ amount_cell(row.reviewer_recommended_cents, format_currency) }}
-                {{ amount_cell(row.final_approved_cents, format_currency) }}
-                {{ amount_cell(row.rejected_cents, format_currency, highlight_negative=True) }}
-                <td class="right num" style="font-weight: 600;">
-                  {{ format_currency(row.total_cents) }}
-                </td>
+                {{ pipeline_row_cells(row, format_currency) }}
               </tr>
             {% endfor %}
           </tbody>
@@ -125,12 +115,13 @@
               <td colspan="2"><strong>TOTALS</strong></td>
               <td class="right num">{{ stats.total_requests }}</td>
               <td class="right num">{{ stats.total_lines }}</td>
-              <td class="right num">{{ format_currency(summary.draft_cents) }}</td>
-              <td class="right num">{{ format_currency(summary.submitted_cents) }}</td>
-              <td class="right num">{{ format_currency(summary.reviewer_recommended_cents) }}</td>
-              <td class="right num">{{ format_currency(summary.final_approved_cents) }}</td>
+              <td class="right num muted">{{ format_currency(summary.draft_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.requested_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.in_review_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.approved_cents) }}</td>
+              <td class="right num">{{ format_currency(summary.reduced_cents) }}</td>
               <td class="right num" style="color: #dc2626;">{{ format_currency(summary.rejected_cents) }}</td>
-              <td class="right num" style="font-size: 16px;">{{ format_currency(summary.total_cents) }}</td>
+              <td class="right num" style="font-size: 16px;">{{ format_currency(summary.ceiling_cents) }}</td>
             </tr>
           </tfoot>
         </table>

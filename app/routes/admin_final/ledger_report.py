@@ -26,6 +26,9 @@ from .report_utils import (
     PipelineTotals,
     resolve_report_filters,
     get_pipeline_sum_columns,
+    pipeline_fields_from_row,
+    pipeline_csv_values,
+    PIPELINE_CSV_HEADERS,
     build_budget_line_base_query,
     apply_standard_filters,
     compute_pipeline_summary,
@@ -110,11 +113,7 @@ def get_ledger_data(
                 account_name=row.account_name,
                 approval_group_code=row.approval_group_code,
                 approval_group_name=row.approval_group_name,
-                draft_cents=row.draft_cents,
-                submitted_cents=row.submitted_cents,
-                reviewer_recommended_cents=row.reviewer_recommended_cents,
-                final_approved_cents=row.final_approved_cents,
-                rejected_cents=row.rejected_cents,
+                **pipeline_fields_from_row(row),
             )
         )
 
@@ -192,12 +191,7 @@ def master_ledger_export():
         "GL Code",
         "Account Name",
         "Reviewer Group",
-        "Draft",
-        "Submitted",
-        "Reviewer Recommended",
-        "Final Approved",
-        "Rejected",
-        "Total",
+        *PIPELINE_CSV_HEADERS,
     ]
 
     # Build CSV rows
@@ -207,12 +201,7 @@ def master_ledger_export():
             row.gl_code,
             row.account_name,
             row.approval_group_code or "",
-            format_currency_csv(row.draft_cents),
-            format_currency_csv(row.submitted_cents),
-            format_currency_csv(row.reviewer_recommended_cents),
-            format_currency_csv(row.final_approved_cents),
-            format_currency_csv(row.rejected_cents),
-            format_currency_csv(row.total_cents),
+            *pipeline_csv_values(row, format_currency_csv),
         ])
 
     # Add totals row
@@ -220,12 +209,7 @@ def master_ledger_export():
         "TOTALS",
         "",
         "",
-        format_currency_csv(summary.draft_cents),
-        format_currency_csv(summary.submitted_cents),
-        format_currency_csv(summary.reviewer_recommended_cents),
-        format_currency_csv(summary.final_approved_cents),
-        format_currency_csv(summary.rejected_cents),
-        format_currency_csv(summary.total_cents),
+        *pipeline_csv_values(summary, format_currency_csv),
     ])
 
     # Generate filename

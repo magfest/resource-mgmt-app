@@ -29,6 +29,9 @@ from .report_utils import (
     PipelineTotals,
     resolve_report_filters,
     get_pipeline_sum_columns,
+    pipeline_fields_from_row,
+    pipeline_csv_values,
+    PIPELINE_CSV_HEADERS,
     compute_pipeline_summary,
 )
 from .report_exports import (
@@ -118,11 +121,7 @@ def get_department_data(
                 division_name=row.division_name,
                 line_count=row.line_count,
                 request_count=row.request_count,
-                draft_cents=row.draft_cents,
-                submitted_cents=row.submitted_cents,
-                reviewer_recommended_cents=row.reviewer_recommended_cents,
-                final_approved_cents=row.final_approved_cents,
-                rejected_cents=row.rejected_cents,
+                **pipeline_fields_from_row(row),
             )
         )
 
@@ -223,12 +222,7 @@ def department_summary_export():
         "Division",
         "Requests",
         "Lines",
-        "Draft",
-        "Submitted",
-        "Reviewer Recommended",
-        "Final Approved",
-        "Rejected",
-        "Total",
+        *PIPELINE_CSV_HEADERS,
     ]
 
     # Build CSV rows
@@ -240,12 +234,7 @@ def department_summary_export():
             row.division_name or "",
             row.request_count,
             row.line_count,
-            format_currency_csv(row.draft_cents),
-            format_currency_csv(row.submitted_cents),
-            format_currency_csv(row.reviewer_recommended_cents),
-            format_currency_csv(row.final_approved_cents),
-            format_currency_csv(row.rejected_cents),
-            format_currency_csv(row.total_cents),
+            *pipeline_csv_values(row, format_currency_csv),
         ])
 
     # Add totals row
@@ -255,12 +244,7 @@ def department_summary_export():
         "",
         stats.total_requests,
         stats.total_lines,
-        format_currency_csv(summary.draft_cents),
-        format_currency_csv(summary.submitted_cents),
-        format_currency_csv(summary.reviewer_recommended_cents),
-        format_currency_csv(summary.final_approved_cents),
-        format_currency_csv(summary.rejected_cents),
-        format_currency_csv(summary.total_cents),
+        *pipeline_csv_values(summary, format_currency_csv),
     ])
 
     # Generate filename

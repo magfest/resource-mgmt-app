@@ -7,6 +7,8 @@
     pipeline_summary_cards,
     grand_total_card,
     pipeline_table_footer,
+    pipeline_table_headers,
+    pipeline_row_cells,
     amount_cell,
     ag_pill,
     empty_state_no_event,
@@ -57,7 +59,7 @@
 
     {{ pipeline_summary_cards(summary, format_currency) }}
 
-    {{ grand_total_card(summary.total_cents, format_currency) }}
+    {{ grand_total_card(summary.ceiling_cents, format_currency) }}
 
     {# Data Table #}
     <section class="card">
@@ -73,12 +75,7 @@
               <th style="width: 80px;">GL Code</th>
               <th>Account Name</th>
               <th style="width: 100px;">AG</th>
-              <th style="width: 110px;" class="right">Draft</th>
-              <th style="width: 110px;" class="right">Submitted</th>
-              <th style="width: 110px;" class="right">Reviewer Recommended</th>
-              <th style="width: 110px;" class="right">Final Approved</th>
-              <th style="width: 110px;" class="right">Rejected</th>
-              <th style="width: 120px;" class="right">Total</th>
+              {{ pipeline_table_headers() }}
             </tr>
           </thead>
           <tbody>
@@ -87,14 +84,7 @@
                 <td><strong>{{ row.gl_code }}</strong></td>
                 <td>{{ row.account_name }}</td>
                 <td>{{ ag_pill(row.approval_group_code) }}</td>
-                {{ amount_cell(row.draft_cents, format_currency) }}
-                {{ amount_cell(row.submitted_cents, format_currency) }}
-                {{ amount_cell(row.reviewer_recommended_cents, format_currency) }}
-                {{ amount_cell(row.final_approved_cents, format_currency) }}
-                {{ amount_cell(row.rejected_cents, format_currency, highlight_negative=True) }}
-                <td class="right num" style="font-weight: 600;">
-                  {{ format_currency(row.total_cents) }}
-                </td>
+                {{ pipeline_row_cells(row, format_currency) }}
               </tr>
             {% endfor %}
           </tbody>

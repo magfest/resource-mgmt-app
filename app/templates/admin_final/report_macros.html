@@ -93,20 +93,20 @@
 {% macro pipeline_summary_cards(summary, format_currency) %}
 <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px;">
   <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Draft</div>
-    <div style="font-size: 20px; font-weight: 700; color: #6b7280;">{{ format_currency(summary.draft_cents) }}</div>
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Requested</div>
+    <div style="font-size: 20px; font-weight: 700; color: #111827;">{{ format_currency(summary.requested_cents) }}</div>
   </div>
   <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Submitted</div>
-    <div style="font-size: 20px; font-weight: 700; color: #0a66c2;">{{ format_currency(summary.submitted_cents) }}</div>
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">In Review</div>
+    <div style="font-size: 20px; font-weight: 700; color: #0a66c2;">{{ format_currency(summary.in_review_cents) }}</div>
   </div>
   <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Reviewer Recommended</div>
-    <div style="font-size: 20px; font-weight: 700; color: #7c3aed;">{{ format_currency(summary.reviewer_recommended_cents) }}</div>
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Approved</div>
+    <div style="font-size: 20px; font-weight: 700; color: #059669;">{{ format_currency(summary.approved_cents) }}</div>
   </div>
   <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Final Approved</div>
-    <div style="font-size: 20px; font-weight: 700; color: #059669;">{{ format_currency(summary.final_approved_cents) }}</div>
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Reduced</div>
+    <div style="font-size: 20px; font-weight: 700; color: #b45309;">{{ format_currency(summary.reduced_cents) }}</div>
   </div>
   <div class="card" style="text-align: center; padding: 16px; background: #fef2f2; border-color: #fca5a5;">
     <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Rejected</div>
@@ -120,7 +120,7 @@
    Grand Total Card
    ============================================================ #}
 
-{% macro grand_total_card(total_cents, format_currency, label="Total (Excluding Rejected)") %}
+{% macro grand_total_card(total_cents, format_currency, label="Current Ceiling") %}
 <div class="card" style="text-align: center; padding: 16px; margin-bottom: 24px; background: #f0f9ff; border-color: #0a66c2;">
   <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">{{ label }}</div>
   <div style="font-size: 28px; font-weight: 700; color: #0a66c2;">{{ format_currency(total_cents) }}</div>
@@ -182,14 +182,42 @@
 <tfoot style="background: #f8f9fa; font-weight: 600;">
   <tr>
     <td colspan="{{ pre_columns }}"><strong>TOTALS</strong></td>
-    <td class="right num">{{ format_currency(summary.draft_cents) }}</td>
-    <td class="right num">{{ format_currency(summary.submitted_cents) }}</td>
-    <td class="right num">{{ format_currency(summary.reviewer_recommended_cents) }}</td>
-    <td class="right num">{{ format_currency(summary.final_approved_cents) }}</td>
+    <td class="right num muted">{{ format_currency(summary.draft_cents) }}</td>
+    <td class="right num">{{ format_currency(summary.requested_cents) }}</td>
+    <td class="right num">{{ format_currency(summary.in_review_cents) }}</td>
+    <td class="right num">{{ format_currency(summary.approved_cents) }}</td>
+    <td class="right num">{{ format_currency(summary.reduced_cents) }}</td>
     <td class="right num" style="color: #dc2626;">{{ format_currency(summary.rejected_cents) }}</td>
-    <td class="right num" style="font-size: 16px;">{{ format_currency(summary.total_cents) }}</td>
+    <td class="right num" style="font-size: 16px;">{{ format_currency(summary.ceiling_cents) }}</td>
   </tr>
 </tfoot>
+{% endmacro %}
+
+
+{# ============================================================
+   Pipeline Table Header and Row Cells
+   Both reports render these so their columns stay in the same order as
+   PIPELINE_CSV_HEADERS in report_utils.py.
+   ============================================================ #}
+
+{% macro pipeline_table_headers() %}
+<th style="width: 100px;" class="right">Draft</th>
+<th style="width: 110px;" class="right">Requested</th>
+<th style="width: 100px;" class="right">In Review</th>
+<th style="width: 100px;" class="right">Approved</th>
+<th style="width: 100px;" class="right">Reduced</th>
+<th style="width: 100px;" class="right">Rejected</th>
+<th style="width: 110px;" class="right">Current Ceiling</th>
+{% endmacro %}
+
+{% macro pipeline_row_cells(row, format_currency) %}
+{{ amount_cell(row.draft_cents, format_currency) }}
+<td class="right num" style="font-weight: 600;">{{ format_currency(row.requested_cents) }}</td>
+{{ amount_cell(row.in_review_cents, format_currency) }}
+{{ amount_cell(row.approved_cents, format_currency) }}
+{{ amount_cell(row.reduced_cents, format_currency) }}
+{{ amount_cell(row.rejected_cents, format_currency, highlight_negative=True) }}
+<td class="right num" style="font-weight: 600;">{{ format_currency(row.ceiling_cents) }}</td>
 {% endmacro %}
 
 
