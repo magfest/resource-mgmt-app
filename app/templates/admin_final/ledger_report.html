@@ -9,6 +9,7 @@
     pipeline_table_footer,
     pipeline_table_headers,
     pipeline_row_cells,
+    pipeline_help_panel,
     amount_cell,
     ag_pill,
     empty_state_no_event,
@@ -22,7 +23,7 @@
 
   {{ report_header(
       "Master Ledger Report",
-      "Budget totals by expense account (GL account) across pipeline stages"
+      "Requested, approved and remaining budget by expense account"
   ) }}
 
   {% set request_kind_filter %}
@@ -60,6 +61,8 @@
     {{ pipeline_summary_cards(summary, format_currency) }}
 
     {{ grand_total_card(summary.ceiling_cents, format_currency) }}
+
+    {{ pipeline_help_panel(show_draft=True) }}
 
     {# Data Table #}
     <section class="card">

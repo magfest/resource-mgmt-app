@@ -113,3 +113,18 @@ def test_reports_and_exports_render(app, client, seed_workflow_data):
         assert csv.status_code == 200
         header = csv.data.decode().splitlines()[0]
         assert "Requested,In Review,Approved,Reduced,Rejected,Current Ceiling" in header
+
+
+def test_help_panel_matches_report(app, client, seed_workflow_data):
+    """The Ledger explains its Draft column; Department Summary explains the badge instead."""
+    _seed_lines(seed_workflow_data)
+    with client.session_transaction() as sess:
+        sess["active_user_id"] = "test:admin"
+    event = seed_workflow_data["cycle"].code
+
+    dept = client.get(f"/admin/budget/departments/?event={event}").data
+    ledger = client.get(f"/admin/budget/ledger/?event={event}").data
+
+    assert b"How to read this report" in dept and b"How to read this report" in ledger
+    assert b"<dt><strong>Unsubmitted drafts</strong>" in dept
+    assert b"<dt><strong>Draft</strong>" in ledger

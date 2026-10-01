@@ -9,6 +9,7 @@
     pipeline_table_footer,
     pipeline_table_headers,
     pipeline_row_cells,
+    pipeline_help_panel,
     amount_cell,
     stat_card,
     empty_state_no_event,
@@ -22,7 +23,7 @@
 
   {{ report_header(
       "Department Budget Summary",
-      "Budget totals by department across pipeline stages"
+      "Requested, approved and remaining budget by department"
   ) }}
 
   {% set request_kind_filter %}
@@ -73,6 +74,8 @@
     {{ pipeline_summary_cards(summary, format_currency) }}
 
     {{ grand_total_card(summary.ceiling_cents, format_currency) }}
+
+    {{ pipeline_help_panel(show_draft=False) }}
 
     {# Data Table #}
     <section class="card">

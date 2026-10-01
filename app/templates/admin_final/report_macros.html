@@ -92,26 +92,18 @@
 
 {% macro pipeline_summary_cards(summary, format_currency) %}
 <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px;">
-  <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Requested</div>
-    <div style="font-size: 20px; font-weight: 700; color: #111827;">{{ format_currency(summary.requested_cents) }}</div>
+  {% for key, label, color, extra in [
+      ("requested", "Requested", "#111827", ""),
+      ("in_review", "In Review", "#0a66c2", ""),
+      ("approved", "Approved", "#059669", ""),
+      ("reduced", "Reduced", "#b45309", ""),
+      ("rejected", "Rejected", "#dc2626", " background: #fef2f2; border-color: #fca5a5;"),
+  ] %}
+  <div class="card" style="text-align: center; padding: 16px;{{ extra }}" title="{{ pipeline_tip(key) }}">
+    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">{{ label }}</div>
+    <div style="font-size: 20px; font-weight: 700; color: {{ color }};">{{ format_currency(summary[key ~ "_cents"]) }}</div>
   </div>
-  <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">In Review</div>
-    <div style="font-size: 20px; font-weight: 700; color: #0a66c2;">{{ format_currency(summary.in_review_cents) }}</div>
-  </div>
-  <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Approved</div>
-    <div style="font-size: 20px; font-weight: 700; color: #059669;">{{ format_currency(summary.approved_cents) }}</div>
-  </div>
-  <div class="card" style="text-align: center; padding: 16px;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Reduced</div>
-    <div style="font-size: 20px; font-weight: 700; color: #b45309;">{{ format_currency(summary.reduced_cents) }}</div>
-  </div>
-  <div class="card" style="text-align: center; padding: 16px; background: #fef2f2; border-color: #fca5a5;">
-    <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">Rejected</div>
-    <div style="font-size: 20px; font-weight: 700; color: #dc2626;">{{ format_currency(summary.rejected_cents) }}</div>
-  </div>
+  {% endfor %}
 </div>
 {% endmacro %}
 
@@ -121,7 +113,7 @@
    ============================================================ #}
 
 {% macro grand_total_card(total_cents, format_currency, label="Current Ceiling") %}
-<div class="card" style="text-align: center; padding: 16px; margin-bottom: 24px; background: #f0f9ff; border-color: #0a66c2;">
+<div class="card" style="text-align: center; padding: 16px; margin-bottom: 24px; background: #f0f9ff; border-color: #0a66c2;" title="{{ pipeline_tip('ceiling') }}">
   <div style="font-size: 11px; text-transform: uppercase; color: #6b7280; margin-bottom: 4px;">{{ label }}</div>
   <div style="font-size: 28px; font-weight: 700; color: #0a66c2;">{{ format_currency(total_cents) }}</div>
 </div>
@@ -200,14 +192,64 @@
    PIPELINE_CSV_HEADERS in report_utils.py.
    ============================================================ #}
 
+{% macro pipeline_tip(key) -%}
+{%- if key == "draft" -%}Lines on requests not yet submitted.
+{%- elif key == "requested" -%}Everything submitted. In Review, Approved, Reduced and Rejected add up to this.
+{%- elif key == "in_review" -%}Submitted, but the budget admin has not decided it yet.
+{%- elif key == "approved" -%}The amount the budget admin approved.
+{%- elif key == "reduced" -%}How much less was approved than requested.
+{%- elif key == "rejected" -%}Lines the budget admin rejected, at the requested amount.
+{%- elif key == "ceiling" -%}The most this can still cost: Approved plus In Review.
+{%- endif -%}
+{%- endmacro %}
+
+{% macro _help_th(key, label, width) %}
+<th style="width: {{ width }}px;" class="right">
+  <span title="{{ pipeline_tip(key) }}" style="text-decoration: underline dotted; cursor: help;">{{ label }}</span>
+</th>
+{% endmacro %}
+
 {% macro pipeline_table_headers(show_draft=True) %}
-{% if show_draft %}<th style="width: 100px;" class="right">Draft</th>{% endif %}
-<th style="width: 110px;" class="right">Requested</th>
-<th style="width: 100px;" class="right">In Review</th>
-<th style="width: 100px;" class="right">Approved</th>
-<th style="width: 100px;" class="right">Reduced</th>
-<th style="width: 100px;" class="right">Rejected</th>
-<th style="width: 110px;" class="right">Current Ceiling</th>
+{% if show_draft %}{{ _help_th("draft", "Draft", 100) }}{% endif %}
+{{ _help_th("requested", "Requested", 110) }}
+{{ _help_th("in_review", "In Review", 100) }}
+{{ _help_th("approved", "Approved", 100) }}
+{{ _help_th("reduced", "Reduced", 100) }}
+{{ _help_th("rejected", "Rejected", 100) }}
+{{ _help_th("ceiling", "Current Ceiling", 110) }}
+{% endmacro %}
+
+{# ============================================================
+   How to Read This Report
+   Collapsed by default; budget admins read it once. Hover text cannot carry
+   the In Review definition and does not work on touch screens.
+   ============================================================ #}
+
+{% macro pipeline_help_panel(show_draft=True) %}
+<details class="card" style="margin-bottom: 16px;">
+  <summary style="cursor: pointer; font-weight: 600;">How to read this report</summary>
+  <dl style="margin: 12px 0 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px;">
+    <dt><strong>Requested</strong></dt>
+    <dd style="margin: 0;">Every line departments have submitted, at the amount they asked for. In Review, Approved, Reduced and Rejected add up to it. Drafts are not included.</dd>
+    <dt><strong>In Review</strong></dt>
+    <dd style="margin: 0;">Lines waiting for dispatch, under reviewer review, or paused behind a primary request. A reviewer's approval or rejection is a recommendation, so those lines stay here until the budget admin decides them at admin final.</dd>
+    <dt><strong>Approved</strong></dt>
+    <dd style="margin: 0;">The amount set at admin final. A line counts here as soon as the budget admin approves it, before the request is finalized. Approved is not released: departments are told only after the board approves the event budget.</dd>
+    <dt><strong>Reduced</strong></dt>
+    <dd style="margin: 0;">The difference between what was requested and what was approved, on approved lines. It is negative when the budget admin approved more than the request.</dd>
+    <dt><strong>Rejected</strong></dt>
+    <dd style="margin: 0;">Lines rejected at admin final, plus reviewer rejections that stood when the request was finalized.</dd>
+    <dt><strong>Current Ceiling</strong></dt>
+    <dd style="margin: 0;">Approved plus everything still in review at its requested amount. It drops as lines in review are reduced or rejected. It rises only when new requests are submitted or the budget admin approves more than a line requested.</dd>
+    {% if show_draft %}
+    <dt><strong>Draft</strong></dt>
+    <dd style="margin: 0;">Lines on requests the department has not submitted. They are not part of Requested.</dd>
+    {% else %}
+    <dt><strong>Unsubmitted drafts</strong></dt>
+    <dd style="margin: 0;">A department holding a draft request shows a badge with the count and amount. Drafts are not part of Requested, so check the badge for departments that may have forgotten to submit.</dd>
+    {% endif %}
+  </dl>
+</details>
 {% endmacro %}
 
 {% macro pipeline_row_cells(row, format_currency, show_draft=True) %}
