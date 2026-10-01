@@ -200,8 +200,8 @@
    PIPELINE_CSV_HEADERS in report_utils.py.
    ============================================================ #}
 
-{% macro pipeline_table_headers() %}
-<th style="width: 100px;" class="right">Draft</th>
+{% macro pipeline_table_headers(show_draft=True) %}
+{% if show_draft %}<th style="width: 100px;" class="right">Draft</th>{% endif %}
 <th style="width: 110px;" class="right">Requested</th>
 <th style="width: 100px;" class="right">In Review</th>
 <th style="width: 100px;" class="right">Approved</th>
@@ -210,8 +210,8 @@
 <th style="width: 110px;" class="right">Current Ceiling</th>
 {% endmacro %}
 
-{% macro pipeline_row_cells(row, format_currency) %}
-{{ amount_cell(row.draft_cents, format_currency) }}
+{% macro pipeline_row_cells(row, format_currency, show_draft=True) %}
+{% if show_draft %}{{ amount_cell(row.draft_cents, format_currency) }}{% endif %}
 <td class="right num" style="font-weight: 600;">{{ format_currency(row.requested_cents) }}</td>
 {{ amount_cell(row.in_review_cents, format_currency) }}
 {{ amount_cell(row.approved_cents, format_currency) }}
