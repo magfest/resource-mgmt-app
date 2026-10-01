@@ -11,7 +11,12 @@ from flask import abort, current_app
 from sqlalchemy.orm import joinedload, selectinload
 
 from app import db
-from app.line_details import LineDetail, get_line_detail, get_line_amount_cents
+from app.line_details import (
+    LineDetail,
+    compute_line_amount_cents,
+    get_line_detail,
+    get_line_amount_cents,
+)
 from app.models import (
     WorkItem,
     WorkLine,
@@ -302,7 +307,8 @@ def get_finalization_summary(work_item: WorkItem) -> dict:
         summary["total_lines"] += 1
 
         if line.budget_detail:
-            line_total = line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+            line_total = compute_line_amount_cents(
+                line.budget_detail.unit_price_cents, line.budget_detail.quantity)
             summary["total_requested_cents"] += line_total
 
         if line.status == WORK_LINE_STATUS_APPROVED:
@@ -356,7 +362,8 @@ def apply_admin_final_decision(
             if recommended is not None:
                 approved_amount_cents = recommended
             elif line.budget_detail:
-                approved_amount_cents = line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+                approved_amount_cents = compute_line_amount_cents(
+                    line.budget_detail.unit_price_cents, line.budget_detail.quantity)
             else:
                 return False, "No amount specified and no default available."
 
@@ -491,7 +498,8 @@ def finalize_work_item(
 
         # Requested amount is the fallback for every approval path.
         if line.budget_detail:
-            amount = line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+            amount = compute_line_amount_cents(
+                line.budget_detail.unit_price_cents, line.budget_detail.quantity)
         else:
             amount = 0
 

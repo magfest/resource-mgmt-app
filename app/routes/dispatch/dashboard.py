@@ -21,6 +21,7 @@ from app.models import (
     REVIEW_STATUS_PENDING,
     AUDIT_EVENT_DISPATCH,
 )
+from app.line_details import compute_line_amount_cents
 from app.routes import get_user_ctx
 from app.routes.work.helpers import format_currency, friendly_status
 from app.routes.admin_final.helpers import require_budget_admin
@@ -138,7 +139,7 @@ def dispatch_item(work_item_id: int):
             suggested_group_id = expense_account.approval_group_id if expense_account else None
             assigned_group_id = detail.routed_approval_group_id
 
-            line_total = detail.unit_price_cents * int(detail.quantity)
+            line_total = compute_line_amount_cents(detail.unit_price_cents, detail.quantity)
 
             lines_data.append({
                 "line": line,

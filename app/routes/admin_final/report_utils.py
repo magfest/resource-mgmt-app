@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Tuple, List, Any
 
 from flask import request
 from sqlalchemy import func, case
 
 from app import db
+from app.line_details import compute_line_amount_cents  # noqa: F401  re-exported for reports
 from app.models import (
     WorkItem,
     WorkLine,
@@ -154,25 +154,15 @@ def resolve_report_filters() -> ReportFilters:
 def get_line_amount_expr():
     """
     Returns SQLAlchemy expression for line amount (unit_price_cents * quantity).
+
+    Rounds the product, not the quantity, to match compute_line_amount_cents.
+    Casting quantity first rounded 1.5 to 2 on PostgreSQL and truncated it to 1
+    on SQLite; neither matched the requested amount.
     """
-    return BudgetLineDetail.unit_price_cents * func.cast(
-        BudgetLineDetail.quantity, db.Integer
+    return func.cast(
+        func.round(BudgetLineDetail.unit_price_cents * BudgetLineDetail.quantity),
+        db.Integer,
     )
-
-
-def compute_line_amount_cents(unit_price_cents, quantity) -> int:
-    """
-    Python-side line amount (unit_price_cents * quantity), rounded half-up to
-    the nearest cent. Mirrors the SQL expression in get_line_amount_expr() but
-    for per-row computation in list-style reports.
-
-    Tolerates None/0 inputs (returns 0) so draft lines with missing data don't
-    raise.
-    """
-    if not unit_price_cents or quantity is None:
-        return 0
-    amount = Decimal(unit_price_cents) * Decimal(quantity)
-    return int(amount.to_integral_value(rounding=ROUND_HALF_UP))
 
 
 def get_pipeline_case_expressions():

@@ -7,7 +7,7 @@ SupplyOrderLineDetail). This module provides generic access to these details.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
@@ -45,6 +45,20 @@ def get_line_detail(line: "WorkLine") -> Optional[LineDetail]:
     )
 
 
+def compute_line_amount_cents(unit_price_cents, quantity) -> int:
+    """Return a budget line's requested amount, rounded half-up to the cent.
+
+    Quantity is Numeric(12, 3) and the line form accepts decimals, so
+    `price * int(quantity)` books 1.5 x $100 as $100. Use this everywhere a
+    budget line amount is computed so every screen agrees with finalize.
+    Returns 0 for a missing price or quantity, which draft lines can have.
+    """
+    if not unit_price_cents or quantity is None:
+        return 0
+    amount = Decimal(unit_price_cents) * Decimal(quantity)
+    return int(amount.to_integral_value(rounding=ROUND_HALF_UP))
+
+
 def get_line_amount_cents(line: "WorkLine") -> int:
     """
     Get the requested amount in cents for any line type.
@@ -61,7 +75,7 @@ def get_line_amount_cents(line: "WorkLine") -> int:
 
     # Budget lines: unit_price_cents * quantity
     if hasattr(detail, "unit_price_cents") and hasattr(detail, "quantity"):
-        return int(Decimal(detail.unit_price_cents) * detail.quantity)
+        return compute_line_amount_cents(detail.unit_price_cents, detail.quantity)
 
     # Contract lines: contract_amount_cents
     if hasattr(detail, "contract_amount_cents"):

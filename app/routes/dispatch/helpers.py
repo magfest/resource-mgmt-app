@@ -9,6 +9,7 @@ from typing import List, Optional
 from sqlalchemy.orm import joinedload, selectinload
 
 from app import db
+from app.line_details import compute_line_amount_cents
 from app.models import (
     WorkItem,
     WorkLine,
@@ -78,7 +79,8 @@ def get_dispatch_queue(
 
         for line in wi.lines:
             if line.budget_detail:
-                total_cents += line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+                total_cents += compute_line_amount_cents(
+                    line.budget_detail.unit_price_cents, line.budget_detail.quantity)
                 if line.budget_detail.routed_approval_group_id:
                     assigned_count += 1
 

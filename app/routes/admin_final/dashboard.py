@@ -20,6 +20,7 @@ from app.models import (
     WORK_ITEM_STATUS_SUBMITTED,
     WORK_ITEM_STATUS_FINALIZED,
 )
+from app.line_details import compute_line_amount_cents
 from app.routes import get_user_ctx
 from app.routes.work.helpers import format_currency, friendly_status, get_budget_work_type
 from . import admin_final_bp
@@ -466,7 +467,8 @@ def all_requests():
         portfolio = wi.portfolio
         line_count = len(wi.lines)
         total_cents = sum(
-            line.budget_detail.unit_price_cents * int(line.budget_detail.quantity)
+            compute_line_amount_cents(
+                line.budget_detail.unit_price_cents, line.budget_detail.quantity)
             for line in wi.lines
             if line.budget_detail
         )

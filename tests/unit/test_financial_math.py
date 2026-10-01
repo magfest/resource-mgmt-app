@@ -44,12 +44,10 @@ class TestGetLineAmountCents:
         assert get_line_amount_cents(line) == 7500
 
     def test_precision_no_float_drift(self):
-        """Regression: float(1999) * float(1.001) = 2000.999 → int truncates to 2000.
-        With Decimal this must be exactly 2000 (1999 * 1.001 = 2000.999, int → 2000)
-        — but more importantly, no spurious float noise."""
+        """Regression: float(1999) * float(1.001) carries float noise.
+        Decimal gives exactly 2000.999, which rounds half-up to 2001."""
         line = self._make_line(1999, "1.001")
-        # Decimal: 1999 * 1.001 = 2000.999 → int() = 2000
-        assert get_line_amount_cents(line) == 2000
+        assert get_line_amount_cents(line) == 2001
 
     def test_classic_float_bug(self):
         """Regression: int(33 * float(Decimal('1.1'))) could give 36 instead of 36

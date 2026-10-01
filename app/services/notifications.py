@@ -28,6 +28,7 @@ from flask import current_app
 from typing import List, Set
 
 from app import db
+from app.line_details import compute_line_amount_cents
 from app.models import (
     WorkItem,
     User,
@@ -135,7 +136,8 @@ def notify_submission_confirmation(work_item: WorkItem) -> int:
         line_count += 1
         detail = line.budget_detail
         if detail:
-            total_requested_cents += int(detail.unit_price_cents * detail.quantity)
+            total_requested_cents += compute_line_amount_cents(
+                detail.unit_price_cents, detail.quantity)
 
     recipients = _get_department_member_emails(
         department_id=portfolio.department_id,
