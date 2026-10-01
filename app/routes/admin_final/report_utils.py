@@ -34,7 +34,7 @@ from app.models import (
     WORK_LINE_STATUS_PENDING,
     WORK_LINE_STATUS_NEEDS_INFO,
     WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
-    REVIEW_STAGE_APPROVAL_GROUP,
+    REVIEW_STAGE_ADMIN_FINAL,
 )
 
 
@@ -44,40 +44,82 @@ from app.models import (
 
 @dataclass
 class PipelineTotals:
-    """
-    Standard totals for each pipeline stage.
-    Reusable across any report that aggregates by pipeline status.
+    """Budget line amounts split into the buckets assigned by get_pipeline_bucket_expr.
+
+    Draft is held apart and is not part of requested_cents; a draft has not
+    been asked for yet. The other four buckets reconcile: requested equals
+    in-review plus approved plus reduced plus rejected. Every field is in
+    requested dollars except approved_cents, which holds what the budget admin
+    approved.
     """
     draft_cents: int = 0
-    submitted_cents: int = 0
-    reviewer_recommended_cents: int = 0
-    final_approved_cents: int = 0
+    in_review_cents: int = 0
+    approved_requested_cents: int = 0
+    approved_cents: int = 0
     rejected_cents: int = 0
 
     @property
-    def total_cents(self) -> int:
-        """Total across all active stages (excluding rejected)."""
-        return (
-            self.draft_cents
-            + self.submitted_cents
-            + self.reviewer_recommended_cents
-            + self.final_approved_cents
-        )
+    def requested_cents(self) -> int:
+        return self.in_review_cents + self.approved_requested_cents + self.rejected_cents
 
     @property
-    def total_with_rejected_cents(self) -> int:
-        """Total including rejected amounts."""
-        return self.total_cents + self.rejected_cents
+    def reduced_cents(self) -> int:
+        """Return how far approved amounts fell below what was requested.
+
+        Negative when the budget admin approved more than the request.
+        """
+        return self.approved_requested_cents - self.approved_cents
+
+    @property
+    def ceiling_cents(self) -> int:
+        """Return the most this scope can still cost: approved plus in review."""
+        return self.approved_cents + self.in_review_cents
 
     def add(self, other: "PipelineTotals") -> "PipelineTotals":
         """Add another PipelineTotals to this one, returning a new instance."""
-        return PipelineTotals(
-            draft_cents=self.draft_cents + other.draft_cents,
-            submitted_cents=self.submitted_cents + other.submitted_cents,
-            reviewer_recommended_cents=self.reviewer_recommended_cents + other.reviewer_recommended_cents,
-            final_approved_cents=self.final_approved_cents + other.final_approved_cents,
-            rejected_cents=self.rejected_cents + other.rejected_cents,
-        )
+        return PipelineTotals(**{
+            name: getattr(self, name) + getattr(other, name)
+            for name in PIPELINE_FIELDS
+        })
+
+
+PIPELINE_FIELDS = (
+    "draft_cents",
+    "in_review_cents",
+    "approved_requested_cents",
+    "approved_cents",
+    "rejected_cents",
+)
+
+
+def pipeline_fields_from_row(row) -> dict:
+    """Pull the pipeline sums out of a query row built with get_pipeline_sum_columns."""
+    return {name: getattr(row, name) for name in PIPELINE_FIELDS}
+
+
+# Shared by every report CSV so the column order cannot drift between reports.
+PIPELINE_CSV_HEADERS = [
+    "Draft",
+    "Requested",
+    "In Review",
+    "Approved",
+    "Reduced",
+    "Rejected",
+    "Current Ceiling",
+]
+
+
+def pipeline_csv_values(totals: PipelineTotals, format_cents) -> list:
+    """Return one CSV row segment in PIPELINE_CSV_HEADERS order."""
+    return [
+        format_cents(totals.draft_cents),
+        format_cents(totals.requested_cents),
+        format_cents(totals.in_review_cents),
+        format_cents(totals.approved_cents),
+        format_cents(totals.reduced_cents),
+        format_cents(totals.rejected_cents),
+        format_cents(totals.ceiling_cents),
+    ]
 
 
 @dataclass
@@ -165,96 +207,55 @@ def get_line_amount_expr():
     )
 
 
-def get_pipeline_case_expressions():
+def get_pipeline_bucket_expr():
+    """Return a CASE expression naming the report bucket for each budget line.
+
+    One ordered CASE, not a predicate per bucket, so every line lands in exactly
+    one bucket. Separate predicates once dropped lines the budget admin had
+    approved but not yet finalized, and dropped PAUSED items entirely.
+
+    A line is decided once the budget admin approves or rejects it at
+    ADMIN_FINAL, or once its item is finalized. finalize_work_item uses the same
+    test to decide which lines it may skip. A reviewer's approval or rejection
+    is a recommendation the admin can overturn, so it stays IN_REVIEW.
     """
-    Returns a dict of SQLAlchemy CASE expressions for each pipeline stage.
-
-    These can be used with func.sum() to aggregate amounts by stage.
-
-    Returns:
-        dict with keys: 'draft', 'submitted', 'ag_approved', 'final_approved', 'rejected'
-        Each value is a CASE expression that returns line_amount or 0.
-    """
-    line_amount = get_line_amount_expr()
-
-    return {
-        # Draft: WorkItem.status == DRAFT
-        'draft': case(
-            (WorkItem.status == WORK_ITEM_STATUS_DRAFT, line_amount),
-            else_=0,
-        ),
-
-        # Submitted: WorkItem in review states, line not yet approved/rejected
-        'submitted': case(
-            (
-                db.and_(
-                    WorkItem.status.in_([
-                        WORK_ITEM_STATUS_SUBMITTED,
-                        WORK_ITEM_STATUS_UNDER_REVIEW,
-                        WORK_ITEM_STATUS_AWAITING_DISPATCH,
-                    ]),
-                    WorkLine.status != WORK_LINE_STATUS_APPROVED,
-                    WorkLine.status != WORK_LINE_STATUS_REJECTED,
-                ),
-                line_amount,
-            ),
-            else_=0,
-        ),
-
-        # AG Approved: Line approved at approval group stage, not yet finalized
-        'ag_approved': case(
-            (
-                db.and_(
-                    WorkLine.status == WORK_LINE_STATUS_APPROVED,
-                    WorkLine.current_review_stage == REVIEW_STAGE_APPROVAL_GROUP,
-                    WorkItem.status != WORK_ITEM_STATUS_FINALIZED,
-                ),
-                func.coalesce(WorkLine.approved_amount_cents, line_amount),
-            ),
-            else_=0,
-        ),
-
-        # Final Approved: WorkItem finalized and line approved
-        'final_approved': case(
-            (
-                db.and_(
-                    WorkItem.status == WORK_ITEM_STATUS_FINALIZED,
-                    WorkLine.status == WORK_LINE_STATUS_APPROVED,
-                ),
-                func.coalesce(WorkLine.approved_amount_cents, line_amount),
-            ),
-            else_=0,
-        ),
-
-        # Rejected: Line rejected at any stage
-        'rejected': case(
-            (WorkLine.status == WORK_LINE_STATUS_REJECTED, line_amount),
-            else_=0,
-        ),
-    }
+    decided = db.or_(
+        WorkLine.current_review_stage == REVIEW_STAGE_ADMIN_FINAL,
+        WorkItem.status == WORK_ITEM_STATUS_FINALIZED,
+    )
+    return case(
+        (WorkItem.status == WORK_ITEM_STATUS_DRAFT, "DRAFT"),
+        (db.and_(decided, WorkLine.status == WORK_LINE_STATUS_APPROVED), "APPROVED"),
+        (db.and_(decided, WorkLine.status == WORK_LINE_STATUS_REJECTED), "REJECTED"),
+        else_="IN_REVIEW",
+    )
 
 
 def get_pipeline_sum_columns():
     """
-    Returns labeled sum columns for each pipeline stage.
+    Returns labeled sum columns for each pipeline bucket, named as PIPELINE_FIELDS.
 
     Use these in a query's select() to get aggregated totals:
         query = db.session.query(
             SomeEntity.id,
             *get_pipeline_sum_columns()
         ).group_by(SomeEntity.id)
-
-    Returns:
-        List of labeled column expressions
     """
-    cases = get_pipeline_case_expressions()
+    bucket = get_pipeline_bucket_expr()
+    requested = get_line_amount_expr()
+    approved = func.coalesce(WorkLine.approved_amount_cents, requested)
+
+    def bucket_sum(name, amount, label):
+        return func.coalesce(
+            func.sum(case((bucket == name, amount), else_=0)), 0
+        ).label(label)
 
     return [
-        func.coalesce(func.sum(cases['draft']), 0).label('draft_cents'),
-        func.coalesce(func.sum(cases['submitted']), 0).label('submitted_cents'),
-        func.coalesce(func.sum(cases['ag_approved']), 0).label('reviewer_recommended_cents'),
-        func.coalesce(func.sum(cases['final_approved']), 0).label('final_approved_cents'),
-        func.coalesce(func.sum(cases['rejected']), 0).label('rejected_cents'),
+        bucket_sum("DRAFT", requested, "draft_cents"),
+        bucket_sum("IN_REVIEW", requested, "in_review_cents"),
+        bucket_sum("APPROVED", requested, "approved_requested_cents"),
+        bucket_sum("APPROVED", approved, "approved_cents"),
+        bucket_sum("REJECTED", requested, "rejected_cents"),
     ]
 
 
@@ -314,29 +315,12 @@ def apply_standard_filters(query, filters: ReportFilters):
 # ============================================================
 
 def compute_pipeline_summary(rows: List[Any]) -> PipelineTotals:
-    """
-    Compute totals from a list of rows that have pipeline amount attributes.
-
-    Each row should have: draft_cents, submitted_cents, reviewer_recommended_cents,
-    final_approved_cents, rejected_cents (either as attributes or properties).
-
-    Args:
-        rows: List of objects with pipeline amount attributes
-
-    Returns:
-        PipelineTotals with summed values
-    """
+    """Sum the PIPELINE_FIELDS of each row into one PipelineTotals."""
     totals = PipelineTotals()
-
     for row in rows:
-        totals = PipelineTotals(
-            draft_cents=totals.draft_cents + (getattr(row, 'draft_cents', 0) or 0),
-            submitted_cents=totals.submitted_cents + (getattr(row, 'submitted_cents', 0) or 0),
-            reviewer_recommended_cents=totals.reviewer_recommended_cents + (getattr(row, 'reviewer_recommended_cents', 0) or 0),
-            final_approved_cents=totals.final_approved_cents + (getattr(row, 'final_approved_cents', 0) or 0),
-            rejected_cents=totals.rejected_cents + (getattr(row, 'rejected_cents', 0) or 0),
-        )
-
+        totals = totals.add(PipelineTotals(**{
+            name: getattr(row, name, 0) or 0 for name in PIPELINE_FIELDS
+        }))
     return totals
 
 

@@ -16,6 +16,8 @@ from app.models import (
     WorkPortfolio,
     Department,
     Division,
+    WorkType,
+    WORK_ITEM_STATUS_DRAFT,
 )
 from app.routes import get_user_ctx
 from app.routes.work.helpers import format_currency
@@ -29,6 +31,9 @@ from .report_utils import (
     PipelineTotals,
     resolve_report_filters,
     get_pipeline_sum_columns,
+    pipeline_fields_from_row,
+    pipeline_csv_values,
+    PIPELINE_CSV_HEADERS,
     compute_pipeline_summary,
 )
 from .report_exports import (
@@ -48,6 +53,7 @@ class DepartmentRow(PipelineTotals):
     division_name: Optional[str] = None
     line_count: int = 0
     request_count: int = 0
+    draft_request_count: int = 0
 
 
 def get_department_data(
@@ -59,7 +65,7 @@ def get_department_data(
     Get department summary data aggregated by department using SQL-level CASE expressions.
 
     Returns a list of DepartmentRow dataclasses, one per department that has
-    budget lines for the selected event cycle.
+    budget lines or an unsubmitted draft for the selected event cycle.
     """
     from sqlalchemy import func, distinct
 
@@ -118,15 +124,71 @@ def get_department_data(
                 division_name=row.division_name,
                 line_count=row.line_count,
                 request_count=row.request_count,
-                draft_cents=row.draft_cents,
-                submitted_cents=row.submitted_cents,
-                reviewer_recommended_cents=row.reviewer_recommended_cents,
-                final_approved_cents=row.final_approved_cents,
-                rejected_cents=row.rejected_cents,
+                **pipeline_fields_from_row(row),
             )
         )
 
+    _attach_draft_requests(rows, event_cycle_id, department_id, request_kind)
     return rows
+
+
+def _attach_draft_requests(rows, event_cycle_id, department_id, request_kind):
+    """Count each department's unsubmitted budget drafts and add rows for draft-only departments.
+
+    Counts requests, not lines; an empty draft is the likeliest sign a
+    department forgot to submit. This query starts from WorkItem, not
+    BudgetLineDetail, so it filters to the BUDGET work type explicitly.
+    """
+    from sqlalchemy import func
+
+    query = (
+        db.session.query(
+            Department.id.label("department_id"),
+            Department.code.label("department_code"),
+            Department.name.label("department_name"),
+            Division.code.label("division_code"),
+            Division.name.label("division_name"),
+            func.count(WorkItem.id).label("draft_count"),
+        )
+        .select_from(WorkItem)
+        .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
+        .join(WorkType, WorkPortfolio.work_type_id == WorkType.id)
+        .join(Department, WorkPortfolio.department_id == Department.id)
+        .outerjoin(Division, Department.division_id == Division.id)
+        .filter(WorkType.code == "BUDGET")
+        .filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+        .filter(WorkItem.status == WORK_ITEM_STATUS_DRAFT)
+        .filter(WorkItem.is_archived == False)
+        .filter(WorkPortfolio.is_archived == False)
+    )
+    if department_id:
+        query = query.filter(WorkPortfolio.department_id == department_id)
+    if request_kind:
+        query = query.filter(WorkItem.request_kind == request_kind)
+    query = query.group_by(
+        Department.id, Department.code, Department.name, Division.code, Division.name,
+    )
+
+    by_id = {r.department_id: r for r in rows}
+    added = False
+    for d in query.all():
+        if d.department_id in by_id:
+            by_id[d.department_id].draft_request_count = d.draft_count
+        else:
+            rows.append(DepartmentRow(
+                department_id=d.department_id,
+                department_code=d.department_code,
+                department_name=d.department_name,
+                division_code=d.division_code,
+                division_name=d.division_name,
+                request_count=d.draft_count,
+                draft_request_count=d.draft_count,
+            ))
+            added = True
+
+    if added:
+        # Match the SQL order: division name with no-division last, then department name.
+        rows.sort(key=lambda r: (r.division_name is None, r.division_name or "", r.department_name))
 
 
 @dataclass
@@ -135,6 +197,7 @@ class DepartmentSummaryStats:
     total_departments: int
     total_requests: int
     total_lines: int
+    departments_with_drafts: int
 
 
 def compute_department_stats(rows: List[DepartmentRow]) -> DepartmentSummaryStats:
@@ -143,6 +206,7 @@ def compute_department_stats(rows: List[DepartmentRow]) -> DepartmentSummaryStat
         total_departments=len(rows),
         total_requests=sum(r.request_count for r in rows),
         total_lines=sum(r.line_count for r in rows),
+        departments_with_drafts=sum(1 for r in rows if r.draft_request_count),
     )
 
 
@@ -223,12 +287,8 @@ def department_summary_export():
         "Division",
         "Requests",
         "Lines",
-        "Draft",
-        "Submitted",
-        "Reviewer Recommended",
-        "Final Approved",
-        "Rejected",
-        "Total",
+        "Unsubmitted Drafts",
+        *PIPELINE_CSV_HEADERS,
     ]
 
     # Build CSV rows
@@ -240,12 +300,8 @@ def department_summary_export():
             row.division_name or "",
             row.request_count,
             row.line_count,
-            format_currency_csv(row.draft_cents),
-            format_currency_csv(row.submitted_cents),
-            format_currency_csv(row.reviewer_recommended_cents),
-            format_currency_csv(row.final_approved_cents),
-            format_currency_csv(row.rejected_cents),
-            format_currency_csv(row.total_cents),
+            row.draft_request_count,
+            *pipeline_csv_values(row, format_currency_csv),
         ])
 
     # Add totals row
@@ -255,12 +311,8 @@ def department_summary_export():
         "",
         stats.total_requests,
         stats.total_lines,
-        format_currency_csv(summary.draft_cents),
-        format_currency_csv(summary.submitted_cents),
-        format_currency_csv(summary.reviewer_recommended_cents),
-        format_currency_csv(summary.final_approved_cents),
-        format_currency_csv(summary.rejected_cents),
-        format_currency_csv(summary.total_cents),
+        sum(r.draft_request_count for r in rows),
+        *pipeline_csv_values(summary, format_currency_csv),
     ])
 
     # Generate filename
