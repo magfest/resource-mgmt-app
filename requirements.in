@@ -1,6 +1,7 @@
 Flask
 Flask-WTF
 Flask-SQLAlchemy
+SQLAlchemy<2.1
 Flask-Migrate
 python-dotenv
 pandas
