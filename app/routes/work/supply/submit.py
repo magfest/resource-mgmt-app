@@ -58,13 +58,15 @@ def supply_order_submit(event: str, dept: str, public_id: str):
 
     detail_url = url_for("work.supply_order_detail", **detail_url_kwargs)
 
-    perms = build_work_item_perms(work_item, ctx)
-    if not perms.can_submit:
-        flash("You cannot submit this supply order.", "error")
-        return redirect(detail_url)
-
     if work_item.status != WORK_ITEM_STATUS_DRAFT:
         flash("Only DRAFT orders can be submitted.", "error")
+        return redirect(detail_url)
+
+    # can_edit, not can_submit: can_submit is also false for an empty order,
+    # and submit_order names that problem instead of a generic refusal.
+    perms = build_work_item_perms(work_item, ctx)
+    if not perms.can_edit:
+        flash("You cannot submit this supply order.", "error")
         return redirect(detail_url)
 
     errors = submit_order(work_item)
@@ -80,8 +82,8 @@ def supply_order_submit(event: str, dept: str, public_id: str):
 def submit_order(work_item) -> list[str]:
     """Validate a DRAFT order and submit it, or return why it cannot be.
 
-    Commits on success. The caller has already checked status and
-    perms.can_submit; the order page's single form calls this after saving.
+    Commits on success. The caller has already checked status and edit
+    rights; the order page's single form calls this after saving.
     """
     errors = validate_order_for_submit(work_item)
     if errors:

@@ -63,6 +63,11 @@
       &larr; Back to Supply Orders
     </a>
     {% if can_edit %}
+      {# Enter in a text box presses the form's first submit button in page
+         order, counting buttons outside the form that name it. This one
+         comes first so Enter saves, not "Add more items" or a Remove. #}
+      <button type="submit" form="order-form" name="action" value="save" tabindex="-1" aria-hidden="true"
+              style="position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden;">Save</button>
       {# Saves the order form first, so edits on this page survive the trip. #}
       <button type="submit" form="order-form" name="action" value="catalog" class="btn btn-primary">
         Add more items
@@ -87,10 +92,6 @@
   <form id="order-form" method="post"
         action="{{ url_for('work.supply_order_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    {# Enter in a text box submits with the form's first submit button. This
-       one comes first so Enter saves instead of pressing line 1's Remove. #}
-    <button type="submit" name="action" value="save" tabindex="-1" aria-hidden="true"
-            style="position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden;">Save</button>
 
   <section class="card" style="margin-bottom: 16px;">
     <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">

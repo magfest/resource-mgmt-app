@@ -126,8 +126,23 @@ class TestSupplyOrderFormSave:
         response = client.post(_url(cycle, dept, work_item),
                                data=_form(line1, line2, action="save"))
 
-        assert response.status_code == 403
+        assert response.status_code == 302
         assert _detail(line1).quantity_requested == 1
+        follow = client.get(response.headers["Location"]).get_data(as_text=True)
+        assert "already submitted" in follow
+
+    def test_enter_key_default_is_save(self, app, client, seed_workflow_data):
+        """Browsers press the first submit button naming the form, in page order."""
+        cycle, dept, work_item, line1, line2 = _order_with_two_lines(seed_workflow_data)
+
+        _login(client, "test:admin")
+        html = client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}"
+        ).get_data(as_text=True)
+
+        first_submit = html.index('type="submit"')
+        assert html.find('value="save"', first_submit) < html.find('value="catalog"', first_submit)
+        assert html.find('value="save"', first_submit) < html.index('name="remove_line"')
 
 
 class TestSupplyOrderFormSubmit:
@@ -152,6 +167,22 @@ class TestSupplyOrderFormSubmit:
         db.session.refresh(work_item)
         assert work_item.status == WORK_ITEM_STATUS_DRAFT
         assert _detail(line2).quantity_requested == 9
+
+    def test_empty_order_names_what_is_missing(self, app, client, seed_workflow_data):
+        cycle, dept, work_item, line1, line2 = _order_with_two_lines(seed_workflow_data)
+        work_item.lines.clear()
+        db.session.commit()
+
+        _login(client, "test:admin")
+        response = client.post(_url(cycle, dept, work_item),
+                               data={"pickup_time": PICKUP_TIME_OPTIONS[0], "action": "submit"},
+                               follow_redirects=True)
+
+        html = response.get_data(as_text=True)
+        assert "Add at least one item" in html
+        assert "You cannot submit" not in html
+        db.session.refresh(work_item)
+        assert work_item.status == WORK_ITEM_STATUS_DRAFT
 
     def test_submit_button_is_never_disabled(self, app, client, seed_workflow_data):
         """It saves first, so errors from page load may already be fixed."""

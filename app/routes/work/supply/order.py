@@ -220,7 +220,13 @@ def supply_order_save(event: str, dept: str, public_id: str):
         "work.supply_order_detail", event=event, dept=dept, public_id=public_id,
     )
 
-    if work_item.status != WORK_ITEM_STATUS_DRAFT or not perms.can_edit:
+    # A page left open in another tab after submit lands here; say so
+    # instead of a permission error the requester cannot explain.
+    if work_item.status != WORK_ITEM_STATUS_DRAFT:
+        flash("This order was already submitted, so the changes on that page "
+              "were not saved.", "error")
+        return redirect(detail_url)
+    if not perms.can_edit:
         abort(403, "You do not have permission to edit this supply order.")
 
     remove_line = request.form.get("remove_line", type=int)
@@ -329,9 +335,8 @@ def supply_order_save(event: str, dept: str, public_id: str):
             "work.supply_catalog", event=event, dept=dept, public_id=public_id,
         ))
     elif action == "submit":
-        if not perms.can_submit:
-            flash("You cannot submit this supply order.", "error")
-            return redirect(detail_url)
+        # submit_order reports an empty order by name, so no can_submit
+        # check here; edit rights were checked above.
         errors = submit_order(work_item)
         if errors:
             flash("Your changes were saved, but the order was not submitted yet.", "error")
