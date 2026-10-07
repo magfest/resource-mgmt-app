@@ -5,6 +5,7 @@ The engine's submit_work_item SILENTLY SKIPS lines it can't route
 """
 from app.models.supply import QUANTITY_CONFIDENCE_OPTIONS
 from app.routing.registry import get_approval_group_for_line
+from .spaces import order_space_choices
 
 # Hardcoded for now (rarely changes; may become per-event config later).
 # "(Select Pickup Time)" is the template's empty-value placeholder, NOT a
@@ -28,12 +29,17 @@ def validate_order_for_submit(work_item) -> list[str]:
     if not work_item.lines:
         errors.append("Add at least one item to the order before submitting.")
     if detail is None or (detail.pickup_time or "") not in PICKUP_TIME_OPTIONS:
-        errors.append("Select a pickup time in Pickup details.")
+        errors.append("Select a pickup time in Pickup & Spaces.")
     elif detail.pickup_time == PICKUP_TIME_OTHER and not (detail.additional_notes or "").strip():
         errors.append(
             "Add your preferred pickup date/time to Additional notes — "
             "required when the 'Other' pickup option is selected."
         )
+
+    # Required only when the event offers spaces; a missing venue setup must
+    # not stop a department ordering.
+    if not work_item.supply_order_spaces and order_space_choices(work_item)["has_spaces"]:
+        errors.append("Choose at least one space where this order will be used.")
 
     for line in sorted(work_item.lines, key=lambda l: l.line_number):
         d = line.supply_detail

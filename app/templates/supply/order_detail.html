@@ -183,10 +183,14 @@
     {% endif %}
   </section>
 
-  {# Pickup details #}
+  {# Pickup & spaces #}
   <section class="card" style="margin-bottom: 16px;">
     <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
-      Pickup Details
+      Pickup &amp; Spaces
+    </div>
+    <div class="callout" style="margin-bottom: 12px;">
+      <strong>Plan to pick up this order yourself.</strong>
+      Supply Ops has limited delivery staff, so delivery is not guaranteed.
     </div>
     {% if can_edit %}
       <form method="post"
@@ -203,13 +207,50 @@
             {% endfor %}
           </select>
         </label>
-        <div class="muted small" style="margin-bottom: 8px;">
+        <div class="muted small" style="margin-bottom: 12px;">
           Pickup location will be communicated before the event.
         </div>
+
+        <fieldset style="border: 0; padding: 0; margin: 0 0 12px;">
+          <legend class="form-label small" style="padding: 0;">Where will these supplies mainly be used?</legend>
+          {% if not space_choices.has_spaces %}
+            <div class="muted small">
+              No spaces are set up for this event yet. Say where this order
+              will be used in Additional notes.
+            </div>
+          {% else %}
+            <div class="muted small" style="margin-bottom: 6px;">Check every space that applies.</div>
+            {% for choice in space_choices.checklist %}
+              <label style="display: flex; align-items: center; gap: 6px; min-height: 32px;">
+                <input type="checkbox" name="space_ids" value="{{ choice.space_id }}" style="margin: 0;"
+                       {% if choice.checked %}checked{% endif %}>
+                {{ choice.label }}
+                {% if not choice.is_assigned %}
+                  <span class="muted small">(not assigned to your department)</span>
+                {% endif %}
+              </label>
+            {% endfor %}
+            {% if space_choices.picker %}
+              <label for="supply-space-picker" class="muted small" style="display: block; margin-top: 8px;">
+                {% if space_choices.checklist %}Add a space not listed above{% else %}Choose a space{% endif %}
+              </label>
+              <select id="supply-space-picker" name="space_ids" style="max-width: 360px;">
+                <option value="">Choose a space&hellip;</option>
+                {% for space_id, name in space_choices.picker %}
+                  <option value="{{ space_id }}">{{ name }}</option>
+                {% endfor %}
+              </select>
+              <div class="muted small" style="margin-top: 4px;">
+                Not an assignment. Supply Ops uses this to plan where your order goes.
+              </div>
+            {% endif %}
+          {% endif %}
+        </fieldset>
+
         <label class="form-label small">Additional notes
           <textarea name="additional_notes" rows="3" style="width:100%;">{{ order_detail.additional_notes if order_detail and order_detail.additional_notes else '' }}</textarea>
         </label>
-        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">Save pickup details</button>
+        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">Save pickup &amp; spaces</button>
       </form>
     {% elif order_detail %}
       <div style="margin-bottom: 4px;">
@@ -221,6 +262,14 @@
         {% endif %}
       </div>
       <div class="muted small">Pickup location will be communicated before the event.</div>
+      <div style="margin-top: 8px;">
+        <strong>Spaces:</strong>
+        {% if work_item.supply_order_spaces %}
+          {{ work_item.supply_order_spaces | map(attribute='space_label') | join(', ') }}
+        {% else %}
+          <span class="muted">None given</span>
+        {% endif %}
+      </div>
       {% if order_detail.additional_notes %}
         <div style="margin-top: 8px;">
           <strong>Additional notes:</strong>

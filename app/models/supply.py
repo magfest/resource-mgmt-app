@@ -168,3 +168,51 @@ class SupplyOrderDetail(db.Model):
         "WorkItem",
         backref=db.backref("supply_order_detail", uselist=False, cascade="all, delete-orphan"),
     )
+
+
+class SupplyOrderSpace(db.Model):
+    """One space a supply order will be used in.
+
+    Supply ops plans delivery and staging from this list. Any space at the
+    event's venue may be named, not only the department's assigned ones,
+    because space allocation is not always right before orders open.
+    """
+    __tablename__ = "supply_order_spaces"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    work_item_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_items.id", name="fk_supply_order_spaces_work_item_id"),
+        nullable=False,
+        index=True,
+    )
+    space_id = db.Column(
+        db.Integer,
+        db.ForeignKey("spaces.id", name="fk_supply_order_spaces_space_id"),
+        nullable=False,
+        index=True,
+    )
+
+    # The name the requester picked, snapshotted at save. A combined space
+    # shows under its event alias ("Chesapeake 4/5"); the generic line review
+    # route cannot recompute that, so every page reads this column instead.
+    space_label = db.Column(db.Text, nullable=False)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_by_user_id = db.Column(db.String(64), nullable=True)
+
+    work_item = db.relationship(
+        "WorkItem",
+        backref=db.backref(
+            "supply_order_spaces",
+            cascade="all, delete-orphan",
+            order_by="SupplyOrderSpace.id",
+        ),
+    )
+    space = db.relationship("Space")
+
+    __table_args__ = (
+        db.UniqueConstraint("work_item_id", "space_id",
+                            name="uq_supply_order_spaces_work_item_space"),
+    )

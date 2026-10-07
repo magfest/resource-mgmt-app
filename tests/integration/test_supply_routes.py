@@ -269,7 +269,7 @@ class TestSupplyOrderDetail(object):
         assert b"Save" in response.data
         assert b"Remove" in response.data
         assert b'<select name="pickup_time">' in response.data
-        assert b"Save pickup details" in response.data
+        assert b"Save pickup &amp; spaces" in response.data
 
     def test_submitted_order_detail_renders_read_only(
         self, app, client, seed_workflow_data
@@ -291,7 +291,7 @@ class TestSupplyOrderDetail(object):
         )
 
         assert response.status_code == 200
-        assert b"Save pickup details" not in response.data
+        assert b"Save pickup &amp; spaces" not in response.data
         assert b'<select name="pickup_time">' not in response.data
 
     def test_kicked_back_line_reopens_edit_form_on_submitted_order(

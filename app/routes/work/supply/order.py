@@ -15,6 +15,7 @@ from app import db
 from app.models import (
     SupplyOrderDetail,
     SupplyOrderLineDetail,
+    SupplyOrderSpace,
     WorkItem,
     WorkLine,
     REQUEST_KIND_PRIMARY,
@@ -32,6 +33,7 @@ from ..helpers import (
 )
 from app.models.supply import QUANTITY_CONFIDENCE_OPTIONS
 from .form_utils import PICKUP_TIME_OPTIONS
+from .spaces import order_space_choices
 
 
 def _load_order(event: str, dept: str, public_id: str):
@@ -235,7 +237,7 @@ def supply_line_delete(event: str, dept: str, public_id: str, line_number: int):
 
 @work_bp.post("/<event>/<dept>/supply/order/<public_id>/details")
 def supply_order_details_save(event: str, dept: str, public_id: str):
-    """Save order-level pickup details (pickup time, notes)."""
+    """Save order-level details: pickup time, notes, and spaces."""
     work_item, ctx, perms = _load_order(event, dept, public_id)
     detail_url = url_for(
         "work.supply_order_detail", event=event, dept=dept, public_id=public_id,
@@ -255,6 +257,22 @@ def supply_order_details_save(event: str, dept: str, public_id: str):
         request.form.get("additional_notes", "").replace("\r\n", "\n").strip()
     )
 
+    # Checked boxes and the "add another space" picker share the field name.
+    # The picker posts "" when left on its placeholder.
+    space_labels = order_space_choices(work_item)["labels"]
+    space_ids = set()
+    for raw in request.form.getlist("space_ids"):
+        if not raw:
+            continue
+        try:
+            space_id = int(raw)
+        except ValueError:
+            space_id = None
+        if space_id not in space_labels:
+            flash("Choose spaces from the list.", "error")
+            return redirect(detail_url)
+        space_ids.add(space_id)
+
     user_ctx = get_user_ctx()
     order_detail = work_item.supply_order_detail
     if order_detail is None:
@@ -268,7 +286,18 @@ def supply_order_details_save(event: str, dept: str, public_id: str):
     order_detail.additional_notes = additional_notes or None
     order_detail.updated_by_user_id = user_ctx.user_id
 
+    for row in list(work_item.supply_order_spaces):
+        if row.space_id not in space_ids:
+            work_item.supply_order_spaces.remove(row)
+    held_ids = {row.space_id for row in work_item.supply_order_spaces}
+    for space_id in sorted(space_ids - held_ids):
+        work_item.supply_order_spaces.append(SupplyOrderSpace(
+            space_id=space_id,
+            space_label=space_labels[space_id],
+            created_by_user_id=user_ctx.user_id,
+        ))
+
     db.session.commit()
 
-    flash("Pickup details saved.", "success")
+    flash("Pickup and spaces saved.", "success")
     return redirect(detail_url)
