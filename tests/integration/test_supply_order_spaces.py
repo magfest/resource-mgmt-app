@@ -54,7 +54,7 @@ def _ready_order(seed_workflow_data):
 
 def _save_details(client, cycle, dept, work_item, space_ids):
     return client.post(
-        f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/details",
+        f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/save",
         data={"pickup_time": PICKUP_TIME_OPTIONS[0], "additional_notes": "",
               "space_ids": [str(i) for i in space_ids]},
     )

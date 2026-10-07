@@ -67,11 +67,25 @@ def supply_order_submit(event: str, dept: str, public_id: str):
         flash("Only DRAFT orders can be submitted.", "error")
         return redirect(detail_url)
 
-    errors = validate_order_for_submit(work_item)
+    errors = submit_order(work_item)
     if errors:
         for err in errors:
             flash(err, "error")
         return redirect(detail_url)
+
+    flash("Supply order submitted! It's now with reviewers.", "success")
+    return redirect(detail_url)
+
+
+def submit_order(work_item) -> list[str]:
+    """Validate a DRAFT order and submit it, or return why it cannot be.
+
+    Commits on success. The caller has already checked status and
+    perms.can_submit; the order page's single form calls this after saving.
+    """
+    errors = validate_order_for_submit(work_item)
+    if errors:
+        return errors
 
     user_ctx = get_user_ctx()
 
@@ -95,6 +109,4 @@ def supply_order_submit(event: str, dept: str, public_id: str):
 
     # Slack after the commit; it is a webhook call, not a local INSERT.
     announce_work_item_event(work_item, 'submitted')
-
-    flash("Supply order submitted! It's now with reviewers.", "success")
-    return redirect(detail_url)
+    return []

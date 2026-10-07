@@ -251,8 +251,8 @@ class TestSupplyOrderDetail(object):
     def test_draft_order_detail_renders_edit_widgets(
         self, app, client, seed_workflow_data
     ):
-        """A DRAFT order with can_edit renders per-row Save/Remove forms
-        and a pickup-details form (Task 10 template widgets)."""
+        """A DRAFT order with can_edit renders one form holding the lines,
+        the pickup fields, and the Save draft / Submit order buttons."""
         wt = _seed_supply(seed_workflow_data)
         cycle = seed_workflow_data["cycle"]
         dept = seed_workflow_data["department"]
@@ -266,10 +266,10 @@ class TestSupplyOrderDetail(object):
         )
 
         assert response.status_code == 200
-        assert b"Save" in response.data
+        assert b'id="order-form"' in response.data
         assert b"Remove" in response.data
         assert b'<select name="pickup_time">' in response.data
-        assert b"Save pickup &amp; spaces" in response.data
+        assert b"Save draft" in response.data
 
     def test_submitted_order_detail_renders_read_only(
         self, app, client, seed_workflow_data
@@ -291,7 +291,7 @@ class TestSupplyOrderDetail(object):
         )
 
         assert response.status_code == 200
-        assert b"Save pickup &amp; spaces" not in response.data
+        assert b'id="order-form"' not in response.data
         assert b'<select name="pickup_time">' not in response.data
 
     def test_kicked_back_line_reopens_edit_form_on_submitted_order(
@@ -794,71 +794,6 @@ class TestSupplyLineUpdate(object):
         detail = SupplyOrderLineDetail.query.filter_by(work_line_id=line.id).first()
         assert detail.quantity_requested == 3
         assert detail.quantity_confidence is None
-
-
-class TestSupplyLineDelete(object):
-    """POST /<event>/<dept>/supply/order/<public_id>/lines/<line_number>/delete"""
-
-    def test_delete_line_removes_it_without_renumbering(self, app, client, seed_workflow_data):
-        wt = _seed_supply(seed_workflow_data)
-        cycle = seed_workflow_data["cycle"]
-        dept = seed_workflow_data["department"]
-        work_item = _make_draft_order(wt, cycle, dept)
-        category, popular_item, plain_item = _seed_catalog()
-        line1 = _add_line(work_item, plain_item, quantity=1, line_number=1)
-        line2 = _add_line(work_item, popular_item, quantity=2, line_number=2)
-
-        _login(client, "test:admin")
-        response = client.post(
-            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}"
-            f"/lines/{line1.line_number}/delete"
-        )
-
-        assert response.status_code == 302
-        remaining = WorkLine.query.filter_by(work_item_id=work_item.id).all()
-        assert len(remaining) == 1
-        assert remaining[0].line_number == 2  # untouched — no renumbering
-        assert SupplyOrderLineDetail.query.filter_by(work_line_id=line1.id).first() is None
-
-
-class TestSupplyOrderDetailsSave(object):
-    """POST /<event>/<dept>/supply/order/<public_id>/details"""
-
-    def test_details_save_persists_pickup_time(self, app, client, seed_workflow_data):
-        wt = _seed_supply(seed_workflow_data)
-        cycle = seed_workflow_data["cycle"]
-        dept = seed_workflow_data["department"]
-        work_item = _make_draft_order(wt, cycle, dept)
-
-        _login(client, "test:admin")
-        response = client.post(
-            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/details",
-            data={
-                "pickup_time": "Tuesday Evening (after 6 PM)",
-                "additional_notes": "",
-            },
-        )
-
-        assert response.status_code == 302
-        order_detail = SupplyOrderDetail.query.filter_by(work_item_id=work_item.id).first()
-        assert order_detail.pickup_time == "Tuesday Evening (after 6 PM)"
-
-    def test_details_save_rejects_unknown_pickup_time(self, app, client, seed_workflow_data):
-        """Values outside PICKUP_TIME_OPTIONS are a form-tampering guard."""
-        wt = _seed_supply(seed_workflow_data)
-        cycle = seed_workflow_data["cycle"]
-        dept = seed_workflow_data["department"]
-        work_item = _make_draft_order(wt, cycle, dept)
-
-        _login(client, "test:admin")
-        response = client.post(
-            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/details",
-            data={"pickup_time": "Whenever I feel like it", "additional_notes": ""},
-        )
-
-        assert response.status_code == 302
-        order_detail = SupplyOrderDetail.query.filter_by(work_item_id=work_item.id).first()
-        assert order_detail.pickup_time is None
 
 
 class TestSupplyEndpointReferences:

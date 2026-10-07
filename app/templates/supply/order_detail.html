@@ -63,9 +63,10 @@
       &larr; Back to Supply Orders
     </a>
     {% if can_edit %}
-      <a class="btn btn-primary" href="{{ url_for('work.supply_catalog', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+      {# Saves the order form first, so edits on this page survive the trip. #}
+      <button type="submit" form="order-form" name="action" value="catalog" class="btn btn-primary">
         Add more items
-      </a>
+      </button>
     {% endif %}
   </div>
 
@@ -79,6 +80,93 @@
        {'id': 'audit', 'label': 'History', 'when': can_view_audit},
      ]) %}
     {% if tab == 'order' %}
+  {% if can_edit %}
+  {# One form for the whole draft, so saving one part never drops an edit in
+     another. Kicked-back lines on a submitted order keep their per-line forms
+     in the read-only table below. #}
+  <form id="order-form" method="post"
+        action="{{ url_for('work.supply_order_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {# Enter in a text box submits with the form's first submit button. This
+       one comes first so Enter saves instead of pressing line 1's Remove. #}
+    <button type="submit" name="action" value="save" tabindex="-1" aria-hidden="true"
+            style="position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden;">Save</button>
+
+  <section class="card" style="margin-bottom: 16px;">
+    <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">
+      Items
+    </div>
+    {% if lines %}
+      <table class="responsive-cards">
+        <thead>
+          <tr>
+            <th style="width: 40px;">#</th>
+            <th>Item</th>
+            <th style="width: 8rem;">Qty</th>
+            <th style="width: 170px;">How sure?</th>
+            <th>Notes</th>
+            <th style="width: 90px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+            {% set detail = line.supply_detail %}
+            {% set item = detail.item if detail else None %}
+            {% set prefix = 'line-' ~ line.line_number ~ '-' %}
+            <tr id="line-{{ line.line_number }}">
+              <td data-label="#">{{ line.line_number }}</td>
+              <td data-label="Item">
+                {% if item %}
+                  <strong>{{ item.item_name }}</strong>
+                  <span class="muted small">({{ item.unit }})</span>
+                  {% if not item.is_expendable %}
+                    <span class="pill pill-info pill-sm">Must be returned</span>
+                  {% endif %}
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
+              {% if detail %}
+                <td data-label="Qty">
+                  <input type="hidden" name="{{ prefix }}item" value="{{ detail.item_id }}">
+                  <input type="number" name="{{ prefix }}qty" class="qty-input" min="1" required
+                         value="{{ detail.quantity_requested }}"
+                         aria-label="Quantity for {{ item.item_name if item else 'line ' ~ line.line_number }}">
+                </td>
+                <td data-label="How sure?">
+                  <select name="{{ prefix }}confidence"
+                          aria-label="How sure are you of the quantity for {{ item.item_name if item else 'line ' ~ line.line_number }}?">
+                    <option value="">Choose&hellip;</option>
+                    {% for code, label in quantity_confidence_options.items() %}
+                      <option value="{{ code }}" {% if detail.quantity_confidence == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td data-label="Notes">
+                  <input type="text" name="{{ prefix }}notes"
+                         value="{{ detail.requester_notes or '' }}"
+                         placeholder="Notes{% if item and item.notes_required %} (required){% endif %}"
+                         aria-label="Notes for {{ item.item_name if item else 'line ' ~ line.line_number }}">
+                </td>
+              {% else %}
+                <td colspan="3" class="muted">This line has no item. Remove it.</td>
+              {% endif %}
+              <td>
+                {# formnovalidate: a cleared quantity elsewhere must not block a removal. #}
+                <button type="submit" name="remove_line" value="{{ line.line_number }}"
+                        class="btn btn-danger small" formnovalidate>Remove</button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="muted" style="text-align: center; padding: 16px;">
+        No items yet &mdash; browse the catalog to add supplies.
+      </div>
+    {% endif %}
+  </section>
+  {% else %}
   {# Cart table — items in this order #}
   <section class="card" style="margin-bottom: 16px;">
     <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">
@@ -86,7 +174,9 @@
     </div>
 
     {% if lines %}
-      {% set show_actions_column = can_edit or kickback_editable_line_numbers %}
+      {# Only a submitted order reaches this table; a draft uses the order
+         form above. Kicked-back lines are the one editable case here. #}
+      {% set show_actions_column = kickback_editable_line_numbers %}
       <table>
         <thead>
           <tr>
@@ -105,10 +195,9 @@
             {% set detail = line.supply_detail %}
             {% set item = detail.item if detail else None %}
             {% set is_kickback = line.line_number in kickback_editable_line_numbers %}
-            {# Kicked-back lines re-open their edit widgets even when the
-               order itself is no longer editable (matches the
-               is_line_kickback_editable gate on work.supply_line_update). #}
-            {% set row_editable = can_edit or is_kickback %}
+            {# Matches the is_line_kickback_editable gate on
+               work.supply_line_update. #}
+            {% set row_editable = is_kickback %}
             <tr id="line-{{ line.line_number }}">
               <td>{{ line.line_number }}</td>
               <td>
@@ -154,17 +243,8 @@
                     <button type="submit" class="btn small">Save</button>
                   </form>
                 </td>
-                <td>
-                  {# Remove stays DRAFT-only — a kicked-back line gets fixed
-                     via update, not deleted (matches supply_line_delete). #}
-                  {% if can_edit %}
-                    <form method="post"
-                          action="{{ url_for('work.supply_line_delete', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_number=line.line_number) }}">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button type="submit" class="btn btn-danger small">Remove</button>
-                    </form>
-                  {% endif %}
-                </td>
+                {# A kicked-back line is fixed, never removed. #}
+                <td></td>
               {% else %}
                 <td>
                   {{ detail.quantity_requested if detail else '-' }}
@@ -194,6 +274,8 @@
     {% endif %}
   </section>
 
+  {% endif %}
+
   {# Pickup & spaces #}
   <section class="card" style="margin-bottom: 16px;">
     <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
@@ -204,9 +286,6 @@
       Supply Ops has limited delivery staff, so delivery is not guaranteed.
     </div>
     {% if can_edit %}
-      <form method="post"
-            action="{{ url_for('work.supply_order_details_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="form-label small">Pickup time
           <select name="pickup_time">
             <option value="">(Select Pickup Time)</option>
@@ -261,8 +340,6 @@
         <label class="form-label small">Additional notes
           <textarea name="additional_notes" rows="3" style="width:100%;">{{ order_detail.additional_notes if order_detail and order_detail.additional_notes else '' }}</textarea>
         </label>
-        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">Save pickup &amp; spaces</button>
-      </form>
     {% elif order_detail %}
       <div style="margin-bottom: 4px;">
         <strong>Pickup time:</strong>
@@ -295,26 +372,22 @@
   {# Submit #}
   {% if can_edit %}
     <section class="card" style="margin-bottom: 16px;">
-      <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
-        Submit
-      </div>
       {% if submit_errors %}
-        <div class="muted small" style="margin-bottom: 8px;">Before you can submit:</div>
+        <div class="muted small" style="margin-bottom: 8px;">Still needed before this order can be submitted:</div>
         <ul style="margin: 0 0 12px 0; padding-left: 20px; color: var(--color-error, #b00020);">
           {% for error in submit_errors %}
             <li>{{ error }}</li>
           {% endfor %}
         </ul>
       {% endif %}
-      <form method="post"
-            action="{{ url_for('work.supply_order_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn-primary"
-                {% if submit_errors %}disabled aria-disabled="true" title="Resolve the items above before submitting"{% endif %}>
-          Submit order
-        </button>
-      </form>
+      {# Submit is never disabled: it saves first, so a problem listed above
+         may already be fixed on the page. The server checks again. #}
+      <div class="btn-row">
+        <button type="submit" name="action" value="save" class="btn">Save draft</button>
+        <button type="submit" name="action" value="submit" class="btn btn-primary">Submit order</button>
+      </div>
     </section>
+  </form>
   {% endif %}
 
     {% elif tab == 'comments' %}
