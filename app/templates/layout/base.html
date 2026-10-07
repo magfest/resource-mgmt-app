@@ -800,6 +800,41 @@
             font: inherit;
         }
 
+        /* A number box sized for a count, styled like the text fields
+           above. Not applied to every number input on purpose; other pages
+           size theirs inline. */
+        .qty-input {
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            width: 8rem;
+            box-sizing: border-box;
+            font: inherit;
+        }
+
+        /* A required radio group: one row, stacked on phones so a wrapped
+           option does not read as a separate question. */
+        .choice-group {
+            border: 0;
+            padding: 0;
+            margin: 8px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 16px;
+        }
+        .choice-group legend { width: 100%; padding: 0; }
+        .choice-group label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-height: 32px;
+        }
+        /* The browser's default radio margin indents the row past the labels. */
+        .choice-group input[type="radio"] { margin: 0; }
+        @media (max-width: 479.98px) {
+            .choice-group { flex-direction: column; gap: 0; }
+        }
+
         .inline-form {
             display: flex;
             gap: 8px;

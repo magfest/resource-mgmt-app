@@ -4,6 +4,7 @@
 {% from "macros/checkout_banner.html" import render_checkout_banner %}
 {% from "macros/comments.html" import render_comments %}
 {% from "macros/audit_log.html" import render_audit_log with context %}
+{% from "components/_request_tabs.html" import request_tabs with context %}
 
 {% block title %}{{ work_item.public_id }} - Supply Order{% endblock %}
 
@@ -62,12 +63,111 @@
       &larr; Back to Supply Orders
     </a>
     {% if can_edit %}
-      <a class="btn btn-primary" href="{{ url_for('work.supply_catalog', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+      {# Enter in a text box presses the form's first submit button in page
+         order, counting buttons outside the form that name it. This one
+         comes first so Enter saves, not "Add more items" or a Remove. #}
+      <button type="submit" form="order-form" name="action" value="save" tabindex="-1" aria-hidden="true"
+              style="position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden;">Save</button>
+      {# Saves the order form first, so edits on this page survive the trip. #}
+      <button type="submit" form="order-form" name="action" value="catalog" class="btn btn-primary">
         Add more items
-      </a>
+      </button>
     {% endif %}
   </div>
 
+  {# Comments and history sit behind tabs so a draft's checkout is not
+     followed by two cards a requester does not need while ordering. The
+     checkout itself stays on one tab: its sections are steps in order, and
+     submit errors must point at something the requester can see. #}
+  {% call(tab) request_tabs([
+       {'id': 'order', 'label': 'Order', 'count': lines | length},
+       {'id': 'comments', 'label': 'Comments', 'count': filtered_comments | length},
+       {'id': 'audit', 'label': 'History', 'when': can_view_audit},
+     ]) %}
+    {% if tab == 'order' %}
+  {% if can_edit %}
+  {# One form for the whole draft, so saving one part never drops an edit in
+     another. Kicked-back lines on a submitted order keep their per-line forms
+     in the read-only table below. #}
+  <form id="order-form" method="post"
+        action="{{ url_for('work.supply_order_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <section class="card" style="margin-bottom: 16px;">
+    <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">
+      Items
+    </div>
+    {% if lines %}
+      <table class="responsive-cards">
+        <thead>
+          <tr>
+            <th style="width: 40px;">#</th>
+            <th>Item</th>
+            <th style="width: 8rem;">Qty</th>
+            <th style="width: 170px;">How sure?</th>
+            <th>Notes</th>
+            <th style="width: 90px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+            {% set detail = line.supply_detail %}
+            {% set item = detail.item if detail else None %}
+            {% set prefix = 'line-' ~ line.line_number ~ '-' %}
+            <tr id="line-{{ line.line_number }}">
+              <td data-label="#">{{ line.line_number }}</td>
+              <td data-label="Item">
+                {% if item %}
+                  <strong>{{ item.item_name }}</strong>
+                  <span class="muted small">({{ item.unit }})</span>
+                  {% if not item.is_expendable %}
+                    <span class="pill pill-info pill-sm">Must be returned</span>
+                  {% endif %}
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
+              {% if detail %}
+                <td data-label="Qty">
+                  <input type="hidden" name="{{ prefix }}item" value="{{ detail.item_id }}">
+                  <input type="number" name="{{ prefix }}qty" class="qty-input" min="1" required
+                         value="{{ detail.quantity_requested }}"
+                         aria-label="Quantity for {{ item.item_name if item else 'line ' ~ line.line_number }}">
+                </td>
+                <td data-label="How sure?">
+                  <select name="{{ prefix }}confidence"
+                          aria-label="How sure are you of the quantity for {{ item.item_name if item else 'line ' ~ line.line_number }}?">
+                    <option value="">Choose&hellip;</option>
+                    {% for code, label in quantity_confidence_options.items() %}
+                      <option value="{{ code }}" {% if detail.quantity_confidence == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td data-label="Notes">
+                  <input type="text" name="{{ prefix }}notes"
+                         value="{{ detail.requester_notes or '' }}"
+                         placeholder="Notes{% if item and item.notes_required %} (required){% endif %}"
+                         aria-label="Notes for {{ item.item_name if item else 'line ' ~ line.line_number }}">
+                </td>
+              {% else %}
+                <td colspan="3" class="muted">This line has no item. Remove it.</td>
+              {% endif %}
+              <td>
+                {# formnovalidate: a cleared quantity elsewhere must not block a removal. #}
+                <button type="submit" name="remove_line" value="{{ line.line_number }}"
+                        class="btn btn-danger small" formnovalidate>Remove</button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="muted" style="text-align: center; padding: 16px;">
+        No items yet &mdash; browse the catalog to add supplies.
+      </div>
+    {% endif %}
+  </section>
+  {% else %}
   {# Cart table — items in this order #}
   <section class="card" style="margin-bottom: 16px;">
     <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">
@@ -75,7 +175,9 @@
     </div>
 
     {% if lines %}
-      {% set show_actions_column = can_edit or kickback_editable_line_numbers %}
+      {# Only a submitted order reaches this table; a draft uses the order
+         form above. Kicked-back lines are the one editable case here. #}
+      {% set show_actions_column = kickback_editable_line_numbers %}
       <table>
         <thead>
           <tr>
@@ -94,10 +196,9 @@
             {% set detail = line.supply_detail %}
             {% set item = detail.item if detail else None %}
             {% set is_kickback = line.line_number in kickback_editable_line_numbers %}
-            {# Kicked-back lines re-open their edit widgets even when the
-               order itself is no longer editable (matches the
-               is_line_kickback_editable gate on work.supply_line_update). #}
-            {% set row_editable = can_edit or is_kickback %}
+            {# Matches the is_line_kickback_editable gate on
+               work.supply_line_update. #}
+            {% set row_editable = is_kickback %}
             <tr id="line-{{ line.line_number }}">
               <td>{{ line.line_number }}</td>
               <td>
@@ -130,6 +231,12 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="number" name="quantity" value="{{ detail.quantity_requested if detail else 1 }}"
                            min="1" required style="width: 70px;">
+                    <select name="quantity_confidence" aria-label="How sure are you of this quantity?">
+                      <option value="">How sure are you?</option>
+                      {% for code, label in quantity_confidence_options.items() %}
+                        <option value="{{ code }}" {% if detail and detail.quantity_confidence == code %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
                     <input type="text" name="notes" value="{{ detail.requester_notes if detail and detail.requester_notes else '' }}"
                            placeholder="Notes{% if item and item.notes_required %} (required){% endif %}"
                            {% if item and item.notes_required %}required{% endif %}
@@ -137,19 +244,15 @@
                     <button type="submit" class="btn small">Save</button>
                   </form>
                 </td>
+                {# A kicked-back line is fixed, never removed. #}
+                <td></td>
+              {% else %}
                 <td>
-                  {# Remove stays DRAFT-only — a kicked-back line gets fixed
-                     via update, not deleted (matches supply_line_delete). #}
-                  {% if can_edit %}
-                    <form method="post"
-                          action="{{ url_for('work.supply_line_delete', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_number=line.line_number) }}">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button type="submit" class="btn btn-danger small">Remove</button>
-                    </form>
+                  {{ detail.quantity_requested if detail else '-' }}
+                  {% if detail and detail.quantity_confidence_label %}
+                    <div class="muted small">{{ detail.quantity_confidence_label }}</div>
                   {% endif %}
                 </td>
-              {% else %}
-                <td>{{ detail.quantity_requested if detail else '-' }}</td>
                 <td>
                   {% if detail and detail.requester_notes %}
                     {{ detail.requester_notes }}
@@ -172,15 +275,18 @@
     {% endif %}
   </section>
 
-  {# Pickup details #}
+  {% endif %}
+
+  {# Pickup & spaces #}
   <section class="card" style="margin-bottom: 16px;">
     <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
-      Pickup Details
+      Pickup &amp; Spaces
+    </div>
+    <div class="callout" style="margin-bottom: 12px;">
+      <strong>Plan to pick up this order yourself.</strong>
+      Supply Ops has limited delivery staff, so delivery is not guaranteed.
     </div>
     {% if can_edit %}
-      <form method="post"
-            action="{{ url_for('work.supply_order_details_save', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="form-label small">Pickup time
           <select name="pickup_time">
             <option value="">(Select Pickup Time)</option>
@@ -192,14 +298,49 @@
             {% endfor %}
           </select>
         </label>
-        <div class="muted small" style="margin-bottom: 8px;">
+        <div class="muted small" style="margin-bottom: 12px;">
           Pickup location will be communicated before the event.
         </div>
+
+        <fieldset style="border: 0; padding: 0; margin: 0 0 12px;">
+          <legend class="form-label small" style="padding: 0;">Where will these supplies mainly be used?</legend>
+          {% if not space_choices.has_spaces %}
+            <div class="muted small">
+              No spaces are set up for this event yet. Say where this order
+              will be used in Additional notes.
+            </div>
+          {% else %}
+            <div class="muted small" style="margin-bottom: 6px;">Check every space that applies.</div>
+            {% for choice in space_choices.checklist %}
+              <label style="display: flex; align-items: center; gap: 6px; min-height: 32px;">
+                <input type="checkbox" name="space_ids" value="{{ choice.space_id }}" style="margin: 0;"
+                       {% if choice.checked %}checked{% endif %}>
+                {{ choice.label }}
+                {% if not choice.is_assigned %}
+                  <span class="muted small">(not assigned to your department)</span>
+                {% endif %}
+              </label>
+            {% endfor %}
+            {% if space_choices.picker %}
+              <label for="supply-space-picker" class="muted small" style="display: block; margin-top: 8px;">
+                {% if space_choices.checklist %}Add a space not listed above{% else %}Choose a space{% endif %}
+              </label>
+              <select id="supply-space-picker" name="space_ids" style="max-width: 360px;">
+                <option value="">Choose a space&hellip;</option>
+                {% for space_id, name in space_choices.picker %}
+                  <option value="{{ space_id }}">{{ name }}</option>
+                {% endfor %}
+              </select>
+              <div class="muted small" style="margin-top: 4px;">
+                Not an assignment. Supply Ops uses this to plan where your order goes.
+              </div>
+            {% endif %}
+          {% endif %}
+        </fieldset>
+
         <label class="form-label small">Additional notes
           <textarea name="additional_notes" rows="3" style="width:100%;">{{ order_detail.additional_notes if order_detail and order_detail.additional_notes else '' }}</textarea>
         </label>
-        <button type="submit" class="btn btn-primary" style="margin-top: 8px;">Save pickup details</button>
-      </form>
     {% elif order_detail %}
       <div style="margin-bottom: 4px;">
         <strong>Pickup time:</strong>
@@ -210,6 +351,14 @@
         {% endif %}
       </div>
       <div class="muted small">Pickup location will be communicated before the event.</div>
+      <div style="margin-top: 8px;">
+        <strong>Spaces:</strong>
+        {% if work_item.supply_order_spaces %}
+          {{ work_item.supply_order_spaces | map(attribute='space_label') | join(', ') }}
+        {% else %}
+          <span class="muted">None given</span>
+        {% endif %}
+      </div>
       {% if order_detail.additional_notes %}
         <div style="margin-top: 8px;">
           <strong>Additional notes:</strong>
@@ -224,38 +373,29 @@
   {# Submit #}
   {% if can_edit %}
     <section class="card" style="margin-bottom: 16px;">
-      <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;">
-        Submit
-      </div>
       {% if submit_errors %}
-        <div class="muted small" style="margin-bottom: 8px;">Before you can submit:</div>
+        <div class="muted small" style="margin-bottom: 8px;">Still needed before this order can be submitted:</div>
         <ul style="margin: 0 0 12px 0; padding-left: 20px; color: var(--color-error, #b00020);">
           {% for error in submit_errors %}
             <li>{{ error }}</li>
           {% endfor %}
         </ul>
       {% endif %}
-      <form method="post"
-            action="{{ url_for('work.supply_order_submit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn-primary"
-                {% if submit_errors %}disabled aria-disabled="true" title="Resolve the items above before submitting"{% endif %}>
-          Submit order
-        </button>
-      </form>
+      {# Submit is never disabled: it saves first, so a problem listed above
+         may already be fixed on the page. The server checks again. #}
+      <div class="btn-row">
+        <button type="submit" name="action" value="save" class="btn">Save draft</button>
+        <button type="submit" name="action" value="submit" class="btn btn-primary">Submit order</button>
+      </div>
     </section>
+  </form>
   {% endif %}
 
-  {# Comments #}
-  <section class="card" style="margin-bottom: 16px;">
-    {{ render_comments(filtered_comments, work_item, ctx, perms, can_add_comment) }}
-  </section>
-
-  {# Audit log (admins only) #}
-  {% if can_view_audit %}
-    <section class="card" style="margin-bottom: 16px;">
+    {% elif tab == 'comments' %}
+      {{ render_comments(filtered_comments, work_item, ctx, perms, can_add_comment) }}
+    {% elif tab == 'audit' %}
       {{ render_audit_log(audit_events, csp_nonce) }}
-    </section>
-  {% endif %}
+    {% endif %}
+  {% endcall %}
 
 {% endblock %}

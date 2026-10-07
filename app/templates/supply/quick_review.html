@@ -139,6 +139,7 @@
             <td>
               {{ detail.quantity_requested if detail else '-' }}
               {% if item %}<div class="muted small">{{ item.unit }}</div>{% endif %}
+              {% if detail and detail.quantity_confidence_label %}<div class="muted small">{{ detail.quantity_confidence_label }}</div>{% endif %}
             </td>
             <td class="num">
               {% if line_cost_cents is not none %}

@@ -150,6 +150,8 @@ def _add_line(work_item, item, quantity=1, notes=None, line_number=None):
         work_line_id=line.id,
         item_id=item.id,
         quantity_requested=quantity,
+        # Submit requires a confidence on every line; these tests are not about it.
+        quantity_confidence="KNOWN",
         requester_notes=notes,
     ))
     db.session.commit()

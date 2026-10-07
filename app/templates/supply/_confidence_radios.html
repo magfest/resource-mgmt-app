@@ -1,0 +1,16 @@
+{# templates/supply/_confidence_radios.html
+   Required, with nothing preselected: a default would be clicked past, and
+   supply ops would read a guess as a firm number. The catalog dialog sets
+   `checked` from the row's data-confidence when it opens for an edit. #}
+{% macro confidence_radios(options, selected=None, id_prefix="confidence") %}
+  <fieldset class="choice-group">
+    <legend class="form-label">How sure are you of this number?</legend>
+    {% for code, label in options.items() %}
+      <label for="{{ id_prefix }}-{{ code|lower }}">
+        <input type="radio" id="{{ id_prefix }}-{{ code|lower }}" name="quantity_confidence"
+               value="{{ code }}" required {% if selected == code %}checked{% endif %}>
+        {{ label }}
+      </label>
+    {% endfor %}
+  </fieldset>
+{% endmacro %}

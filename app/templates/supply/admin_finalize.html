@@ -34,6 +34,9 @@
     <div class="meta"><strong>Pickup time:</strong>
       {{ order_detail.pickup_time if order_detail and order_detail.pickup_time else '-' }}
     </div>
+    <div class="meta" style="margin-top: 8px;"><strong>Spaces:</strong>
+      {{ work_item.supply_order_spaces | map(attribute='space_label') | join(', ') or '-' }}
+    </div>
     {% if order_detail and order_detail.additional_notes %}
       <div class="meta" style="margin-top: 8px;">
         <div><strong>Order notes:</strong></div>
@@ -84,7 +87,12 @@
                   <div class="muted small">{{ row.category.name }}</div>
                 {% endif %}
               </td>
-              <td data-label="Requested" class="right num">{{ row.requested }}</td>
+              <td data-label="Requested" class="right num">
+                {{ row.requested }}
+                {% if line.supply_detail and line.supply_detail.quantity_confidence_label %}
+                  <div class="muted small">{{ line.supply_detail.quantity_confidence_label }}</div>
+                {% endif %}
+              </td>
               <td data-label="Review group">
                 {% if row.ag_review %}
                   {{ render_status_pill(row.ag_review.status, label=friendly_status(row.ag_review.status) if friendly_status else row.ag_review.status) }}

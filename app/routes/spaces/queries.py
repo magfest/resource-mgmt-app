@@ -115,3 +115,26 @@ def spaces_for_department(department_id: int, event_cycle_id: int) -> list[dict]
             "covers": covers,
         })
     return entries
+
+
+def offerable_spaces(event_cycle) -> list[Space]:
+    """Return the active spaces at this event's venue, permanent or this event's.
+
+    EventCycle.venue_id is nullable and nothing in app/seeds populates it.
+    An event with no venue offers nothing here; the caller is responsible
+    for telling the requester to contact the Hotels request channel
+    instead of rendering an empty picker with no explanation.
+    """
+    if event_cycle.venue_id is None:
+        return []
+    return (
+        db.session.query(Space)
+        .filter(
+            Space.venue_id == event_cycle.venue_id,
+            Space.is_active.is_(True),
+            db.or_(Space.event_cycle_id.is_(None),
+                   Space.event_cycle_id == event_cycle.id),
+        )
+        .order_by(Space.sort_order, Space.code)
+        .all()
+    )

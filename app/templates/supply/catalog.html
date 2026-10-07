@@ -1,5 +1,6 @@
 {# templates/supply/catalog.html #}
 {% extends "layout/base.html" %}
+{% from "supply/_confidence_radios.html" import confidence_radios %}
 
 {% block title %}{% if work_item %}{{ work_item.public_id }} - Supply Catalog{% else %}Supply Catalog - {{ ctx.department.name }}{% endif %}{% endblock %}
 
@@ -47,7 +48,7 @@
   .supply-dialog-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .supply-dialog-head h2 { margin: 0; }
   .supply-dialog-pills { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
-  .supply-dialog input[type="number"], .supply-dialog textarea { width: 100%; box-sizing: border-box; }
+  .supply-dialog textarea { width: 100%; box-sizing: border-box; }
   .supply-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
   @media (max-width: 767.98px) {
@@ -208,6 +209,7 @@
                      data-line-number="{{ cart_entry.line_number }}"
                      data-qty="{{ cart_entry.qty }}"
                      data-notes="{{ cart_entry.notes }}"
+                     data-confidence="{{ cart_entry.confidence }}"
                      data-update-url="{{ url_for('work.supply_line_update', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_number=cart_entry.line_number) }}"
                      {% endif %}>{% if cart_entry %}Edit{% else %}Add to order{% endif %}</a>
                 {% else %}
@@ -254,7 +256,8 @@
         <p class="small" data-field="description"></p>
         <p class="muted small" data-field="guidance"></p>
         <label for="supply-dialog-qty" class="form-label">Quantity</label>
-        <input id="supply-dialog-qty" type="number" name="quantity" value="1" min="1" required autofocus>
+        <input id="supply-dialog-qty" class="qty-input" type="number" name="quantity" value="1" min="1" required autofocus>
+        {{ confidence_radios(quantity_confidence_options, id_prefix="supply-dialog-confidence") }}
         <label for="supply-dialog-notes" class="form-label" data-field="notes-label">Notes (optional)</label>
         <textarea id="supply-dialog-notes" name="notes" rows="3" placeholder="What is this for? e.g. Tech booth"></textarea>
         <p class="small" data-separate-wrap hidden><a href="#" data-separate-line>Add as a separate line instead</a></p>
@@ -339,6 +342,7 @@
   var addUrl = form.getAttribute('data-add-url');
   var qty = form.querySelector('[name="quantity"]');
   var notes = form.querySelector('[name="notes"]');
+  var confidence = form.querySelectorAll('[name="quantity_confidence"]');
   var itemId = form.querySelector('[name="item_id"]');
   var submit = form.querySelector('[data-field="submit"]');
   var separateWrap = form.querySelector('[data-separate-wrap]');
@@ -370,6 +374,9 @@
     itemId.value = d.itemId;
     qty.value = editing ? d.qty : '1';
     notes.value = editing ? d.notes : '';
+    confidence.forEach(function (radio) {
+      radio.checked = editing && radio.value === d.confidence;
+    });
     notes.setCustomValidity('');
     form.action = editing ? d.updateUrl : addUrl;
     submit.textContent = editing ? 'Save changes' : 'Add to order';

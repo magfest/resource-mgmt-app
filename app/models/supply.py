@@ -10,6 +10,16 @@ from datetime import datetime
 from app import db
 
 
+# How sure the requester is of a line's quantity. Requesters order once a
+# year, so supply ops trims "Rough guess" lines first when stock runs short.
+# Codes are stored on SupplyOrderLineDetail; labels may be reworded freely.
+QUANTITY_CONFIDENCE_OPTIONS = {
+    "KNOWN": "I know for sure",
+    "ESTIMATE": "Good estimate",
+    "GUESS": "Rough guess",
+}
+
+
 class SupplyCategory(db.Model):
     """Categories for supply items - used for routing."""
     __tablename__ = "supply_categories"
@@ -107,12 +117,20 @@ class SupplyOrderLineDetail(db.Model):
     )
 
     quantity_requested = db.Column(db.Integer, nullable=False)
+    # A code from QUANTITY_CONFIDENCE_OPTIONS above. This is not the
+    # budget ConfidenceLevel table; that one rates price, and supply has none.
+    # NULL on a draft line, and on lines submitted before this column existed.
+    quantity_confidence = db.Column(db.String(16), nullable=True)
     quantity_approved = db.Column(db.Integer, nullable=True)
     requester_notes = db.Column(db.Text, nullable=True)
 
     work_line = db.relationship("WorkLine", backref=db.backref("supply_detail", uselist=False, cascade="all, delete-orphan"))
     item = db.relationship("SupplyItem")
     routed_approval_group = db.relationship("ApprovalGroup", foreign_keys=[routed_approval_group_id])
+
+    @property
+    def quantity_confidence_label(self) -> str | None:
+        return QUANTITY_CONFIDENCE_OPTIONS.get(self.quantity_confidence)
 
     __table_args__ = (
         db.Index("ix_supply_order_line_details_approval_routing", "routed_approval_group_id", "item_id"),
@@ -149,4 +167,52 @@ class SupplyOrderDetail(db.Model):
     work_item = db.relationship(
         "WorkItem",
         backref=db.backref("supply_order_detail", uselist=False, cascade="all, delete-orphan"),
+    )
+
+
+class SupplyOrderSpace(db.Model):
+    """One space a supply order will be used in.
+
+    Supply ops plans delivery and staging from this list. Any space at the
+    event's venue may be named, not only the department's assigned ones,
+    because space allocation is not always right before orders open.
+    """
+    __tablename__ = "supply_order_spaces"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    work_item_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_items.id", name="fk_supply_order_spaces_work_item_id"),
+        nullable=False,
+        index=True,
+    )
+    space_id = db.Column(
+        db.Integer,
+        db.ForeignKey("spaces.id", name="fk_supply_order_spaces_space_id"),
+        nullable=False,
+        index=True,
+    )
+
+    # The name the requester picked, snapshotted at save. A combined space
+    # shows under its event alias ("Chesapeake 4/5"); the generic line review
+    # route cannot recompute that, so every page reads this column instead.
+    space_label = db.Column(db.Text, nullable=False)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_by_user_id = db.Column(db.String(64), nullable=True)
+
+    work_item = db.relationship(
+        "WorkItem",
+        backref=db.backref(
+            "supply_order_spaces",
+            cascade="all, delete-orphan",
+            order_by="SupplyOrderSpace.id",
+        ),
+    )
+    space = db.relationship("Space")
+
+    __table_args__ = (
+        db.UniqueConstraint("work_item_id", "space_id",
+                            name="uq_supply_order_spaces_work_item_space"),
     )

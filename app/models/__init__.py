@@ -184,6 +184,7 @@ from .supply import (
     SupplyItem,
     SupplyOrderLineDetail,
     SupplyOrderDetail,
+    SupplyOrderSpace,
 )
 
 # Re-export techops models
@@ -376,6 +377,7 @@ __all__ = [
     "SupplyItem",
     "SupplyOrderLineDetail",
     "SupplyOrderDetail",
+    "SupplyOrderSpace",
     # TechOps models
     "TechOpsServiceType",
     "TechOpsLineDetail",

@@ -1,5 +1,6 @@
 {# templates/supply/item_detail.html #}
 {% extends "layout/base.html" %}
+{% from "supply/_confidence_radios.html" import confidence_radios %}
 
 {% block title %}{{ item.item_name }} - Supply Catalog{% endblock %}
 
@@ -80,7 +81,8 @@
               <input type="hidden" name="item_id" value="{{ item.id }}">
             {% endif %}
             <label for="item-qty" class="form-label small">Quantity</label>
-            <input id="item-qty" type="number" name="quantity" value="{{ cart_entry.qty if editing else 1 }}" min="1" required>
+            <input id="item-qty" type="number" name="quantity" value="{{ cart_entry.qty if editing else 1 }}" min="1" required class="qty-input">
+            {{ confidence_radios(quantity_confidence_options, selected=cart_entry.confidence if editing else None, id_prefix="item-confidence") }}
             <label for="item-notes" class="form-label small" style="margin-top: 8px;">Notes {% if item.notes_required %}(required){% else %}(optional){% endif %}</label>
             <textarea id="item-notes" name="notes" rows="3" {% if item.notes_required %}required{% endif %}
                       placeholder="What is this for? e.g. Tech booth">{{ cart_entry.notes if editing else '' }}</textarea>

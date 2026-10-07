@@ -100,6 +100,9 @@
           <div><strong>Pickup time:</strong>
             {{ order_detail.pickup_time if order_detail and order_detail.pickup_time else '-' }}
           </div>
+          <div><strong>Spaces:</strong>
+            {{ work_item.supply_order_spaces | map(attribute='space_label') | join(', ') or '-' }}
+          </div>
         </div>
         {% if order_detail and order_detail.additional_notes %}
           <div class="meta" style="margin-top: 8px;">
@@ -126,6 +129,9 @@
               {{ detail.quantity_requested if detail else '-' }}
               {% if item %}(per {{ item.unit }}){% endif %}
             </div>
+            {% if detail and detail.quantity_confidence_label %}
+              <div><strong>Requester is:</strong> {{ detail.quantity_confidence_label }}</div>
+            {% endif %}
           </div>
         </div>
 
