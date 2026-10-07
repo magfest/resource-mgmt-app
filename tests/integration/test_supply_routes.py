@@ -512,6 +512,47 @@ class TestSupplyCatalog:
         assert details[0].quantity_requested == 3
         assert details[0].requester_notes == "for tech booth"
 
+    def test_add_saves_confidence_and_rejects_unknown_code(
+        self, app, client, seed_workflow_data
+    ):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        add_url = (
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/lines/add"
+        )
+
+        _login(client, "test:admin")
+        client.post(add_url, data={"item_id": str(plain_item.id), "quantity": "2",
+                                   "quantity_confidence": "GUESS"})
+        client.post(add_url, data={"item_id": str(popular_item.id), "quantity": "2",
+                                   "quantity_confidence": "PSYCHIC"})
+
+        added = SupplyOrderLineDetail.query.filter_by(item_id=plain_item.id).one()
+        assert added.quantity_confidence == "GUESS"
+        assert SupplyOrderLineDetail.query.filter_by(item_id=popular_item.id).count() == 0
+
+    def test_catalog_edit_button_carries_saved_confidence(
+        self, app, client, seed_workflow_data
+    ):
+        """The dialog prefills its radios from this attribute when editing."""
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        _add_line(work_item, plain_item, quantity=2, quantity_confidence="ESTIMATE")
+
+        _login(client, "test:admin")
+        html = client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        ).get_data(as_text=True)
+
+        assert 'data-confidence="ESTIMATE"' in html
+        assert 'name="quantity_confidence"' in html
+
     def test_add_same_item_twice_creates_two_lines(
         self, app, client, seed_workflow_data
     ):
@@ -536,7 +577,7 @@ class TestSupplyCatalog:
         assert quantities == [1, 2]
 
 
-def _add_line(work_item, item, quantity=1, notes=None, line_number=None, status=WORK_LINE_STATUS_PENDING, needs_requester_action=False):
+def _add_line(work_item, item, quantity=1, notes=None, line_number=None, status=WORK_LINE_STATUS_PENDING, needs_requester_action=False, quantity_confidence=None):
     """Add a WorkLine + SupplyOrderLineDetail directly to an order (bypasses
     the catalog add-to-cart route so tests can control status/flags)."""
     if line_number is None:
@@ -553,6 +594,7 @@ def _add_line(work_item, item, quantity=1, notes=None, line_number=None, status=
         work_line_id=line.id,
         item_id=item.id,
         quantity_requested=quantity,
+        quantity_confidence=quantity_confidence,
         requester_notes=notes,
     ))
     db.session.commit()
@@ -710,6 +752,48 @@ class TestSupplyLineUpdate(object):
         detail = SupplyOrderLineDetail.query.filter_by(work_line_id=line.id).first()
         assert detail.quantity_requested == 5
         assert detail.requester_notes == "fixed per feedback"
+
+
+    def test_update_saves_confidence_and_leaves_it_when_field_absent(
+        self, app, client, seed_workflow_data
+    ):
+        """The order page posts quantity_confidence; the catalog and item
+        pages post the same route without it and must not clear it."""
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        line = _add_line(work_item, plain_item, quantity=3)
+        url = (f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}"
+               f"/lines/{line.line_number}/update")
+
+        _login(client, "test:admin")
+        client.post(url, data={"quantity": "4", "quantity_confidence": "ESTIMATE"})
+        client.post(url, data={"quantity": "6", "notes": ""})
+
+        detail = SupplyOrderLineDetail.query.filter_by(work_line_id=line.id).first()
+        assert detail.quantity_requested == 6
+        assert detail.quantity_confidence == "ESTIMATE"
+
+    def test_update_rejects_unknown_confidence(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        line = _add_line(work_item, plain_item, quantity=3)
+
+        _login(client, "test:admin")
+        client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}"
+            f"/lines/{line.line_number}/update",
+            data={"quantity": "9", "quantity_confidence": "PSYCHIC"},
+        )
+
+        detail = SupplyOrderLineDetail.query.filter_by(work_line_id=line.id).first()
+        assert detail.quantity_requested == 3
+        assert detail.quantity_confidence is None
 
 
 class TestSupplyLineDelete(object):

@@ -10,6 +10,16 @@ from datetime import datetime
 from app import db
 
 
+# How sure the requester is of a line's quantity. Requesters order once a
+# year, so supply ops trims "Rough guess" lines first when stock runs short.
+# Codes are stored on SupplyOrderLineDetail; labels may be reworded freely.
+QUANTITY_CONFIDENCE_OPTIONS = {
+    "KNOWN": "I know for sure",
+    "ESTIMATE": "Good estimate",
+    "GUESS": "Rough guess",
+}
+
+
 class SupplyCategory(db.Model):
     """Categories for supply items - used for routing."""
     __tablename__ = "supply_categories"
@@ -107,12 +117,20 @@ class SupplyOrderLineDetail(db.Model):
     )
 
     quantity_requested = db.Column(db.Integer, nullable=False)
+    # A code from QUANTITY_CONFIDENCE_OPTIONS above. This is not the
+    # budget ConfidenceLevel table; that one rates price, and supply has none.
+    # NULL on a draft line, and on lines submitted before this column existed.
+    quantity_confidence = db.Column(db.String(16), nullable=True)
     quantity_approved = db.Column(db.Integer, nullable=True)
     requester_notes = db.Column(db.Text, nullable=True)
 
     work_line = db.relationship("WorkLine", backref=db.backref("supply_detail", uselist=False, cascade="all, delete-orphan"))
     item = db.relationship("SupplyItem")
     routed_approval_group = db.relationship("ApprovalGroup", foreign_keys=[routed_approval_group_id])
+
+    @property
+    def quantity_confidence_label(self) -> str | None:
+        return QUANTITY_CONFIDENCE_OPTIONS.get(self.quantity_confidence)
 
     __table_args__ = (
         db.Index("ix_supply_order_line_details_approval_routing", "routed_approval_group_id", "item_id"),

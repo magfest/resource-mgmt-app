@@ -33,7 +33,9 @@ from app.models import (
     WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_SUBMITTED,
 )
-from app.routes.work.supply.form_utils import PICKUP_TIME_OPTIONS, PICKUP_TIME_OTHER
+from app.routes.work.supply.form_utils import (
+    PICKUP_TIME_OPTIONS, PICKUP_TIME_OTHER, validate_order_for_submit,
+)
 
 
 def _login(client, user_id):
@@ -129,7 +131,8 @@ def _make_draft_order(wt, cycle, dept):
     return work_item
 
 
-def _add_line(work_item, item, quantity=1, notes=None, line_number=None):
+def _add_line(work_item, item, quantity=1, notes=None, line_number=None,
+              quantity_confidence="KNOWN"):
     if line_number is None:
         line_number = 1 + max((l.line_number for l in work_item.lines), default=0)
     line = WorkLine(
@@ -142,6 +145,7 @@ def _add_line(work_item, item, quantity=1, notes=None, line_number=None):
         work_line_id=line.id,
         item_id=item.id,
         quantity_requested=quantity,
+        quantity_confidence=quantity_confidence,
         requester_notes=notes,
     ))
     db.session.commit()
@@ -233,6 +237,26 @@ class TestSupplySubmitValidationBlocks:
         assert response.status_code == 302
         db.session.refresh(work_item)
         assert work_item.status == WORK_ITEM_STATUS_DRAFT
+
+    def test_line_without_confidence_blocks_submit(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category)
+        work_item = _make_draft_order(wt, cycle, dept)
+        _add_line(work_item, item, quantity_confidence=None)
+        _set_pickup_details(work_item)
+
+        _login(client, "test:admin")
+        response = self._submit(client, cycle, dept, work_item)
+
+        assert response.status_code == 302
+        db.session.refresh(work_item)
+        assert work_item.status == WORK_ITEM_STATUS_DRAFT
+        errors = validate_order_for_submit(work_item)
+        assert any("Sharpie Markers" in e and "sure" in e for e in errors)
 
     def test_notes_required_blank_blocks_submit(self, app, client, seed_workflow_data):
         wt = _seed_supply(seed_workflow_data)

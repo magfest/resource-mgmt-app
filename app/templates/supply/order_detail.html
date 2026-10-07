@@ -130,6 +130,12 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="number" name="quantity" value="{{ detail.quantity_requested if detail else 1 }}"
                            min="1" required style="width: 70px;">
+                    <select name="quantity_confidence" aria-label="How sure are you of this quantity?">
+                      <option value="">How sure are you?</option>
+                      {% for code, label in quantity_confidence_options.items() %}
+                        <option value="{{ code }}" {% if detail and detail.quantity_confidence == code %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
                     <input type="text" name="notes" value="{{ detail.requester_notes if detail and detail.requester_notes else '' }}"
                            placeholder="Notes{% if item and item.notes_required %} (required){% endif %}"
                            {% if item and item.notes_required %}required{% endif %}
@@ -149,7 +155,12 @@
                   {% endif %}
                 </td>
               {% else %}
-                <td>{{ detail.quantity_requested if detail else '-' }}</td>
+                <td>
+                  {{ detail.quantity_requested if detail else '-' }}
+                  {% if detail and detail.quantity_confidence_label %}
+                    <div class="muted small">{{ detail.quantity_confidence_label }}</div>
+                  {% endif %}
+                </td>
                 <td>
                   {% if detail and detail.requester_notes %}
                     {{ detail.requester_notes }}

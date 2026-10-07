@@ -20,6 +20,7 @@ from app.models import (
     WORK_ITEM_STATUS_DRAFT,
     WORK_LINE_STATUS_PENDING,
 )
+from app.models.supply import QUANTITY_CONFIDENCE_OPTIONS
 from .. import work_bp
 from ..helpers import (
     get_portfolio_context,
@@ -98,11 +99,12 @@ def _catalog_items(q: str) -> list[tuple[SupplyCategory, list[SupplyItem]]]:
 def _cart_entries(work_item) -> dict[int, dict]:
     """Summarize an order's lines per catalog item for the add-or-edit rule.
 
-    line_number and notes are set only when the item is on exactly one line;
-    with two or more lines the requester edits each one on the order page.
+    line_number, notes and confidence are set only when the item is on
+    exactly one line; with two or more lines the requester edits each one on
+    the order page.
     """
     entries: dict[int, dict] = {}
-    singles: dict[int, tuple[int, str]] = {}
+    singles: dict[int, tuple[int, str, str]] = {}
     for line in work_item.lines:
         detail = line.supply_detail
         if detail is None:
@@ -110,10 +112,13 @@ def _cart_entries(work_item) -> dict[int, dict]:
         entry = entries.setdefault(detail.item_id, {"lines": 0, "qty": 0})
         entry["lines"] += 1
         entry["qty"] += detail.quantity_requested or 0
-        singles[detail.item_id] = (line.line_number, detail.requester_notes or "")
+        singles[detail.item_id] = (
+            line.line_number, detail.requester_notes or "",
+            detail.quantity_confidence or "",
+        )
     for item_id, entry in entries.items():
         if entry["lines"] == 1:
-            entry["line_number"], entry["notes"] = singles[item_id]
+            entry["line_number"], entry["notes"], entry["confidence"] = singles[item_id]
     return entries
 
 
@@ -156,6 +161,7 @@ def supply_catalog(event: str, dept: str, public_id: str):
         catalog_url=catalog_url,
         item_detail_url=item_detail_url,
         in_cart=in_cart,
+        quantity_confidence_options=QUANTITY_CONFIDENCE_OPTIONS,
     )
 
 
@@ -251,6 +257,7 @@ def supply_item_detail(event: str, dept: str, item_id: int):
         can_add=can_add,
         back_url=back_url,
         cart_entry=cart_entry,
+        quantity_confidence_options=QUANTITY_CONFIDENCE_OPTIONS,
     )
 
 
@@ -295,6 +302,13 @@ def supply_line_add(event: str, dept: str, public_id: str):
         flash(f"Notes are required for {item.item_name}.", "error")
         return redirect(anchor_url)
 
+    # The dialog requires an answer; the server accepts a blank one because
+    # the submit check in form_utils is the gate that cannot be bypassed.
+    confidence = (request.form.get("quantity_confidence") or "").strip()
+    if confidence and confidence not in QUANTITY_CONFIDENCE_OPTIONS:
+        flash("Choose how sure you are of the quantity from the list.", "error")
+        return redirect(anchor_url)
+
     line_number = 1 + max(
         (l.line_number for l in work_item.lines), default=0
     )
@@ -306,6 +320,7 @@ def supply_line_add(event: str, dept: str, public_id: str):
         work_line_id=line.id,
         item_id=item.id,
         quantity_requested=quantity,
+        quantity_confidence=confidence or None,
         requester_notes=notes or None,
     ))
     db.session.commit()

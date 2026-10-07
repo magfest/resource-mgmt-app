@@ -84,7 +84,12 @@
                   <div class="muted small">{{ row.category.name }}</div>
                 {% endif %}
               </td>
-              <td data-label="Requested" class="right num">{{ row.requested }}</td>
+              <td data-label="Requested" class="right num">
+                {{ row.requested }}
+                {% if line.supply_detail and line.supply_detail.quantity_confidence_label %}
+                  <div class="muted small">{{ line.supply_detail.quantity_confidence_label }}</div>
+                {% endif %}
+              </td>
               <td data-label="Review group">
                 {% if row.ag_review %}
                   {{ render_status_pill(row.ag_review.status, label=friendly_status(row.ag_review.status) if friendly_status else row.ag_review.status) }}

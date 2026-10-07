@@ -3,6 +3,7 @@
 The engine's submit_work_item SILENTLY SKIPS lines it can't route
 (lifecycle.py:67-68) — this module is the loud gate that runs first.
 """
+from app.models.supply import QUANTITY_CONFIDENCE_OPTIONS
 from app.routing.registry import get_approval_group_for_line
 
 # Hardcoded for now (rarely changes; may become per-event config later).
@@ -43,6 +44,11 @@ def validate_order_for_submit(work_item) -> list[str]:
             errors.append(
                 f"Line {line.line_number}: '{d.item.item_name}' is no longer "
                 "available — remove it to submit."
+            )
+        if d.quantity_confidence not in QUANTITY_CONFIDENCE_OPTIONS:
+            errors.append(
+                f"Line {line.line_number}: say how sure you are of the "
+                f"quantity for '{d.item.item_name}'."
             )
         if d.item.notes_required and not (d.requester_notes or "").strip():
             errors.append(

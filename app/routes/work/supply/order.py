@@ -30,6 +30,7 @@ from ..helpers import (
     require_portfolio_edit,
     require_work_item_view,
 )
+from app.models.supply import QUANTITY_CONFIDENCE_OPTIONS
 from .form_utils import PICKUP_TIME_OPTIONS
 
 
@@ -138,7 +139,7 @@ def _update_return_url(return_to: str, event: str, dept: str, public_id: str, it
 
 @work_bp.post("/<event>/<dept>/supply/order/<public_id>/lines/<int:line_number>/update")
 def supply_line_update(event: str, dept: str, public_id: str, line_number: int):
-    """Update a line's quantity/notes.
+    """Update a line's quantity, quantity confidence, and notes.
 
     Gate: normally DRAFT + can_edit — EXCEPT a kicked-back line, per
     is_line_kickback_editable() above. Redirects per return_to; see
@@ -182,8 +183,18 @@ def supply_line_update(event: str, dept: str, public_id: str, line_number: int):
         flash(f"Notes are required for {item.item_name}.", "error")
         return redirect(back_url)
 
+    # Only the order page posts this field. The catalog and item pages post
+    # here without it, and must not clear an answer given on the order page.
+    has_confidence = "quantity_confidence" in request.form
+    confidence = (request.form.get("quantity_confidence") or "").strip()
+    if confidence and confidence not in QUANTITY_CONFIDENCE_OPTIONS:
+        flash("Choose how sure you are of the quantity from the list.", "error")
+        return redirect(back_url)
+
     line.supply_detail.quantity_requested = quantity
     line.supply_detail.requester_notes = notes or None
+    if has_confidence:
+        line.supply_detail.quantity_confidence = confidence or None
     db.session.commit()
 
     flash("Line updated.", "success")
