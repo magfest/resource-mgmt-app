@@ -4,6 +4,7 @@
 {% from "macros/checkout_banner.html" import render_checkout_banner %}
 {% from "macros/comments.html" import render_comments %}
 {% from "macros/audit_log.html" import render_audit_log with context %}
+{% from "components/_request_tabs.html" import request_tabs with context %}
 
 {% block title %}{{ work_item.public_id }} - Supply Order{% endblock %}
 
@@ -68,6 +69,16 @@
     {% endif %}
   </div>
 
+  {# Comments and history sit behind tabs so a draft's checkout is not
+     followed by two cards a requester does not need while ordering. The
+     checkout itself stays on one tab: its sections are steps in order, and
+     submit errors must point at something the requester can see. #}
+  {% call(tab) request_tabs([
+       {'id': 'order', 'label': 'Order', 'count': lines | length},
+       {'id': 'comments', 'label': 'Comments', 'count': filtered_comments | length},
+       {'id': 'audit', 'label': 'History', 'when': can_view_audit},
+     ]) %}
+    {% if tab == 'order' %}
   {# Cart table — items in this order #}
   <section class="card" style="margin-bottom: 16px;">
     <div class="muted small" style="text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px;">
@@ -306,16 +317,11 @@
     </section>
   {% endif %}
 
-  {# Comments #}
-  <section class="card" style="margin-bottom: 16px;">
-    {{ render_comments(filtered_comments, work_item, ctx, perms, can_add_comment) }}
-  </section>
-
-  {# Audit log (admins only) #}
-  {% if can_view_audit %}
-    <section class="card" style="margin-bottom: 16px;">
+    {% elif tab == 'comments' %}
+      {{ render_comments(filtered_comments, work_item, ctx, perms, can_add_comment) }}
+    {% elif tab == 'audit' %}
       {{ render_audit_log(audit_events, csp_nonce) }}
-    </section>
-  {% endif %}
+    {% endif %}
+  {% endcall %}
 
 {% endblock %}

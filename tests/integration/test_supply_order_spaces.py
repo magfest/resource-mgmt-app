@@ -149,3 +149,38 @@ class TestSupplyOrderSpacesPage:
         assert f'type="checkbox" name="space_ids" value="{assigned.id}"' in html
         assert f'<option value="{other.id}">Other Room</option>' in html
         assert "Plan to pick up this order" in html
+
+
+class TestSupplyOrderTabs:
+
+    def test_requester_sees_order_and_comments_but_not_history(
+        self, app, client, seed_workflow_data
+    ):
+        from app.models import (
+            DepartmentMembership, DepartmentMembershipWorkTypeAccess, User,
+        )
+        cycle, dept, work_item = _ready_order(seed_workflow_data)
+        requester = User(id="test:requester", email="requester@test.local",
+                         display_name="Test Requester", is_active=True)
+        db.session.add(requester)
+        db.session.flush()
+        membership = DepartmentMembership(
+            user_id=requester.id, department_id=dept.id, event_cycle_id=cycle.id)
+        db.session.add(membership)
+        db.session.flush()
+        db.session.add(DepartmentMembershipWorkTypeAccess(
+            department_membership_id=membership.id,
+            work_type_id=work_item.portfolio.work_type_id,
+            can_view=True, can_edit=True,
+        ))
+        db.session.commit()
+        url = f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}"
+
+        _login(client, "test:requester")
+        html = client.get(url).get_data(as_text=True)
+        assert 'data-tab="order"' in html
+        assert 'data-tab="comments"' in html
+        assert 'data-tab="audit"' not in html
+
+        _login(client, "test:admin")
+        assert 'data-tab="audit"' in client.get(url).get_data(as_text=True)
