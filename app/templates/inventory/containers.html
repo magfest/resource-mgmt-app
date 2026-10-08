@@ -1,0 +1,56 @@
+{% extends "layout/base.html" %}
+{% block title %}Containers - Inventory{% endblock %}
+{% block content %}
+<h1>Containers</h1>
+<div class="muted mb-16">
+  Create containers here in batches. Use Edit to rename a container or
+  move it inside another.
+</div>
+<form method="post" action="{{ url_for('inventory.create_containers') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row">
+    <label>Kind
+      <select name="kind_id" required>
+        {% for k in kinds %}<option value="{{ k.id }}">{{ k.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>How many <input type="number" name="count" value="1" min="1" max="50" style="width: 80px;"></label>
+    <label>Inside (label) <input type="text" name="parent_code" maxlength="16" placeholder="C-0001" style="width: 110px;"></label>
+    <label>Name (one only) <input type="text" name="name" maxlength="128"></label>
+  </div>
+  <button type="submit" class="btn btn-primary">Create</button>
+</form>
+
+{% macro node(c) %}
+  <li id="container-{{ c.id }}">
+    <code>{{ c.label_code }}</code> {{ c.kind.name }}{% if c.name %}: {{ c.name }}{% endif %}
+    <span class="muted small">
+      {{ stock_lines.get(c.id, 0) }} stock lines, {{ unit_counts.get(c.id, 0) }} units
+    </span>
+    <a class="btn btn-small" href="{{ url_for('inventory.containers', edit=c.id) }}#container-{{ c.id }}">Edit</a>
+    {% if edit_id == c.id %}
+    <form method="post" action="{{ url_for('inventory.update_container', container_id=c.id) }}" class="card">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row">
+        <label>Kind
+          <select name="kind_id">
+            {% for k in kinds %}<option value="{{ k.id }}" {% if k.id == c.kind_id %}selected{% endif %}>{{ k.name }}</option>{% endfor %}
+            {% if not c.kind.is_active %}<option value="{{ c.kind_id }}" selected>{{ c.kind.name }} (inactive)</option>{% endif %}
+          </select>
+        </label>
+        <label>Name <input type="text" name="name" value="{{ c.name or '' }}" maxlength="128"></label>
+        <label>Inside (label, blank for top level)
+          <input type="text" name="parent_code" value="{{ c.parent.label_code if c.parent else '' }}" maxlength="16" style="width: 110px;">
+        </label>
+      </div>
+      <button type="submit" class="btn btn-small">Save</button>
+    </form>
+    {% endif %}
+    {% if children[c.id] %}
+    <ul>{% for child in children[c.id] %}{{ node(child) }}{% endfor %}</ul>
+    {% endif %}
+  </li>
+{% endmacro %}
+
+<ul>{% for c in roots %}{{ node(c) }}{% else %}<li class="muted">No containers yet.</li>{% endfor %}</ul>
+{% endblock %}
