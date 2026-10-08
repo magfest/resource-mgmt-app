@@ -51,23 +51,55 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Two stages on purpose. tr7742b1c8e5 refuses to run unless the
-      # TECHOPS_NET and TECHOPS_GEN approval groups exist, and those come from
-      # `flask seed`, not from a migration. An environment that already has
-      # them upgrades in one step; a new database has to be seeded part-way.
+      # Two stages on purpose. tr7742b1c8e5 inserts rows only when the
+      # TECHOPS_NET and TECHOPS_GEN approval groups already exist, which is
+      # true of staging and production but not of a new database. Without
+      # those rows, CI would skip the branch production actually runs.
       #
-      # SEED_POINT is the revision immediately before the first migration that
+      # The rows go in as raw SQL, not `flask seed`. The seed loads the
+      # current models, which query columns a pinned old schema lacks; that
+      # broke this job once SupplyItem gained inventory columns.
+      #
+      # The pin is the revision immediately before the first migration that
       # depends on seeded rows. When a new migration adds such a dependency,
       # move this pin to the revision before it, or this job goes green while
       # testing less than it claims.
       - name: Upgrade to the last migration that needs no seeded data
         run: flask db upgrade sp5539947d06
 
-      - name: Seed reference data
-        run: flask seed
+      - name: Insert the rows tr7742b1c8e5 depends on
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timezone
+
+          import sqlalchemy as sa
+
+          engine = sa.create_engine(os.environ["DATABASE_URL"])
+          now = datetime.now(timezone.utc).replace(tzinfo=None)
+          with engine.begin() as conn:
+              conn.execute(sa.text(
+                  "INSERT INTO work_types (code, name, is_active, sort_order) "
+                  "VALUES ('TECHOPS', 'TechOps', :active, 40)"), {"active": True})
+              wt_id = conn.execute(sa.text(
+                  "SELECT id FROM work_types WHERE code = 'TECHOPS'")).scalar()
+              for code, name in (("TECHOPS_NET", "TechOps Networking"),
+                                 ("TECHOPS_GEN", "TechOps Generic")):
+                  conn.execute(sa.text(
+                      "INSERT INTO approval_groups (work_type_id, code, name, "
+                      "is_active, created_at, updated_at) "
+                      "VALUES (:wt, :code, :name, :active, :now, :now)"),
+                      {"wt": wt_id, "code": code, "name": name,
+                       "active": True, "now": now})
+          PY
 
       - name: Upgrade to head
         run: flask db upgrade
+
+      # Production runs the seed after a full upgrade (Procfile, app.json);
+      # this matches that order and proves the seed works on the final schema.
+      - name: Seed reference data
+        run: flask seed
 
       - name: Show the resulting head
         run: flask db current
