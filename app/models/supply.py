@@ -76,6 +76,14 @@ class SupplyItem(db.Model):
     notes_required = db.Column(db.Boolean, nullable=False, default=False)
     internal_type = db.Column(db.String(32), nullable=True)
 
+    # Inventory flags. A deploy-only item such as a wireless access point has
+    # is_orderable False: it is tracked in inventory but never shown in the
+    # Supply catalog.
+    is_serialized = db.Column(db.Boolean, nullable=False, default=False)
+    is_orderable = db.Column(db.Boolean, nullable=False, default=True)
+    # A manufacturer UPC or a FestOps I- label code, stored normalized.
+    barcode = db.Column(db.String(64), nullable=True, index=True)
+
     unit_cost_cents = db.Column(db.Integer, nullable=True)
     qty_on_hand = db.Column(db.Integer, nullable=True)
     location_zone = db.Column(db.String(32), nullable=True)

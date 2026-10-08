@@ -72,6 +72,43 @@ ROLE_APPROVER = "APPROVER"              # approver (typically scoped to approval
 # ix_user_roles_global_unique already covers it.
 ROLE_SPACE_ADMIN = "SPACE_ADMIN"
 
+# Inventory roles. Unscoped, like SPACE_ADMIN. They are not WORKTYPE_ADMIN
+# because network leads scan and configure gear without administering the
+# Supply catalog.
+ROLE_INVENTORY_ADMIN = "INVENTORY_ADMIN"
+ROLE_INVENTORY_OPERATOR = "INVENTORY_OPERATOR"
+
+# Movement actions. A movement never changes after it is written.
+INV_ACTION_ADD = "ADD"
+INV_ACTION_MOVE = "MOVE"
+INV_ACTION_ADJUST = "ADJUST"
+
+# A unit's lasting condition across events. Per-event pipeline state is a
+# separate record with a separate lifetime.
+INV_CONDITION_IN_SERVICE = "IN_SERVICE"
+INV_CONDITION_REPAIR = "REPAIR"
+INV_CONDITION_RETIRED = "RETIRED"
+INV_CONDITION_LOST = "LOST"
+
+INV_OWNERSHIP_OWNED = "OWNED"
+INV_OWNERSHIP_RENTED = "RENTED"
+
+# VENDOR_SERIAL is the rental reconciliation key; FESTOPS_LABEL is only a
+# scanning handle and may be retired and reused.
+INV_IDENT_FESTOPS_LABEL = "FESTOPS_LABEL"
+INV_IDENT_VENDOR_SERIAL = "VENDOR_SERIAL"
+INV_IDENT_VENDOR_TAG = "VENDOR_TAG"
+INV_IDENT_MFR_SERIAL = "MFR_SERIAL"
+
+INV_BADGE_END_BADGE_OUT = "BADGE_OUT"
+INV_BADGE_END_REPLACED = "REPLACED"
+INV_BADGE_END_IDLE = "IDLE"
+INV_BADGE_END_REVOKED = "REVOKED"
+
+INV_COUNT_LINE_APPLIED = "APPLIED"
+INV_COUNT_LINE_STALE = "STALE"
+INV_COUNT_LINE_UNCHANGED = "UNCHANGED"
+
 # Space kinds. A SLICE is part of a room. A FREEFORM space has no parent and
 # uses location_note for where it sits. Combining two slices for one event is
 # not a kind; it is SpaceEventOverride.combined_into_space_id.

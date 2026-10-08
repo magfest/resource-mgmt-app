@@ -14,6 +14,7 @@ Module organization:
 - techops.py: TechOpsServiceType, TechOpsLineDetail, TechOpsRequestDetail
 - telemetry.py: ActivityEvent, NotificationLog, SecurityAuditLog, ConfigAuditEvent
 - email_outbox.py: EmailOutbox, EmailSuppression, EmailMessageBody
+- inventory.py: FestOps inventory containers, units, stock, movements
 """
 
 # Re-export all constants
@@ -52,6 +53,8 @@ from .constants import (
     ROLE_WORKTYPE_ADMIN,
     ROLE_APPROVER,
     ROLE_SPACE_ADMIN,
+    ROLE_INVENTORY_ADMIN,
+    ROLE_INVENTORY_OPERATOR,
     # Spend type modes
     SPEND_TYPE_MODE_SINGLE_LOCKED,
     SPEND_TYPE_MODE_ALLOW_LIST,
@@ -206,6 +209,13 @@ from .constants import (
     SPACE_KINDS,
 )
 
+# Re-export inventory models
+from .inventory import (
+    InvContainerKind, InvContainer, InvUnit, InvUnitIdentifier, InvStock,
+    InvDevice, InvBadgeSession, InvCount, InvCountLine, InvMovement,
+    InvScanRequest, InvLabelSequence,
+)
+
 # Re-export telemetry models
 from .telemetry import (
     ActivityEvent,
@@ -260,6 +270,8 @@ __all__ = [
     "ROLE_WORKTYPE_ADMIN",
     "ROLE_APPROVER",
     "ROLE_SPACE_ADMIN",
+    "ROLE_INVENTORY_ADMIN",
+    "ROLE_INVENTORY_OPERATOR",
     # Constants - Spend type modes
     "SPEND_TYPE_MODE_SINGLE_LOCKED",
     "SPEND_TYPE_MODE_ALLOW_LIST",
@@ -388,6 +400,19 @@ __all__ = [
     "Space",
     "SpaceEventOverride",
     "SpaceAssignment",
+    # Inventory models
+    "InvContainerKind",
+    "InvContainer",
+    "InvUnit",
+    "InvUnitIdentifier",
+    "InvStock",
+    "InvDevice",
+    "InvBadgeSession",
+    "InvCount",
+    "InvCountLine",
+    "InvMovement",
+    "InvScanRequest",
+    "InvLabelSequence",
     "compose_combined_name",
     "SPACE_KIND_ROOM",
     "SPACE_KIND_SLICE",
