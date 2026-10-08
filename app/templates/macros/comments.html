@@ -36,8 +36,12 @@
 
 {% if can_add %}
   <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;">
-    <form method="post" action="{{ url_for('work.work_item_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
+    {# Without work_type_slug, url_for picks the /budget/ rule and a TechOps or
+       Supply item 404s. return_to brings the poster back to this page, since
+       the route's own fallback is the Budget detail page. #}
+    <form method="post" action="{{ url_for('work.work_item_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug=ctx.work_type_slug) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ request.path }}">
       <div style="margin-bottom: 8px;">
         <label for="work_item_comment" style="font-size: 13px; font-weight: 600;">Add Comment:</label>
         <textarea name="comment" id="work_item_comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Enter your comment..."></textarea>
