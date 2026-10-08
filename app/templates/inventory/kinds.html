@@ -1,0 +1,38 @@
+{% extends "layout/base.html" %}
+{% block title %}Container kinds - Inventory{% endblock %}
+{% block content %}
+<h1>Container kinds</h1>
+<div class="muted mb-16">
+  Kinds are labels only; any kind can hold any other. A kind in use is
+  deactivated, not deleted, so old containers keep it.
+</div>
+<form method="post" action="{{ url_for('inventory.create_kind') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row">
+    <label>Name <input type="text" name="name" required maxlength="64"></label>
+    <label>Sort <input type="number" name="sort_order" style="width: 80px;"></label>
+  </div>
+  <button type="submit" class="btn btn-primary">Add kind</button>
+</form>
+<table>
+  <thead><tr><th>Code</th><th>Name</th><th>Sort</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for k in kinds %}
+    <tr>
+      <td><code>{{ k.code }}</code></td>
+      <td><input type="text" form="kind-{{ k.id }}" name="name" value="{{ k.name }}" maxlength="64" required></td>
+      <td><input type="number" form="kind-{{ k.id }}" name="sort_order" value="{{ k.sort_order if k.sort_order is not none else '' }}" style="width: 80px;"></td>
+      <td><input type="checkbox" form="kind-{{ k.id }}" name="is_active" value="1" {% if k.is_active %}checked{% endif %}></td>
+      <td>
+        <form id="kind-{{ k.id }}" method="post" action="{{ url_for('inventory.update_kind', kind_id=k.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Save</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">No container kinds yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
