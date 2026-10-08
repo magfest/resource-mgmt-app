@@ -72,7 +72,9 @@ def _catalog_items(q: str) -> list[tuple[SupplyCategory, list[SupplyItem]]]:
         .all()
     )
 
-    items_query = SupplyItem.query.filter_by(is_active=True)
+    # is_orderable False marks deploy-only gear (WAPs, signage) that FestOps
+    # inventories but departments never order.
+    items_query = SupplyItem.query.filter_by(is_active=True, is_orderable=True)
     if q:
         like = f"%{q}%"
         items_query = items_query.filter(
@@ -219,7 +221,7 @@ def supply_item_detail(event: str, dept: str, item_id: int):
 
     item = (
         SupplyItem.query
-        .filter_by(id=item_id, is_active=True)
+        .filter_by(id=item_id, is_active=True, is_orderable=True)
         .options(joinedload(SupplyItem.category))
         .first()
     )
@@ -280,7 +282,7 @@ def supply_line_add(event: str, dept: str, public_id: str):
     item_id = request.form.get("item_id", type=int)
     item = None
     if item_id is not None:
-        item = SupplyItem.query.filter_by(id=item_id, is_active=True).first()
+        item = SupplyItem.query.filter_by(id=item_id, is_active=True, is_orderable=True).first()
     if item is None:
         flash("That catalog item could not be found.", "error")
         return redirect(catalog_url)

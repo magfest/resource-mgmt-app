@@ -601,6 +601,28 @@ def _add_line(work_item, item, quantity=1, notes=None, line_number=None, status=
     return line
 
 
+class TestDeployOnlyItemsHidden:
+    """is_orderable=False items are inventory-only and never reach an order."""
+
+    def test_catalog_omits_and_refuses_unorderable_item(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        plain_item.is_orderable = False
+        db.session.commit()
+
+        _login(client, "test:admin")
+        base = f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}"
+        html = client.get(f"{base}/catalog").get_data(as_text=True)
+        assert "Sharpie Markers" not in html
+        assert "Gaffer Tape" in html
+
+        client.post(f"{base}/lines/add", data={"item_id": str(plain_item.id), "quantity": "1"})
+        assert SupplyOrderLineDetail.query.filter_by(item_id=plain_item.id).count() == 0
+
+
 class TestSupplyCatalogBrowse:
     """GET /<event>/<dept>/supply/catalog — standalone view-only browse
     (Task 16). No order needs to exist; add-to-cart forms are hidden."""

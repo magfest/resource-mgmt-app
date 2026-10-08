@@ -12,4 +12,4 @@ from flask import Blueprint
 
 inventory_bp = Blueprint("inventory", __name__, url_prefix="/inv")
 
-from . import admin_home, admin_kinds, admin_operators  # noqa: E402,F401  (registers routes)
+from . import admin_home, admin_items, admin_kinds, admin_operators  # noqa: E402,F401  (registers routes)
