@@ -1,10 +1,9 @@
 """
-Inventory: FestOps containers, stock, labels, and the TC60 scanner.
+Inventory: FestOps containers, stock, and the admin pages that manage them.
 
 Sits outside app/routes/admin/ because every route there requires
 SUPER_ADMIN, and inventory pages are run by INVENTORY_ADMIN leads who hold no
-other admin role. Scanner routes live under /inv/scan/ and are the only
-routes that honor a shared device's cookie.
+other admin role.
 """
 from __future__ import annotations
 

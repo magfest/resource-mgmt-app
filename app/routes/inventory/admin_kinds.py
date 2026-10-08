@@ -55,4 +55,5 @@ def update_kind(kind_id: int):
     kind.sort_order = request.form.get("sort_order", type=int)
     kind.is_active = request.form.get("is_active") == "1"
     db.session.commit()
+    flash(f"Saved {kind.name}.", "success")
     return redirect(url_for("inventory.kinds"))

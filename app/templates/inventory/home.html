@@ -10,6 +10,8 @@
   <li><a href="{{ url_for('inventory.items') }}">Items</a></li>
   <li><a href="{{ url_for('inventory.operators') }}">Operators</a></li>
   <li><a href="{{ url_for('inventory.movements') }}">Movements</a></li>
+  {% else %}
+  <li class="muted">An inventory admin manages these pages. The Operator role has no pages here yet.</li>
   {% endif %}
 </ul>
 {% endblock %}

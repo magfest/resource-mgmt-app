@@ -344,6 +344,8 @@ def _update_user_roles(user: User, form_data) -> None:
     Form fields:
     - role_super_admin: "1" if checked
     - role_space_admin: "1" if checked
+    - role_inventory_admin: "1" if checked
+    - role_inventory_operator: "1" if checked
     - role_worktype_admin_<work_type_id>: "1" if checked
     - role_approver_<approval_group_id>: "1" if checked
 

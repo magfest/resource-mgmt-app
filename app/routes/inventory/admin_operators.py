@@ -62,4 +62,5 @@ def revoke_operator(user_id: str):
         if deleted:
             _log(user, "revoked")
             db.session.commit()
+            flash(f"Removed Operator from {user.display_name}.", "success")
     return redirect(url_for("inventory.operators"))
