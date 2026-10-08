@@ -1,0 +1,11 @@
+{% extends "layout/base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block content %}
+<h1>Inventory</h1>
+<div class="muted mb-16">FestOps stock, containers, and labels.</div>
+<ul>
+  {% if is_inv_admin %}
+  <li><a href="{{ url_for('inventory.operators') }}">Operators</a></li>
+  {% endif %}
+</ul>
+{% endblock %}

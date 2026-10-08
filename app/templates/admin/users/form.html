@@ -80,6 +80,23 @@
         </label>
       </div>
 
+      {# Inventory roles (FestOps warehouse) #}
+      {% for field, code, label, hint in [
+           ('role_inventory_admin', 'INVENTORY_ADMIN', 'Inventory Admin', 'Containers, labels, devices, and scanner operators.'),
+           ('role_inventory_operator', 'INVENTORY_OPERATOR', 'Inventory Operator', 'Uses the scanner under their own name.')] %}
+      <div class="mb-16">
+        <label style="display: flex; gap: 8px; align-items: flex-start; font-weight: normal;">
+          <input type="checkbox" name="{{ field }}" value="1"
+                 {% if user %}{% for r in user.roles %}{% if r.role_code == code %}checked{% endif %}{% endfor %}{% endif %}
+                 style="margin-top: 3px;" />
+          <div>
+            <strong>{{ label }}</strong>
+            <div class="muted small">{{ hint }}</div>
+          </div>
+        </label>
+      </div>
+      {% endfor %}
+
       {# Work Type Admin #}
       {% if work_types %}
       <div class="mb-16">

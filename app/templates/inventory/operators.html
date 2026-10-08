@@ -1,0 +1,33 @@
+{% extends "layout/base.html" %}
+{% block title %}Operators - Inventory{% endblock %}
+{% block content %}
+<h1>Scanner operators</h1>
+<div class="muted mb-16">
+  Operators use the scanner under their own name. Volunteers on shared
+  scanners scan a badge instead and need no account.
+</div>
+<form method="post" action="{{ url_for('inventory.grant_operator') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Email <input type="email" name="email" required maxlength="256"></label>
+  <button type="submit" class="btn btn-primary">Add operator</button>
+</form>
+<table>
+  <thead><tr><th>Name</th><th>Email</th><th style="width: 100px;"></th></tr></thead>
+  <tbody>
+  {% for u in operators %}
+    <tr>
+      <td>{{ u.display_name }}</td>
+      <td class="muted">{{ u.email }}</td>
+      <td>
+        <form method="post" action="{{ url_for('inventory.revoke_operator', user_id=u.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Remove</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">No operators yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

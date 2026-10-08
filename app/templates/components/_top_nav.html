@@ -66,7 +66,7 @@
        Final Review. #}
     {% set supply_groups = nav_review_groups.get("SUPPLY", []) %}
     {% set supply_admin = "SUPPLY" in nav_admin_work_types %}
-    {% if supply_groups or supply_admin %}
+    {% if supply_groups or supply_admin or nav_is_inventory %}
     <div class="top-nav-dropdown">
       <button type="button" class="top-nav-link top-nav-toggle">FestOps <span class="top-nav-caret">&#9662;</span></button>
       <div class="top-nav-menu">
@@ -85,6 +85,10 @@
         <a href="{{ url_for('admin_config.supply_items.list_supply_items') }}">Supply Items</a>
         <div class="top-nav-divider"></div>
         <a href="{{ url_for('work.supply_admin_home') }}">Supply Home</a>
+        {% endif %}
+        {% if nav_is_inventory %}
+        <div class="top-nav-menu-label">Inventory</div>
+        <a href="{{ url_for('inventory.home') }}">Inventory Home</a>
         {% endif %}
       </div>
     </div>

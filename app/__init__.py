@@ -634,6 +634,7 @@ def create_app() -> Flask:
                 "env_banner_message": app.config.get("ENV_BANNER_MESSAGE", ""),
                 "nav_admin_work_types": [],
                 "nav_is_space_admin": False,
+                "nav_is_inventory": False,
                 "nav_review_groups": {},
                 "nav_event_cycle": None,
                 "nav_dept_memberships": [],
@@ -654,6 +655,7 @@ def create_app() -> Flask:
         _is_super = is_super_admin()
         nav_admin_work_types: list[str] = []
         nav_is_space_admin = False
+        nav_is_inventory = False
         nav_review_groups: dict[str, list] = {}
         nav_event_cycle = None
         nav_dept_memberships = []
@@ -664,6 +666,7 @@ def create_app() -> Flask:
                 UserRole, WorkType, ApprovalGroup, EventCycle,
                 DepartmentMembership, DivisionMembership, Department, Division,
                 ROLE_WORKTYPE_ADMIN, ROLE_SPACE_ADMIN,
+                ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR,
             )
 
             # nav_admin_work_types is the codes of work types this user can
@@ -699,6 +702,8 @@ def create_app() -> Flask:
                     ]
 
             nav_is_space_admin = _is_super or (ROLE_SPACE_ADMIN in roles)
+            nav_is_inventory = _is_super or bool(
+                {ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR} & set(roles))
 
             from .routes.admin.helpers import sort_with_override as _sort_override
 
@@ -779,6 +784,7 @@ def create_app() -> Flask:
             # Navigation bar
             "nav_admin_work_types": nav_admin_work_types,
             "nav_is_space_admin": nav_is_space_admin,
+            "nav_is_inventory": nav_is_inventory,
             "nav_review_groups": nav_review_groups,
             "nav_event_cycle": nav_event_cycle,
             "nav_dept_memberships": nav_dept_memberships,
