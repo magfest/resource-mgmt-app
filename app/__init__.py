@@ -634,7 +634,7 @@ def create_app() -> Flask:
                 "env_banner_message": app.config.get("ENV_BANNER_MESSAGE", ""),
                 "nav_admin_work_types": [],
                 "nav_is_space_admin": False,
-                "nav_approval_groups": [],
+                "nav_review_groups": {},
                 "nav_event_cycle": None,
                 "nav_dept_memberships": [],
                 "nav_div_memberships": [],
@@ -654,7 +654,7 @@ def create_app() -> Flask:
         _is_super = is_super_admin()
         nav_admin_work_types: list[str] = []
         nav_is_space_admin = False
-        nav_approval_groups = []
+        nav_review_groups: dict[str, list] = {}
         nav_event_cycle = None
         nav_dept_memberships = []
         nav_div_memberships = []
@@ -702,16 +702,19 @@ def create_app() -> Flask:
 
             from .routes.admin.helpers import sort_with_override as _sort_override
 
-            # Approval groups the user can review (for Review menu)
+            # Reviewer groups the user belongs to, keyed by work type code.
+            # Each team menu shows only its own groups in a Review section,
+            # so a reviewer finds their queue where that team's work lives.
             ag_ids = active_user_approval_group_ids()
             if ag_ids:
-                nav_approval_groups = (
+                for group in (
                     ApprovalGroup.query
                     .filter(ApprovalGroup.id.in_(ag_ids))
                     .filter(ApprovalGroup.is_active.is_(True))
                     .order_by(*_sort_override(ApprovalGroup))
                     .all()
-                )
+                ):
+                    nav_review_groups.setdefault(group.work_type.code, []).append(group)
 
             # User menu: department/division memberships for current event
             # Use session-selected cycle, fallback to default
@@ -776,7 +779,7 @@ def create_app() -> Flask:
             # Navigation bar
             "nav_admin_work_types": nav_admin_work_types,
             "nav_is_space_admin": nav_is_space_admin,
-            "nav_approval_groups": nav_approval_groups,
+            "nav_review_groups": nav_review_groups,
             "nav_event_cycle": nav_event_cycle,
             "nav_dept_memberships": nav_dept_memberships,
             "nav_div_memberships": nav_div_memberships,

@@ -1,0 +1,21 @@
+{# templates/admin_final/reports_index.html #}
+{% extends "layout/base.html" %}
+
+{% block title %}Budget Reports{% endblock %}
+
+{% block content %}
+<h1>Budget Reports</h1>
+<div class="muted mb-16">Every budget report, grouped by what it answers.</div>
+
+{% for heading, reports in sections %}
+<section class="card" style="margin-bottom: 16px;">
+  <h3 style="margin: 0 0 8px 0;">{{ heading }}</h3>
+  {% for report in reports %}
+  <div style="margin-bottom: 10px;">
+    <a href="{{ url_for(report.endpoint) }}"><strong>{{ report.title }}</strong></a>
+    <div class="muted small">{{ report.description }}</div>
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endblock %}
