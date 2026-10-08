@@ -1,0 +1,33 @@
+{% extends "layout/base.html" %}
+{% block title %}Movements - Inventory{% endblock %}
+{% block content %}
+<h1>Movements</h1>
+<form method="get" class="card mb-16">
+  <div class="row">
+    <label>Container <input type="text" name="container" value="{{ args.get('container', '') }}" style="width: 110px;"></label>
+    <label>Item
+      <select name="item"><option value="">Any</option>
+        {% for i in items %}<option value="{{ i.id }}" {% if args.get('item')|int == i.id %}selected{% endif %}>{{ i.item_name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Device
+      <select name="device"><option value="">Any</option>
+        {% for d in devices %}<option value="{{ d.id }}" {% if args.get('device')|int == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Since <input type="date" name="since" value="{{ args.get('since', '') }}"></label>
+  </div>
+  <button type="submit" class="btn btn-small">Filter</button>
+</form>
+<div class="muted mb-16">Newest {{ page_size }} matching movements.</div>
+<table>
+  <thead><tr><th>When (UTC)</th><th>What</th><th>Who</th></tr></thead>
+  <tbody>
+  {% for m, text, who in rows %}
+    <tr><td class="muted">{{ m.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ text }}</td><td>{{ who }}</td></tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">No movements match.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

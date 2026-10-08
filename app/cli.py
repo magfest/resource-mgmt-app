@@ -255,3 +255,21 @@ def register_cli(app: Flask) -> None:
             )
 
         sys.exit(0)
+
+    @app.cli.command("inv-check-balances")
+    @with_appcontext
+    def inv_check_balances_command():
+        """Compare cached inventory balances with the movement log.
+
+        Reports only and exits 1 on any mismatch. A mismatch means a write
+        bypassed the ledger; resolve it with a count, never an edit to inv_stock.
+        """
+        from app.inventory.checks import find_balance_mismatches
+
+        mismatches = find_balance_mismatches()
+        for m in mismatches:
+            click.echo(f"item {m['item_id']} in container {m['container_id']}: "
+                       f"cached {m['cached']}, log {m['from_log']}")
+        click.echo(f"inv-check-balances: {len(mismatches)} mismatch(es).")
+        if mismatches:
+            raise SystemExit(1)
