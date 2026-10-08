@@ -5,96 +5,87 @@
     <button type="button" class="top-nav-hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="top-nav-mobile-drawer">&#9776;</button>
     <a href="{{ url_for('home.index') }}" class="top-nav-brand">MAGFest Budget</a>
 
-    {# Menu order is most-frequently-used first. Approvers and budget
-       admins read these every day; per-worktype admin and system admin
-       menus are weekly-or-rarer reference. Order: Review → Reports →
-       Budget Admin → TechOps Admin → Admin. #}
+    {# One menu per team, named for the team, not for a role. Sections
+       inside are role-gated: a reviewer sees only Review, an admin also
+       sees Manage. Reviewer groups belong to one work type each, so they
+       appear in that team's menu instead of a separate Review menu. Admin
+       stays the system menu for super admins. #}
 
-    {# Review menu (approvers) #}
-    {% if nav_approval_groups %}
+    {% set budget_groups = nav_review_groups.get("BUDGET", []) %}
+    {% set budget_admin = "BUDGET" in nav_admin_work_types %}
+    {% if budget_groups or budget_admin %}
     <div class="top-nav-dropdown">
-      <button type="button" class="top-nav-link top-nav-toggle">Review <span class="top-nav-caret">&#9662;</span></button>
+      <button type="button" class="top-nav-link top-nav-toggle">Budget <span class="top-nav-caret">&#9662;</span></button>
       <div class="top-nav-menu">
-        {% for group in nav_approval_groups %}
+        {% if budget_groups %}
+        <div class="top-nav-menu-label">Review</div>
+        {% for group in budget_groups %}
           <a href="{{ url_for('approvals.dashboard_group', group_code=group.code) }}">{{ group.name }}</a>
         {% endfor %}
-        <div class="top-nav-divider"></div>
-        <a href="{{ url_for('approvals.dashboard_home') }}">All Reviewer Groups</a>
-      </div>
-    </div>
-    {% endif %}
-
-    {# Reports menu (BUDGET admins + super admins — separated from
-       Budget Admin so a future role split can hand reports to a
-       different audience without dragging Budget Admin actions along). #}
-    {% if "BUDGET" in nav_admin_work_types %}
-    <div class="top-nav-dropdown">
-      <button type="button" class="top-nav-link top-nav-toggle">Reports <span class="top-nav-caret">&#9662;</span></button>
-      <div class="top-nav-menu">
-        <div class="top-nav-menu-label">Financials</div>
-        <a href="{{ url_for('admin_final.master_ledger') }}">Master Ledger</a>
-        <a href="{{ url_for('admin_final.department_summary') }}">Department Summary</a>
-        <a href="{{ url_for('admin_final.income_report') }}">Income Report</a>
-        <div class="top-nav-menu-label">Request Detail</div>
-        <a href="{{ url_for('admin_final.expense_account_report') }}">Expense Account Lines</a>
-        <a href="{{ url_for('admin_final.hotel_rooms_report') }}">Hotel Rooms</a>
-        <a href="{{ url_for('admin_final.warehouse_report') }}">Warehouse Lines</a>
-        <div class="top-nav-menu-label">Workflow Health</div>
-        <a href="{{ url_for('admin_final.reviewer_group_report') }}">Reviewer Group Health</a>
-        <a href="{{ url_for('admin_final.workload_report') }}">Workload Report</a>
-        <a href="{{ url_for('admin_final.missing_budgets_report') }}">Missing Budgets</a>
-      </div>
-    </div>
-    {% endif %}
-
-    {# Budget Admin menu (BUDGET worktype admins + super admins) #}
-    {% if "BUDGET" in nav_admin_work_types %}
-    <div class="top-nav-dropdown">
-      <button type="button" class="top-nav-link top-nav-toggle">Budget Admin <span class="top-nav-caret">&#9662;</span></button>
-      <div class="top-nav-menu">
+        {% endif %}
+        {% if budget_admin %}
+        <div class="top-nav-menu-label">Manage</div>
         <a href="{{ url_for('dispatch.dashboard') }}">Assign Reviewers</a>
-        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
         <a href="{{ url_for('admin_final.dashboard') }}">Final Review</a>
         <a href="{{ url_for('admin_final.all_requests') }}">All Budget Requests</a>
-        <div class="top-nav-divider"></div>
+        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
         <a href="{{ url_for('admin_config.expense_accounts.list_expense_accounts') }}">Expense Accounts</a>
+        <a href="{{ url_for('admin_final.reports_index') }}">Reports</a>
         <div class="top-nav-divider"></div>
-        <a href="{{ url_for('admin_final.budget_admin_home') }}">Budget Admin Home</a>
+        <a href="{{ url_for('admin_final.budget_admin_home') }}">Budget Home</a>
+        {% endif %}
       </div>
     </div>
     {% endif %}
 
-    {# TechOps Admin menu (TECHOPS worktype admins + super admins).
-       TechOps doesn't have dispatch or admin_final stages, so there's
-       no Assign Reviewers or Final Review here. A dedicated TechOps
-       Admin Home landing page is a natural future addition. #}
-    {% if "TECHOPS" in nav_admin_work_types %}
+    {# TechOps has no dispatch or admin-final stage, so Manage carries no
+       Assign Reviewers or Final Review. #}
+    {% set techops_groups = nav_review_groups.get("TECHOPS", []) %}
+    {% set techops_admin = "TECHOPS" in nav_admin_work_types %}
+    {% if techops_groups or techops_admin %}
     <div class="top-nav-dropdown">
-      <button type="button" class="top-nav-link top-nav-toggle">TechOps Admin <span class="top-nav-caret">&#9662;</span></button>
+      <button type="button" class="top-nav-link top-nav-toggle">TechOps <span class="top-nav-caret">&#9662;</span></button>
       <div class="top-nav-menu">
-        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
+        {% if techops_groups %}
+        <div class="top-nav-menu-label">Review</div>
+        {% for group in techops_groups %}
+          <a href="{{ url_for('approvals.dashboard_group', group_code=group.code) }}">{{ group.name }}</a>
+        {% endfor %}
+        {% endif %}
+        {% if techops_admin %}
+        <div class="top-nav-menu-label">Manage</div>
         <a href="{{ url_for('work.techops_all_requests') }}">All TechOps Requests</a>
+        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
+        {% endif %}
       </div>
     </div>
     {% endif %}
 
-    {# Supply Admin menu (SUPPLY worktype admins + super admins).
-       SUPPLY skips dispatch (uses_dispatch=False) like TechOps, but does
-       have an admin-final stage, so the finalize queue stands in for
-       Final Review. Mirrors Budget Admin's shape: workflow links, then
-       a divider, then catalog config, then a divider, then admin home. #}
-    {% if "SUPPLY" in nav_admin_work_types %}
+    {# FestOps runs Supply ordering and, later, inventory, so both live in
+       one team menu. Supply skips dispatch; its finalize queue stands in for
+       Final Review. #}
+    {% set supply_groups = nav_review_groups.get("SUPPLY", []) %}
+    {% set supply_admin = "SUPPLY" in nav_admin_work_types %}
+    {% if supply_groups or supply_admin %}
     <div class="top-nav-dropdown">
-      <button type="button" class="top-nav-link top-nav-toggle">Supply Admin <span class="top-nav-caret">&#9662;</span></button>
+      <button type="button" class="top-nav-link top-nav-toggle">FestOps <span class="top-nav-caret">&#9662;</span></button>
       <div class="top-nav-menu">
-        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
+        {% if supply_groups %}
+        <div class="top-nav-menu-label">Review</div>
+        {% for group in supply_groups %}
+          <a href="{{ url_for('approvals.dashboard_group', group_code=group.code) }}">{{ group.name }}</a>
+        {% endfor %}
+        {% endif %}
+        {% if supply_admin %}
+        <div class="top-nav-menu-label">Supply Orders</div>
         <a href="{{ url_for('work.supply_admin_queue') }}">Supply Queue</a>
         <a href="{{ url_for('work.supply_all_orders') }}">All Supply Orders</a>
-        <div class="top-nav-divider"></div>
+        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
         <a href="{{ url_for('admin_config.supply_categories.list_supply_categories') }}">Supply Categories</a>
         <a href="{{ url_for('admin_config.supply_items.list_supply_items') }}">Supply Items</a>
         <div class="top-nav-divider"></div>
-        <a href="{{ url_for('work.supply_admin_home') }}">Supply Admin Home</a>
+        <a href="{{ url_for('work.supply_admin_home') }}">Supply Home</a>
+        {% endif %}
       </div>
     </div>
     {% endif %}
