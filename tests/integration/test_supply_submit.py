@@ -365,6 +365,32 @@ class TestSupplySubmitDeactivatedItem:
         db.session.refresh(work_item)
         assert work_item.status == WORK_ITEM_STATUS_DRAFT
 
+    def test_not_orderable_item_blocks_submit_and_names_item(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category, name="Tracked Only Cable")
+        work_item = _make_draft_order(wt, cycle, dept)
+        _add_line(work_item, item)
+        _set_pickup_details(work_item)
+
+        item.is_orderable = False
+        db.session.commit()
+
+        _login(client, "test:admin")
+        response = client.post(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/submit",
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        assert b"is no longer available" in response.data
+
+        db.session.refresh(work_item)
+        assert work_item.status == WORK_ITEM_STATUS_DRAFT
+
 
 class TestSupplySubmitQueuesTheReceipt:
     """The ordering department must hear that their order arrived.

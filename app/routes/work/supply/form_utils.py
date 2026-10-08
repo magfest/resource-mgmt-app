@@ -46,7 +46,7 @@ def validate_order_for_submit(work_item) -> list[str]:
         if d is None or d.item is None:
             errors.append(f"Line {line.line_number}: item is missing — remove and re-add it.")
             continue
-        if not d.item.is_active:
+        if not d.item.is_active or not d.item.is_orderable:
             errors.append(
                 f"Line {line.line_number}: '{d.item.item_name}' is no longer "
                 "available — remove it to submit."
