@@ -222,6 +222,42 @@
 </div>
 {% endmacro %}
 
+{% macro render_printer_row(sid, idx, p) %}
+  <div class="space-card-row" data-printer-row>
+    <div class="space-card-row-header">Printer {{ idx }}</div>
+    <div class="space-card-field">
+      <label>How does it connect?</label>
+      {% for value, words in [("ETHERNET", "Network cable (Ethernet)"), ("USB", "USB to one computer")] %}
+        <label class="space-card-check">
+          <input type="radio" name="space_{{ sid }}_PRINTER_{{ idx }}_connectivity"
+                 value="{{ value }}" {% if p.connectivity == value %}checked{% endif %}>
+          {{ words }}
+        </label>
+      {% endfor %}
+    </div>
+    <div class="space-card-field">
+      <label>Pages per day</label>
+      {% for value, words in [("UNDER_50", "Under 50"), ("50_250", "50 to 250"), ("250_500", "250 to 500"), ("OVER_500", "More than 500")] %}
+        <label class="space-card-check">
+          <input type="radio" name="space_{{ sid }}_PRINTER_{{ idx }}_volume"
+                 value="{{ value }}" {% if p.volume == value %}checked{% endif %}>
+          {{ words }}
+        </label>
+      {% endfor %}
+    </div>
+    <div class="space-card-field">
+      <label>Where in the room? (optional)</label>
+      <input type="text" name="space_{{ sid }}_PRINTER_{{ idx }}_location"
+             value="{{ p.location }}" maxlength="200" style="width: 100%; max-width: 480px;">
+    </div>
+    <div class="space-card-field">
+      <label>What will it print? (optional)</label>
+      <textarea name="space_{{ sid }}_PRINTER_{{ idx }}_usage" rows="2"
+                maxlength="2000" style="width: 100%; max-width: 600px;">{{ p.usage }}</textarea>
+    </div>
+  </div>
+{% endmacro %}
+
 {% macro render_phone_line(sid, n, line) %}
 {% set prefix = 'space_' ~ sid ~ '_PHONE_line_' ~ n %}
 {% set is_sharing = line.source != source_new %}
@@ -441,7 +477,12 @@
             <label class="space-card-check">
               <input type="checkbox" name="space_{{ sid }}_NETWORK_kinds" value="SCANNERS"
                      {% if "SCANNERS" in (card.network_kinds or []) %}checked{% endif %}>
-              Badge scanners or printers
+              Badge scanners
+            </label>
+            <label class="space-card-check">
+              <input type="checkbox" name="space_{{ sid }}_NETWORK_kinds" value="PRINTERS"
+                     {% if "PRINTERS" in (card.network_kinds or []) %}checked{% endif %}>
+              Printers
             </label>
             <label class="space-card-check">
               <input type="checkbox" name="space_{{ sid }}_NETWORK_kinds" value="CONSOLES"
@@ -536,6 +577,33 @@
                   'source': 'NEW', 'purpose': none, 'internal_only': False,
                   'usage': '', 'voicemail_slack_channel': '',
                   'text_slack_channel': '', 'forward_target': '', 'handsets': ()}) }}
+          </template>
+        </div>
+      </details>
+
+      <details class="space-collapsible" data-service-subsection="PRINTER"
+               {% if card.printers %}open{% endif %}>
+        <summary class="space-collapsible-summary">
+          <span class="space-collapsible-heading">
+            <span class="space-card-row-header">Printers</span>
+            {% if card.printer_description %}
+              <span class="muted small">{{ card.printer_description }}</span>
+            {% endif %}
+          </span>
+          <span class="muted small" data-printer-count>&middot; {{ card.printer_count }} printer{{ 's' if card.printer_count != 1 else '' }}</span>
+        </summary>
+        <div class="space-collapsible-body">
+          <div data-printers-container data-space-id="{{ sid }}"
+               data-next-index="{{ (card.printers|length) + 1 }}">
+            {% for p in card.printers %}
+              {{ render_printer_row(sid, loop.index, p) }}
+            {% endfor %}
+          </div>
+          <button type="button" class="btn btn-muted" data-add-printer="{{ sid }}">
+            {{ '+ Add another printer' if card.printers else '+ Add a printer' }}
+          </button>
+          <template data-printer-template="{{ sid }}">
+            {{ render_printer_row(sid, '__IDX__', {'connectivity': '', 'volume': '', 'location': '', 'usage': ''}) }}
           </template>
         </div>
       </details>

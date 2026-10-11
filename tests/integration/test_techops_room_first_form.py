@@ -2177,3 +2177,20 @@ def test_the_payments_line_does_not_leak_into_the_home_base_card(
                 if c["space"].id == sid)
     assert len(card["printers"]) == 1
     assert card["wifi_forced"] is True
+
+
+def test_a_failed_submit_keeps_the_typed_payments_block(app, client,
+                                                       techops_portfolio):
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    data = _printer_and_payments_post(
+        sid, primary_contact_name="", payments_daily_sales="$100,000",
+        payments_mobile="1", payments_mobile_where="Concert hall")
+    body = client.post(techops_portfolio["new_request_url"],
+                       data=data).get_data(as_text=True)
+    assert "These questions cover your department's payments as a whole" in body
+    assert re.search(r'name="payments_daily_sales"[^>]*value="100000"', body)
+    assert 'Concert hall' in body
+    assert re.search(
+        rf'<option value="{sid}"[^>]*selected', body)
+    assert "Badge scanners or printers" not in body

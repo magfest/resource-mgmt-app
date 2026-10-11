@@ -179,8 +179,9 @@
         These belong to your team rather than a room.
       </div>
 
-      {# Only RADIO_CHANNEL and OTHER are department-wide as of the
-         room-first form; WIFI and ETHERNET moved onto space cards, and
+      {# Only RADIO_CHANNEL and OTHER are department-wide loop services as of
+         the room-first form; PAYMENTS renders as its own block below the
+         loop. WIFI and ETHERNET moved onto space cards, and
          PHONE was replaced by the per-space PHONE_NUMBER/DESK_PHONE
          pair. parse_form._parse_department_wide only reads these two
          codes' fields — rendering a checkbox for any other code here
@@ -330,6 +331,73 @@
           </div>
         </details>
       {% endfor %}
+
+      {% set pay = payments %}
+      <details class="techops-service-section space-collapsible"
+               data-service-section="PAYMENTS" {% if pay %}open{% endif %}>
+        <summary class="space-collapsible-summary">
+          <span style="font-weight: 600;">Taking payments (card or cash)</span>
+        </summary>
+        <div class="space-collapsible-body">
+          <div class="techops-service-fields" style="margin-left: 24px; margin-top: 8px;">
+            <div class="muted small mb-8">These questions cover your department's payments as a whole, not one device.</div>
+            <div class="space-card-field">
+              <label for="payments_home_space_id">Home base room</label>
+              <select id="payments_home_space_id" name="payments_home_space_id">
+                <option value="">Pick a room on this request</option>
+                {% for card in cards %}
+                  <option value="{{ card.space.id }}"
+                          {% if pay and pay.home_space_id == card.space.id %}selected{% endif %}>{{ card.display_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="space-card-field">
+              <label for="payments_checkout_points">Checkout points (places one customer pays at a time)</label>
+              <input type="text" inputmode="numeric" id="payments_checkout_points" name="payments_checkout_points"
+                     value="{{ pay.checkout_points if pay and pay.checkout_points is not none else '' }}">
+            </div>
+            <div class="space-card-field">
+              <label for="payments_managing_department">Department in charge</label>
+              <input type="text" id="payments_managing_department" name="payments_managing_department" maxlength="200"
+                     value="{{ pay.managing_department if pay else ctx.department.name }}">
+            </div>
+            <div class="space-card-field">
+              <label for="payments_daily_sales">Expected sales per day, in dollars (a rough guess is fine)</label>
+              <input type="text" inputmode="numeric" id="payments_daily_sales" name="payments_daily_sales"
+                     value="{{ pay.daily_sales_dollars if pay and pay.daily_sales_dollars is not none else '' }}">
+            </div>
+            <div class="space-card-field">
+              <label for="payments_daily_transactions">Expected transactions per day</label>
+              <input type="text" inputmode="numeric" id="payments_daily_transactions" name="payments_daily_transactions"
+                     value="{{ pay.daily_transactions if pay and pay.daily_transactions is not none else '' }}">
+            </div>
+            <div class="space-card-field">
+              <label for="payments_catalog_size">How many different items will you sell?</label>
+              <input type="text" inputmode="numeric" id="payments_catalog_size" name="payments_catalog_size"
+                     value="{{ pay.catalog_size if pay and pay.catalog_size is not none else '' }}">
+            </div>
+            <label class="space-card-check">
+              <input type="checkbox" name="payments_accepts_cash" value="1" {% if pay and pay.accepts_cash %}checked{% endif %}>
+              We will take cash
+            </label>
+            <label class="space-card-check">
+              <input type="checkbox" name="payments_paper_receipts" value="1" {% if pay and pay.paper_receipts %}checked{% endif %}>
+              We will offer paper receipts
+            </label>
+            <label class="space-card-check">
+              <input type="checkbox" name="payments_mobile" value="1" data-payments-mobile
+                     {% if pay and pay.mobile %}checked{% endif %}>
+              Some checkout points will be used outside the home base
+            </label>
+            <div class="space-card-field" data-payments-mobile-where {% if not (pay and pay.mobile) %}hidden{% endif %}>
+              <label for="payments_mobile_where">Where else?</label>
+              <input type="text" id="payments_mobile_where" name="payments_mobile_where" maxlength="500"
+                     value="{{ pay.mobile_where if pay else '' }}">
+            </div>
+            <div class="muted small" style="margin-top: 8px;">Treasury and BizOps will follow up with the questions needed to configure Square.</div>
+          </div>
+        </div>
+      </details>
 
       {# For a department with no space cards to answer at all (no venue
          set, or nothing offerable), this is the only way to submit.
@@ -511,6 +579,15 @@
       updateServiceSectionBadge(section);
     });
 
+    // The "Where else?" box is hidden until the mobile box is ticked.
+    var mobileBox = document.querySelector('[data-payments-mobile]');
+    var mobileWhere = document.querySelector('[data-payments-mobile-where]');
+    if (mobileBox && mobileWhere) {
+      mobileBox.addEventListener('change', function() {
+        mobileWhere.hidden = !mobileBox.checked;
+      });
+    }
+
     // ---- Space cards ----
 
     // The one place "does this card have a filled phone line" is decided
@@ -670,6 +747,13 @@
         if (handsetCount > 0) line += ', ' + handsetCount + ' desk phone' + (handsetCount === 1 ? '' : 's');
         parts.push(line);
       }
+      // Same any-input rule as _parse_printers.
+      var printerCount = Array.prototype.filter.call(card.querySelectorAll('[data-printer-row]'), function(row) {
+        return Array.prototype.some.call(row.querySelectorAll('input, textarea'), function(f) {
+          return (f.type === 'radio') ? f.checked : !!f.value.trim();
+        });
+      }).length;
+      if (printerCount > 0) parts.push(pluralize(printerCount, 'printer'));
       if (parts.length) return parts.join(' - ');
 
       // Nothing filled in yet: the fallback must match the radio above
@@ -884,6 +968,23 @@
             addPhone.textContent = '+ Add another phone';
             var phoneDetails = pcontainer.closest('[data-service-subsection="PHONE"]');
             if (phoneDetails) updatePhoneBadge(phoneDetails);
+          }
+        }
+        return;
+      }
+
+      var addPrinter = e.target.closest('[data-add-printer]');
+      if (addPrinter) {
+        var rsid = addPrinter.getAttribute('data-add-printer');
+        var rcontainer = document.querySelector('[data-printers-container][data-space-id="' + rsid + '"]');
+        var rtemplate = document.querySelector('template[data-printer-template="' + rsid + '"]');
+        if (rcontainer && rtemplate) {
+          var rNextIdx = parseInt(rcontainer.getAttribute('data-next-index') || '1', 10);
+          var rrow = cloneFromTemplate(rtemplate, rNextIdx);
+          if (rrow) {
+            rcontainer.appendChild(rrow);
+            rcontainer.setAttribute('data-next-index', String(rNextIdx + 1));
+            addPrinter.textContent = '+ Add another printer';
           }
         }
         return;
