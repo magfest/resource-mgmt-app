@@ -12,11 +12,12 @@ from app.routes.work.techops.form_utils import (
     ACTION_SAVE_DRAFT, ACTION_SUBMIT, parse_form, validate,
 )
 from app.routes.work.techops.line_grain import (
-    NETWORK_UNSURE, NETWORK_YES,
+    NETWORK_NO, NETWORK_UNSURE, NETWORK_YES,
     QUESTION_CAPABILITIES, QUESTION_VOICEMAIL_SLACK,
     QUESTION_VOICE_DELIVERY,
     VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_NONE, VOICE_DELIVERY_VOICEMAIL,
-    PhoneHandset, PhoneLine, RequestAnswers, SpaceAnswer,
+    PaymentsAnswer, PhoneHandset, PhoneLine, PrinterAnswer, RequestAnswers,
+    SpaceAnswer,
     expand_to_lines,
 )
 from tests.unit.test_techops_line_grain import _answers, _space
@@ -344,3 +345,51 @@ def test_a_draft_may_leave_the_cable_question_unanswered():
     space = _space(network_needed="")
     assert validate(_answers([space], action=ACTION_SAVE_DRAFT),
                     has_space_cards=True) == []
+
+
+def _submit(**kw):
+    return _answers(action=ACTION_SUBMIT, **kw)
+
+
+def test_an_ethernet_printer_refuses_a_network_no_and_accepts_not_sure():
+    printer = PrinterAnswer(connectivity="ETHERNET", volume="50_250")
+    refused = _space(wifi_requested=True, network_needed=NETWORK_NO,
+                     printers=(printer,))
+    errors = validate(_submit(spaces=[refused]), has_space_cards=True)
+    assert any("a printer here uses Ethernet" in e for e in errors)
+    unsure = replace(refused, network_needed=NETWORK_UNSURE)
+    errors = validate(_submit(spaces=[unsure]), has_space_cards=True)
+    assert not any("Ethernet" in e for e in errors)
+
+
+def test_payments_home_base_rules():
+    payments = PaymentsAnswer(home_space_id=1, checkout_points=2,
+                              managing_department="Merch")
+    nothing = _space(1, answer="NOTHING", no_services_reason="Storage only")
+    errors = validate(replace(_submit(spaces=[nothing]), payments=payments),
+                      has_space_cards=True)
+    assert any("home base" in e and "Nothing needed" in e for e in errors)
+
+    missing = validate(replace(_submit(spaces=[_space(1, wifi_requested=True)]),
+                               payments=replace(payments, home_space_id=None)),
+                       has_space_cards=True)
+    assert any("pick the room that is home base" in e for e in missing)
+
+    stale = validate(replace(_submit(spaces=[_space(1, wifi_requested=True)]),
+                             payments=replace(payments, home_space_id=99)),
+                     has_space_cards=True)
+    assert any("no longer on this request" in e for e in stale)
+
+    declined = _space(1, wifi_requested=False, wifi_declined_reason="")
+    errors = validate(replace(_submit(spaces=[declined]), payments=payments),
+                      has_space_cards=True)
+    assert any("needs no WiFi" in e for e in errors)
+
+
+def test_the_payments_line_does_not_hide_an_empty_home_base_card():
+    payments = PaymentsAnswer(home_space_id=1, checkout_points=2,
+                              managing_department="Merch")
+    empty = _space(1, wifi_requested=False, wifi_declined_reason="Venue WiFi")
+    errors = validate(replace(_submit(spaces=[empty]), payments=payments),
+                      has_space_cards=True)
+    assert any("nothing has been requested for it" in e for e in errors)

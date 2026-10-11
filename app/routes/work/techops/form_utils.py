@@ -38,6 +38,8 @@ from .line_grain import (
     DepartmentWideAnswer,
     NETWORK_ANSWERS,
     NETWORK_KINDS,
+    NETWORK_UNSURE,
+    NETWORK_YES,
     PaymentsAnswer,
     PhoneHandset,
     PhoneLine,
@@ -54,6 +56,8 @@ from .line_grain import (
     SOURCE_NEW,
     SpaceAnswer,
     expand_to_lines,
+    network_is_forced,
+    payments_home_id,
     phone_open_questions,
     wifi_is_forced,
 )
@@ -571,6 +575,8 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
     if answers.action != ACTION_SUBMIT:
         return errors
 
+    home_id = payments_home_id(answers)
+
     if answers.no_services_needed and has_space_cards:
         errors.append(ValidationError(
             "This request covers spaces, so answer each one rather than "
@@ -611,7 +617,7 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
         # answered" into the same message as "declined with no reason":
         # both leave TechOps without a line or a stated reason for one.
         if space.wifi_requested is None:
-            if wifi_is_forced(space):
+            if wifi_is_forced(space, home_id):
                 errors.append(ValidationError(
                     f"{name}: this space has wired gear, so say why it "
                     "needs no WiFi, or tick WiFi.",
@@ -620,7 +626,7 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
             else:
                 errors.append(ValidationError(
                     f"{name}: say whether this space needs WiFi.", sid))
-        elif (space.wifi_requested is False and wifi_is_forced(space)
+        elif (space.wifi_requested is False and wifi_is_forced(space, home_id)
               and not space.wifi_declined_reason):
             # Invariant 2's escape hatch. No WiFi line exists to carry the
             # reason, so the reason is required here or the decline is lost.
@@ -640,6 +646,16 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
                 sid,
             ))
 
+        # An Ethernet printer needs a cable regardless of what the requester
+        # answered; "No" would drop the network line it depends on.
+        if (network_is_forced(space)
+                and space.network_needed not in (NETWORK_YES, NETWORK_UNSURE)):
+            errors.append(ValidationError(
+                f"{name}: a printer here uses Ethernet, so answer Yes or "
+                "Not sure to the network question.",
+                sid,
+            ))
+
         for line in space.phone_lines:
             _validate_phone_line(name, sid, line, owners, all_keys, errors)
 
@@ -650,7 +666,7 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
         # elsewhere on the request cannot mask this card's emptiness.
         space_only = replace(
             answers, spaces=(space,), department_wide=(),
-            no_services_needed=False,
+            no_services_needed=False, payments=None,
         )
         if not expand_to_lines(space_only):
             errors.append(ValidationError(
@@ -659,6 +675,9 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
                 "\"Nothing needed\".",
                 sid,
             ))
+
+    if answers.payments is not None:
+        _validate_payments(answers, errors)
 
     # Only when nothing on the request was answered at all: a space marked
     # NEEDS that itself produces no lines already gets its own error above,
@@ -722,6 +741,38 @@ def _validate_phone_line(
             "voice, which has no handsets to place.",
             space_id,
         ))
+
+
+def _validate_payments(answers: "RequestAnswers", errors: list[str]) -> None:
+    """Refuse a payments block Treasury cannot act on.
+
+    Estimates left blank are open questions, not refusals. A missing home
+    base, count, or owner leaves Treasury nobody to call and nowhere to go.
+    """
+    payments = answers.payments
+    cards = {space.space_id: space for space in answers.spaces}
+    home = cards.get(payments.home_space_id)
+    if payments.home_space_id is None:
+        errors.append(ValidationError(
+            "Taking payments: pick the room that is home base."))
+    elif home is None:
+        errors.append(ValidationError(
+            "Taking payments: the home base room is no longer on this "
+            "request. Pick another."))
+    elif home.answer == ANSWER_NOTHING:
+        # The home base needs WiFi, and a room marked "Nothing needed"
+        # produces no lines.
+        errors.append(ValidationError(
+            f"{home.display_name} is the payments home base, so it cannot "
+            "be marked Nothing needed.",
+            home.space_id,
+        ))
+    if not payments.checkout_points:
+        errors.append(ValidationError(
+            "Taking payments: say how many checkout points you need."))
+    if not payments.managing_department:
+        errors.append(ValidationError(
+            "Taking payments: say which department is in charge."))
 
 
 def upsert_request_detail(
