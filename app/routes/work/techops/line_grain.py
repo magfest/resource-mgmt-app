@@ -21,6 +21,7 @@ SERVICE_PHONE_NUMBER = "PHONE_NUMBER"
 SERVICE_DESK_PHONE = "DESK_PHONE"
 SERVICE_NO_SERVICES = "NO_SERVICES"
 SERVICE_PRINTER = "PRINTER"
+SERVICE_PAYMENTS = "PAYMENTS"
 
 ANSWER_NEEDS = "NEEDS"
 ANSWER_NOTHING = "NOTHING"
@@ -89,6 +90,10 @@ PRINTER_VOLUMES = (VOLUME_UNDER_50, VOLUME_50_250, VOLUME_250_500,
 QUESTION_CONNECTIVITY = "connectivity"
 QUESTION_VOLUME = "volume"
 QUESTION_LOW_VOLUME = "low_volume"
+QUESTION_DAILY_SALES = "daily_sales"
+QUESTION_DAILY_TRANSACTIONS = "daily_transactions"
+QUESTION_CATALOG_SIZE = "catalog_size"
+QUESTION_MOBILE_WHERE = "mobile_where"
 
 QUESTION_NETWORK_UNSURE = "network_unsure"
 QUESTION_NETWORK_KINDS = "kinds"
@@ -146,6 +151,25 @@ class PrinterAnswer:
 
 
 @dataclass(frozen=True)
+class PaymentsAnswer:
+    """One department's payments setup, answered once for the whole request.
+
+    Not one card reader. Treasury chooses the hardware during its follow-up;
+    a checkout point is a place one customer pays at a time.
+    """
+    home_space_id: int | None = None
+    checkout_points: int | None = None
+    managing_department: str = ""
+    daily_sales_dollars: int | None = None
+    daily_transactions: int | None = None
+    catalog_size: int | None = None
+    accepts_cash: bool = False
+    paper_receipts: bool = False
+    mobile: bool = False
+    mobile_where: str = ""
+
+
+@dataclass(frozen=True)
 class SpaceAnswer:
     space_id: int
     display_name: str
@@ -188,6 +212,7 @@ class RequestAnswers:
     action: str
     spaces: tuple[SpaceAnswer, ...] = ()
     department_wide: tuple[DepartmentWideAnswer, ...] = ()
+    payments: "PaymentsAnswer | None" = None
     # Which card's own "Save this space" button posted this save, or None
     # for the bottom Save Draft / Submit buttons. Carried through to the
     # post-save redirect (?open=<id>) so the requester lands back on the
@@ -423,6 +448,60 @@ def _printer_config(printer: PrinterAnswer) -> dict:
     return config
 
 
+def payments_home_id(answers: RequestAnswers) -> int | None:
+    return answers.payments.home_space_id if answers.payments else None
+
+
+def payments_open_questions(payments: PaymentsAnswer) -> list[str]:
+    """Name the estimates left blank. Treasury is calling the department anyway."""
+    questions = []
+    if payments.daily_sales_dollars is None:
+        questions.append(QUESTION_DAILY_SALES)
+    if payments.daily_transactions is None:
+        questions.append(QUESTION_DAILY_TRANSACTIONS)
+    if payments.catalog_size is None:
+        questions.append(QUESTION_CATALOG_SIZE)
+    if payments.mobile and not payments.mobile_where:
+        questions.append(QUESTION_MOBILE_WHERE)
+    return questions
+
+
+def _payments_config(payments: PaymentsAnswer) -> dict:
+    config = {
+        "managing_department": payments.managing_department,
+        "daily_sales_dollars": payments.daily_sales_dollars,
+        "daily_transactions": payments.daily_transactions,
+        "catalog_size": payments.catalog_size,
+        "accepts_cash": payments.accepts_cash,
+        "paper_receipts": payments.paper_receipts,
+        "mobile": payments.mobile,
+        # A value left behind by a hidden question is not an answer.
+        "mobile_where": payments.mobile_where if payments.mobile else "",
+    }
+    questions = payments_open_questions(payments)
+    if questions:
+        config["open_questions"] = questions
+    return config
+
+
+def payments_from_line(space_id: int | None, quantity: int | None,
+                       config: dict | None) -> PaymentsAnswer:
+    """Rebuild the answer from a saved PAYMENTS line, for the form's reload."""
+    cfg = config or {}
+    return PaymentsAnswer(
+        home_space_id=space_id,
+        checkout_points=quantity,
+        managing_department=cfg.get("managing_department") or "",
+        daily_sales_dollars=cfg.get("daily_sales_dollars"),
+        daily_transactions=cfg.get("daily_transactions"),
+        catalog_size=cfg.get("catalog_size"),
+        accepts_cash=bool(cfg.get("accepts_cash")),
+        paper_receipts=bool(cfg.get("paper_receipts")),
+        mobile=bool(cfg.get("mobile")),
+        mobile_where=cfg.get("mobile_where") or "",
+    )
+
+
 def expand_to_lines(answers: RequestAnswers) -> list[PlannedLine]:
     """Return the lines this request will create, in line-number order.
 
@@ -460,6 +539,16 @@ def expand_to_lines(answers: RequestAnswers) -> list[PlannedLine]:
             location=entry.location or None,
             usage=entry.usage or None,
             description=entry.description or None,
+        ))
+
+    # Answered once per department, filed under the home base room so
+    # reviewers and the order sheet see it where the hardware lives.
+    if answers.payments is not None:
+        lines.append(PlannedLine(
+            service_code=SERVICE_PAYMENTS,
+            space_id=answers.payments.home_space_id,
+            quantity=answers.payments.checkout_points,
+            config=_payments_config(answers.payments),
         ))
 
     # The whole-department affirmation. validate() refuses to combine this

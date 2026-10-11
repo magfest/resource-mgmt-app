@@ -21,6 +21,8 @@ from app.routes.work.techops.line_grain import (
     PrinterAnswer, KIND_PRINTERS, CONNECTIVITY_ETHERNET, CONNECTIVITY_USB,
     VOLUME_UNDER_50, VOLUME_250_500, QUESTION_LOW_VOLUME,
     network_is_forced, wifi_is_forced,
+    PaymentsAnswer, payments_from_line, payments_home_id,
+    QUESTION_DAILY_SALES,
 )
 
 
@@ -596,3 +598,46 @@ def test_printer_lines_follow_phone_lines_and_record_low_volume_as_a_question():
     assert printer.location == "Desk"
     assert printer.config["volume"] == VOLUME_UNDER_50
     assert printer.config["open_questions"] == [QUESTION_LOW_VOLUME]
+
+
+def _payments(**kw):
+    defaults = dict(home_space_id=1, checkout_points=3,
+                    managing_department="Merch", daily_sales_dollars=100000,
+                    daily_transactions=800, catalog_size=40)
+    defaults.update(kw)
+    return PaymentsAnswer(**defaults)
+
+
+def test_payments_emit_one_line_at_the_home_base_after_department_wide_lines():
+    answers = replace(
+        _answers(spaces=[_space(wifi_requested=True)],
+                 department_wide=[DepartmentWideAnswer(service_code="OTHER",
+                                                       description="Help")]),
+        payments=_payments(daily_sales_dollars=None, accepts_cash=True))
+    lines = expand_to_lines(answers)
+    assert [l.service_code for l in lines] == ["WIFI", "OTHER", "PAYMENTS"]
+    payments = lines[-1]
+    assert payments.space_id == 1
+    assert payments.quantity == 3
+    assert payments.config["accepts_cash"] is True
+    assert payments.config["open_questions"] == [QUESTION_DAILY_SALES]
+
+
+def test_mobile_where_is_dropped_when_mobile_is_unticked_and_round_trips_otherwise():
+    hidden = expand_to_lines(replace(
+        _answers(), payments=_payments(mobile=False, mobile_where="Concert hall")))[-1]
+    assert hidden.config["mobile_where"] == ""
+    shown = expand_to_lines(replace(
+        _answers(), payments=_payments(mobile=True, mobile_where="Concert hall")))[-1]
+    rebuilt = payments_from_line(shown.space_id, shown.quantity, shown.config)
+    assert rebuilt == _payments(mobile=True, mobile_where="Concert hall")
+
+
+def test_the_payments_home_base_forces_wifi_on_that_room_only():
+    answers = replace(_answers(spaces=[_space(1), _space(2)]),
+                      payments=_payments(home_space_id=2))
+    home = payments_home_id(answers)
+    assert home == 2
+    assert wifi_is_forced(answers.spaces[1], home)
+    assert not wifi_is_forced(answers.spaces[0], home)
+    assert payments_home_id(_answers()) is None
