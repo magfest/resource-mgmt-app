@@ -2206,3 +2206,149 @@ def test_the_order_preview_describes_printers_and_payments(app, client,
     specs = {row[1]: row[3] for row in rows}
     assert "Ethernet, 250 to 500 pages/day" in specs["Printer"]
     assert specs["Taking payments (card or cash)"].startswith("4 checkout points, cash")
+
+
+def _item_url(portfolio, item):
+    return (f"/{portfolio['cycle'].code}/{portfolio['department'].code}"
+            f"/techops/item/{item.public_id}")
+
+
+def _submitted_printer_and_payments(client, portfolio):
+    """Submit one PRINTER and one PAYMENTS line, past the open-questions stop."""
+    _login(client, "test:admin")
+    data = _printer_and_payments_post(
+        portfolio["space_id"], action=ACTION_SUBMIT,
+        open_questions_acknowledged="1")
+    response = client.post(portfolio["new_request_url"], data=data)
+    assert response.status_code == 302
+    item = portfolio["latest_item"]()
+    assert item.status == WORK_ITEM_STATUS_SUBMITTED
+    return item
+
+
+def test_a_saved_printer_row_and_the_blank_template_both_offer_remove(
+        app, client, techops_portfolio):
+    """A printer's radios have no blank option; removing the row is the only
+    way back once one is clicked."""
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    client.post(techops_portfolio["new_request_url"],
+                data=_printer_and_payments_post(sid))
+    item = techops_portfolio["latest_item"]()
+    body = client.get(_item_url(techops_portfolio, item) + "/edit").get_data(as_text=True)
+    template = _template_body(body, f'data-printer-template="{sid}"')
+    saved_rows = body.split(f'data-printer-template="{sid}"')[0]
+    assert "data-remove-printer" in template
+    assert saved_rows.count("data-remove-printer") == 1
+    # The delegated handler renumbers what is left and resets the add
+    # button's wording when the last row goes.
+    assert "e.target.closest('[data-remove-printer]')" in body
+    assert "'+ Add a printer'" in body
+
+
+def test_the_printer_badge_updates_by_the_same_rule_as_the_summary(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
+    rows_src = _extract_js_function(body, "filledPrinterRows")
+    assert "(f.type === 'radio') ? f.checked : !!f.value.trim()" in rows_src
+    assert "filledPrinterRows(details)" in _extract_js_function(body, "updatePrinterBadge")
+    assert "filledPrinterRows(card)" in _extract_js_function(body, "summarizeCard")
+    assert "updatePrinterBadge(printerDetails)" in _extract_js_function(body, "updateBadgeFor")
+
+
+def test_a_home_base_at_another_venue_is_refused_and_not_saved(
+        app, client, techops_portfolio, other_venue_space):
+    _login(client, "test:admin")
+    data = _printer_and_payments_post(
+        techops_portfolio["space_id"],
+        payments_home_space_id=str(other_venue_space.id))
+    body = client.post(techops_portfolio["new_request_url"],
+                       data=data).get_data(as_text=True)
+    assert ("Taking payments: the home base room is not available at this "
+            "event. Pick another.") in html.unescape(body)
+    assert "Room Elsewhere" not in body
+    assert techops_portfolio["latest_item"]() is None
+
+
+def test_a_stale_home_base_is_refused_by_its_name(app, client, techops_portfolio):
+    """The room is offerable but its card is gone from the post, the state
+    a requester reaches by removing the room after picking it."""
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    data = {key: value for key, value in _printer_and_payments_post(
+                sid, action=ACTION_SUBMIT).items()
+            if not key.startswith(f"space_{sid}_") and key != "space_ids"}
+    body = client.post(techops_portfolio["new_request_url"],
+                       data=data).get_data(as_text=True)
+    assert ("Taking payments: the home base room, Expo Hall E, is no longer "
+            "on this request.") in html.unescape(body)
+
+
+def test_a_home_base_with_no_gear_explains_wifi_by_payments(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    data = _printer_and_payments_post(sid, **{
+        f"space_{sid}_WIFI_enabled": "0",
+        f"space_{sid}_NETWORK_needed": "NO",
+        f"space_{sid}_PRINTER_1_connectivity": "",
+        f"space_{sid}_PRINTER_1_volume": "",
+        f"space_{sid}_PRINTER_1_location": "",
+    })
+    client.post(techops_portfolio["new_request_url"], data=data)
+    item = techops_portfolio["latest_item"]()
+    body = client.get(_item_url(techops_portfolio, item) + "/edit").get_data(as_text=True)
+    assert "This room is the payments home base, so WiFi needs an answer." in body
+    assert "This space has wired gear" not in body
+    assert "A printer here uses a network cable" not in body
+
+
+def test_an_ethernet_printer_shows_the_network_callout(
+        app, client, techops_portfolio):
+    from app.routes.work.techops.spaces import space_cards
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    client.post(techops_portfolio["new_request_url"],
+                data=_printer_and_payments_post(sid))
+    item = techops_portfolio["latest_item"]()
+    card = next(c for c in space_cards(item, techops_portfolio["department"].id,
+                                       techops_portfolio["cycle"])
+                if c["space"].id == sid)
+    assert card["network_forced"] is True
+    assert card["wifi_forced_reason"] == "payments"
+    body = client.get(_item_url(techops_portfolio, item) + "/edit").get_data(as_text=True)
+    assert "A printer here uses a network cable, so answer Yes or Not sure." in body
+
+
+@pytest.mark.parametrize("page, expected", [
+    ("detail", "250 to 500 pages/day (mid volume)"),
+    ("quick_review", "4 checkout points"),
+    ("printer_review", "250 to 500 pages/day (mid volume)"),
+    ("payments_review", "Checkout points:"),
+])
+def test_reviewer_pages_render_printer_and_payments_lines(
+        app, client, techops_portfolio, page, expected):
+    item = _submitted_printer_and_payments(client, techops_portfolio)
+    numbers = {line.techops_detail.service_type.code: line.line_number
+               for line in item.lines}
+    base = _item_url(techops_portfolio, item)
+    url = {
+        "detail": base,
+        "quick_review": base + "/quick-review",
+        "printer_review": f"{base}/line/{numbers['PRINTER']}/review",
+        "payments_review": f"{base}/line/{numbers['PAYMENTS']}/review",
+    }[page]
+    response = client.get(url)
+    assert response.status_code == 200
+    assert expected in response.get_data(as_text=True)
+
+
+def test_printers_route_to_techops_and_payments_to_treasury(
+        app, client, techops_portfolio):
+    item = _submitted_printer_and_payments(client, techops_portfolio)
+    routed = {line.techops_detail.service_type.code:
+              line.techops_detail.routed_approval_group.code
+              for line in item.lines
+              if line.techops_detail.service_type.code in ("PRINTER", "PAYMENTS")}
+    assert routed == {"PRINTER": "TECHOPS_GEN", "PAYMENTS": "TREASURY"}
