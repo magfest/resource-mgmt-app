@@ -730,6 +730,22 @@
       badge.textContent = '· ' + text;
     }
 
+    // Same any-input rule as _parse_printers: a radio counts only when
+    // checked, a text field only when non-blank.
+    function filledPrinterRows(root) {
+      return Array.prototype.filter.call(root.querySelectorAll('[data-printer-row]'), function(row) {
+        return Array.prototype.some.call(row.querySelectorAll('input, textarea'), function(f) {
+          return (f.type === 'radio') ? f.checked : !!f.value.trim();
+        });
+      });
+    }
+
+    function updatePrinterBadge(details) {
+      var badge = details.querySelector('[data-printer-count]');
+      if (!badge) return;
+      badge.textContent = '\u00b7 ' + pluralize(filledPrinterRows(details).length, 'printer');
+    }
+
     function summarizeCard(card) {
       var parts = [];
       if (card.querySelector('[data-wifi-answer-radio][value="1"]:checked')) parts.push('WiFi');
@@ -747,12 +763,7 @@
         if (handsetCount > 0) line += ', ' + handsetCount + ' desk phone' + (handsetCount === 1 ? '' : 's');
         parts.push(line);
       }
-      // Same any-input rule as _parse_printers.
-      var printerCount = Array.prototype.filter.call(card.querySelectorAll('[data-printer-row]'), function(row) {
-        return Array.prototype.some.call(row.querySelectorAll('input, textarea'), function(f) {
-          return (f.type === 'radio') ? f.checked : !!f.value.trim();
-        });
-      }).length;
+      var printerCount = filledPrinterRows(card).length;
       if (printerCount > 0) parts.push(pluralize(printerCount, 'printer'));
       if (parts.length) return parts.join(' - ');
 
@@ -841,6 +852,7 @@
       applyWifiReveal(card);
       card.querySelectorAll('[data-service-subsection="ETHERNET"]').forEach(updateEthernetBadge);
       card.querySelectorAll('[data-service-subsection="PHONE"]').forEach(updatePhoneBadge);
+      card.querySelectorAll('[data-service-subsection="PRINTER"]').forEach(updatePrinterBadge);
       card.querySelectorAll('[data-space-answer-radio]').forEach(function(radio) {
         radio.addEventListener('change', function() {
           applyCardState(card);
@@ -925,6 +937,8 @@
       if (ethernetDetails) { updateEthernetBadge(ethernetDetails); return; }
       var phoneDetails = target.closest('[data-service-subsection="PHONE"]');
       if (phoneDetails) { updatePhoneBadge(phoneDetails); return; }
+      var printerDetails = target.closest('[data-service-subsection="PRINTER"]');
+      if (printerDetails) { updatePrinterBadge(printerDetails); return; }
     }
 
     document.addEventListener('input', function(e) {
@@ -985,8 +999,44 @@
             rcontainer.appendChild(rrow);
             rcontainer.setAttribute('data-next-index', String(rNextIdx + 1));
             addPrinter.textContent = '+ Add another printer';
+            var addedDetails = rcontainer.closest('[data-service-subsection="PRINTER"]');
+            if (addedDetails) updatePrinterBadge(addedDetails);
           }
         }
+        return;
+      }
+
+      var removePrinter = e.target.closest('[data-remove-printer]');
+      if (removePrinter) {
+        var removedRow = removePrinter.closest('[data-printer-row]');
+        var dcontainer = removedRow && removedRow.closest('[data-printers-container]');
+        if (!dcontainer) return;
+        removedRow.remove();
+        // Renumber so the headers read 1..n and the indexes stay inside
+        // the range _parse_printers walks. Rows are in ascending index
+        // order, so each new name is free before a row moves into it.
+        var remaining = dcontainer.querySelectorAll('[data-printer-row]');
+        Array.prototype.forEach.call(remaining, function(row, i) {
+          var n = String(i + 1);
+          row.querySelectorAll('[name]').forEach(function(field) {
+            field.name = field.name.replace(/^(space_\d+_PRINTER_)\d+_/, function(m, head) {
+              return head + n + '_';
+            });
+          });
+          var number = row.querySelector('[data-printer-number]');
+          if (number) number.textContent = n;
+        });
+        dcontainer.setAttribute('data-next-index', String(remaining.length + 1));
+        var dsid = dcontainer.getAttribute('data-space-id');
+        var daddBtn = document.querySelector('[data-add-printer="' + dsid + '"]');
+        if (daddBtn) {
+          daddBtn.textContent = remaining.length ? '+ Add another printer' : '+ Add a printer';
+        }
+        var removedDetails = dcontainer.closest('[data-service-subsection="PRINTER"]');
+        if (removedDetails) updatePrinterBadge(removedDetails);
+        // Removing a node fires no input event; this one lets the order
+        // preview drop the printer line too.
+        dcontainer.dispatchEvent(new Event('change', {bubbles: true}));
         return;
       }
 
