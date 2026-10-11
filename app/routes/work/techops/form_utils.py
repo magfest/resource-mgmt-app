@@ -38,8 +38,10 @@ from .line_grain import (
     DepartmentWideAnswer,
     NETWORK_ANSWERS,
     NETWORK_KINDS,
+    PaymentsAnswer,
     PhoneHandset,
     PhoneLine,
+    PrinterAnswer,
     VOICE_DELIVERY_NONE,
     QUESTION_CAPABILITIES,
     QUESTION_FORWARD_TARGET,
@@ -94,6 +96,7 @@ MAX_SPACES_PER_REQUEST = 100
 MAX_DROPS_PER_SPACE = 25
 MAX_PHONE_LINES_PER_SPACE = 10
 MAX_HANDSETS_PER_LINE = 20
+MAX_PRINTERS_PER_SPACE = 10
 MAX_DEPARTMENT_WIDE_INSTANCES = 50
 
 
@@ -237,6 +240,31 @@ def _parse_handsets(space_id: int, line_n: int, form: "MultiDict",
     return tuple(handsets)
 
 
+def _parse_printers(space_id: int, form: "MultiDict",
+                    errors: list[str], label: str) -> tuple:
+    """Walk one space's printer rows into PrinterAnswer entries.
+
+    A row counts when any of its inputs holds content; fully blank rows
+    are untouched slots and are skipped.
+    """
+    printers = []
+    overflow = False
+    for n in range(1, MAX_PRINTERS_PER_SPACE + 2):
+        prefix = f"space_{space_id}_PRINTER_{n}"
+        fields = {key: (form.get(f"{prefix}_{key}") or "").strip()
+                  for key in ("location", "usage", "connectivity", "volume")}
+        if not any(fields.values()):
+            continue
+        if n > MAX_PRINTERS_PER_SPACE:
+            overflow = True
+            break
+        printers.append(PrinterAnswer(**fields))
+    if overflow:
+        errors.append(
+            f"{label}: at most {MAX_PRINTERS_PER_SPACE} printers per space.")
+    return tuple(printers)
+
+
 def _parse_phone_lines(space_id: int, form: "MultiDict",
                        errors: list[str], label: str) -> tuple:
     """Walk one space's phone line fields into PhoneLine entries.
@@ -357,6 +385,7 @@ def _parse_space(space_id: int, display_name: str, form: "MultiDict",
         wifi_description=(form.get(f"space_{space_id}_WIFI_description") or "").strip(),
         **_parse_network(space_id, form),
         phone_lines=_parse_phone_lines(space_id, form, errors, display_name),
+        printers=_parse_printers(space_id, form, errors, display_name),
         notes=(form.get(f"space_{space_id}_notes") or "").strip(),
     )
 
@@ -403,6 +432,56 @@ def _parse_department_wide(form: "MultiDict", errors: list[str]) -> tuple:
         ))
 
     return tuple(entries)
+
+
+def _parse_whole_number(raw: str | None, label: str,
+                        errors: list[str]) -> int | None:
+    """Read an approximate figure. Blank is None; a refused value adds an error.
+
+    Requesters type money the way they write it, so commas and a leading
+    dollar sign are stripped rather than refused.
+    """
+    text = (raw or "").strip().replace(",", "").lstrip("$").strip()
+    if not text:
+        return None
+    try:
+        value = int(text)
+    except ValueError:
+        value = -1
+    if value < 0 or value > MAX_INT4:
+        errors.append(f"Taking payments: {label} must be a whole number.")
+        return None
+    return value
+
+
+def _parse_payments(form: "MultiDict", errors: list[str]) -> PaymentsAnswer | None:
+    """Return the payments block, or None when the requester left it untouched.
+
+    The department name is prefilled, so it alone does not count as
+    touching the block. Every other field does, checkboxes included; a
+    lone ticked box dropped on save would read as an answer that saved.
+    """
+    payments = PaymentsAnswer(
+        home_space_id=_space_id_or_none(form.get("payments_home_space_id") or ""),
+        checkout_points=_parse_whole_number(
+            form.get("payments_checkout_points"), "checkout points", errors),
+        managing_department=(form.get("payments_managing_department") or "").strip(),
+        daily_sales_dollars=_parse_whole_number(
+            form.get("payments_daily_sales"), "sales per day", errors),
+        daily_transactions=_parse_whole_number(
+            form.get("payments_daily_transactions"), "transactions per day", errors),
+        catalog_size=_parse_whole_number(
+            form.get("payments_catalog_size"), "items for sale", errors),
+        accepts_cash=form.get("payments_accepts_cash") == "1",
+        paper_receipts=form.get("payments_paper_receipts") == "1",
+        mobile=form.get("payments_mobile") == "1",
+        mobile_where=(form.get("payments_mobile_where") or "").strip(),
+    )
+    touched = replace(payments, managing_department="") != PaymentsAnswer()
+    # A refused number is still a touched field: keep the block so the
+    # redisplay shows the rest of what was typed.
+    refused = any(e.startswith("Taking payments:") for e in errors)
+    return payments if (touched or refused) else None
 
 
 def parse_form(form: "MultiDict",
@@ -465,6 +544,7 @@ def parse_form(form: "MultiDict",
         action=form.get("action") or ACTION_SAVE_DRAFT,
         spaces=tuple(spaces),
         department_wide=_parse_department_wide(form, errors),
+        payments=_parse_payments(form, errors),
         save_space_id=save_space_id,
     ), errors
 
@@ -791,7 +871,7 @@ def replace_lines(work_item: "WorkItem", answers: "RequestAnswers") -> None:
             space_id=entry.space_id,
             purpose=entry.purpose,
             internal_only=entry.internal_only,
-            quantity=None,
+            quantity=entry.quantity,
             config=entry.config,
         ))
     db.session.flush()
