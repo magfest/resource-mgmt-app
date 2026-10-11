@@ -35,7 +35,9 @@ from .line_grain import (
     SERVICE_PRINTER,
     SOURCE_NEW,
     SpaceAnswer,
+    network_is_forced,
     payments_from_line,
+    wifi_forced_reason,
     wifi_is_forced,
 )
 
@@ -478,6 +480,8 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
             "printer_description": descriptions.get("PRINTER", ""),
             "notes": answer.notes,
             "wifi_forced": wifi_is_forced(answer, home_id),
+            "wifi_forced_reason": wifi_forced_reason(answer, home_id),
+            "network_forced": network_is_forced(answer),
         })
     return cards
 
@@ -542,6 +546,8 @@ def redisplay_cards(cards: list[dict], answers,
             "printer_count": len(posted.printers),
             "notes": posted.notes,
             "wifi_forced": wifi_is_forced(posted, home_id),
+            "wifi_forced_reason": wifi_forced_reason(posted, home_id),
+            "network_forced": network_is_forced(posted),
         })
 
     for space_id, posted in posted_by_id.items():
@@ -577,6 +583,8 @@ def redisplay_cards(cards: list[dict], answers,
             "printer_description": descriptions.get("PRINTER", ""),
             "notes": posted.notes,
             "wifi_forced": wifi_is_forced(posted, home_id),
+            "wifi_forced_reason": wifi_forced_reason(posted, home_id),
+            "network_forced": network_is_forced(posted),
         })
     return merged
 

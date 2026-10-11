@@ -579,3 +579,24 @@ def test_a_payments_block_with_only_a_checkbox_ticked_is_kept_and_an_empty_one_i
     untouched.add("payments_managing_department", "Test Department")
     answers, _ = parse_form(untouched, {})
     assert answers.payments is None
+
+
+def test_a_home_base_outside_the_offerable_rooms_is_refused_without_echoing_it():
+    form = _base()
+    form.add("payments_home_space_id", "999")
+    form.add("payments_checkout_points", "3")
+    answers, errors = parse_form(form, {7: "Merch Booth"})
+    assert answers.payments.home_space_id is None
+    assert errors == [
+        "Taking payments: the home base room is not available at this "
+        "event. Pick another."]
+    assert not any("999" in e for e in errors)
+
+
+def test_an_offerable_home_base_carries_its_display_name():
+    form = _base()
+    form.add("payments_home_space_id", "7")
+    answers, errors = parse_form(form, {7: "Merch Booth"})
+    assert errors == []
+    assert answers.payments.home_space_id == 7
+    assert answers.payments.home_space_name == "Merch Booth"

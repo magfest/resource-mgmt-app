@@ -158,6 +158,9 @@ class PaymentsAnswer:
     a checkout point is a place one customer pays at a time.
     """
     home_space_id: int | None = None
+    # The home base's name on this event, kept only so a refusal can name
+    # the room. Never stored; a reloaded block leaves it blank.
+    home_space_name: str = ""
     checkout_points: int | None = None
     managing_department: str = ""
     daily_sales_dollars: int | None = None
@@ -268,6 +271,25 @@ def wifi_is_forced(space: SpaceAnswer, payments_home_id: int | None = None) -> b
     is_home_base = (payments_home_id is not None
                     and space.space_id == payments_home_id)
     return wired or bool(space.phone_lines) or is_home_base
+
+
+WIFI_FORCED_BY_GEAR = "gear"
+WIFI_FORCED_BY_PAYMENTS = "payments"
+
+
+def wifi_forced_reason(space: SpaceAnswer,
+                       payments_home_id: int | None = None) -> str | None:
+    """Return why WiFi needs an answer here, or None when it does not.
+
+    Gear outranks the home base: a room with both is told about its gear,
+    which the requester can see on the card. "payments" means the home
+    base is the only cause, so the message must not mention wired gear.
+    """
+    if not wifi_is_forced(space, payments_home_id):
+        return None
+    if wifi_is_forced(space):
+        return WIFI_FORCED_BY_GEAR
+    return WIFI_FORCED_BY_PAYMENTS
 
 
 def _sharing_key(space_id: int, line_index: int) -> str:

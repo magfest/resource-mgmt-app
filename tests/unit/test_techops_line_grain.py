@@ -20,7 +20,7 @@ from app.routes.work.techops.line_grain import (
     derive_internal_only, derive_purpose, expand_to_lines,
     PrinterAnswer, KIND_PRINTERS, CONNECTIVITY_ETHERNET, CONNECTIVITY_USB,
     VOLUME_UNDER_50, VOLUME_250_500, QUESTION_LOW_VOLUME,
-    network_is_forced, wifi_is_forced,
+    network_is_forced, wifi_is_forced, wifi_forced_reason,
     PaymentsAnswer, payments_from_line, payments_home_id,
     QUESTION_DAILY_SALES,
 )
@@ -641,3 +641,13 @@ def test_the_payments_home_base_forces_wifi_on_that_room_only():
     assert wifi_is_forced(answers.spaces[1], home)
     assert not wifi_is_forced(answers.spaces[0], home)
     assert payments_home_id(_answers()) is None
+
+
+def test_the_wifi_forcing_reason_names_the_home_base_only_when_nothing_else_forces():
+    """The requester is told why WiFi needs an answer. A home base with no
+    gear has no "wired gear" to point at."""
+    assert wifi_forced_reason(_space(1), payments_home_id=1) == "payments"
+    assert wifi_forced_reason(_wired(), payments_home_id=None) == "gear"
+    assert wifi_forced_reason(replace(_wired(), space_id=1),
+                              payments_home_id=1) == "gear"
+    assert wifi_forced_reason(_space(1), payments_home_id=2) is None

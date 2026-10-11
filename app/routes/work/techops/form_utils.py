@@ -55,11 +55,12 @@ from .line_grain import (
     RequestAnswers,
     SOURCE_NEW,
     SpaceAnswer,
+    WIFI_FORCED_BY_PAYMENTS,
     expand_to_lines,
     network_is_forced,
     payments_home_id,
     phone_open_questions,
-    wifi_is_forced,
+    wifi_forced_reason,
 )
 
 if TYPE_CHECKING:
@@ -458,15 +459,27 @@ def _parse_whole_number(raw: str | None, label: str,
     return value
 
 
-def _parse_payments(form: "MultiDict", errors: list[str]) -> PaymentsAnswer | None:
+def _parse_payments(form: "MultiDict", offerable_spaces: dict[int, str],
+                    errors: list[str]) -> PaymentsAnswer | None:
     """Return the payments block, or None when the requester left it untouched.
 
     The department name is prefilled, so it alone does not count as
     touching the block. Every other field does, checkboxes included; a
     lone ticked box dropped on save would read as an answer that saved.
     """
+    raw_home = (form.get("payments_home_space_id") or "").strip()
+    home_id = _space_id_or_none(raw_home)
+    # Same gate as the space cards. The select only lists this request's
+    # rooms, so an id outside the offerable set is a crafted POST; saving
+    # it would file the payments line under another venue's room.
+    if raw_home and home_id not in offerable_spaces:
+        errors.append(
+            "Taking payments: the home base room is not available at this "
+            "event. Pick another.")
+        home_id = None
     payments = PaymentsAnswer(
-        home_space_id=_space_id_or_none(form.get("payments_home_space_id") or ""),
+        home_space_id=home_id,
+        home_space_name=offerable_spaces.get(home_id) or "",
         checkout_points=_parse_whole_number(
             form.get("payments_checkout_points"), "checkout points", errors),
         managing_department=(form.get("payments_managing_department") or "").strip(),
@@ -548,7 +561,7 @@ def parse_form(form: "MultiDict",
         action=form.get("action") or ACTION_SAVE_DRAFT,
         spaces=tuple(spaces),
         department_wide=_parse_department_wide(form, errors),
-        payments=_parse_payments(form, errors),
+        payments=_parse_payments(form, offerable_spaces, errors),
         save_space_id=save_space_id,
     ), errors
 
@@ -616,25 +629,20 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
         # checkbox with extra clicks. A forced space folds "never
         # answered" into the same message as "declined with no reason":
         # both leave TechOps without a line or a stated reason for one.
+        forced_by = wifi_forced_reason(space, home_id)
         if space.wifi_requested is None:
-            if wifi_is_forced(space, home_id):
+            if forced_by:
                 errors.append(ValidationError(
-                    f"{name}: this space has wired gear, so say why it "
-                    "needs no WiFi, or tick WiFi.",
-                    sid,
-                ))
+                    _forced_wifi_message(name, forced_by), sid))
             else:
                 errors.append(ValidationError(
                     f"{name}: say whether this space needs WiFi.", sid))
-        elif (space.wifi_requested is False and wifi_is_forced(space, home_id)
+        elif (space.wifi_requested is False and forced_by
               and not space.wifi_declined_reason):
             # Invariant 2's escape hatch. No WiFi line exists to carry the
             # reason, so the reason is required here or the decline is lost.
             errors.append(ValidationError(
-                f"{name}: this space has wired gear, so say why it needs "
-                "no WiFi, or tick WiFi.",
-                sid,
-            ))
+                _forced_wifi_message(name, forced_by), sid))
 
         # The gate takes thought, and a question that takes thought with no
         # consequence for skipping gets skipped. "Not sure" completes it, so
@@ -663,10 +671,12 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
         # omission; expand_to_lines() is the one place that knows whether
         # that answer produced anything. Checked against this space alone
         # (department_wide and no_services_needed stripped) so a real line
-        # elsewhere on the request cannot mask this card's emptiness.
+        # elsewhere on the request cannot mask this card's emptiness. The
+        # payments line stays only for its home base, where it is filed.
         space_only = replace(
             answers, spaces=(space,), department_wide=(),
-            no_services_needed=False, payments=None,
+            no_services_needed=False,
+            payments=answers.payments if home_id == sid else None,
         )
         if not expand_to_lines(space_only):
             errors.append(ValidationError(
@@ -743,6 +753,15 @@ def _validate_phone_line(
         ))
 
 
+def _forced_wifi_message(name: str, forced_by: str) -> str:
+    """Word the forced-WiFi refusal by its cause, from wifi_forced_reason()."""
+    if forced_by == WIFI_FORCED_BY_PAYMENTS:
+        return (f"{name}: this room is the payments home base, so say why "
+                "it needs no WiFi, or tick WiFi.")
+    return (f"{name}: this space has wired gear, so say why it needs no "
+            "WiFi, or tick WiFi.")
+
+
 def _validate_payments(answers: "RequestAnswers", errors: list[str]) -> None:
     """Refuse a payments block Treasury cannot act on.
 
@@ -756,9 +775,11 @@ def _validate_payments(answers: "RequestAnswers", errors: list[str]) -> None:
         errors.append(ValidationError(
             "Taking payments: pick the room that is home base."))
     elif home is None:
+        room = (f"the home base room, {payments.home_space_name},"
+                if payments.home_space_name else "the home base room")
         errors.append(ValidationError(
-            "Taking payments: the home base room is no longer on this "
-            "request. Pick another."))
+            f"Taking payments: {room} is no longer on this request. "
+            "Pick another."))
     elif home.answer == ANSWER_NOTHING:
         # The home base needs WiFi, and a room marked "Nothing needed"
         # produces no lines.
