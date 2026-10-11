@@ -20,6 +20,7 @@ SERVICE_ETHERNET = "ETHERNET"
 SERVICE_PHONE_NUMBER = "PHONE_NUMBER"
 SERVICE_DESK_PHONE = "DESK_PHONE"
 SERVICE_NO_SERVICES = "NO_SERVICES"
+SERVICE_PRINTER = "PRINTER"
 
 ANSWER_NEEDS = "NEEDS"
 ANSWER_NOTHING = "NOTHING"
@@ -61,13 +62,33 @@ NETWORK_NO = "NO"
 NETWORK_UNSURE = "UNSURE"
 NETWORK_ANSWERS = (NETWORK_YES, NETWORK_NO, NETWORK_UNSURE)
 
-NETWORK_KINDS = ("COMPUTERS", "STREAMING", "SCANNERS", "CONSOLES", "OTHER")
+KIND_PRINTERS = "PRINTERS"
+NETWORK_KINDS = ("COMPUTERS", "STREAMING", "SCANNERS", KIND_PRINTERS,
+                 "CONSOLES", "OTHER")
 NETWORK_COUNTS = ("1-2", "3-5", "6-10", "10+")
 
 TRAFFIC_INTERNET = "INTERNET"
 TRAFFIC_LOCAL = "LOCAL"
 TRAFFIC_UNSURE = "UNSURE"
 NETWORK_TRAFFIC = (TRAFFIC_INTERNET, TRAFFIC_LOCAL, TRAFFIC_UNSURE)
+
+CONNECTIVITY_ETHERNET = "ETHERNET"
+CONNECTIVITY_USB = "USB"
+PRINTER_CONNECTIVITY = (CONNECTIVITY_ETHERNET, CONNECTIVITY_USB)
+
+# Pages per day. The three upper bands map to TechOps's low, mid, and high
+# volume printers. Under 50 maps to none: TechOps asks whether a public
+# printer at a helpdesk would serve instead.
+VOLUME_UNDER_50 = "UNDER_50"
+VOLUME_50_250 = "50_250"
+VOLUME_250_500 = "250_500"
+VOLUME_OVER_500 = "OVER_500"
+PRINTER_VOLUMES = (VOLUME_UNDER_50, VOLUME_50_250, VOLUME_250_500,
+                   VOLUME_OVER_500)
+
+QUESTION_CONNECTIVITY = "connectivity"
+QUESTION_VOLUME = "volume"
+QUESTION_LOW_VOLUME = "low_volume"
 
 QUESTION_NETWORK_UNSURE = "network_unsure"
 QUESTION_NETWORK_KINDS = "kinds"
@@ -117,6 +138,14 @@ class PhoneLine:
 
 
 @dataclass(frozen=True)
+class PrinterAnswer:
+    location: str = ""
+    usage: str = ""
+    connectivity: str = ""
+    volume: str = ""
+
+
+@dataclass(frozen=True)
 class SpaceAnswer:
     space_id: int
     display_name: str
@@ -138,6 +167,7 @@ class SpaceAnswer:
     network_traffic: str = ""
     network_notes: str = ""
     phone_lines: tuple[PhoneLine, ...] = ()
+    printers: tuple[PrinterAnswer, ...] = ()
     notes: str = ""
 
 
@@ -173,6 +203,7 @@ class PlannedLine:
     usage: str | None = None
     description: str | None = None
     config: dict | None = None
+    quantity: int | None = None
     purpose: str | None = None
     internal_only: bool = False
     # Position of this line's parent within the returned list, not a
@@ -182,14 +213,36 @@ class PlannedLine:
     parent_index: int | None = None
 
 
-def wifi_is_forced(space: SpaceAnswer) -> bool:
+def network_is_forced(space: SpaceAnswer) -> bool:
+    """A printer on Ethernet needs the room's network answer to be yes or unsure."""
+    return any(p.connectivity == CONNECTIVITY_ETHERNET for p in space.printers)
+
+
+def effective_network_kinds(space: SpaceAnswer) -> tuple[str, ...]:
+    """Return the ticked kinds, plus PRINTERS when an Ethernet printer is listed.
+
+    The requester already said the printer is wired. Asking them to tick
+    the kind as well would raise a missing-kinds question about a room
+    whose gear is fully described.
+    """
+    if network_is_forced(space) and KIND_PRINTERS not in space.network_kinds:
+        return space.network_kinds + (KIND_PRINTERS,)
+    return space.network_kinds
+
+
+def wifi_is_forced(space: SpaceAnswer, payments_home_id: int | None = None) -> bool:
     """Invariant 2: gear in the room means coverage for it.
 
-    True when a decline needs a stated reason to be accepted. Does not
-    decide whether a WiFi line exists; that is a plain read of
-    `wifi_requested` in `_expand_space`.
+    True when a decline needs a stated reason to be accepted. A room whose
+    only wired gear is printers needs a cable, not coverage. A payments
+    home base needs WiFi for its card readers. Does not decide whether a
+    WiFi line exists; that is a plain read of `wifi_requested`.
     """
-    return space.network_needed == NETWORK_YES or bool(space.phone_lines)
+    wired = (space.network_needed == NETWORK_YES
+             and set(effective_network_kinds(space)) != {KIND_PRINTERS})
+    is_home_base = (payments_home_id is not None
+                    and space.space_id == payments_home_id)
+    return wired or bool(space.phone_lines) or is_home_base
 
 
 def _sharing_key(space_id: int, line_index: int) -> str:
@@ -259,7 +312,7 @@ def network_open_questions(space: SpaceAnswer) -> list[str]:
     """
     if space.network_needed == NETWORK_UNSURE:
         return [QUESTION_NETWORK_UNSURE]
-    if space.network_needed == NETWORK_YES and not space.network_kinds:
+    if space.network_needed == NETWORK_YES and not effective_network_kinds(space):
         return [QUESTION_NETWORK_KINDS]
     return []
 
@@ -342,6 +395,29 @@ def _phone_config(line: PhoneLine) -> dict:
         "dial_out": line.dial_out and line.voice_delivery != VOICE_DELIVERY_NONE,
     }
     questions = phone_open_questions(line)
+    if questions:
+        config["open_questions"] = questions
+    return config
+
+
+def printer_open_questions(printer: PrinterAnswer) -> list[str]:
+    questions = []
+    if printer.connectivity not in PRINTER_CONNECTIVITY:
+        questions.append(QUESTION_CONNECTIVITY)
+    if printer.volume not in PRINTER_VOLUMES:
+        questions.append(QUESTION_VOLUME)
+    elif printer.volume == VOLUME_UNDER_50:
+        questions.append(QUESTION_LOW_VOLUME)
+    return questions
+
+
+def _printer_config(printer: PrinterAnswer) -> dict:
+    config = {
+        "connectivity": (printer.connectivity
+                         if printer.connectivity in PRINTER_CONNECTIVITY else None),
+        "volume": printer.volume if printer.volume in PRINTER_VOLUMES else None,
+    }
+    questions = printer_open_questions(printer)
     if questions:
         config["open_questions"] = questions
     return config
@@ -481,7 +557,7 @@ def _expand_space(
     # they sign off on is "wired network for this room".
     if space.network_needed in (NETWORK_YES, NETWORK_UNSURE):
         config = {
-            "kinds": list(space.network_kinds),
+            "kinds": list(effective_network_kinds(space)),
             "rough_count": space.network_count or None,
             "traffic": space.network_traffic or None,
         }
@@ -548,5 +624,14 @@ def _expand_space(
                 usage=None,
                 config={"open_questions": [QUESTION_LOCATION]},
             ))
+
+    for printer in space.printers:
+        lines.append(PlannedLine(
+            service_code=SERVICE_PRINTER,
+            space_id=space.space_id,
+            location=printer.location or None,
+            usage=printer.usage or None,
+            config=_printer_config(printer),
+        ))
 
     return lines, handset_keys, number_positions

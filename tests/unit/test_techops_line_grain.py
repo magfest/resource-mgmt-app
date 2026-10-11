@@ -18,6 +18,9 @@ from app.routes.work.techops.line_grain import (
     VOICE_DELIVERY_NONE, VOICE_DELIVERY_VOICEMAIL, DepartmentWideAnswer,
     PhoneHandset, PhoneLine, RequestAnswers, SpaceAnswer,
     derive_internal_only, derive_purpose, expand_to_lines,
+    PrinterAnswer, KIND_PRINTERS, CONNECTIVITY_ETHERNET, CONNECTIVITY_USB,
+    VOLUME_UNDER_50, VOLUME_250_500, QUESTION_LOW_VOLUME,
+    network_is_forced, wifi_is_forced,
 )
 
 
@@ -553,3 +556,43 @@ def test_wired_gear_still_forces_a_wifi_answer():
     assert wifi_is_forced(_wired()) is True
     assert wifi_is_forced(_space(network_needed=NETWORK_NO)) is False
     assert wifi_is_forced(_space(phone_lines=(_voice_line(),))) is True
+
+
+def _printer(connectivity=CONNECTIVITY_ETHERNET, volume=VOLUME_250_500, **kw):
+    return PrinterAnswer(connectivity=connectivity, volume=volume, **kw)
+
+
+def test_an_ethernet_printer_alone_adds_the_printers_kind_and_forces_no_wifi():
+    space = _space(network_needed=NETWORK_YES, printers=(_printer(),))
+    lines = expand_to_lines(_answers(spaces=[space]))
+    ethernet = next(l for l in lines if l.service_code == "ETHERNET")
+    assert ethernet.config["kinds"] == [KIND_PRINTERS]
+    assert "open_questions" not in ethernet.config
+    assert network_is_forced(space)
+    assert not wifi_is_forced(space)
+
+
+def test_a_usb_printer_forces_nothing_and_a_yes_with_other_kinds_still_forces_wifi():
+    usb = _space(network_needed=NETWORK_NO,
+                 printers=(_printer(connectivity=CONNECTIVITY_USB),))
+    assert not network_is_forced(usb)
+    mixed = _space(network_needed=NETWORK_YES, network_kinds=("COMPUTERS",),
+                   printers=(_printer(),))
+    assert wifi_is_forced(mixed)
+    bare_yes = _space(network_needed=NETWORK_YES)
+    assert wifi_is_forced(bare_yes)
+
+
+def test_printer_lines_follow_phone_lines_and_record_low_volume_as_a_question():
+    space = _space(network_needed=NETWORK_YES,
+                   phone_lines=(_voice_line(handsets=0,
+                                            voice_delivery=VOICE_DELIVERY_VOICEMAIL,
+                                            voicemail_slack_channel="#vm"),),
+                   printers=(_printer(volume=VOLUME_UNDER_50, location="Desk"),))
+    lines = expand_to_lines(_answers(spaces=[space]))
+    assert [l.service_code for l in lines][-1] == "PRINTER"
+    printer = lines[-1]
+    assert printer.space_id == space.space_id
+    assert printer.location == "Desk"
+    assert printer.config["volume"] == VOLUME_UNDER_50
+    assert printer.config["open_questions"] == [QUESTION_LOW_VOLUME]
