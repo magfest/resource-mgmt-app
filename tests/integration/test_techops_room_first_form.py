@@ -2194,3 +2194,15 @@ def test_a_failed_submit_keeps_the_typed_payments_block(app, client,
     assert re.search(
         rf'<option value="{sid}"[^>]*selected', body)
     assert "Badge scanners or printers" not in body
+
+
+def test_the_order_preview_describes_printers_and_payments(app, client,
+                                                         techops_portfolio):
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    body = client.post(techops_portfolio["preview_url"],
+                       data=_printer_and_payments_post(sid)).get_data(as_text=True)
+    rows = _preview_rows(body)
+    specs = {row[1]: row[3] for row in rows}
+    assert "Ethernet, 250 to 500 pages/day" in specs["Printer"]
+    assert specs["Taking payments (card or cash)"].startswith("4 checkout points, cash")

@@ -154,6 +154,20 @@
                   <div class="muted small">{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
                 {% elif st and st.code == "NO_SERVICES" %}
                   <div style="font-size: 13px; max-width: 360px;"><strong>Reason:</strong> {{ (detail.description or 'No reason given.')[:120] }}{% if detail.description and detail.description|length > 120 %}...{% endif %}</div>
+                {% elif st and st.code == "PRINTER" %}
+                  {% set printer_cfg = detail.config or {} %}
+                  <div style="font-size: 13px;">
+                    <strong>{{ {'ETHERNET': 'Ethernet', 'USB': 'USB'}.get(printer_cfg.get('connectivity'), 'Connection not given') }}, {{ {'UNDER_50': 'under 50 pages/day', '50_250': '50 to 250 pages/day', '250_500': '250 to 500 pages/day', 'OVER_500': 'more than 500 pages/day'}.get(printer_cfg.get('volume'), 'volume not given') }}</strong>
+                    {{ question_badge(detail) }}
+                  </div>
+                  <div class="muted small">{{ (detail.location or '-')[:120] }}</div>
+                {% elif st and st.code == "PAYMENTS" %}
+                  {% set pay_cfg = detail.config or {} %}
+                  <div style="font-size: 13px;">
+                    <strong>{{ detail.quantity or 0 }} checkout point{{ 's' if detail.quantity != 1 else '' }}</strong>
+                    {{ question_badge(detail) }}
+                  </div>
+                  <div class="muted small">{{ [('cash' if pay_cfg.get('accepts_cash') else ''), ('paper receipts' if pay_cfg.get('paper_receipts') else ''), ('also used elsewhere' if pay_cfg.get('mobile') else '')]|select|join(', ') or '-' }}</div>
                 {% elif st and st.code == "ETHERNET" %}
                   <div style="font-size: 13px;">
                     <strong>{{ 'Wired network' }}</strong>
