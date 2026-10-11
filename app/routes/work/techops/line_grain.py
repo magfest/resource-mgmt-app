@@ -20,6 +20,8 @@ SERVICE_ETHERNET = "ETHERNET"
 SERVICE_PHONE_NUMBER = "PHONE_NUMBER"
 SERVICE_DESK_PHONE = "DESK_PHONE"
 SERVICE_NO_SERVICES = "NO_SERVICES"
+SERVICE_PRINTER = "PRINTER"
+SERVICE_PAYMENTS = "PAYMENTS"
 
 ANSWER_NEEDS = "NEEDS"
 ANSWER_NOTHING = "NOTHING"
@@ -61,13 +63,37 @@ NETWORK_NO = "NO"
 NETWORK_UNSURE = "UNSURE"
 NETWORK_ANSWERS = (NETWORK_YES, NETWORK_NO, NETWORK_UNSURE)
 
-NETWORK_KINDS = ("COMPUTERS", "STREAMING", "SCANNERS", "CONSOLES", "OTHER")
+KIND_PRINTERS = "PRINTERS"
+NETWORK_KINDS = ("COMPUTERS", "STREAMING", "SCANNERS", KIND_PRINTERS,
+                 "CONSOLES", "OTHER")
 NETWORK_COUNTS = ("1-2", "3-5", "6-10", "10+")
 
 TRAFFIC_INTERNET = "INTERNET"
 TRAFFIC_LOCAL = "LOCAL"
 TRAFFIC_UNSURE = "UNSURE"
 NETWORK_TRAFFIC = (TRAFFIC_INTERNET, TRAFFIC_LOCAL, TRAFFIC_UNSURE)
+
+CONNECTIVITY_ETHERNET = "ETHERNET"
+CONNECTIVITY_USB = "USB"
+PRINTER_CONNECTIVITY = (CONNECTIVITY_ETHERNET, CONNECTIVITY_USB)
+
+# Pages per day. The three upper bands map to TechOps's low, mid, and high
+# volume printers. Under 50 maps to none: TechOps asks whether a public
+# printer at a helpdesk would serve instead.
+VOLUME_UNDER_50 = "UNDER_50"
+VOLUME_50_250 = "50_250"
+VOLUME_250_500 = "250_500"
+VOLUME_OVER_500 = "OVER_500"
+PRINTER_VOLUMES = (VOLUME_UNDER_50, VOLUME_50_250, VOLUME_250_500,
+                   VOLUME_OVER_500)
+
+QUESTION_CONNECTIVITY = "connectivity"
+QUESTION_VOLUME = "volume"
+QUESTION_LOW_VOLUME = "low_volume"
+QUESTION_DAILY_SALES = "daily_sales"
+QUESTION_DAILY_TRANSACTIONS = "daily_transactions"
+QUESTION_CATALOG_SIZE = "catalog_size"
+QUESTION_MOBILE_WHERE = "mobile_where"
 
 QUESTION_NETWORK_UNSURE = "network_unsure"
 QUESTION_NETWORK_KINDS = "kinds"
@@ -117,6 +143,36 @@ class PhoneLine:
 
 
 @dataclass(frozen=True)
+class PrinterAnswer:
+    location: str = ""
+    usage: str = ""
+    connectivity: str = ""
+    volume: str = ""
+
+
+@dataclass(frozen=True)
+class PaymentsAnswer:
+    """One department's payments setup, answered once for the whole request.
+
+    Not one card reader. Treasury chooses the hardware during its follow-up;
+    a checkout point is a place one customer pays at a time.
+    """
+    home_space_id: int | None = None
+    # The home base's name on this event, kept only so a refusal can name
+    # the room. Never stored; a reloaded block leaves it blank.
+    home_space_name: str = ""
+    checkout_points: int | None = None
+    managing_department: str = ""
+    daily_sales_dollars: int | None = None
+    daily_transactions: int | None = None
+    catalog_size: int | None = None
+    accepts_cash: bool = False
+    paper_receipts: bool = False
+    mobile: bool = False
+    mobile_where: str = ""
+
+
+@dataclass(frozen=True)
 class SpaceAnswer:
     space_id: int
     display_name: str
@@ -138,6 +194,7 @@ class SpaceAnswer:
     network_traffic: str = ""
     network_notes: str = ""
     phone_lines: tuple[PhoneLine, ...] = ()
+    printers: tuple[PrinterAnswer, ...] = ()
     notes: str = ""
 
 
@@ -158,6 +215,7 @@ class RequestAnswers:
     action: str
     spaces: tuple[SpaceAnswer, ...] = ()
     department_wide: tuple[DepartmentWideAnswer, ...] = ()
+    payments: "PaymentsAnswer | None" = None
     # Which card's own "Save this space" button posted this save, or None
     # for the bottom Save Draft / Submit buttons. Carried through to the
     # post-save redirect (?open=<id>) so the requester lands back on the
@@ -173,6 +231,7 @@ class PlannedLine:
     usage: str | None = None
     description: str | None = None
     config: dict | None = None
+    quantity: int | None = None
     purpose: str | None = None
     internal_only: bool = False
     # Position of this line's parent within the returned list, not a
@@ -182,14 +241,55 @@ class PlannedLine:
     parent_index: int | None = None
 
 
-def wifi_is_forced(space: SpaceAnswer) -> bool:
+def network_is_forced(space: SpaceAnswer) -> bool:
+    """A printer on Ethernet needs the room's network answer to be yes or unsure."""
+    return any(p.connectivity == CONNECTIVITY_ETHERNET for p in space.printers)
+
+
+def effective_network_kinds(space: SpaceAnswer) -> tuple[str, ...]:
+    """Return the ticked kinds, plus PRINTERS when an Ethernet printer is listed.
+
+    The requester already said the printer is wired. Asking them to tick
+    the kind as well would raise a missing-kinds question about a room
+    whose gear is fully described.
+    """
+    if network_is_forced(space) and KIND_PRINTERS not in space.network_kinds:
+        return space.network_kinds + (KIND_PRINTERS,)
+    return space.network_kinds
+
+
+def wifi_is_forced(space: SpaceAnswer, payments_home_id: int | None = None) -> bool:
     """Invariant 2: gear in the room means coverage for it.
 
-    True when a decline needs a stated reason to be accepted. Does not
-    decide whether a WiFi line exists; that is a plain read of
-    `wifi_requested` in `_expand_space`.
+    True when a decline needs a stated reason to be accepted. A room whose
+    only wired gear is printers needs a cable, not coverage. A payments
+    home base needs WiFi for its card readers. Does not decide whether a
+    WiFi line exists; that is a plain read of `wifi_requested`.
     """
-    return space.network_needed == NETWORK_YES or bool(space.phone_lines)
+    wired = (space.network_needed == NETWORK_YES
+             and set(effective_network_kinds(space)) != {KIND_PRINTERS})
+    is_home_base = (payments_home_id is not None
+                    and space.space_id == payments_home_id)
+    return wired or bool(space.phone_lines) or is_home_base
+
+
+WIFI_FORCED_BY_GEAR = "gear"
+WIFI_FORCED_BY_PAYMENTS = "payments"
+
+
+def wifi_forced_reason(space: SpaceAnswer,
+                       payments_home_id: int | None = None) -> str | None:
+    """Return why WiFi needs an answer here, or None when it does not.
+
+    Gear outranks the home base: a room with both is told about its gear,
+    which the requester can see on the card. "payments" means the home
+    base is the only cause, so the message must not mention wired gear.
+    """
+    if not wifi_is_forced(space, payments_home_id):
+        return None
+    if wifi_is_forced(space):
+        return WIFI_FORCED_BY_GEAR
+    return WIFI_FORCED_BY_PAYMENTS
 
 
 def _sharing_key(space_id: int, line_index: int) -> str:
@@ -259,7 +359,7 @@ def network_open_questions(space: SpaceAnswer) -> list[str]:
     """
     if space.network_needed == NETWORK_UNSURE:
         return [QUESTION_NETWORK_UNSURE]
-    if space.network_needed == NETWORK_YES and not space.network_kinds:
+    if space.network_needed == NETWORK_YES and not effective_network_kinds(space):
         return [QUESTION_NETWORK_KINDS]
     return []
 
@@ -347,6 +447,83 @@ def _phone_config(line: PhoneLine) -> dict:
     return config
 
 
+def printer_open_questions(printer: PrinterAnswer) -> list[str]:
+    questions = []
+    if printer.connectivity not in PRINTER_CONNECTIVITY:
+        questions.append(QUESTION_CONNECTIVITY)
+    if printer.volume not in PRINTER_VOLUMES:
+        questions.append(QUESTION_VOLUME)
+    elif printer.volume == VOLUME_UNDER_50:
+        questions.append(QUESTION_LOW_VOLUME)
+    return questions
+
+
+def _printer_config(printer: PrinterAnswer) -> dict:
+    config = {
+        "connectivity": (printer.connectivity
+                         if printer.connectivity in PRINTER_CONNECTIVITY else None),
+        "volume": printer.volume if printer.volume in PRINTER_VOLUMES else None,
+    }
+    questions = printer_open_questions(printer)
+    if questions:
+        config["open_questions"] = questions
+    return config
+
+
+def payments_home_id(answers: RequestAnswers) -> int | None:
+    return answers.payments.home_space_id if answers.payments else None
+
+
+def payments_open_questions(payments: PaymentsAnswer) -> list[str]:
+    """Name the estimates left blank. Treasury is calling the department anyway."""
+    questions = []
+    if payments.daily_sales_dollars is None:
+        questions.append(QUESTION_DAILY_SALES)
+    if payments.daily_transactions is None:
+        questions.append(QUESTION_DAILY_TRANSACTIONS)
+    if payments.catalog_size is None:
+        questions.append(QUESTION_CATALOG_SIZE)
+    if payments.mobile and not payments.mobile_where:
+        questions.append(QUESTION_MOBILE_WHERE)
+    return questions
+
+
+def _payments_config(payments: PaymentsAnswer) -> dict:
+    config = {
+        "managing_department": payments.managing_department,
+        "daily_sales_dollars": payments.daily_sales_dollars,
+        "daily_transactions": payments.daily_transactions,
+        "catalog_size": payments.catalog_size,
+        "accepts_cash": payments.accepts_cash,
+        "paper_receipts": payments.paper_receipts,
+        "mobile": payments.mobile,
+        # A value left behind by a hidden question is not an answer.
+        "mobile_where": payments.mobile_where if payments.mobile else "",
+    }
+    questions = payments_open_questions(payments)
+    if questions:
+        config["open_questions"] = questions
+    return config
+
+
+def payments_from_line(space_id: int | None, quantity: int | None,
+                       config: dict | None) -> PaymentsAnswer:
+    """Rebuild the answer from a saved PAYMENTS line, for the form's reload."""
+    cfg = config or {}
+    return PaymentsAnswer(
+        home_space_id=space_id,
+        checkout_points=quantity,
+        managing_department=cfg.get("managing_department") or "",
+        daily_sales_dollars=cfg.get("daily_sales_dollars"),
+        daily_transactions=cfg.get("daily_transactions"),
+        catalog_size=cfg.get("catalog_size"),
+        accepts_cash=bool(cfg.get("accepts_cash")),
+        paper_receipts=bool(cfg.get("paper_receipts")),
+        mobile=bool(cfg.get("mobile")),
+        mobile_where=cfg.get("mobile_where") or "",
+    )
+
+
 def expand_to_lines(answers: RequestAnswers) -> list[PlannedLine]:
     """Return the lines this request will create, in line-number order.
 
@@ -384,6 +561,16 @@ def expand_to_lines(answers: RequestAnswers) -> list[PlannedLine]:
             location=entry.location or None,
             usage=entry.usage or None,
             description=entry.description or None,
+        ))
+
+    # Answered once per department, filed under the home base room so
+    # reviewers and the order sheet see it where the hardware lives.
+    if answers.payments is not None:
+        lines.append(PlannedLine(
+            service_code=SERVICE_PAYMENTS,
+            space_id=answers.payments.home_space_id,
+            quantity=answers.payments.checkout_points,
+            config=_payments_config(answers.payments),
         ))
 
     # The whole-department affirmation. validate() refuses to combine this
@@ -481,7 +668,7 @@ def _expand_space(
     # they sign off on is "wired network for this room".
     if space.network_needed in (NETWORK_YES, NETWORK_UNSURE):
         config = {
-            "kinds": list(space.network_kinds),
+            "kinds": list(effective_network_kinds(space)),
             "rough_count": space.network_count or None,
             "traffic": space.network_traffic or None,
         }
@@ -548,5 +735,14 @@ def _expand_space(
                 usage=None,
                 config={"open_questions": [QUESTION_LOCATION]},
             ))
+
+    for printer in space.printers:
+        lines.append(PlannedLine(
+            service_code=SERVICE_PRINTER,
+            space_id=space.space_id,
+            location=printer.location or None,
+            usage=printer.usage or None,
+            config=_printer_config(printer),
+        ))
 
     return lines, handset_keys, number_positions

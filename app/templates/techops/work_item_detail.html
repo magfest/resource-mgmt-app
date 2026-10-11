@@ -1,3 +1,4 @@
+{% from "techops/_printer_payments_config.html" import render_printer_config, render_payments_config with context %}
 {% from "components/_request_tabs.html" import request_tabs with context %}
 {% from "techops/_network_config.html" import render_network_config with context %}
 {% from "techops/_phone_number_config.html" import render_phone_number_config, render_desk_phone_location, question_badge with context %}
@@ -246,6 +247,10 @@
                       <div>{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
                     {% elif st and st.code == "NO_SERVICES" %}
                       <div><strong>Reason:</strong> {{ detail.description or 'No reason given.' }}</div>
+                    {% elif st and st.code == "PRINTER" %}
+                      {{ render_printer_config(detail) }}
+                    {% elif st and st.code == "PAYMENTS" %}
+                      {{ render_payments_config(detail) }}
                     {% elif st and st.code == "ETHERNET" %}
                       <div class="meta" style="margin-top: 12px;">
                         {{ render_network_config(detail) }}

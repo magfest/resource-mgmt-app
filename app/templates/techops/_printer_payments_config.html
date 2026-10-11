@@ -1,0 +1,38 @@
+{# Shared by line_review and work_item_detail so the reviewer views cannot
+   drift. quick_review is a dense table and keeps its own two-line rows.
+
+   A key named in config.open_questions is shown as a badge, not as an
+   empty value; an empty value reads as "nothing needed here". #}
+{% from "techops/_phone_number_config.html" import question_badge %}
+{% set CONNECTIVITY_WORDS = {'ETHERNET': 'Ethernet', 'USB': 'USB'} %}
+{% set VOLUME_WORDS = {
+     'UNDER_50': 'Under 50 pages/day (ask whether a helpdesk printer would do)',
+     '50_250': '50 to 250 pages/day (low volume)',
+     '250_500': '250 to 500 pages/day (mid volume)',
+     'OVER_500': 'More than 500 pages/day (high volume)'} %}
+
+{% macro figure(value) %}{{ '{:,}'.format(value) if value is not none else 'Not given' }}{% endmacro %}
+
+{% macro render_printer_config(detail) %}
+  {% set cfg = detail.config or {} %}
+  <div>{{ question_badge(detail) }}</div>
+  <div><strong>Connection:</strong> {{ CONNECTIVITY_WORDS.get(cfg.get('connectivity'), 'Not given, ask the requester') }}</div>
+  <div><strong>Volume:</strong> {{ VOLUME_WORDS.get(cfg.get('volume'), 'Not given, ask the requester') }}</div>
+  <div><strong>Where in the room:</strong> {{ detail.location or '-' }}</div>
+  <div><strong>Prints:</strong></div>
+  <div style="white-space: pre-wrap;">{{ detail.usage or '-' }}</div>
+{% endmacro %}
+
+{% macro render_payments_config(detail) %}
+  {% set cfg = detail.config or {} %}
+  <div>{{ question_badge(detail) }}</div>
+  <div><strong>Checkout points:</strong> {{ detail.quantity or '-' }}</div>
+  <div><strong>Department in charge:</strong> {{ cfg.get('managing_department') or '-' }}</div>
+  <div><strong>Sales per day:</strong> {% if cfg.get('daily_sales_dollars') is not none %}${% endif %}{{ figure(cfg.get('daily_sales_dollars')) }}</div>
+  <div><strong>Transactions per day:</strong> {{ figure(cfg.get('daily_transactions')) }}</div>
+  <div><strong>Items for sale:</strong> {{ figure(cfg.get('catalog_size')) }}</div>
+  <div><strong>Takes cash:</strong> {{ 'Yes' if cfg.get('accepts_cash') else 'No' }}</div>
+  <div><strong>Paper receipts:</strong> {{ 'Yes' if cfg.get('paper_receipts') else 'No' }}</div>
+  <div><strong>Used outside the home base:</strong>
+    {% if cfg.get('mobile') %}Yes, {{ cfg.get('mobile_where') or 'where not given' }}{% else %}No{% endif %}</div>
+{% endmacro %}

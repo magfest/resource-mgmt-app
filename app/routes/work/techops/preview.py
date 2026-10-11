@@ -22,7 +22,9 @@ from .line_grain import (
     SERVICE_DESK_PHONE,
     SERVICE_ETHERNET,
     SERVICE_NO_SERVICES,
+    SERVICE_PAYMENTS,
     SERVICE_PHONE_NUMBER,
+    SERVICE_PRINTER,
     SERVICE_WIFI,
     expand_to_lines,
 )
@@ -50,7 +52,8 @@ _PURPOSE_LABELS = {
 _KIND_LABELS = {
     "COMPUTERS": "laptops or desktops",
     "STREAMING": "streaming or capture gear",
-    "SCANNERS": "badge scanners or printers",
+    "SCANNERS": "badge scanners",
+    "PRINTERS": "printers",
     "CONSOLES": "consoles or arcade hardware",
     "OTHER": "something else",
 }
@@ -67,6 +70,21 @@ _DELIVERY_LABELS = {
     "VOICEMAIL": "straight to voicemail",
     "NONE": "no voice",
 }
+
+_CONNECTIVITY_LABELS = {"ETHERNET": "Ethernet", "USB": "USB"}
+_VOLUME_LABELS = {
+    "UNDER_50": "under 50 pages/day",
+    "50_250": "50 to 250 pages/day",
+    "250_500": "250 to 500 pages/day",
+    "OVER_500": "more than 500 pages/day",
+}
+
+
+def _questions_suffix(cfg: dict) -> str:
+    count = len(cfg.get("open_questions") or [])
+    if not count:
+        return ""
+    return f" — {count} question{'s' if count != 1 else ''} unanswered"
 
 
 def _spec_for(entry: PlannedLine, ring_line_number: int | None) -> str:
@@ -118,6 +136,22 @@ def _spec_for(entry: PlannedLine, ring_line_number: int | None) -> str:
         ring = (f"Rings the number on line {ring_line_number}."
                if ring_line_number is not None else PHONE_LINE_NOT_CHOSEN)
         return f"{entry.location} — {ring}" if entry.location else ring
+    if code == SERVICE_PRINTER:
+        cfg = entry.config or {}
+        bits = [_CONNECTIVITY_LABELS.get(cfg.get("connectivity"), "connection not given"),
+                _VOLUME_LABELS.get(cfg.get("volume"), "volume not given")]
+        return ", ".join(bits) + _questions_suffix(cfg)
+    if code == SERVICE_PAYMENTS:
+        cfg = entry.config or {}
+        points = entry.quantity or 0
+        bits = [f"{points} checkout point{'s' if points != 1 else ''}"]
+        if cfg.get("accepts_cash"):
+            bits.append("cash")
+        if cfg.get("paper_receipts"):
+            bits.append("receipts")
+        if cfg.get("mobile"):
+            bits.append("also used elsewhere")
+        return ", ".join(bits) + _questions_suffix(cfg)
     if code == SERVICE_NO_SERVICES:
         return entry.description or "No services needed for this space."
     # RADIO_CHANNEL, OTHER, and any future department-wide code: location +
@@ -185,6 +219,7 @@ def rows_from_saved_lines(work_item, space_names: dict) -> list[dict]:
             usage=detail.usage,
             description=detail.description,
             config=detail.config,
+            quantity=detail.quantity,
             purpose=detail.purpose,
             internal_only=detail.internal_only,
         )

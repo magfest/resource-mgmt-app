@@ -25,12 +25,19 @@ from app.models import (
 from app.routes.spaces.queries import offerable_spaces, spaces_for_department
 from .line_grain import (
     NETWORK_YES,
+    PaymentsAnswer,
     PhoneHandset,
     PhoneLine,
+    PrinterAnswer,
     PURPOSE_BOTH,
     PURPOSE_TEXT,
+    SERVICE_PAYMENTS,
+    SERVICE_PRINTER,
     SOURCE_NEW,
     SpaceAnswer,
+    network_is_forced,
+    payments_from_line,
+    wifi_forced_reason,
     wifi_is_forced,
 )
 
@@ -38,7 +45,7 @@ from .line_grain import (
 # summary (item 1: a closed <details> must explain itself). PHONE_NUMBER
 # stands in for the whole "Phone System" section; DESK_PHONE's own
 # description covers only the handset, not the line.
-_COLLAPSIBLE_SERVICE_CODES = ("ETHERNET", "PHONE_NUMBER")
+_COLLAPSIBLE_SERVICE_CODES = ("ETHERNET", "PHONE_NUMBER", "PRINTER")
 
 
 def collapsible_descriptions() -> dict[str, str]:
@@ -152,6 +159,10 @@ def _redisplay_extras(work_item) -> dict[int, dict]:
 
     by_space: dict[int, list[TechOpsLineDetail]] = {}
     for detail in details:
+        # PAYMENTS carries the home base in space_id but is answered at
+        # department level; it is not part of any card's answers.
+        if detail.service_type.code == SERVICE_PAYMENTS:
+            continue
         by_space.setdefault(detail.space_id, []).append(detail)
 
     # A PHONE_NUMBER line's position within its own space, keyed by its
@@ -282,10 +293,21 @@ def _redisplay_extras(work_item) -> dict[int, dict]:
             ))
             next_index += 1
 
+        printers = tuple(
+            PrinterAnswer(
+                location=d.location or "",
+                usage=d.usage or "",
+                connectivity=(d.config or {}).get("connectivity") or "",
+                volume=(d.config or {}).get("volume") or "",
+            )
+            for d in rows if d.service_type.code == SERVICE_PRINTER
+        )
+
         extras[space_id] = {
             "wifi_description": (wifi_line.description or "") if wifi_line else "",
             "network": network,
             "phone_lines": tuple(phone_lines),
+            "printers": printers,
         }
     return extras
 
@@ -300,6 +322,17 @@ def count_filled_phone(phone_lines: tuple) -> tuple[int, int]:
     filled location (_parse_handsets). Returns (line_count, handset_count).
     """
     return len(phone_lines), sum(len(line.handsets) for line in phone_lines)
+
+
+def saved_payments(work_item) -> PaymentsAnswer | None:
+    """Return the saved payments block, or None when the draft has none."""
+    if work_item is None:
+        return None
+    for line in work_item.lines:
+        detail = line.techops_detail
+        if detail is not None and detail.service_type.code == SERVICE_PAYMENTS:
+            return payments_from_line(detail.space_id, detail.quantity, detail.config)
+    return None
 
 
 def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
@@ -385,8 +418,10 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
         "network": {"needed": "", "kinds": (), "count": "", "traffic": "",
                     "notes": ""},
         "phone_lines": (),
+        "printers": (),
     }
     descriptions = collapsible_descriptions()
+    home_id = (saved_payments(work_item) or PaymentsAnswer()).home_space_id
 
     cards = []
     for entry in entries:
@@ -415,6 +450,7 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
             network_traffic=extra["network"]["traffic"],
             network_notes=extra["network"]["notes"],
             phone_lines=extra["phone_lines"],
+            printers=extra["printers"],
             notes=(row.notes or "") if row else "",
         )
         phone_line_count, phone_handset_count = count_filled_phone(answer.phone_lines)
@@ -439,8 +475,13 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
             "phone_line_count": phone_line_count,
             "phone_handset_count": phone_handset_count,
             "phone_description": descriptions.get("PHONE_NUMBER", ""),
+            "printers": answer.printers,
+            "printer_count": len(answer.printers),
+            "printer_description": descriptions.get("PRINTER", ""),
             "notes": answer.notes,
-            "wifi_forced": wifi_is_forced(answer),
+            "wifi_forced": wifi_is_forced(answer, home_id),
+            "wifi_forced_reason": wifi_forced_reason(answer, home_id),
+            "network_forced": network_is_forced(answer),
         })
     return cards
 
@@ -474,6 +515,7 @@ def redisplay_cards(cards: list[dict], answers,
     """
     if answers is None:
         return cards
+    home_id = answers.payments.home_space_id if answers.payments else None
     posted_by_id = {a.space_id: a for a in answers.spaces}
     known_ids: set[int] = set()
     merged = []
@@ -500,8 +542,12 @@ def redisplay_cards(cards: list[dict], answers,
             "phone_lines": posted.phone_lines,
             "phone_line_count": posted_line_count,
             "phone_handset_count": posted_handset_count,
+            "printers": posted.printers,
+            "printer_count": len(posted.printers),
             "notes": posted.notes,
-            "wifi_forced": wifi_is_forced(posted),
+            "wifi_forced": wifi_is_forced(posted, home_id),
+            "wifi_forced_reason": wifi_forced_reason(posted, home_id),
+            "network_forced": network_is_forced(posted),
         })
 
     for space_id, posted in posted_by_id.items():
@@ -532,8 +578,13 @@ def redisplay_cards(cards: list[dict], answers,
             "phone_line_count": new_line_count,
             "phone_handset_count": new_handset_count,
             "phone_description": descriptions.get("PHONE_NUMBER", ""),
+            "printers": posted.printers,
+            "printer_count": len(posted.printers),
+            "printer_description": descriptions.get("PRINTER", ""),
             "notes": posted.notes,
-            "wifi_forced": wifi_is_forced(posted),
+            "wifi_forced": wifi_is_forced(posted, home_id),
+            "wifi_forced_reason": wifi_forced_reason(posted, home_id),
+            "network_forced": network_is_forced(posted),
         })
     return merged
 

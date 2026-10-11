@@ -38,8 +38,12 @@ from .line_grain import (
     DepartmentWideAnswer,
     NETWORK_ANSWERS,
     NETWORK_KINDS,
+    NETWORK_UNSURE,
+    NETWORK_YES,
+    PaymentsAnswer,
     PhoneHandset,
     PhoneLine,
+    PrinterAnswer,
     VOICE_DELIVERY_NONE,
     QUESTION_CAPABILITIES,
     QUESTION_FORWARD_TARGET,
@@ -51,9 +55,12 @@ from .line_grain import (
     RequestAnswers,
     SOURCE_NEW,
     SpaceAnswer,
+    WIFI_FORCED_BY_PAYMENTS,
     expand_to_lines,
+    network_is_forced,
+    payments_home_id,
     phone_open_questions,
-    wifi_is_forced,
+    wifi_forced_reason,
 )
 
 if TYPE_CHECKING:
@@ -94,6 +101,7 @@ MAX_SPACES_PER_REQUEST = 100
 MAX_DROPS_PER_SPACE = 25
 MAX_PHONE_LINES_PER_SPACE = 10
 MAX_HANDSETS_PER_LINE = 20
+MAX_PRINTERS_PER_SPACE = 10
 MAX_DEPARTMENT_WIDE_INSTANCES = 50
 
 
@@ -237,6 +245,31 @@ def _parse_handsets(space_id: int, line_n: int, form: "MultiDict",
     return tuple(handsets)
 
 
+def _parse_printers(space_id: int, form: "MultiDict",
+                    errors: list[str], label: str) -> tuple:
+    """Walk one space's printer rows into PrinterAnswer entries.
+
+    A row counts when any of its inputs holds content; fully blank rows
+    are untouched slots and are skipped.
+    """
+    printers = []
+    overflow = False
+    for n in range(1, MAX_PRINTERS_PER_SPACE + 2):
+        prefix = f"space_{space_id}_PRINTER_{n}"
+        fields = {key: (form.get(f"{prefix}_{key}") or "").strip()
+                  for key in ("location", "usage", "connectivity", "volume")}
+        if not any(fields.values()):
+            continue
+        if n > MAX_PRINTERS_PER_SPACE:
+            overflow = True
+            break
+        printers.append(PrinterAnswer(**fields))
+    if overflow:
+        errors.append(
+            f"{label}: at most {MAX_PRINTERS_PER_SPACE} printers per space.")
+    return tuple(printers)
+
+
 def _parse_phone_lines(space_id: int, form: "MultiDict",
                        errors: list[str], label: str) -> tuple:
     """Walk one space's phone line fields into PhoneLine entries.
@@ -357,6 +390,7 @@ def _parse_space(space_id: int, display_name: str, form: "MultiDict",
         wifi_description=(form.get(f"space_{space_id}_WIFI_description") or "").strip(),
         **_parse_network(space_id, form),
         phone_lines=_parse_phone_lines(space_id, form, errors, display_name),
+        printers=_parse_printers(space_id, form, errors, display_name),
         notes=(form.get(f"space_{space_id}_notes") or "").strip(),
     )
 
@@ -403,6 +437,68 @@ def _parse_department_wide(form: "MultiDict", errors: list[str]) -> tuple:
         ))
 
     return tuple(entries)
+
+
+def _parse_whole_number(raw: str | None, label: str,
+                        errors: list[str]) -> int | None:
+    """Read an approximate figure. Blank is None; a refused value adds an error.
+
+    Requesters type money the way they write it, so commas and a leading
+    dollar sign are stripped rather than refused.
+    """
+    text = (raw or "").strip().replace(",", "").lstrip("$").strip()
+    if not text:
+        return None
+    try:
+        value = int(text)
+    except ValueError:
+        value = -1
+    if value < 0 or value > MAX_INT4:
+        errors.append(f"Taking payments: {label} must be a whole number.")
+        return None
+    return value
+
+
+def _parse_payments(form: "MultiDict", offerable_spaces: dict[int, str],
+                    errors: list[str]) -> PaymentsAnswer | None:
+    """Return the payments block, or None when the requester left it untouched.
+
+    The department name is prefilled, so it alone does not count as
+    touching the block. Every other field does, checkboxes included; a
+    lone ticked box dropped on save would read as an answer that saved.
+    """
+    raw_home = (form.get("payments_home_space_id") or "").strip()
+    home_id = _space_id_or_none(raw_home)
+    # Same gate as the space cards. The select only lists this request's
+    # rooms, so an id outside the offerable set is a crafted POST; saving
+    # it would file the payments line under another venue's room.
+    if raw_home and home_id not in offerable_spaces:
+        errors.append(
+            "Taking payments: the home base room is not available at this "
+            "event. Pick another.")
+        home_id = None
+    payments = PaymentsAnswer(
+        home_space_id=home_id,
+        home_space_name=offerable_spaces.get(home_id) or "",
+        checkout_points=_parse_whole_number(
+            form.get("payments_checkout_points"), "checkout points", errors),
+        managing_department=(form.get("payments_managing_department") or "").strip(),
+        daily_sales_dollars=_parse_whole_number(
+            form.get("payments_daily_sales"), "sales per day", errors),
+        daily_transactions=_parse_whole_number(
+            form.get("payments_daily_transactions"), "transactions per day", errors),
+        catalog_size=_parse_whole_number(
+            form.get("payments_catalog_size"), "items for sale", errors),
+        accepts_cash=form.get("payments_accepts_cash") == "1",
+        paper_receipts=form.get("payments_paper_receipts") == "1",
+        mobile=form.get("payments_mobile") == "1",
+        mobile_where=(form.get("payments_mobile_where") or "").strip(),
+    )
+    touched = replace(payments, managing_department="") != PaymentsAnswer()
+    # A refused number is still a touched field: keep the block so the
+    # redisplay shows the rest of what was typed.
+    refused = any(e.startswith("Taking payments:") for e in errors)
+    return payments if (touched or refused) else None
 
 
 def parse_form(form: "MultiDict",
@@ -465,6 +561,7 @@ def parse_form(form: "MultiDict",
         action=form.get("action") or ACTION_SAVE_DRAFT,
         spaces=tuple(spaces),
         department_wide=_parse_department_wide(form, errors),
+        payments=_parse_payments(form, offerable_spaces, errors),
         save_space_id=save_space_id,
     ), errors
 
@@ -490,6 +587,8 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
 
     if answers.action != ACTION_SUBMIT:
         return errors
+
+    home_id = payments_home_id(answers)
 
     if answers.no_services_needed and has_space_cards:
         errors.append(ValidationError(
@@ -530,25 +629,20 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
         # checkbox with extra clicks. A forced space folds "never
         # answered" into the same message as "declined with no reason":
         # both leave TechOps without a line or a stated reason for one.
+        forced_by = wifi_forced_reason(space, home_id)
         if space.wifi_requested is None:
-            if wifi_is_forced(space):
+            if forced_by:
                 errors.append(ValidationError(
-                    f"{name}: this space has wired gear, so say why it "
-                    "needs no WiFi, or tick WiFi.",
-                    sid,
-                ))
+                    _forced_wifi_message(name, forced_by), sid))
             else:
                 errors.append(ValidationError(
                     f"{name}: say whether this space needs WiFi.", sid))
-        elif (space.wifi_requested is False and wifi_is_forced(space)
+        elif (space.wifi_requested is False and forced_by
               and not space.wifi_declined_reason):
             # Invariant 2's escape hatch. No WiFi line exists to carry the
             # reason, so the reason is required here or the decline is lost.
             errors.append(ValidationError(
-                f"{name}: this space has wired gear, so say why it needs "
-                "no WiFi, or tick WiFi.",
-                sid,
-            ))
+                _forced_wifi_message(name, forced_by), sid))
 
         # The gate takes thought, and a question that takes thought with no
         # consequence for skipping gets skipped. "Not sure" completes it, so
@@ -560,6 +654,16 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
                 sid,
             ))
 
+        # An Ethernet printer needs a cable regardless of what the requester
+        # answered; "No" would drop the network line it depends on.
+        if (network_is_forced(space)
+                and space.network_needed not in (NETWORK_YES, NETWORK_UNSURE)):
+            errors.append(ValidationError(
+                f"{name}: a printer here uses Ethernet, so answer Yes or "
+                "Not sure to the network question.",
+                sid,
+            ))
+
         for line in space.phone_lines:
             _validate_phone_line(name, sid, line, owners, all_keys, errors)
 
@@ -567,10 +671,12 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
         # omission; expand_to_lines() is the one place that knows whether
         # that answer produced anything. Checked against this space alone
         # (department_wide and no_services_needed stripped) so a real line
-        # elsewhere on the request cannot mask this card's emptiness.
+        # elsewhere on the request cannot mask this card's emptiness. The
+        # payments line stays only for its home base, where it is filed.
         space_only = replace(
             answers, spaces=(space,), department_wide=(),
             no_services_needed=False,
+            payments=answers.payments if home_id == sid else None,
         )
         if not expand_to_lines(space_only):
             errors.append(ValidationError(
@@ -579,6 +685,9 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
                 "\"Nothing needed\".",
                 sid,
             ))
+
+    if answers.payments is not None:
+        _validate_payments(answers, errors)
 
     # Only when nothing on the request was answered at all: a space marked
     # NEEDS that itself produces no lines already gets its own error above,
@@ -642,6 +751,49 @@ def _validate_phone_line(
             "voice, which has no handsets to place.",
             space_id,
         ))
+
+
+def _forced_wifi_message(name: str, forced_by: str) -> str:
+    """Word the forced-WiFi refusal by its cause, from wifi_forced_reason()."""
+    if forced_by == WIFI_FORCED_BY_PAYMENTS:
+        return (f"{name}: this room is the payments home base, so say why "
+                "it needs no WiFi, or tick WiFi.")
+    return (f"{name}: this space has wired gear, so say why it needs no "
+            "WiFi, or tick WiFi.")
+
+
+def _validate_payments(answers: "RequestAnswers", errors: list[str]) -> None:
+    """Refuse a payments block Treasury cannot act on.
+
+    Estimates left blank are open questions, not refusals. A missing home
+    base, count, or owner leaves Treasury nobody to call and nowhere to go.
+    """
+    payments = answers.payments
+    cards = {space.space_id: space for space in answers.spaces}
+    home = cards.get(payments.home_space_id)
+    if payments.home_space_id is None:
+        errors.append(ValidationError(
+            "Taking payments: pick the room that is home base."))
+    elif home is None:
+        room = (f"the home base room, {payments.home_space_name},"
+                if payments.home_space_name else "the home base room")
+        errors.append(ValidationError(
+            f"Taking payments: {room} is no longer on this request. "
+            "Pick another."))
+    elif home.answer == ANSWER_NOTHING:
+        # The home base needs WiFi, and a room marked "Nothing needed"
+        # produces no lines.
+        errors.append(ValidationError(
+            f"{home.display_name} is the payments home base, so it cannot "
+            "be marked Nothing needed.",
+            home.space_id,
+        ))
+    if not payments.checkout_points:
+        errors.append(ValidationError(
+            "Taking payments: say how many checkout points you need."))
+    if not payments.managing_department:
+        errors.append(ValidationError(
+            "Taking payments: say which department is in charge."))
 
 
 def upsert_request_detail(
@@ -791,7 +943,7 @@ def replace_lines(work_item: "WorkItem", answers: "RequestAnswers") -> None:
             space_id=entry.space_id,
             purpose=entry.purpose,
             internal_only=entry.internal_only,
-            quantity=None,
+            quantity=entry.quantity,
             config=entry.config,
         ))
     db.session.flush()

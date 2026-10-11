@@ -18,6 +18,11 @@ from app.routes.work.techops.line_grain import (
     VOICE_DELIVERY_NONE, VOICE_DELIVERY_VOICEMAIL, DepartmentWideAnswer,
     PhoneHandset, PhoneLine, RequestAnswers, SpaceAnswer,
     derive_internal_only, derive_purpose, expand_to_lines,
+    PrinterAnswer, KIND_PRINTERS, CONNECTIVITY_ETHERNET, CONNECTIVITY_USB,
+    VOLUME_UNDER_50, VOLUME_250_500, QUESTION_LOW_VOLUME,
+    network_is_forced, wifi_is_forced, wifi_forced_reason,
+    PaymentsAnswer, payments_from_line, payments_home_id,
+    QUESTION_DAILY_SALES,
 )
 
 
@@ -553,3 +558,96 @@ def test_wired_gear_still_forces_a_wifi_answer():
     assert wifi_is_forced(_wired()) is True
     assert wifi_is_forced(_space(network_needed=NETWORK_NO)) is False
     assert wifi_is_forced(_space(phone_lines=(_voice_line(),))) is True
+
+
+def _printer(connectivity=CONNECTIVITY_ETHERNET, volume=VOLUME_250_500, **kw):
+    return PrinterAnswer(connectivity=connectivity, volume=volume, **kw)
+
+
+def test_an_ethernet_printer_alone_adds_the_printers_kind_and_forces_no_wifi():
+    space = _space(network_needed=NETWORK_YES, printers=(_printer(),))
+    lines = expand_to_lines(_answers(spaces=[space]))
+    ethernet = next(l for l in lines if l.service_code == "ETHERNET")
+    assert ethernet.config["kinds"] == [KIND_PRINTERS]
+    assert "open_questions" not in ethernet.config
+    assert network_is_forced(space)
+    assert not wifi_is_forced(space)
+
+
+def test_a_usb_printer_forces_nothing_and_a_yes_with_other_kinds_still_forces_wifi():
+    usb = _space(network_needed=NETWORK_NO,
+                 printers=(_printer(connectivity=CONNECTIVITY_USB),))
+    assert not network_is_forced(usb)
+    mixed = _space(network_needed=NETWORK_YES, network_kinds=("COMPUTERS",),
+                   printers=(_printer(),))
+    assert wifi_is_forced(mixed)
+    bare_yes = _space(network_needed=NETWORK_YES)
+    assert wifi_is_forced(bare_yes)
+
+
+def test_printer_lines_follow_phone_lines_and_record_low_volume_as_a_question():
+    space = _space(network_needed=NETWORK_YES,
+                   phone_lines=(_voice_line(handsets=0,
+                                            voice_delivery=VOICE_DELIVERY_VOICEMAIL,
+                                            voicemail_slack_channel="#vm"),),
+                   printers=(_printer(volume=VOLUME_UNDER_50, location="Desk"),))
+    lines = expand_to_lines(_answers(spaces=[space]))
+    assert [l.service_code for l in lines][-1] == "PRINTER"
+    printer = lines[-1]
+    assert printer.space_id == space.space_id
+    assert printer.location == "Desk"
+    assert printer.config["volume"] == VOLUME_UNDER_50
+    assert printer.config["open_questions"] == [QUESTION_LOW_VOLUME]
+
+
+def _payments(**kw):
+    defaults = dict(home_space_id=1, checkout_points=3,
+                    managing_department="Merch", daily_sales_dollars=100000,
+                    daily_transactions=800, catalog_size=40)
+    defaults.update(kw)
+    return PaymentsAnswer(**defaults)
+
+
+def test_payments_emit_one_line_at_the_home_base_after_department_wide_lines():
+    answers = replace(
+        _answers(spaces=[_space(wifi_requested=True)],
+                 department_wide=[DepartmentWideAnswer(service_code="OTHER",
+                                                       description="Help")]),
+        payments=_payments(daily_sales_dollars=None, accepts_cash=True))
+    lines = expand_to_lines(answers)
+    assert [l.service_code for l in lines] == ["WIFI", "OTHER", "PAYMENTS"]
+    payments = lines[-1]
+    assert payments.space_id == 1
+    assert payments.quantity == 3
+    assert payments.config["accepts_cash"] is True
+    assert payments.config["open_questions"] == [QUESTION_DAILY_SALES]
+
+
+def test_mobile_where_is_dropped_when_mobile_is_unticked_and_round_trips_otherwise():
+    hidden = expand_to_lines(replace(
+        _answers(), payments=_payments(mobile=False, mobile_where="Concert hall")))[-1]
+    assert hidden.config["mobile_where"] == ""
+    shown = expand_to_lines(replace(
+        _answers(), payments=_payments(mobile=True, mobile_where="Concert hall")))[-1]
+    rebuilt = payments_from_line(shown.space_id, shown.quantity, shown.config)
+    assert rebuilt == _payments(mobile=True, mobile_where="Concert hall")
+
+
+def test_the_payments_home_base_forces_wifi_on_that_room_only():
+    answers = replace(_answers(spaces=[_space(1), _space(2)]),
+                      payments=_payments(home_space_id=2))
+    home = payments_home_id(answers)
+    assert home == 2
+    assert wifi_is_forced(answers.spaces[1], home)
+    assert not wifi_is_forced(answers.spaces[0], home)
+    assert payments_home_id(_answers()) is None
+
+
+def test_the_wifi_forcing_reason_names_the_home_base_only_when_nothing_else_forces():
+    """The requester is told why WiFi needs an answer. A home base with no
+    gear has no "wired gear" to point at."""
+    assert wifi_forced_reason(_space(1), payments_home_id=1) == "payments"
+    assert wifi_forced_reason(_wired(), payments_home_id=None) == "gear"
+    assert wifi_forced_reason(replace(_wired(), space_id=1),
+                              payments_home_id=1) == "gear"
+    assert wifi_forced_reason(_space(1), payments_home_id=2) is None
