@@ -112,6 +112,7 @@ def techops_request_new(event: str, dept: str):
         work_item=None,
         request_detail=None,
         existing_lines_by_code={},
+        payments=None,
         service_types=active_service_types(),
         # Defaults: account display name + email. Help text in the template
         # explains why someone might change these for a specific request.
@@ -210,6 +211,7 @@ def techops_request_create(event: str, dept: str):
                 no_services_needed=answers.no_services_needed,
             ),
             existing_lines_by_code=department_wide_redisplay(answers.department_wide),
+            payments=answers.payments,
             service_types=service_types_list,
             default_contact_name=answers.primary_contact_name,
             default_contact_email=answers.primary_contact_email,

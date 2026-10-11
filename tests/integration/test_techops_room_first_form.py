@@ -2121,3 +2121,59 @@ def test_printer_and_payments_seed_with_their_own_approval_groups(app):
     assert payments.default_approval_group.code == "TREASURY"
     assert payments.default_approval_group.work_type.code == "TECHOPS"
     assert payments.instance_noun is None
+
+
+def _printer_and_payments_post(space_id, **extra):
+    data = {
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "save_draft",
+        "space_ids": str(space_id),
+        f"space_{space_id}_answer": "NEEDS",
+        f"space_{space_id}_WIFI_enabled": "1",
+        f"space_{space_id}_NETWORK_needed": "YES",
+        f"space_{space_id}_PRINTER_1_connectivity": "ETHERNET",
+        f"space_{space_id}_PRINTER_1_volume": "250_500",
+        f"space_{space_id}_PRINTER_1_location": "Cash wrap",
+        "payments_home_space_id": str(space_id),
+        "payments_checkout_points": "4",
+        "payments_managing_department": "Merch",
+        "payments_accepts_cash": "1",
+    }
+    data.update(extra)
+    return data
+
+
+def test_a_saved_printer_and_payments_block_reload_into_the_form(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    client.post(techops_portfolio["new_request_url"],
+                data=_printer_and_payments_post(sid))
+    item = techops_portfolio["latest_item"]()
+    edit_url = (f"/{techops_portfolio['cycle'].code}/"
+                f"{techops_portfolio['department'].code}/techops/item/"
+                f"{item.public_id}/edit")
+    body = client.get(edit_url).get_data(as_text=True)
+    assert 'value="Cash wrap"' in body
+    assert re.search(r'name="payments_checkout_points"[^>]*value="4"', body)
+    assert re.search(r'name="payments_accepts_cash"[^>]*checked', body)
+    assert re.search(
+        rf'name="space_{sid}_NETWORK_kinds" value="PRINTERS"[^>]*checked', body)
+
+
+def test_the_payments_line_does_not_leak_into_the_home_base_card(
+        app, client, techops_portfolio):
+    from app.routes.work.techops.spaces import space_cards, saved_payments
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    client.post(techops_portfolio["new_request_url"],
+                data=_printer_and_payments_post(sid))
+    item = techops_portfolio["latest_item"]()
+    payments = saved_payments(item)
+    assert payments.home_space_id == sid and payments.checkout_points == 4
+    card = next(c for c in space_cards(item, techops_portfolio["department"].id,
+                                       techops_portfolio["cycle"])
+                if c["space"].id == sid)
+    assert len(card["printers"]) == 1
+    assert card["wifi_forced"] is True
