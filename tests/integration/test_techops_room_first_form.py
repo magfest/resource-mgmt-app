@@ -2109,3 +2109,15 @@ def test_the_requester_form_says_desk_phone_not_handset(
     visible = re.sub(r"<[^>]+>", " ", stripped)
     assert "handset" not in visible.lower()
     assert "phone line" not in visible.lower()
+
+
+def test_printer_and_payments_seed_with_their_own_approval_groups(app):
+    _seed_techops_worktype()
+    db.session.flush()
+    printer = TechOpsServiceType.query.filter_by(code="PRINTER").one()
+    payments = TechOpsServiceType.query.filter_by(code="PAYMENTS").one()
+    assert printer.default_approval_group.code == "TECHOPS_GEN"
+    assert printer.instance_noun == "printer"
+    assert payments.default_approval_group.code == "TREASURY"
+    assert payments.default_approval_group.work_type.code == "TECHOPS"
+    assert payments.instance_noun is None
