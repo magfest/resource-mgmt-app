@@ -662,7 +662,11 @@ def apply_review_decision(
         if not decision_lock_satisfied(work_item, user_ctx):
             return False, "You must checkout this work item before making review decisions."
 
-    # 2. Validate transition
+    # 2. Re-read the review under a row lock. Without review sessions two
+    # reviewers can submit at once, and the second must see the first's decision.
+    db.session.refresh(review, with_for_update=True)
+
+    # 3. Validate transition
     old_status = review.status
     new_status, error = validate_review_transition(
         old_status, action, note, user_ctx, review, line, ctx=ctx
@@ -670,7 +674,7 @@ def apply_review_decision(
     if error:
         return False, error
 
-    # 3. Apply changes
+    # 4. Apply changes
     review.status = new_status
     review.decided_at = datetime.utcnow()
     review.decided_by_user_id = user_ctx.user_id
@@ -681,11 +685,11 @@ def apply_review_decision(
     ):
         review.approved_amount_cents = amount_cents
 
-    # 4. Sync line status
+    # 5. Sync line status
     sync_line_status(line, review)
     line.status_changed_by_user_id = user_ctx.user_id
 
-    # 5. Create audit event
+    # 6. Create audit event
     create_line_audit_event(
         line,
         AUDIT_EVENT_REVIEW_DECISION if action != REVIEW_ACTION_RESPOND else AUDIT_EVENT_REQUESTER_RESPONSE,
@@ -695,7 +699,7 @@ def apply_review_decision(
         user_ctx,
     )
 
-    # 6. Auto-finalize for non-admin-final worktypes once every approval-group
+    # 7. Auto-finalize for non-admin-final worktypes once every approval-group
     # review has a terminal decision. No-op for admin-final worktypes (BUDGET).
     from app.routes.work.helpers.lifecycle import try_auto_finalize
     try_auto_finalize(work_item, user_ctx)

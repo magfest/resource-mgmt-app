@@ -37,3 +37,33 @@ def test_a_lock_left_from_before_deploy_does_not_block(client, techops_review):
 
     review = WorkLineReview.query.filter_by(work_line_id=techops_review["line"].id).one()
     assert review.status == REVIEW_STATUS_APPROVED
+
+
+def test_a_decision_racing_a_stale_copy_is_refused(app, techops_review):
+    """Two simultaneous requests both load the review as PENDING. Simulate
+    the slower one: its in-memory copy is stale once the faster one commits."""
+    from sqlalchemy import text
+
+    from app import db
+    from app.models import REVIEW_ACTION_REJECT, REVIEW_STATUS_REJECTED
+    from app.routes import UserContext
+    from app.routes.approvals.helpers import apply_review_decision
+
+    line = techops_review["line"]
+    stale = WorkLineReview.query.filter_by(work_line_id=line.id).one()
+    db.session.execute(
+        text("UPDATE work_line_reviews SET status = 'APPROVED' WHERE id = :id"),
+        {"id": stale.id},
+    )
+    reviewer = UserContext(
+        user_id="test:other", user=None, roles=("APPROVER",),
+        is_super_admin=False, approval_group_ids={techops_review["group"].id},
+    )
+
+    ok, error = apply_review_decision(
+        review=stale, line=line, work_item=techops_review["item"],
+        action=REVIEW_ACTION_REJECT, note="late", amount_cents=None, user_ctx=reviewer,
+    )
+
+    assert (ok, error) == (False, "This line was already decided.")
+    assert stale.status != REVIEW_STATUS_REJECTED
