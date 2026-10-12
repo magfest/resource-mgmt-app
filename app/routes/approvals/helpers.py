@@ -392,6 +392,10 @@ def validate_review_transition(
     key = (current_status, action)
 
     if key not in VALID_TRANSITIONS:
+        if current_status in (
+            REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW, REVIEW_STATUS_REJECTED,
+        ):
+            return "", "This line was already decided."
         return "", f"Invalid transition: {current_status} -> {action}"
 
     new_status, note_required, allowed_role = VALID_TRANSITIONS[key]

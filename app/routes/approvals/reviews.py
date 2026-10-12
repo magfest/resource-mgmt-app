@@ -365,7 +365,8 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
 
     if not success:
         if is_ajax:
-            return jsonify({"success": False, "error": error})
+            # current_status lets quick review redraw a row someone else decided.
+            return jsonify({"success": False, "error": error, "current_status": line.status})
         flash(error, "error")
     else:
         action_labels = {
