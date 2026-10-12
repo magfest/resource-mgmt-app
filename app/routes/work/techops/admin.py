@@ -32,20 +32,24 @@ from app.routes.approvals.helpers import (
     get_active_departments,
     get_active_event_cycles,
 )
-from app.routes.work.helpers import friendly_status, is_worktype_admin
+from app.routes.work.helpers import friendly_status, is_worktype_admin, is_worktype_viewer
+from app.routes.work.helpers.review_state import group_progress_for_items
 from .. import work_bp
 
 
 _PER_PAGE = 25
 
 
-def _require_techops_admin(user_ctx) -> WorkType:
-    """Resolve the TECHOPS WorkType row and gate to admins of it."""
+def _require_techops_staff(user_ctx) -> WorkType:
+    """Resolve the TECHOPS WorkType row and gate to its admins and viewers."""
     techops_wt = WorkType.query.filter_by(code="TECHOPS").first()
     if not techops_wt:
         abort(404, "TechOps work type not configured.")
-    if not is_worktype_admin(user_ctx, techops_wt.id):
-        abort(403, "TechOps admin access required.")
+    if not (
+        is_worktype_admin(user_ctx, techops_wt.id)
+        or is_worktype_viewer(user_ctx, techops_wt.id)
+    ):
+        abort(403, "TechOps admin or viewer access required.")
     return techops_wt
 
 
@@ -57,7 +61,7 @@ def techops_all_requests():
     TECHOPS worktype only and without monetary columns.
     """
     user_ctx = get_user_ctx()
-    techops_wt = _require_techops_admin(user_ctx)
+    techops_wt = _require_techops_staff(user_ctx)
 
     search_query = request.args.get("q", "").strip()
     event_code = request.args.get("event", "").strip()
@@ -100,6 +104,8 @@ def techops_all_requests():
     query = query.order_by(WorkItem.updated_at.desc())
     pagination = query.paginate(page=page, per_page=_PER_PAGE, error_out=False)
 
+    progress_by_item = group_progress_for_items(wi.id for wi in pagination.items)
+
     requests_data = []
     for wi in pagination.items:
         portfolio = wi.portfolio
@@ -125,18 +131,17 @@ def techops_all_requests():
             "department": portfolio.department,
             "line_count": len(wi.lines),
             "service_mix": service_mix,
+            "progress": progress_by_item.get(wi.id, []),
         })
 
     event_cycles = get_active_event_cycles()
     departments = get_active_departments()
 
-    # TechOps lifecycle is shorter than BUDGET — no AWAITING_DISPATCH
-    # (uses_dispatch=False), no PAUSED status surfaced today. NEEDS_INFO
-    # is included for the item-level kickback flow.
+    # No AWAITING_DISPATCH: TechOps has uses_dispatch=False. No NEEDS_INFO
+    # either; it is a line status, and nothing writes it to work_item.status.
     statuses = [
         ("DRAFT", "Draft"),
         ("SUBMITTED", "Under Review"),
-        ("NEEDS_INFO", "Info Requested"),
         ("FINALIZED", "Finalized"),
     ]
 

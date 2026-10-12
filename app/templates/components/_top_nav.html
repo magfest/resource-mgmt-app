@@ -28,7 +28,7 @@
         <a href="{{ url_for('dispatch.dashboard') }}">Assign Reviewers</a>
         <a href="{{ url_for('admin_final.dashboard') }}">Final Review</a>
         <a href="{{ url_for('admin_final.all_requests') }}">All Budget Requests</a>
-        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
+        <a href="{{ url_for('approvals.dashboard_home', work_type='BUDGET') }}">Reviewer Groups</a>
         <a href="{{ url_for('admin_config.expense_accounts.list_expense_accounts') }}">Expense Accounts</a>
         <a href="{{ url_for('admin_final.reports_index') }}">Reports</a>
         <div class="top-nav-divider"></div>
@@ -42,7 +42,8 @@
        Assign Reviewers or Final Review. #}
     {% set techops_groups = nav_review_groups.get("TECHOPS", []) %}
     {% set techops_admin = "TECHOPS" in nav_admin_work_types %}
-    {% if techops_groups or techops_admin %}
+    {% set techops_viewer = "TECHOPS" in nav_viewer_work_types %}
+    {% if techops_groups or techops_admin or techops_viewer %}
     <div class="top-nav-dropdown">
       <button type="button" class="top-nav-link top-nav-toggle">TechOps <span class="top-nav-caret">&#9662;</span></button>
       <div class="top-nav-menu">
@@ -55,7 +56,12 @@
         {% if techops_admin %}
         <div class="top-nav-menu-label">Manage</div>
         <a href="{{ url_for('work.techops_all_requests') }}">All TechOps Requests</a>
-        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
+        <a href="{{ url_for('approvals.dashboard_home', work_type='TECHOPS') }}">Reviewer Groups</a>
+        {% endif %}
+        {% if techops_viewer and not techops_admin %}
+        <div class="top-nav-menu-label">Read</div>
+        <a href="{{ url_for('work.techops_all_requests') }}">All TechOps Requests</a>
+        <a href="{{ url_for('approvals.dashboard_home', work_type='TECHOPS') }}">Reviewer Groups</a>
         {% endif %}
       </div>
     </div>
@@ -80,7 +86,7 @@
         <div class="top-nav-menu-label">Supply Orders</div>
         <a href="{{ url_for('work.supply_admin_queue') }}">Supply Queue</a>
         <a href="{{ url_for('work.supply_all_orders') }}">All Supply Orders</a>
-        <a href="{{ url_for('approvals.dashboard_home') }}">Reviewer Groups</a>
+        <a href="{{ url_for('approvals.dashboard_home', work_type='SUPPLY') }}">Reviewer Groups</a>
         <a href="{{ url_for('admin_config.supply_categories.list_supply_categories') }}">Supply Categories</a>
         <a href="{{ url_for('admin_config.supply_items.list_supply_items') }}">Supply Items</a>
         <div class="top-nav-divider"></div>

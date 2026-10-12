@@ -3,7 +3,6 @@
 {% from "techops/_phone_number_config.html" import render_phone_number_config, render_desk_phone_location, question_badge with context %}
 {# templates/techops/line_review.html #}
 {% extends "layout/base.html" %}
-{% from "macros/checkout_banner.html" import render_checkout_action with context %}
 {% from "macros/status_pill.html" import render_status_pill %}
 {% from "macros/techops_line_facts.html" import render_line_space, render_phone_ring %}
 
@@ -41,34 +40,6 @@
       </div>
     </div>
   </div>
-
-  {# Checkout Status Banner #}
-  {% if is_checked_out %}
-    {% if has_checkout %}
-      <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
-          <div>
-            <strong>You have this item checked out</strong>
-            <div class="muted" style="margin-top:4px;">
-              You can make review decisions on this line.
-            </div>
-          </div>
-          <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}" style="flex-shrink: 0;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="return_to" value="{{ request.full_path }}">
-            <button type="submit" class="btn">Finish Reviewing</button>
-          </form>
-        </div>
-      </div>
-    {% else %}
-      <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
-        <strong>Under Active Review</strong>
-        <div class="muted" style="margin-top:4px;">
-          This item is checked out by another reviewer.
-        </div>
-      </div>
-    {% endif %}
-  {% endif %}
 
   {# Navigation #}
   <div class="btn-row mb-16">
@@ -278,6 +249,22 @@
 
       {% include "components/_view_only_notice.html" %}
 
+      {# Reopen sends a decided line back to the group. The note is posted
+         publicly, like any decision rationale. #}
+      {% if can_reopen %}
+        <section class="card" style="margin-bottom: 16px; background: #f8f9fa;">
+          <h3 style="margin:0 0 12px 0;">Reopen this line</h3>
+          <form method="post" action="{{ url_for('approvals.line_reopen', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='techops') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="reopen_note" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
+              Why does it need another look? (required, visible to the requester)
+            </label>
+            <textarea name="note" id="reopen_note" rows="2" style="width: 100%;" required></textarea>
+            <button type="submit" class="btn" style="margin-top: 8px;">Reopen</button>
+          </form>
+        </section>
+      {% endif %}
+
       {# Reviewer Decision Form — TechOps has no admin_final stage so the
          BUDGET-style AG/Admin tab toggle isn't needed. The "Need
          Adjustment" button is intentionally omitted: line_adjust hard-
@@ -321,22 +308,6 @@
             </form>
           </div>
         </section>
-      {# perms.can_checkout, not "I do not hold it": the latter is also true
-         when another reviewer holds it, and this callout then duplicated the
-         "Under Active Review" banner above while heading it "Checkout
-         Required", which is the opposite of what was true. #}
-      {% elif can_review and perms.can_checkout and status == "PENDING" %}
-        <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
-          <strong>Checkout Required</strong>
-          <div class="muted" style="margin-top:4px;">
-            You must start a review session to make decisions on this request.
-          </div>
-          {# The macro, not a hand-rolled form: the old markup rendered the
-             button whenever the viewer did not hold the lock, including when
-             another reviewer did, and that POST always refused. The macro
-             keys off perms.can_checkout and says who is holding it instead. #}
-          {{ render_checkout_action(work_item, perms, ctx, work_type_slug='techops') }}
-        </div>
       {% endif %}
 
       {# Comments #}
@@ -362,7 +333,7 @@
           </div>
         {% endif %}
 
-        {% if can_review %}
+        {% if can_comment %}
           <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;">
             <form method="post" action="{{ url_for('approvals.line_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='techops') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -370,7 +341,7 @@
                 <label for="standalone_comment" style="font-size: 13px; font-weight: 600;">Add Comment:</label>
                 <textarea name="comment" id="standalone_comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Enter your comment..."></textarea>
               </div>
-              {% if user_ctx.is_super_admin %}
+              {% if can_comment %}
                 <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
                   <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
                   Admin-only (not visible to requesters)

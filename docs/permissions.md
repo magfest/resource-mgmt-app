@@ -17,13 +17,15 @@ A user with no role and no membership sees nothing beyond the dashboard.
 | --- | --- | --- | --- |
 | `SUPER_ADMIN` | Global. Every department, work type, and admin page | Admin → Users → Edit User, "Super Admin" box. Writes a `UserRole` row with both scope columns NULL | Same form with the box cleared |
 | `WORKTYPE_ADMIN` | One work type, via `user_roles.work_type_id` | Admin → Users → Edit User, the box for that work type | Same form with the box cleared |
+| `WORKTYPE_VIEWER` | Read-only on one work type: every request, line and review queue. Never decides, reopens or comments | Admin → Users → Edit User, the Work Type Viewer box. Offered for TechOps only (`VIEWER_ROLE_WORK_TYPES`, `admin/users.py:47`) | Same form with the box cleared |
 | `APPROVER` | One approval group, via `user_roles.approval_group_id` | Admin → Users → Edit User, the box for that group | Same form with the box cleared |
 | Department membership | One department, one event cycle | Admin → Departments → [Department] → Members → Add Member (`admin/departments.py:453`) | Delete on the member row (`departments.py:603`) |
 | Division membership | Every department in one division, one event cycle | Admin → Divisions → [Division] → Members → Add Member (`admin/divisions.py:372`) | Delete on the member row (`divisions.py:495`) |
 
-All three role checkboxes post to the same handler. `_update_user_roles()`
-(`admin/users.py:309`) deletes every existing role row for the user, then rewrites
-the set from the submitted form. An unchecked box is a revocation.
+Every role checkbox posts to the same handler. `_update_user_roles()`
+(`admin/users.py:343`) deletes every existing role row for the user, then rewrites
+the set from the submitted form. An unchecked box is a revocation, and so is a
+viewer row on a work type the form does not offer.
 
 Memberships also arrive in bulk through Admin → Data Upload, which accepts CSV for
 department and division memberships. The POST importers are
@@ -63,6 +65,11 @@ prefix, and two pages under `/admin/config/` fall on opposite sides.
 
 Approval groups are shared infrastructure, so their config pages sit behind
 SUPER_ADMIN even though budget admins use the groups daily.
+
+On a work type without `has_admin_final` (TechOps, as of October 2026), a
+work-type admin also decides, reopens and comments on every line of that type,
+including lines routed to groups they are not in. Staff who only need to read
+get `WORKTYPE_VIEWER` instead; giving them admin grants approval rights.
 
 ## Guards: the module decides how you call it
 
@@ -111,7 +118,8 @@ name.
 | `get_user_ctx()` |  `app/routes/__init__.py:77` | Returns the request's `UserContext` |
 | `is_super_admin()` | `app/__init__.py:543` | Zero-arg, reads the session |
 | `_has_super_admin_role()` | `app/__init__.py:523` | Zero-arg, ignores beta overrides |
-| `is_worktype_admin(user_ctx, work_type_id)` | `work/helpers/context.py:243` | Boolean |
+| `is_worktype_admin(user_ctx, work_type_id)` | `work/helpers/context.py:244` | Boolean |
+| `is_worktype_viewer(user_ctx, work_type_id)` | `work/helpers/context.py:258` | Boolean |
 | `is_budget_admin(user_ctx, work_type_id=None)` | `work/helpers/context.py:257` | Boolean |
 | `is_any_worktype_admin(user_ctx)` | `work/helpers/context.py:265` | Boolean |
 | `build_portfolio_perms(ctx)` | `work/helpers/context.py:282` | Returns `PortfolioPerms` |
@@ -119,7 +127,9 @@ name.
 | `require_portfolio_view(ctx)` | `work/helpers/context.py:355` | Callable, aborts 403 |
 | `require_portfolio_edit(ctx)` | `work/helpers/context.py:363` | Callable, aborts 403 |
 | `require_work_item_view(item, ctx)` | `work/helpers/context.py:371` | Callable, aborts 403 |
-| `is_reviewer_for_line(line, user_ctx)` | `approvals/helpers.py:130` | Boolean |
+| `is_reviewer_for_line(line, user_ctx)` | `approvals/helpers.py:142` | Boolean |
+| `can_decide_line(line, user_ctx)` | `approvals/helpers.py:305` | Boolean; the one decision rule |
+| `can_reopen_line(line, user_ctx)` | `approvals/helpers.py:320` | Boolean |
 | `can_respond_to_work_item(item, ctx, user_ctx)` | `approvals/helpers.py:148` | Boolean |
 
 `build_work_item_perms()` lives in `checkout.py` while the `WorkItemPerms`

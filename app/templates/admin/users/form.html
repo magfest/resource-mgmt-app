@@ -97,6 +97,23 @@
       </div>
       {% endif %}
 
+      {# Work Type Viewer: offered only where the pages are checked for it #}
+      {% if viewer_work_types %}
+      <div class="mb-16">
+        <div style="font-weight: 600; margin-bottom: 8px;">Work Type Viewer</div>
+        <div class="muted small" style="margin-bottom: 8px;">Read every request and queue; cannot approve or comment.</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+          {% for wt in viewer_work_types %}
+            <label style="display: flex; gap: 6px; align-items: center; font-weight: normal;">
+              <input type="checkbox" name="role_worktype_viewer_{{ wt.id }}" value="1"
+                     {% if user %}{% for r in user.roles %}{% if r.role_code == 'WORKTYPE_VIEWER' and r.work_type_id == wt.id %}checked{% endif %}{% endfor %}{% endif %} />
+              {{ wt.name }}
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
       {# Approver Roles #}
       {% if approval_groups %}
       <div style="margin-bottom: 8px;">

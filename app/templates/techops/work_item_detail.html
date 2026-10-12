@@ -5,9 +5,9 @@
 {# templates/techops/work_item_detail.html #}
 {% extends "layout/base.html" %}
 {% from "macros/status_pill.html" import render_status_pill %}
-{% from "macros/checkout_banner.html" import render_checkout_banner %}
 {% from "macros/comments.html" import render_comments %}
 {% from "macros/audit_log.html" import render_audit_log with context %}
+{% from "macros/group_progress.html" import render_group_progress %}
 {% from "macros/techops_line_facts.html" import render_line_space, render_phone_ring %}
 
 {% block title %}{{ work_item.public_id }} - TechOps Request{% endblock %}
@@ -61,17 +61,15 @@
     </div>
   </div>
 
-  {{ render_checkout_banner(work_item, perms) }}
+  {% if group_progress %}
+    <div style="margin-bottom: 16px;">
+      {{ render_group_progress(group_progress, progress_audience) }}
+    </div>
+  {% endif %}
 
-  {# Top action bar — three groups separated by a vertical divider:
-     1. Requester actions (Edit / Submit), only on DRAFT.
-     2. Reviewer actions (Start/Finish Reviewing, Review Queue), only
-        once submitted. checkin shows "Force Release" instead of "Finish
-        Reviewing" when an admin is releasing someone else's lock.
-     3. Navigation back to the portfolio.
-     Buttons that don't apply to TechOps (Assign Reviewers, Admin Final
-     Queue) are intentionally omitted — TechOps has uses_dispatch=False
-     and has_admin_final=False, so those workflows don't exist. #}
+  {# Top action bar: requester actions on DRAFT, reviewer links once
+     submitted, then navigation. TechOps has no review sessions, dispatch
+     or admin-final stage, so none of those controls appear. #}
   <div class="btn-row mb-16">
     {% if perms.is_draft and perms.can_edit %}
       <a class="btn btn-primary" href="{{ url_for('work.techops_request_edit', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
@@ -88,47 +86,12 @@
       </form>
     {% endif %}
 
-    {# Quick Review surfaces for anyone who can review (admin, current
-       checkout-holder, or anyone eligible to take checkout). It's a
-       read-only view for the latter group; AJAX action buttons only
-       fire when the user has the lock. #}
-    {% if not perms.is_draft and (perms.is_worktype_admin or perms.can_checkout or perms.is_checked_out_by_current_user) %}
+    {% set is_staff_reviewer = perms.is_worktype_admin or is_approver_for_item %}
+    {% if not perms.is_draft and is_staff_reviewer %}
       <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}">
         Quick Review
       </a>
-    {% endif %}
-
-    {# Reviewer actions: Start/Finish Reviewing on the request itself
-       (rather than per-line). can_checkout / can_checkin are already
-       worktype-agnostic so they work for TechOps unchanged. #}
-    {% if perms.can_checkout %}
-      <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}" style="display: inline;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="return_to" value="{{ request.url }}">
-        <button type="submit" class="btn btn-primary">
-          Start Reviewing
-        </button>
-      </form>
-    {% endif %}
-
-    {% if perms.can_checkin %}
-      <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}" style="display: inline;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="return_to" value="{{ request.url }}">
-        <button type="submit" class="btn" data-confirm="Finish your review session?">
-          {% if perms.is_checked_out_by_current_user %}
-            Finish Reviewing
-          {% else %}
-            Force Release
-          {% endif %}
-        </button>
-      </form>
-    {% endif %}
-
-    {# Review Queue link for reviewers (admins always; non-admins only
-       while they hold checkout — matches BUDGET's gating). #}
-    {% if not perms.is_draft and (perms.is_worktype_admin or perms.is_checked_out_by_current_user) %}
-      <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
+      <a class="btn" href="{{ url_for('approvals.dashboard_home', work_type='TECHOPS') }}">
         Review Queue
       </a>
     {% endif %}
@@ -194,15 +157,15 @@
          the button is visible to anyone viewing the page; it's a no-op
          for users who can't actually decide. #}
       {# FINALIZED is included because a finished request is what a department
-         goes back to read; the link becomes "View" there, since the line page
-         offers no actions without checkout and a FINALIZED item cannot be
-         checked out. UNDER_REVIEW never reaches `status`, which is the raw
-         column, but it is listed to match budget/_work_item_lines_table.html
-         so the two do not look like they disagree. #}
+         goes back to read; the link becomes "View" there, and a reviewer
+         reopens a line from that page. UNDER_REVIEW never reaches `status`,
+         which is the raw column, but it is listed to match
+         budget/_work_item_lines_table.html so the two do not look like they
+         disagree. #}
       {% set show_line_actions = status in ("SUBMITTED", "UNDER_REVIEW", "NEEDS_INFO", "FINALIZED") %}
       {% set line_action_label = "View" if status == "FINALIZED" else "Review" %}
       {% if lines %}
-        <table>
+        <table class="responsive-cards">
           <thead>
             <tr>
               <th style="width: 50px;">#</th>
@@ -221,8 +184,8 @@
               {% set detail = line.techops_detail %}
               {% set st = detail.service_type if detail else None %}
               <tr id="line-{{ line.line_number }}">
-                <td>{{ line.line_number }}</td>
-                <td>
+                <td data-label="Line">{{ line.line_number }}</td>
+                <td data-label="Service">
                   {% if st %}
                     <strong>{{ st.name }}</strong>
                     {% if st.code == "PHONE" and detail.config and detail.config.get("external_callable") %}
@@ -232,10 +195,10 @@
                     <span class="muted">-</span>
                   {% endif %}
                 </td>
-                <td>
+                <td data-label="Space">
                   {{ render_line_space(detail, space_facts) }}
                 </td>
-                <td>
+                <td class="cell-stack" data-label="Details">
                   {% if detail %}
                     {% if st and st.code == "RADIO_CHANNEL" %}
                       <div><strong>Channel:</strong> {{ detail.location or '-' }}</div>
@@ -268,10 +231,10 @@
                     <span class="muted">-</span>
                   {% endif %}
                 </td>
-                <td>
+                <td data-label="Status">
                   {{ render_status_pill(line.status) }}
                 </td>
-                <td class="muted small">
+                <td class="muted small" data-label="Reviewer group">
                   {% if detail and detail.routed_approval_group %}
                     {{ detail.routed_approval_group.name }}
                   {% else %}

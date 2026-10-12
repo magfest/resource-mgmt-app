@@ -64,6 +64,7 @@ REVIEW_STATUS_REJECTED = "REJECTED"
 
 ROLE_SUPER_ADMIN = "SUPER_ADMIN"        # global admin
 ROLE_WORKTYPE_ADMIN = "WORKTYPE_ADMIN"  # admin for a work type (e.g., BUDGET)
+ROLE_WORKTYPE_VIEWER = "WORKTYPE_VIEWER"  # read-only on one work type; never decides
 ROLE_APPROVER = "APPROVER"              # approver (typically scoped to approval group)
 
 # Manages venues, spaces, and per-event assignments. Held by Event Ops, who
@@ -186,6 +187,7 @@ REVIEW_ACTION_NEEDS_INFO = "NEEDS_INFO"
 REVIEW_ACTION_NEEDS_ADJUSTMENT = "NEEDS_ADJUSTMENT"
 REVIEW_ACTION_RESET = "RESET"
 REVIEW_ACTION_RESPOND = "RESPOND"
+REVIEW_ACTION_REOPEN = "REOPEN"  # group-final work types only: decided line back to PENDING
 
 # ============================================================
 # Routing strategy constants

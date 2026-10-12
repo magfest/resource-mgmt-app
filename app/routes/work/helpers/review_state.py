@@ -10,8 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from app import db
 from app.models import (
-    WorkLine, WorkLineReview,
+    ApprovalGroup, WorkLine, WorkLineReview,
     REVIEW_STAGE_APPROVAL_GROUP, REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING, REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED,
     REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT,
@@ -42,6 +43,19 @@ def _has_admin_stage(line: WorkLine) -> bool:
     work_type = portfolio.work_type if portfolio else None
     config = work_type.config if work_type else None
     return bool(config and config.has_admin_final)
+
+
+def is_group_final(work_item) -> bool:
+    """Return whether the approval group's decision is final for this item.
+
+    True when the work type has no admin-final stage; as of 2026-10-12 that
+    is TechOps alone. A missing config counts as not group-final, so the
+    checkout stays required rather than silently dropping away.
+    """
+    portfolio = work_item.portfolio if work_item else None
+    work_type = portfolio.work_type if portfolio else None
+    config = work_type.config if work_type else None
+    return bool(config) and not config.has_admin_final
 
 
 def get_line_review_state(line: WorkLine) -> LineReviewState:
@@ -78,3 +92,56 @@ def get_line_review_state(line: WorkLine) -> LineReviewState:
         ag=ag, admin=admin, has_admin_stage=has_admin_stage,
         awaiting=awaiting, kickback_review=kickback_review,
     )
+
+
+@dataclass(frozen=True)
+class GroupProgress:
+    """How far one approval group has got on one request."""
+    group: ApprovalGroup
+    total: int
+    decided: int
+    waiting_on_requester: int
+
+    @property
+    def pending(self) -> int:
+        return self.total - self.decided - self.waiting_on_requester
+
+
+def group_progress_for_items(work_item_ids) -> dict[int, list[GroupProgress]]:
+    """Return per-group progress for each item, groups in sort order.
+
+    Reads APPROVAL_GROUP review rows, not line.status, which summarises two
+    stages lossily. An item with no review rows, such as a draft, is absent.
+    """
+    ids = list(work_item_ids)
+    if not ids:
+        return {}
+    # WorkLineReview.id keeps every row distinct. Query de-duplicates rows that
+    # hold an entity, so two same-status lines in one group would count once.
+    rows = (
+        db.session.query(
+            WorkLineReview.id, WorkLine.work_item_id, WorkLineReview.status, ApprovalGroup,
+        )
+        .join(WorkLineReview, WorkLineReview.work_line_id == WorkLine.id)
+        .join(ApprovalGroup, ApprovalGroup.id == WorkLineReview.approval_group_id)
+        .filter(WorkLine.work_item_id.in_(ids))
+        .filter(WorkLineReview.stage == REVIEW_STAGE_APPROVAL_GROUP)
+        .all()
+    )
+    tallies: dict[int, dict[int, list]] = {}
+    for _review_id, item_id, status, group in rows:
+        entry = tallies.setdefault(item_id, {}).setdefault(group.id, [group, 0, 0, 0])
+        entry[1] += 1
+        if status in _AG_TERMINAL:
+            entry[2] += 1
+        elif status in _KICKBACK:
+            entry[3] += 1
+    return {
+        item_id: [
+            GroupProgress(group=g, total=t, decided=d, waiting_on_requester=w)
+            for g, t, d, w in sorted(
+                by_group.values(), key=lambda e: (e[0].sort_order or 0, e[0].name),
+            )
+        ]
+        for item_id, by_group in tallies.items()
+    }

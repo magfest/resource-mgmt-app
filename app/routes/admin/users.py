@@ -16,6 +16,7 @@ from app.models import (
     DivisionMembership,
     ROLE_SUPER_ADMIN,
     ROLE_WORKTYPE_ADMIN,
+    ROLE_WORKTYPE_VIEWER,
     ROLE_APPROVER,
     ROLE_SPACE_ADMIN,
     CONFIG_AUDIT_CREATE,
@@ -40,6 +41,10 @@ from .helpers import (
 )
 
 users_bp = Blueprint('users', __name__, url_prefix='/users')
+
+# Work types whose pages have been checked for the viewer role. Offering it
+# elsewhere would grant read access nobody has reviewed.
+VIEWER_ROLE_WORK_TYPES = ("TECHOPS",)
 
 
 def _get_user_or_404(user_id: str) -> User:
@@ -76,11 +81,13 @@ def _get_role_context():
     return {
         "work_types": work_types,
         "approval_groups": approval_groups,
+        "viewer_work_types": [wt for wt in work_types if wt.code in VIEWER_ROLE_WORK_TYPES],
         "role_codes": [
             (ROLE_SUPER_ADMIN, "Super Admin", "Full system access"),
             (ROLE_WORKTYPE_ADMIN, "Work Type Admin", "Admin for specific work type (e.g., Budget)"),
             (ROLE_APPROVER, "Approver", "Can review/approve lines in assigned approval groups"),
             (ROLE_SPACE_ADMIN, "Space Admin", "Manages venues and spaces (Event Ops)"),
+            (ROLE_WORKTYPE_VIEWER, "Work Type Viewer", "Read-only access to one work type (TechOps)"),
         ],
     }
 
@@ -341,6 +348,7 @@ def _update_user_roles(user: User, form_data) -> None:
     - role_super_admin: "1" if checked
     - role_space_admin: "1" if checked
     - role_worktype_admin_<work_type_id>: "1" if checked
+    - role_worktype_viewer_<work_type_id>: "1" if checked (TechOps only)
     - role_approver_<approval_group_id>: "1" if checked
 
     Snapshots the role set before clearing it, and logs a security audit
@@ -380,6 +388,12 @@ def _update_user_roles(user: User, form_data) -> None:
                 work_type_id=wt.id,
             )
             db.session.add(role)
+        if wt.code in VIEWER_ROLE_WORK_TYPES and form_data.get(f"role_worktype_viewer_{wt.id}") == "1":
+            db.session.add(UserRole(
+                user_id=user.id,
+                role_code=ROLE_WORKTYPE_VIEWER,
+                work_type_id=wt.id,
+            ))
 
     # Approver roles
     approval_groups = db.session.query(ApprovalGroup).filter(ApprovalGroup.is_active == True).all()

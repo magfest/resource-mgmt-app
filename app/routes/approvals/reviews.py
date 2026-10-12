@@ -18,6 +18,7 @@ from app.models import (
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
     REVIEW_ACTION_RESPOND,
+    REVIEW_ACTION_REOPEN,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     COMMENT_VISIBILITY_PUBLIC,
@@ -30,6 +31,7 @@ from app.line_details import (
 )
 from app.routes import get_user_ctx
 from app.routes.work.helpers import (
+    is_worktype_viewer,
     get_portfolio_context,
     require_work_item_view,
     build_work_item_perms,
@@ -45,6 +47,8 @@ from app.routes.work.helpers.review_state import (
 )
 from . import approvals_bp
 from .helpers import (
+    can_decide_line,
+    can_reopen_line,
     is_reviewer_for_line,
     can_respond_to_work_item,
     can_view_work_item_lines,
@@ -106,6 +110,17 @@ def get_work_item_and_line(event: str, dept: str, public_id: str, line_num: int,
     return work_item, line, ctx
 
 
+def _can_comment_on_line(line: WorkLine, work_item: WorkItem, user_ctx) -> bool:
+    """Return whether the user may post a standalone comment on this line.
+
+    The routed group's reviewers, plus admins of the line's work type, who can
+    already open every line of it. An admin of another work type cannot.
+    """
+    return is_reviewer_for_line(line, user_ctx) or is_worktype_admin(
+        user_ctx, work_item.portfolio.work_type_id,
+    )
+
+
 # ============================================================
 # Line Review View
 # ============================================================
@@ -140,7 +155,9 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         # gating it on edit locked out most of the requesting department.
         is_requester = can_view_work_item_lines(work_item, ctx, user_ctx)
 
-        if not is_in_routed_group and not is_requester:
+        is_viewer = is_worktype_viewer(user_ctx, work_item.portfolio.work_type_id)
+
+        if not is_in_routed_group and not is_requester and not is_viewer:
             abort(403, "You do not have permission to view this line.")
 
     # Get or create review record
@@ -158,18 +175,9 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         admin_review = get_admin_final_review(line)
         ag_review = get_approval_group_review(line)
 
-    # The AG decision form is only actionable while it's genuinely the
-    # approval group's turn. Derived from the review-state read-model
-    # (state.awaiting) rather than review.status directly, so this
-    # automatically excludes the admin-terminal case (awaiting would be
-    # DONE, not REVIEWER_GROUP) — the old `admin_final_decided` guard is
-    # now subsumed by AWAITING_REVIEWER_GROUP itself.
+    # One rule for the form and the route; see can_decide_line.
     state = get_line_review_state(line)
-    can_decide = (
-        state.awaiting == AWAITING_REVIEWER_GROUP
-        and is_reviewer_for_line(line, user_ctx)
-        and user_holds_checkout(work_item, user_ctx)
-    )
+    can_decide = can_decide_line(line, user_ctx)
 
     # Admin final decisions require the checkout lock, same as AG decisions
     # (Task 3). Computed off the review-state read-model so it's correct
@@ -256,8 +264,10 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         comments=comments,
         audit_events=audit_events,
         can_review=can_review,
+        can_comment=_can_comment_on_line(line, work_item, user_ctx),
         has_checkout=has_checkout,
         can_decide=can_decide,
+        can_reopen=can_reopen_line(line, user_ctx),
         can_admin_decide=can_admin_decide,
         can_respond=can_respond,
         state=state,
@@ -311,6 +321,40 @@ def line_needs_adjustment(event: str, dept: str, public_id: str, line_num: int, 
     return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_NEEDS_ADJUSTMENT)
 
 
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reopen")
+def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str):
+    """Send a decided line on a group-final work type back to PENDING."""
+    user_ctx = get_user_ctx()
+    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
+    back = redirect(url_for(
+        "approvals.line_review", event=event, dept=dept, public_id=public_id,
+        line_num=line_num, work_type_slug=work_type_slug,
+    ))
+
+    if not can_reopen_line(line, user_ctx):
+        flash("You cannot reopen this line.", "error")
+        return back
+
+    note = (request.form.get("note") or "").strip()
+    success, error = apply_review_decision(
+        review=get_review_for_line(line), line=line, work_item=work_item,
+        action=REVIEW_ACTION_REOPEN, note=note, amount_cents=None,
+        user_ctx=user_ctx, ctx=ctx,
+    )
+    if not success:
+        flash(error, "error")
+        return back
+
+    # Decision rationale is public; a reopen is a decision.
+    db.session.add(WorkLineComment(
+        work_line_id=line.id, visibility=COMMENT_VISIBILITY_PUBLIC,
+        body=f"[REOPENED] {note}", created_by_user_id=user_ctx.user_id,
+    ))
+    db.session.commit()
+    flash(f"Line {line_num} reopened.", "success")
+    return back
+
+
 def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str, action: str):
     """
     Common handler for all review actions.
@@ -353,7 +397,9 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
 
     if not success:
         if is_ajax:
-            return jsonify({"success": False, "error": error})
+            # current_status lets quick review redraw a row someone else decided.
+            # The review was re-read under its lock; the line may predate that.
+            return jsonify({"success": False, "error": error, "current_status": review.status})
         flash(error, "error")
     else:
         action_labels = {
@@ -755,8 +801,7 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
-    # Permission check: must be reviewer for this line
-    if not is_reviewer_for_line(line, user_ctx):
+    if not _can_comment_on_line(line, work_item, user_ctx):
         flash("You do not have permission to comment on this line.", "error")
         return redirect(url_for("approvals.line_review", event=event, dept=dept,
                                 public_id=public_id, line_num=line_num, work_type_slug=work_type_slug))
@@ -767,12 +812,8 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type
         return redirect(url_for("approvals.line_review", event=event, dept=dept,
                                 public_id=public_id, line_num=line_num, work_type_slug=work_type_slug))
 
-    visibility = get_comment_visibility(
-        request.form,
-        user_ctx.is_super_admin
-        or is_reviewer_for_line(line, user_ctx)
-        or is_worktype_admin(user_ctx, work_item.portfolio.work_type_id),
-    )
+    # Everyone who passes the gate above may choose admin-only.
+    visibility = get_comment_visibility(request.form, True)
     comment = WorkLineComment(
         work_line_id=line.id,
         visibility=visibility,

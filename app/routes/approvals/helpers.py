@@ -31,6 +31,10 @@ from app.models import (
     ContractLineDetail,
     SupplyOrderLineDetail,
     User,
+    UserRole,
+    WorkType,
+    ROLE_WORKTYPE_ADMIN,
+    ROLE_WORKTYPE_VIEWER,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING,
@@ -45,17 +49,21 @@ from app.models import (
     WORK_LINE_STATUS_APPROVED,
     WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW,
     WORK_LINE_STATUS_REJECTED,
+    WORK_ITEM_STATUS_FINALIZED,
+    WORK_ITEM_STATUS_SUBMITTED,
     REVIEW_ACTION_APPROVE,
     REVIEW_ACTION_APPROVE_NEEDS_REVIEW,
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
     REVIEW_ACTION_RESPOND,
+    REVIEW_ACTION_REOPEN,
     AUDIT_EVENT_REVIEW_DECISION,
     AUDIT_EVENT_REQUESTER_RESPONSE,
     AUDIT_EVENT_LINE_CREATED,
     AUDIT_EVENT_FIELD_CHANGE,
     AUDIT_EVENT_LINE_DELETED,
+    AUDIT_EVENT_UNFINALIZE,
     ROLE_APPROVER,
 )
 from app.routes import get_user_ctx, UserContext
@@ -81,6 +89,10 @@ VALID_TRANSITIONS = {
 
     # From NEEDS_ADJUSTMENT
     (REVIEW_STATUS_NEEDS_ADJUSTMENT, REVIEW_ACTION_RESPOND): (REVIEW_STATUS_PENDING, True, "REQUESTER"),
+
+    # From a decision, group-final work types only (validate_review_transition guards)
+    (REVIEW_STATUS_APPROVED, REVIEW_ACTION_REOPEN): (REVIEW_STATUS_PENDING, True, "APPROVER"),
+    (REVIEW_STATUS_REJECTED, REVIEW_ACTION_REOPEN): (REVIEW_STATUS_PENDING, True, "APPROVER"),
 }
 
 
@@ -128,21 +140,26 @@ class ApprovalQueues:
 # ============================================================
 
 def is_reviewer_for_line(line: WorkLine, user_ctx: UserContext) -> bool:
-    """
-    Check if user can review this line.
+    """Return whether the user may act as a reviewer of this line.
 
-    User can review if:
-    - They are an admin, OR
-    - They have APPROVER role for the approval group this line is routed to
+    Super admins and members of the routed group always may. On a group-final
+    work type an admin of that work type also may, because no admin-final
+    stage exists to hold their authority instead.
     """
     if user_ctx.is_super_admin:
         return True
 
     routed_group = get_line_routing_approval_group(line)
-    if routed_group is None:
-        return False
+    if routed_group is not None and routed_group.id in user_ctx.approval_group_ids:
+        return True
 
-    return routed_group.id in user_ctx.approval_group_ids
+    # Local imports: see the circular-import note in approvals/reviews.py.
+    from app.routes.work.helpers.context import is_worktype_admin
+    from app.routes.work.helpers.review_state import is_group_final
+    work_item = line.work_item
+    return is_group_final(work_item) and is_worktype_admin(
+        user_ctx, work_item.portfolio.work_type_id,
+    )
 
 
 def can_view_work_item_lines(work_item: WorkItem, ctx, user_ctx: UserContext) -> bool:
@@ -221,25 +238,41 @@ def can_respond_to_work_item(work_item: WorkItem, ctx, user_ctx: UserContext) ->
     return False
 
 
-def get_reviewable_groups(user_ctx: UserContext) -> List[ApprovalGroup]:
+def get_reviewable_groups(
+    user_ctx: UserContext, work_type_code: Optional[str] = None,
+) -> List[ApprovalGroup]:
     """
-    Get approval groups the user can review.
+    Get approval groups whose review queue the user may open.
 
-    Admins can review all groups. Approvers can review their assigned groups.
+    Super admins see every group. Approvers see their own groups, and a
+    work-type admin or viewer sees every group of that work type. Opening a
+    queue is not a decision right; can_decide_line answers that.
+
+    Args:
+        work_type_code: Limit the result to one work type's groups.
     """
-    if user_ctx.is_super_admin:
-        return ApprovalGroup.query.filter_by(is_active=True).order_by(
-            ApprovalGroup.sort_order.asc(),
-            ApprovalGroup.name.asc()
-        ).all()
+    query = ApprovalGroup.query.filter(ApprovalGroup.is_active == True)
+    if work_type_code:
+        query = query.join(WorkType, ApprovalGroup.work_type_id == WorkType.id).filter(
+            WorkType.code == work_type_code.upper()
+        )
 
-    if not user_ctx.approval_group_ids:
-        return []
+    if not user_ctx.is_super_admin:
+        staff_work_type_ids = [
+            row.work_type_id for row in UserRole.query.filter(
+                UserRole.user_id == user_ctx.user_id,
+                UserRole.role_code.in_([ROLE_WORKTYPE_ADMIN, ROLE_WORKTYPE_VIEWER]),
+                UserRole.work_type_id.isnot(None),
+            )
+        ]
+        if not user_ctx.approval_group_ids and not staff_work_type_ids:
+            return []
+        query = query.filter(db.or_(
+            ApprovalGroup.id.in_(user_ctx.approval_group_ids or []),
+            ApprovalGroup.work_type_id.in_(staff_work_type_ids),
+        ))
 
-    return ApprovalGroup.query.filter(
-        ApprovalGroup.id.in_(user_ctx.approval_group_ids),
-        ApprovalGroup.is_active == True
-    ).order_by(
+    return query.order_by(
         ApprovalGroup.sort_order.asc(),
         ApprovalGroup.name.asc()
     ).all()
@@ -255,6 +288,49 @@ def require_checkout_for_review(work_item: WorkItem, user_ctx: UserContext) -> N
     """Abort 403 if user does not have checkout on this work item."""
     if work_item.checked_out_by_user_id != user_ctx.user_id:
         abort(403, "You must checkout this work item before making review decisions.")
+
+
+def decision_lock_satisfied(work_item: WorkItem, user_ctx: UserContext) -> bool:
+    """Return whether the checkout rule allows this user to decide now.
+
+    Group-final work types have no review sessions; everywhere else the
+    decider must hold the checkout.
+    """
+    from app.routes.work.helpers.review_state import is_group_final
+    if is_group_final(work_item):
+        return True
+    return work_item.checked_out_by_user_id == user_ctx.user_id
+
+
+def can_decide_line(line: WorkLine, user_ctx: UserContext) -> bool:
+    """Return whether the user may approve, reject or kick back this line now.
+
+    The one rule every decision button and decision route reads.
+    """
+    from app.routes.work.helpers.review_state import (
+        AWAITING_REVIEWER_GROUP, get_line_review_state,
+    )
+    return (
+        get_line_review_state(line).awaiting == AWAITING_REVIEWER_GROUP
+        and is_reviewer_for_line(line, user_ctx)
+        and decision_lock_satisfied(line.work_item, user_ctx)
+    )
+
+
+def can_reopen_line(line: WorkLine, user_ctx: UserContext) -> bool:
+    """Return whether the user may send this decided line back to PENDING.
+
+    Group-final work types only, and only someone who could have decided it.
+    """
+    from app.routes.work.helpers.review_state import is_group_final
+    if not is_group_final(line.work_item):
+        return False
+    review = get_review_for_line(line)
+    return (
+        review is not None
+        and review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)
+        and is_reviewer_for_line(line, user_ctx)
+    )
 
 
 # ============================================================
@@ -338,9 +414,19 @@ def validate_review_transition(
     Returns (new_status, error_message) tuple.
     error_message is None if transition is valid.
     """
+    if action == REVIEW_ACTION_REOPEN:
+        from app.routes.work.helpers.review_state import is_group_final
+        if not is_group_final(line.work_item):
+            # BUDGET reopens through its admin-final tools instead.
+            return "", "Reopen is not available for this work type."
+
     key = (current_status, action)
 
     if key not in VALID_TRANSITIONS:
+        if current_status in (
+            REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW, REVIEW_STATUS_REJECTED,
+        ):
+            return "", "This line was already decided."
         return "", f"Invalid transition: {current_status} -> {action}"
 
     new_status, note_required, allowed_role = VALID_TRANSITIONS[key]
@@ -604,10 +690,19 @@ def apply_review_decision(
     """
     # 1. Verify checkout (except for requester responses)
     if action != REVIEW_ACTION_RESPOND:
-        if work_item.checked_out_by_user_id != user_ctx.user_id:
+        if not decision_lock_satisfied(work_item, user_ctx):
             return False, "You must checkout this work item before making review decisions."
 
-    # 2. Validate transition
+    # 2. Re-read the request, then the review, under row locks. Without review
+    # sessions two reviewers can decide at once: the review lock refuses a second
+    # decision on one line, and the request lock lets the later of two last-line
+    # decisions see the earlier one and finalize. Lock the request first, always.
+    # Both refreshes discard unflushed changes; callers must not set attributes
+    # on work_item or review before this call.
+    db.session.refresh(work_item, with_for_update=True)
+    db.session.refresh(review, with_for_update=True)
+
+    # 3. Validate transition
     old_status = review.status
     new_status, error = validate_review_transition(
         old_status, action, note, user_ctx, review, line, ctx=ctx
@@ -615,7 +710,7 @@ def apply_review_decision(
     if error:
         return False, error
 
-    # 3. Apply changes
+    # 4. Apply changes
     review.status = new_status
     review.decided_at = datetime.utcnow()
     review.decided_by_user_id = user_ctx.user_id
@@ -626,11 +721,11 @@ def apply_review_decision(
     ):
         review.approved_amount_cents = amount_cents
 
-    # 4. Sync line status
+    # 5. Sync line status
     sync_line_status(line, review)
     line.status_changed_by_user_id = user_ctx.user_id
 
-    # 5. Create audit event
+    # 6. Create audit event
     create_line_audit_event(
         line,
         AUDIT_EVENT_REVIEW_DECISION if action != REVIEW_ACTION_RESPOND else AUDIT_EVENT_REQUESTER_RESPONSE,
@@ -640,7 +735,22 @@ def apply_review_decision(
         user_ctx,
     )
 
-    # 6. Auto-finalize for non-admin-final worktypes once every approval-group
+    # 6b. A reopened line means the request is no longer fully decided.
+    if action == REVIEW_ACTION_REOPEN and work_item.status == WORK_ITEM_STATUS_FINALIZED:
+        db.session.add(WorkItemAuditEvent(
+            work_item_id=work_item.id,
+            event_type=AUDIT_EVENT_UNFINALIZE,
+            old_value=WORK_ITEM_STATUS_FINALIZED,
+            new_value=WORK_ITEM_STATUS_SUBMITTED,
+            reason=(note or "").strip(),
+            snapshot={"trigger": "line_reopened", "line_number": line.line_number},
+            created_by_user_id=user_ctx.user_id,
+        ))
+        work_item.status = WORK_ITEM_STATUS_SUBMITTED
+        work_item.finalized_at = None
+        work_item.finalized_by_user_id = None
+
+    # 7. Auto-finalize for non-admin-final worktypes once every approval-group
     # review has a terminal decision. No-op for admin-final worktypes (BUDGET).
     from app.routes.work.helpers.lifecycle import try_auto_finalize
     try_auto_finalize(work_item, user_ctx)

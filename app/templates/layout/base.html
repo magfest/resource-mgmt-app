@@ -1154,6 +1154,34 @@
                 font-size: 13px;
                 flex-shrink: 0;
             }
+            /* Request-page tabs share the width so three fit a 375px phone;
+               a long label wraps inside its own tab. */
+            .request-tab-nav {
+                gap: 2px;
+                padding: 4px 0 0;
+            }
+            .tab-btn {
+                flex: 1 1 0;
+                min-width: 0;
+                padding: 10px 6px;
+                font-size: 14px;
+            }
+            .tab-count {
+                margin-left: 4px;
+            }
+            .tab-panel {
+                padding: 12px;
+            }
+
+            /* Opt-in for long or multi-line cells: the label sits on its own
+               line and the content takes the card's full width. */
+            table.responsive-cards td.cell-stack {
+                display: block;
+            }
+            table.responsive-cards td.cell-stack[data-label]::before {
+                display: block;
+                margin-bottom: 4px;
+            }
             /* Totals/footer rows in card mode: render as a block with no labels */
             table.responsive-cards tfoot tr {
                 background: #f6f6f6;
