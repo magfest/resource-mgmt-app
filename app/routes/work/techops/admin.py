@@ -33,6 +33,7 @@ from app.routes.approvals.helpers import (
     get_active_event_cycles,
 )
 from app.routes.work.helpers import friendly_status, is_worktype_admin
+from app.routes.work.helpers.review_state import group_progress_for_items
 from .. import work_bp
 
 
@@ -100,6 +101,8 @@ def techops_all_requests():
     query = query.order_by(WorkItem.updated_at.desc())
     pagination = query.paginate(page=page, per_page=_PER_PAGE, error_out=False)
 
+    progress_by_item = group_progress_for_items(wi.id for wi in pagination.items)
+
     requests_data = []
     for wi in pagination.items:
         portfolio = wi.portfolio
@@ -125,6 +128,7 @@ def techops_all_requests():
             "department": portfolio.department,
             "line_count": len(wi.lines),
             "service_mix": service_mix,
+            "progress": progress_by_item.get(wi.id, []),
         })
 
     event_cycles = get_active_event_cycles()

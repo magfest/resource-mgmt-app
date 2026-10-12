@@ -7,6 +7,7 @@
 {% from "macros/status_pill.html" import render_status_pill %}
 {% from "macros/comments.html" import render_comments %}
 {% from "macros/audit_log.html" import render_audit_log with context %}
+{% from "macros/group_progress.html" import render_group_progress %}
 {% from "macros/techops_line_facts.html" import render_line_space, render_phone_ring %}
 
 {% block title %}{{ work_item.public_id }} - TechOps Request{% endblock %}
@@ -59,6 +60,12 @@
       <div style="font-size: 24px; font-weight:700;">{{ lines|length }}</div>
     </div>
   </div>
+
+  {% if group_progress %}
+    <div style="margin-bottom: 16px;">
+      {{ render_group_progress(group_progress, progress_audience) }}
+    </div>
+  {% endif %}
 
   {# Top action bar: requester actions on DRAFT, reviewer links once
      submitted, then navigation. TechOps has no review sessions, dispatch

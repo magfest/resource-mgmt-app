@@ -6,6 +6,7 @@
    department actually need?" at a glance. #}
 {% extends "layout/base.html" %}
 {% from "macros/status_pill.html" import render_status_pill %}
+{% from "macros/group_progress.html" import render_group_progress %}
 
 {% block title %}All TechOps Requests{% endblock %}
 
@@ -89,6 +90,7 @@
             <th style="width: 110px;">Status</th>
             <th style="width: 70px;" class="right">Lines</th>
             <th>Service mix</th>
+            <th>Progress</th>
             <th style="width: 140px;">Updated</th>
             <th style="width: 80px;"></th>
           </tr>
@@ -127,6 +129,9 @@
                 {% else %}
                   <span class="muted small">-</span>
                 {% endif %}
+              </td>
+              <td data-label="Progress">
+                {{ render_group_progress(item.progress, 'staff') }}
               </td>
               <td data-label="Updated" class="muted small">
                 {% if wi.updated_at %}

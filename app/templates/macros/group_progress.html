@@ -1,0 +1,20 @@
+{# templates/macros/group_progress.html #}
+{# One chip per approval group, in words so it does not depend on colour.
+   audience "requester" reads "waiting on you"; staff read "waiting on
+   requester". #}
+{% macro render_group_progress(progress, audience) %}
+  {% if progress %}
+    <div class="group-progress" style="display: flex; flex-wrap: wrap; gap: 6px;">
+      {% for p in progress %}
+        <span class="pill" style="font-size: 12px; white-space: normal;">
+          {%- if p.decided == 0 and p.waiting_on_requester == 0 -%}
+            {{ p.group.name }} · not started
+          {%- else -%}
+            {{ p.group.name }} · {{ p.decided }} of {{ p.total }} decided
+            {%- if p.waiting_on_requester %} · {{ p.waiting_on_requester }} waiting on {{ 'you' if audience == 'requester' else 'requester' }}{% endif -%}
+          {%- endif -%}
+        </span>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endmacro %}

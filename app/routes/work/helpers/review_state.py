@@ -10,8 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from app import db
 from app.models import (
-    WorkLine, WorkLineReview,
+    ApprovalGroup, WorkLine, WorkLineReview,
     REVIEW_STAGE_APPROVAL_GROUP, REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING, REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED,
     REVIEW_STATUS_NEEDS_INFO, REVIEW_STATUS_NEEDS_ADJUSTMENT,
@@ -91,3 +92,52 @@ def get_line_review_state(line: WorkLine) -> LineReviewState:
         ag=ag, admin=admin, has_admin_stage=has_admin_stage,
         awaiting=awaiting, kickback_review=kickback_review,
     )
+
+
+@dataclass(frozen=True)
+class GroupProgress:
+    """How far one approval group has got on one request."""
+    group: ApprovalGroup
+    total: int
+    decided: int
+    waiting_on_requester: int
+
+    @property
+    def pending(self) -> int:
+        return self.total - self.decided - self.waiting_on_requester
+
+
+def group_progress_for_items(work_item_ids) -> dict[int, list[GroupProgress]]:
+    """Return per-group progress for each item, groups in sort order.
+
+    Reads APPROVAL_GROUP review rows, not line.status, which summarises two
+    stages lossily. An item with no review rows, such as a draft, is absent.
+    """
+    ids = list(work_item_ids)
+    if not ids:
+        return {}
+    rows = (
+        db.session.query(WorkLine.work_item_id, WorkLineReview.status, ApprovalGroup)
+        .join(WorkLineReview, WorkLineReview.work_line_id == WorkLine.id)
+        .join(ApprovalGroup, ApprovalGroup.id == WorkLineReview.approval_group_id)
+        .filter(WorkLine.work_item_id.in_(ids))
+        .filter(WorkLineReview.stage == REVIEW_STAGE_APPROVAL_GROUP)
+        .all()
+    )
+    tallies: dict[int, dict[int, list]] = {}
+    for item_id, status, group in rows:
+        entry = tallies.setdefault(item_id, {}).setdefault(group.id, [group, 0, 0, 0])
+        entry[1] += 1
+        if status in _AG_TERMINAL:
+            entry[2] += 1
+        elif status in _KICKBACK:
+            entry[3] += 1
+    return {
+        item_id: [
+            GroupProgress(group=g, total=t, decided=d, waiting_on_requester=w)
+            for g, t, d, w in sorted(
+                by_group.values(), key=lambda e: (e[0].sort_order or 0, e[0].name),
+            )
+        ]
+        for item_id, by_group in tallies.items()
+    }
