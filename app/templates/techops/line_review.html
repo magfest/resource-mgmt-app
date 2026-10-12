@@ -249,6 +249,22 @@
 
       {% include "components/_view_only_notice.html" %}
 
+      {# Reopen sends a decided line back to the group. The note is posted
+         publicly, like any decision rationale. #}
+      {% if can_reopen %}
+        <section class="card" style="margin-bottom: 16px; background: #f8f9fa;">
+          <h3 style="margin:0 0 12px 0;">Reopen this line</h3>
+          <form method="post" action="{{ url_for('approvals.line_reopen', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='techops') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="reopen_note" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">
+              Why does it need another look? (required, visible to the requester)
+            </label>
+            <textarea name="note" id="reopen_note" rows="2" style="width: 100%;" required></textarea>
+            <button type="submit" class="btn" style="margin-top: 8px;">Reopen</button>
+          </form>
+        </section>
+      {% endif %}
+
       {# Reviewer Decision Form — TechOps has no admin_final stage so the
          BUDGET-style AG/Admin tab toggle isn't needed. The "Need
          Adjustment" button is intentionally omitted: line_adjust hard-

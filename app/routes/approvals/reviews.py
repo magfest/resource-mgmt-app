@@ -18,6 +18,7 @@ from app.models import (
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
     REVIEW_ACTION_RESPOND,
+    REVIEW_ACTION_REOPEN,
     REVIEW_STATUS_NEEDS_INFO,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     COMMENT_VISIBILITY_PUBLIC,
@@ -46,6 +47,7 @@ from app.routes.work.helpers.review_state import (
 from . import approvals_bp
 from .helpers import (
     can_decide_line,
+    can_reopen_line,
     is_reviewer_for_line,
     can_respond_to_work_item,
     can_view_work_item_lines,
@@ -262,6 +264,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         can_comment=_can_comment_on_line(line, work_item, user_ctx),
         has_checkout=has_checkout,
         can_decide=can_decide,
+        can_reopen=can_reopen_line(line, user_ctx),
         can_admin_decide=can_admin_decide,
         can_respond=can_respond,
         state=state,
@@ -313,6 +316,40 @@ def line_needs_info(event: str, dept: str, public_id: str, line_num: int, work_t
 def line_needs_adjustment(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str = "budget"):
     """Request adjustment for a line."""
     return _handle_review_action(event, dept, public_id, line_num, work_type_slug, REVIEW_ACTION_NEEDS_ADJUSTMENT)
+
+
+@approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reopen")
+def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str):
+    """Send a decided line on a group-final work type back to PENDING."""
+    user_ctx = get_user_ctx()
+    work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
+    back = redirect(url_for(
+        "approvals.line_review", event=event, dept=dept, public_id=public_id,
+        line_num=line_num, work_type_slug=work_type_slug,
+    ))
+
+    if not can_reopen_line(line, user_ctx):
+        flash("You cannot reopen this line.", "error")
+        return back
+
+    note = (request.form.get("note") or "").strip()
+    success, error = apply_review_decision(
+        review=get_review_for_line(line), line=line, work_item=work_item,
+        action=REVIEW_ACTION_REOPEN, note=note, amount_cents=None,
+        user_ctx=user_ctx, ctx=ctx,
+    )
+    if not success:
+        flash(error, "error")
+        return back
+
+    # Decision rationale is public; a reopen is a decision.
+    db.session.add(WorkLineComment(
+        work_line_id=line.id, visibility=COMMENT_VISIBILITY_PUBLIC,
+        body=f"[REOPENED] {note}", created_by_user_id=user_ctx.user_id,
+    ))
+    db.session.commit()
+    flash(f"Line {line_num} reopened.", "success")
+    return back
 
 
 def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str, action: str):

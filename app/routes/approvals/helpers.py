@@ -48,17 +48,21 @@ from app.models import (
     WORK_LINE_STATUS_APPROVED,
     WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW,
     WORK_LINE_STATUS_REJECTED,
+    WORK_ITEM_STATUS_FINALIZED,
+    WORK_ITEM_STATUS_SUBMITTED,
     REVIEW_ACTION_APPROVE,
     REVIEW_ACTION_APPROVE_NEEDS_REVIEW,
     REVIEW_ACTION_REJECT,
     REVIEW_ACTION_NEEDS_INFO,
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
     REVIEW_ACTION_RESPOND,
+    REVIEW_ACTION_REOPEN,
     AUDIT_EVENT_REVIEW_DECISION,
     AUDIT_EVENT_REQUESTER_RESPONSE,
     AUDIT_EVENT_LINE_CREATED,
     AUDIT_EVENT_FIELD_CHANGE,
     AUDIT_EVENT_LINE_DELETED,
+    AUDIT_EVENT_UNFINALIZE,
     ROLE_APPROVER,
 )
 from app.routes import get_user_ctx, UserContext
@@ -84,6 +88,10 @@ VALID_TRANSITIONS = {
 
     # From NEEDS_ADJUSTMENT
     (REVIEW_STATUS_NEEDS_ADJUSTMENT, REVIEW_ACTION_RESPOND): (REVIEW_STATUS_PENDING, True, "REQUESTER"),
+
+    # From a decision, group-final work types only (validate_review_transition guards)
+    (REVIEW_STATUS_APPROVED, REVIEW_ACTION_REOPEN): (REVIEW_STATUS_PENDING, True, "APPROVER"),
+    (REVIEW_STATUS_REJECTED, REVIEW_ACTION_REOPEN): (REVIEW_STATUS_PENDING, True, "APPROVER"),
 }
 
 
@@ -308,6 +316,22 @@ def can_decide_line(line: WorkLine, user_ctx: UserContext) -> bool:
     )
 
 
+def can_reopen_line(line: WorkLine, user_ctx: UserContext) -> bool:
+    """Return whether the user may send this decided line back to PENDING.
+
+    Group-final work types only, and only someone who could have decided it.
+    """
+    from app.routes.work.helpers.review_state import is_group_final
+    if not is_group_final(line.work_item):
+        return False
+    review = get_review_for_line(line)
+    return (
+        review is not None
+        and review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)
+        and is_reviewer_for_line(line, user_ctx)
+    )
+
+
 # ============================================================
 # Review Record Management
 # ============================================================
@@ -389,6 +413,12 @@ def validate_review_transition(
     Returns (new_status, error_message) tuple.
     error_message is None if transition is valid.
     """
+    if action == REVIEW_ACTION_REOPEN:
+        from app.routes.work.helpers.review_state import is_group_final
+        if not is_group_final(line.work_item):
+            # BUDGET reopens through its admin-final tools instead.
+            return "", "Reopen is not available for this work type."
+
     key = (current_status, action)
 
     if key not in VALID_TRANSITIONS:
@@ -698,6 +728,21 @@ def apply_review_decision(
         note,
         user_ctx,
     )
+
+    # 6b. A reopened line means the request is no longer fully decided.
+    if action == REVIEW_ACTION_REOPEN and work_item.status == WORK_ITEM_STATUS_FINALIZED:
+        db.session.add(WorkItemAuditEvent(
+            work_item_id=work_item.id,
+            event_type=AUDIT_EVENT_UNFINALIZE,
+            old_value=WORK_ITEM_STATUS_FINALIZED,
+            new_value=WORK_ITEM_STATUS_SUBMITTED,
+            reason=(note or "").strip(),
+            snapshot={"trigger": "line_reopened", "line_number": line.line_number},
+            created_by_user_id=user_ctx.user_id,
+        ))
+        work_item.status = WORK_ITEM_STATUS_SUBMITTED
+        work_item.finalized_at = None
+        work_item.finalized_by_user_id = None
 
     # 7. Auto-finalize for non-admin-final worktypes once every approval-group
     # review has a terminal decision. No-op for admin-final worktypes (BUDGET).

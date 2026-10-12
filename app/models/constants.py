@@ -186,6 +186,7 @@ REVIEW_ACTION_NEEDS_INFO = "NEEDS_INFO"
 REVIEW_ACTION_NEEDS_ADJUSTMENT = "NEEDS_ADJUSTMENT"
 REVIEW_ACTION_RESET = "RESET"
 REVIEW_ACTION_RESPOND = "RESPOND"
+REVIEW_ACTION_REOPEN = "REOPEN"  # group-final work types only: decided line back to PENDING
 
 # ============================================================
 # Routing strategy constants
