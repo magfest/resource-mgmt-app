@@ -17,13 +17,16 @@ from .helpers import (
 
 @approvals_bp.get("/approvals/")
 def dashboard_home():
-    """
-    Dashboard home - redirect to first reviewable group or show selector.
+    """Redirect to the first group the user can open.
+
+    Team menus pass ?work_type=CODE so a user with groups on several teams
+    lands on the team they clicked, not on whichever group sorts first.
     """
     user_ctx = get_user_ctx()
 
-    # Get groups user can review
-    groups = get_reviewable_groups(user_ctx)
+    groups = get_reviewable_groups(
+        user_ctx, work_type_code=request.args.get("work_type", "").strip() or None,
+    )
 
     if not groups:
         abort(403, "You do not have permission to access the approvals dashboard.")

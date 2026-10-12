@@ -128,7 +128,7 @@
     {# Review Queue link for reviewers (admins always; non-admins only
        while they hold checkout — matches BUDGET's gating). #}
     {% if not perms.is_draft and (perms.is_worktype_admin or perms.is_checked_out_by_current_user) %}
-      <a class="btn" href="{{ url_for('approvals.dashboard_home') }}">
+      <a class="btn" href="{{ url_for('approvals.dashboard_home', work_type='TECHOPS') }}">
         Review Queue
       </a>
     {% endif %}

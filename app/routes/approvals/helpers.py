@@ -31,6 +31,9 @@ from app.models import (
     ContractLineDetail,
     SupplyOrderLineDetail,
     User,
+    UserRole,
+    WorkType,
+    ROLE_WORKTYPE_ADMIN,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING,
@@ -221,25 +224,41 @@ def can_respond_to_work_item(work_item: WorkItem, ctx, user_ctx: UserContext) ->
     return False
 
 
-def get_reviewable_groups(user_ctx: UserContext) -> List[ApprovalGroup]:
+def get_reviewable_groups(
+    user_ctx: UserContext, work_type_code: Optional[str] = None,
+) -> List[ApprovalGroup]:
     """
-    Get approval groups the user can review.
+    Get approval groups whose review queue the user may open.
 
-    Admins can review all groups. Approvers can review their assigned groups.
+    Super admins see every group. Approvers see their own groups, and a
+    work-type admin sees every group of that work type. Opening a queue is not
+    a decision right; decisions still require membership of the routed group.
+
+    Args:
+        work_type_code: Limit the result to one work type's groups.
     """
-    if user_ctx.is_super_admin:
-        return ApprovalGroup.query.filter_by(is_active=True).order_by(
-            ApprovalGroup.sort_order.asc(),
-            ApprovalGroup.name.asc()
-        ).all()
+    query = ApprovalGroup.query.filter(ApprovalGroup.is_active == True)
+    if work_type_code:
+        query = query.join(WorkType, ApprovalGroup.work_type_id == WorkType.id).filter(
+            WorkType.code == work_type_code.upper()
+        )
 
-    if not user_ctx.approval_group_ids:
-        return []
+    if not user_ctx.is_super_admin:
+        admin_work_type_ids = [
+            row.work_type_id for row in UserRole.query.filter(
+                UserRole.user_id == user_ctx.user_id,
+                UserRole.role_code == ROLE_WORKTYPE_ADMIN,
+                UserRole.work_type_id.isnot(None),
+            )
+        ]
+        if not user_ctx.approval_group_ids and not admin_work_type_ids:
+            return []
+        query = query.filter(db.or_(
+            ApprovalGroup.id.in_(user_ctx.approval_group_ids or []),
+            ApprovalGroup.work_type_id.in_(admin_work_type_ids),
+        ))
 
-    return ApprovalGroup.query.filter(
-        ApprovalGroup.id.in_(user_ctx.approval_group_ids),
-        ApprovalGroup.is_active == True
-    ).order_by(
+    return query.order_by(
         ApprovalGroup.sort_order.asc(),
         ApprovalGroup.name.asc()
     ).all()
