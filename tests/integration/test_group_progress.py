@@ -63,3 +63,16 @@ def test_draft_request_renders_without_a_strip(client, techops_review):
 
     assert resp.status_code == 200
     assert "group-progress" not in resp.get_data(as_text=True)
+
+
+def test_two_lines_with_the_same_status_both_count(client, techops_review):
+    # Identical (item, status, group) rows must not collapse into one.
+    item = techops_review["item"]
+    add_routed_line(item, 2, "TECHOPS_GEN")
+    login(client, "test:reviewer")
+    client.post(line_url(1, "approve"))
+    client.post(line_url(2, "approve"))
+
+    progress = {p.group.code: p for p in group_progress_for_items([item.id])[item.id]}
+
+    assert (progress["TECHOPS_GEN"].total, progress["TECHOPS_GEN"].decided) == (2, 2)

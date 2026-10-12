@@ -116,8 +116,12 @@ def group_progress_for_items(work_item_ids) -> dict[int, list[GroupProgress]]:
     ids = list(work_item_ids)
     if not ids:
         return {}
+    # WorkLineReview.id keeps every row distinct. Query de-duplicates rows that
+    # hold an entity, so two same-status lines in one group would count once.
     rows = (
-        db.session.query(WorkLine.work_item_id, WorkLineReview.status, ApprovalGroup)
+        db.session.query(
+            WorkLineReview.id, WorkLine.work_item_id, WorkLineReview.status, ApprovalGroup,
+        )
         .join(WorkLineReview, WorkLineReview.work_line_id == WorkLine.id)
         .join(ApprovalGroup, ApprovalGroup.id == WorkLineReview.approval_group_id)
         .filter(WorkLine.work_item_id.in_(ids))
@@ -125,7 +129,7 @@ def group_progress_for_items(work_item_ids) -> dict[int, list[GroupProgress]]:
         .all()
     )
     tallies: dict[int, dict[int, list]] = {}
-    for item_id, status, group in rows:
+    for _review_id, item_id, status, group in rows:
         entry = tallies.setdefault(item_id, {}).setdefault(group.id, [group, 0, 0, 0])
         entry[1] += 1
         if status in _AG_TERMINAL:
