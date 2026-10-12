@@ -54,7 +54,7 @@
 
   {# Lines Table #}
   <section class="card">
-    <table style="table-layout: auto;">
+    <table class="responsive-cards" style="table-layout: auto;">
       <thead>
         <tr>
           <th style="width: 50px;">#</th>
@@ -73,12 +73,12 @@
           {% set st = detail.service_type if detail else None %}
           {% set status = line.status | upper %}
           <tr id="line-{{ line.line_number }}" data-line-num="{{ line.line_number }}" data-status="{{ status }}">
-            <td>
+            <td data-label="Line">
               <a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='techops') }}">
                 {{ line.line_number }}
               </a>
             </td>
-            <td>
+            <td data-label="Service">
               {% if st %}
                 <strong style="font-size: 13px;">{{ st.name }}</strong>
                 {% if st.code == "PHONE" and detail.config and detail.config.get("external_callable") %}
@@ -88,13 +88,13 @@
                 <span class="muted">-</span>
               {% endif %}
             </td>
-            <td style="font-size: 13px;">
+            <td data-label="Space" style="font-size: 13px;">
               {{ render_line_space(detail, space_facts) }}
             </td>
-            <td>
+            <td class="cell-stack" data-label="Details">
               {{ render_line_summary(detail, phone_line_not_chosen) }}
             </td>
-            <td>
+            <td data-label="Status">
               {# Render via the macro so the status → pill-class mapping
                  stays in one place. The extra_class adds line-status-pill
                  so the AJAX post-action JS can locate this exact pill
@@ -102,7 +102,7 @@
               {% set status_label = friendly_status(status) if friendly_status else status %}
               {{ render_status_pill(status, label=status_label, extra_class="line-status-pill", extra_style="font-size: 11px;") }}
             </td>
-            <td class="line-actions">
+            <td class="line-actions cell-stack" data-label="Actions">
               {# Buttons follow can_decide_line, the same rule the route enforces. #}
               {% if status == 'PENDING' and item.can_decide %}
                 <div class="quick-action-row" style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">

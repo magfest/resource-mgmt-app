@@ -165,7 +165,7 @@
       {% set show_line_actions = status in ("SUBMITTED", "UNDER_REVIEW", "NEEDS_INFO", "FINALIZED") %}
       {% set line_action_label = "View" if status == "FINALIZED" else "Review" %}
       {% if lines %}
-        <table>
+        <table class="responsive-cards">
           <thead>
             <tr>
               <th style="width: 50px;">#</th>
@@ -184,8 +184,8 @@
               {% set detail = line.techops_detail %}
               {% set st = detail.service_type if detail else None %}
               <tr id="line-{{ line.line_number }}">
-                <td>{{ line.line_number }}</td>
-                <td>
+                <td data-label="Line">{{ line.line_number }}</td>
+                <td data-label="Service">
                   {% if st %}
                     <strong>{{ st.name }}</strong>
                     {% if st.code == "PHONE" and detail.config and detail.config.get("external_callable") %}
@@ -195,10 +195,10 @@
                     <span class="muted">-</span>
                   {% endif %}
                 </td>
-                <td>
+                <td data-label="Space">
                   {{ render_line_space(detail, space_facts) }}
                 </td>
-                <td>
+                <td class="cell-stack" data-label="Details">
                   {% if detail %}
                     {% if st and st.code == "RADIO_CHANNEL" %}
                       <div><strong>Channel:</strong> {{ detail.location or '-' }}</div>
@@ -231,10 +231,10 @@
                     <span class="muted">-</span>
                   {% endif %}
                 </td>
-                <td>
+                <td data-label="Status">
                   {{ render_status_pill(line.status) }}
                 </td>
-                <td class="muted small">
+                <td class="muted small" data-label="Reviewer group">
                   {% if detail and detail.routed_approval_group %}
                     {{ detail.routed_approval_group.name }}
                   {% else %}

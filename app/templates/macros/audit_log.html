@@ -28,7 +28,7 @@
   {% endif %}
 </div>
 {% if events %}
-  <table>
+  <table class="responsive-cards">
     <thead>
       <tr>
         <th style="width: 150px;">When</th>
@@ -41,15 +41,15 @@
     <tbody>
       {% for event in events %}
         <tr class="{% if event.event_type == 'VIEW' %}audit-view-event{% endif %}" {% if event.event_type == 'VIEW' %}style="display: none;"{% endif %}>
-          <td class="muted small">{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-          <td class="small">
+          <td class="muted small" data-label="When">{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="small" data-label="Scope">
             {% if event.line_number %}
               <a href="#line-{{ event.line_number }}" style="color: #0a66c2;">Line {{ event.line_number }}</a>
             {% else %}
               <span class="muted">Request</span>
             {% endif %}
           </td>
-          <td>
+          <td data-label="Event">
             {# Work item level events #}
             {% if event.event_type == 'FINALIZE' %}
               <span class="pill pill-approved">FINALIZED</span>
@@ -118,7 +118,7 @@
               <span class="pill">{{ event.event_type }}</span>
             {% endif %}
           </td>
-          <td>
+          <td class="cell-stack" data-label="Details">
             {% if event.event_type == 'LINE_CREATED' %}
               {{ event.new_value }}
               {% if event.reason %}
@@ -196,7 +196,7 @@
               <div class="small muted" style="margin-top: 4px;">{{ event.reason }}</div>
             {% endif %}
           </td>
-          <td class="muted small">{{ event.created_by_user_id|user_display }}</td>
+          <td class="muted small" data-label="By">{{ event.created_by_user_id|user_display }}</td>
         </tr>
       {% endfor %}
     </tbody>
