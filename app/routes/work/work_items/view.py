@@ -41,6 +41,8 @@ from app.routes.admin_final.helpers import (
     get_finalization_summary,
 )
 from .common import get_work_item_by_public_id
+from app.routes.approvals.helpers import can_decide_line
+from app.routes.work.helpers.review_state import is_group_final
 
 
 # ============================================================
@@ -279,10 +281,15 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
 
     # Filter lines for approval group users
     all_lines = list(work_item.lines)
+    # On group-final work types an admin can decide every line, so they see
+    # every line. Elsewhere only super admins skip the group filter.
+    sees_all_lines = (
+        perms.is_worktype_admin if is_group_final(work_item) else user_ctx.is_super_admin
+    )
     visible_lines, lines_filtered = filter_lines_for_user(
         all_lines,
         user_ctx,
-        is_worktype_admin=user_ctx.is_super_admin,
+        is_worktype_admin=sees_all_lines,
         has_edit_access=False,  # Quick review is for reviewers only
     )
     total_lines_count = len(all_lines)
@@ -327,6 +334,7 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
             # Polymorphic accessor, so this is safe for any worktype whose
             # quick_review template chooses to render it.
             "group": get_line_routing_approval_group(line),
+            "can_decide": can_decide_line(line, user_ctx),
         })
 
     # Pick the per-worktype template (same pattern as line_review).

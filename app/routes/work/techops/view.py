@@ -120,4 +120,5 @@ def techops_work_item_detail(event: str, dept: str, public_id: str):
         user_ctx=user_ctx,
         space_facts=space_facts,
         phone_line_not_chosen=PHONE_LINE_NOT_CHOSEN,
+        is_approver_for_item=is_approver_for_item,
     )

@@ -45,6 +45,7 @@ from app.routes.work.helpers.review_state import (
 )
 from . import approvals_bp
 from .helpers import (
+    can_decide_line,
     is_reviewer_for_line,
     can_respond_to_work_item,
     can_view_work_item_lines,
@@ -169,18 +170,9 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         admin_review = get_admin_final_review(line)
         ag_review = get_approval_group_review(line)
 
-    # The AG decision form is only actionable while it's genuinely the
-    # approval group's turn. Derived from the review-state read-model
-    # (state.awaiting) rather than review.status directly, so this
-    # automatically excludes the admin-terminal case (awaiting would be
-    # DONE, not REVIEWER_GROUP) — the old `admin_final_decided` guard is
-    # now subsumed by AWAITING_REVIEWER_GROUP itself.
+    # One rule for the form and the route; see can_decide_line.
     state = get_line_review_state(line)
-    can_decide = (
-        state.awaiting == AWAITING_REVIEWER_GROUP
-        and is_reviewer_for_line(line, user_ctx)
-        and user_holds_checkout(work_item, user_ctx)
-    )
+    can_decide = can_decide_line(line, user_ctx)
 
     # Admin final decisions require the checkout lock, same as AG decisions
     # (Task 3). Computed off the review-state read-model so it's correct

@@ -52,45 +52,6 @@
     </div>
   </div>
 
-  {# Checkout Status #}
-  {% if is_checked_out %}
-    {% if has_checkout %}
-      <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
-          <div>
-            <strong>You have this item checked out</strong>
-            <span class="muted">- You can make review decisions.</span>
-          </div>
-          <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            {# Use request.full_path (relative) — safe_redirect_url
-               rejects absolute URLs like request.url. #}
-            <input type="hidden" name="return_to" value="{{ request.full_path }}">
-            <button type="submit" class="btn">Finish Reviewing</button>
-          </form>
-        </div>
-      </div>
-    {% else %}
-      <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
-        <strong>Under Active Review</strong> - Checked out by another reviewer.
-      </div>
-    {% endif %}
-  {% elif can_checkout %}
-    <div class="callout" style="margin-bottom: 16px; background: #e7f3fe; border-left: 4px solid #2196f3;">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
-        <div>
-          <strong>Review Session Required</strong>
-          <span class="muted">- Start a review session to make decisions.</span>
-        </div>
-        <form method="post" action="{{ url_for('work.work_item_checkout', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="return_to" value="{{ request.full_path }}">
-          <button type="submit" class="btn btn-primary">Start Reviewing</button>
-        </form>
-      </div>
-    </div>
-  {% endif %}
-
   {# Lines Table #}
   <section class="card">
     <table style="table-layout: auto;">
@@ -142,12 +103,8 @@
               {{ render_status_pill(status, label=status_label, extra_class="line-status-pill", extra_style="font-size: 11px;") }}
             </td>
             <td class="line-actions">
-              {# Note input + action buttons are gated on has_checkout
-                 only — typing without a checkout meant the user lost
-                 their note when the checkout POST replaced the page.
-                 See user feedback: prefer to prevent work over trying
-                 to preserve client state across redirects. #}
-              {% if status == 'PENDING' and has_checkout %}
+              {# Buttons follow can_decide_line, the same rule the route enforces. #}
+              {% if status == 'PENDING' and item.can_decide %}
                 <div class="quick-action-row" style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
                   <input type="text" class="line-note" placeholder="Note (required for reject/info)"
                          style="flex: 1; min-width: 120px; padding: 4px 8px; font-size: 12px;">
@@ -167,7 +124,7 @@
                   </div>
                 </div>
               {% elif status == 'PENDING' %}
-                <span class="muted small">Start a review session above to act on this line.</span>
+                <span class="muted small">Waiting on {{ item.group.name if item.group else 'the routed group' }}</span>
               {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}
                 <span class="muted small">Awaiting requester response</span>
               {% elif status == 'APPROVED' %}
@@ -296,47 +253,24 @@
     })
     .then(function(response) { return response.json(); })
     .then(function(data) {
+      feedbackSpinner.style.display = 'none';
       if (data.success) {
-        var newStatus = statusMap[action];
-        row.setAttribute('data-status', newStatus);
-
-        var pill = row.querySelector('.line-status-pill');
-        pill.textContent = friendlyStatusLabels[newStatus] || newStatus;
-        // Match the Jinja pill-class mapping above (high-contrast classes).
-        pill.className = 'pill line-status-pill';
-        if (newStatus === 'APPROVED') {
-          pill.classList.add('pill-success');
-        } else if (newStatus === 'REJECTED') {
-          pill.classList.add('pill-rejected');
-        } else if (newStatus === 'NEEDS_INFO') {
-          pill.classList.add('pill-warning');
-        } else {
-          pill.classList.add('pill-draft');
-        }
-
-        var actionsCell = row.querySelector('.line-actions');
-        if (newStatus === 'APPROVED') {
-          actionsCell.innerHTML = '<span class="muted small">Approved</span>';
-        } else if (newStatus === 'REJECTED') {
-          actionsCell.innerHTML = '<span class="muted small">Rejected</span>';
-        } else if (newStatus === 'NEEDS_INFO') {
-          actionsCell.innerHTML = '<span class="muted small">Awaiting requester response</span>';
-        }
-
-        updateSummaryCounts();
-
-        feedbackSpinner.style.display = 'none';
+        applyStatus(row, statusMap[action]);
         feedbackText.textContent = 'Done!';
         feedback.style.color = '#059669';
-      } else {
-        feedbackSpinner.style.display = 'none';
-        feedbackText.textContent = data.error || 'Error occurred';
-        feedback.style.color = '#dc3545';
-        buttons.forEach(function(b) {
-          b.disabled = false;
-          b.style.opacity = '1';
-        });
+        return;
       }
+      feedbackText.textContent = data.error || 'Error occurred';
+      feedback.style.color = '#dc3545';
+      if (data.current_status && data.current_status !== 'PENDING') {
+        // Someone else decided it first; show what they decided.
+        applyStatus(row, data.current_status);
+        return;
+      }
+      buttons.forEach(function(b) {
+        b.disabled = false;
+        b.style.opacity = '1';
+      });
     })
     .catch(function(err) {
       feedbackSpinner.style.display = 'none';
@@ -348,6 +282,39 @@
       });
     });
   });
+
+  // Redraw a row for a status the server reports, ours or someone else's.
+  function applyStatus(row, newStatus) {
+    row.setAttribute('data-status', newStatus);
+
+    var pill = row.querySelector('.line-status-pill');
+    pill.textContent = friendlyStatusLabels[newStatus] || newStatus;
+    // Match the Jinja pill-class mapping above (high-contrast classes).
+    pill.className = 'pill line-status-pill';
+    if (newStatus === 'APPROVED') {
+      pill.classList.add('pill-success');
+    } else if (newStatus === 'REJECTED') {
+      pill.classList.add('pill-rejected');
+    } else if (newStatus === 'NEEDS_INFO') {
+      pill.classList.add('pill-warning');
+    } else {
+      pill.classList.add('pill-draft');
+    }
+
+    var actionsCell = row.querySelector('.line-actions');
+    var feedback = actionsCell.querySelector('.action-feedback');
+    var label = {
+      'APPROVED': 'Approved',
+      'REJECTED': 'Rejected',
+      'NEEDS_INFO': 'Awaiting requester response'
+    }[newStatus];
+    if (label) {
+      actionsCell.innerHTML = '<span class="muted small">' + label + '</span>';
+      if (feedback) actionsCell.appendChild(feedback);
+    }
+
+    updateSummaryCounts();
+  }
 
   function updateSummaryCounts() {
     var rows = document.querySelectorAll('tr[data-status]');
