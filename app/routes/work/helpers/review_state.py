@@ -44,6 +44,19 @@ def _has_admin_stage(line: WorkLine) -> bool:
     return bool(config and config.has_admin_final)
 
 
+def is_group_final(work_item) -> bool:
+    """Return whether the approval group's decision is final for this item.
+
+    True when the work type has no admin-final stage; as of 2026-10-12 that
+    is TechOps alone. A missing config counts as not group-final, so the
+    checkout stays required rather than silently dropping away.
+    """
+    portfolio = work_item.portfolio if work_item else None
+    work_type = portfolio.work_type if portfolio else None
+    config = work_type.config if work_type else None
+    return bool(config) and not config.has_admin_final
+
+
 def get_line_review_state(line: WorkLine) -> LineReviewState:
     ag = WorkLineReview.query.filter_by(
         work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP).first()

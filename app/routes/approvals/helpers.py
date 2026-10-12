@@ -131,21 +131,26 @@ class ApprovalQueues:
 # ============================================================
 
 def is_reviewer_for_line(line: WorkLine, user_ctx: UserContext) -> bool:
-    """
-    Check if user can review this line.
+    """Return whether the user may act as a reviewer of this line.
 
-    User can review if:
-    - They are an admin, OR
-    - They have APPROVER role for the approval group this line is routed to
+    Super admins and members of the routed group always may. On a group-final
+    work type an admin of that work type also may, because no admin-final
+    stage exists to hold their authority instead.
     """
     if user_ctx.is_super_admin:
         return True
 
     routed_group = get_line_routing_approval_group(line)
-    if routed_group is None:
-        return False
+    if routed_group is not None and routed_group.id in user_ctx.approval_group_ids:
+        return True
 
-    return routed_group.id in user_ctx.approval_group_ids
+    # Local imports: see the circular-import note in approvals/reviews.py.
+    from app.routes.work.helpers.context import is_worktype_admin
+    from app.routes.work.helpers.review_state import is_group_final
+    work_item = line.work_item
+    return is_group_final(work_item) and is_worktype_admin(
+        user_ctx, work_item.portfolio.work_type_id,
+    )
 
 
 def can_view_work_item_lines(work_item: WorkItem, ctx, user_ctx: UserContext) -> bool:
@@ -274,6 +279,33 @@ def require_checkout_for_review(work_item: WorkItem, user_ctx: UserContext) -> N
     """Abort 403 if user does not have checkout on this work item."""
     if work_item.checked_out_by_user_id != user_ctx.user_id:
         abort(403, "You must checkout this work item before making review decisions.")
+
+
+def decision_lock_satisfied(work_item: WorkItem, user_ctx: UserContext) -> bool:
+    """Return whether the checkout rule allows this user to decide now.
+
+    Group-final work types have no review sessions; everywhere else the
+    decider must hold the checkout.
+    """
+    from app.routes.work.helpers.review_state import is_group_final
+    if is_group_final(work_item):
+        return True
+    return work_item.checked_out_by_user_id == user_ctx.user_id
+
+
+def can_decide_line(line: WorkLine, user_ctx: UserContext) -> bool:
+    """Return whether the user may approve, reject or kick back this line now.
+
+    The one rule every decision button and decision route reads.
+    """
+    from app.routes.work.helpers.review_state import (
+        AWAITING_REVIEWER_GROUP, get_line_review_state,
+    )
+    return (
+        get_line_review_state(line).awaiting == AWAITING_REVIEWER_GROUP
+        and is_reviewer_for_line(line, user_ctx)
+        and decision_lock_satisfied(line.work_item, user_ctx)
+    )
 
 
 # ============================================================
@@ -623,7 +655,7 @@ def apply_review_decision(
     """
     # 1. Verify checkout (except for requester responses)
     if action != REVIEW_ACTION_RESPOND:
-        if work_item.checked_out_by_user_id != user_ctx.user_id:
+        if not decision_lock_satisfied(work_item, user_ctx):
             return False, "You must checkout this work item before making review decisions."
 
     # 2. Validate transition
