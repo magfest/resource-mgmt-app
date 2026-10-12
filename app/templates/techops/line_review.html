@@ -49,8 +49,16 @@
         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
           <div>
             <strong>You have this item checked out</strong>
+            {# Holding the lock is not a decision right: a work-type admin
+               may check out an item without being in the line's group. #}
             <div class="muted" style="margin-top:4px;">
-              You can make review decisions on this line.
+              {% if can_decide %}
+                You can make review decisions on this line.
+              {% elif not can_review %}
+                Only {{ detail.routed_approval_group.name if detail and detail.routed_approval_group else 'the routed group' }} reviewers can decide this line.
+              {% else %}
+                No decision is due on this line right now.
+              {% endif %}
             </div>
           </div>
           <form method="post" action="{{ url_for('work.work_item_checkin', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}" style="flex-shrink: 0;">
