@@ -130,13 +130,11 @@ def techops_all_requests():
     event_cycles = get_active_event_cycles()
     departments = get_active_departments()
 
-    # TechOps lifecycle is shorter than BUDGET — no AWAITING_DISPATCH
-    # (uses_dispatch=False), no PAUSED status surfaced today. NEEDS_INFO
-    # is included for the item-level kickback flow.
+    # No AWAITING_DISPATCH: TechOps has uses_dispatch=False. No NEEDS_INFO
+    # either; it is a line status, and nothing writes it to work_item.status.
     statuses = [
         ("DRAFT", "Draft"),
         ("SUBMITTED", "Under Review"),
-        ("NEEDS_INFO", "Info Requested"),
         ("FINALIZED", "Finalized"),
     ]
 
