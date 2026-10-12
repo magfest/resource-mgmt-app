@@ -32,7 +32,7 @@ from app.routes.approvals.helpers import (
     get_active_departments,
     get_active_event_cycles,
 )
-from app.routes.work.helpers import friendly_status, is_worktype_admin
+from app.routes.work.helpers import friendly_status, is_worktype_admin, is_worktype_viewer
 from app.routes.work.helpers.review_state import group_progress_for_items
 from .. import work_bp
 
@@ -40,13 +40,16 @@ from .. import work_bp
 _PER_PAGE = 25
 
 
-def _require_techops_admin(user_ctx) -> WorkType:
-    """Resolve the TECHOPS WorkType row and gate to admins of it."""
+def _require_techops_staff(user_ctx) -> WorkType:
+    """Resolve the TECHOPS WorkType row and gate to its admins and viewers."""
     techops_wt = WorkType.query.filter_by(code="TECHOPS").first()
     if not techops_wt:
         abort(404, "TechOps work type not configured.")
-    if not is_worktype_admin(user_ctx, techops_wt.id):
-        abort(403, "TechOps admin access required.")
+    if not (
+        is_worktype_admin(user_ctx, techops_wt.id)
+        or is_worktype_viewer(user_ctx, techops_wt.id)
+    ):
+        abort(403, "TechOps admin or viewer access required.")
     return techops_wt
 
 
@@ -58,7 +61,7 @@ def techops_all_requests():
     TECHOPS worktype only and without monetary columns.
     """
     user_ctx = get_user_ctx()
-    techops_wt = _require_techops_admin(user_ctx)
+    techops_wt = _require_techops_staff(user_ctx)
 
     search_query = request.args.get("q", "").strip()
     event_code = request.args.get("event", "").strip()

@@ -42,7 +42,8 @@
        Assign Reviewers or Final Review. #}
     {% set techops_groups = nav_review_groups.get("TECHOPS", []) %}
     {% set techops_admin = "TECHOPS" in nav_admin_work_types %}
-    {% if techops_groups or techops_admin %}
+    {% set techops_viewer = "TECHOPS" in nav_viewer_work_types %}
+    {% if techops_groups or techops_admin or techops_viewer %}
     <div class="top-nav-dropdown">
       <button type="button" class="top-nav-link top-nav-toggle">TechOps <span class="top-nav-caret">&#9662;</span></button>
       <div class="top-nav-menu">
@@ -54,6 +55,11 @@
         {% endif %}
         {% if techops_admin %}
         <div class="top-nav-menu-label">Manage</div>
+        <a href="{{ url_for('work.techops_all_requests') }}">All TechOps Requests</a>
+        <a href="{{ url_for('approvals.dashboard_home', work_type='TECHOPS') }}">Reviewer Groups</a>
+        {% endif %}
+        {% if techops_viewer and not techops_admin %}
+        <div class="top-nav-menu-label">Read</div>
         <a href="{{ url_for('work.techops_all_requests') }}">All TechOps Requests</a>
         <a href="{{ url_for('approvals.dashboard_home', work_type='TECHOPS') }}">Reviewer Groups</a>
         {% endif %}

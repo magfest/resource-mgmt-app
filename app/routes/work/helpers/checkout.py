@@ -24,6 +24,7 @@ from .context import (
     WorkItemPerms,
     build_portfolio_perms,
     is_worktype_admin,
+    is_worktype_viewer,
 )
 from .review_state import is_group_final
 
@@ -253,8 +254,12 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
     is_approver_for_item = _is_approver_for_work_item(item, ctx.user_ctx)
     is_reviewer = portfolio_perms.is_worktype_admin or is_approver_for_item
 
-    # View: portfolio can_view OR is a reviewer for this item
-    can_view = portfolio_perms.can_view or is_reviewer
+    # View: portfolio can_view, a reviewer for this item, or a work-type viewer
+    can_view = (
+        portfolio_perms.can_view
+        or is_reviewer
+        or is_worktype_viewer(ctx.user_ctx, ctx.work_type.id)
+    )
 
     # Edit: (admin or membership.can_edit) AND status == DRAFT
     can_edit = portfolio_perms.can_edit and is_draft

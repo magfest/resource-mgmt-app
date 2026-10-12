@@ -31,6 +31,7 @@ from app.line_details import (
 )
 from app.routes import get_user_ctx
 from app.routes.work.helpers import (
+    is_worktype_viewer,
     get_portfolio_context,
     require_work_item_view,
     build_work_item_perms,
@@ -154,7 +155,9 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         # gating it on edit locked out most of the requesting department.
         is_requester = can_view_work_item_lines(work_item, ctx, user_ctx)
 
-        if not is_in_routed_group and not is_requester:
+        is_viewer = is_worktype_viewer(user_ctx, work_item.portfolio.work_type_id)
+
+        if not is_in_routed_group and not is_requester and not is_viewer:
             abort(403, "You do not have permission to view this line.")
 
     # Get or create review record

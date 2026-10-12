@@ -50,6 +50,7 @@ from .constants import (
     # Role codes
     ROLE_SUPER_ADMIN,
     ROLE_WORKTYPE_ADMIN,
+    ROLE_WORKTYPE_VIEWER,
     ROLE_APPROVER,
     ROLE_SPACE_ADMIN,
     # Spend type modes
@@ -259,6 +260,7 @@ __all__ = [
     # Constants - Role codes
     "ROLE_SUPER_ADMIN",
     "ROLE_WORKTYPE_ADMIN",
+    "ROLE_WORKTYPE_VIEWER",
     "ROLE_APPROVER",
     "ROLE_SPACE_ADMIN",
     # Constants - Spend type modes

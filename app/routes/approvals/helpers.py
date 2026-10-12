@@ -34,6 +34,7 @@ from app.models import (
     UserRole,
     WorkType,
     ROLE_WORKTYPE_ADMIN,
+    ROLE_WORKTYPE_VIEWER,
     REVIEW_STAGE_APPROVAL_GROUP,
     REVIEW_STAGE_ADMIN_FINAL,
     REVIEW_STATUS_PENDING,
@@ -244,8 +245,8 @@ def get_reviewable_groups(
     Get approval groups whose review queue the user may open.
 
     Super admins see every group. Approvers see their own groups, and a
-    work-type admin sees every group of that work type. Opening a queue is not
-    a decision right; decisions still require membership of the routed group.
+    work-type admin or viewer sees every group of that work type. Opening a
+    queue is not a decision right; can_decide_line answers that.
 
     Args:
         work_type_code: Limit the result to one work type's groups.
@@ -257,18 +258,18 @@ def get_reviewable_groups(
         )
 
     if not user_ctx.is_super_admin:
-        admin_work_type_ids = [
+        staff_work_type_ids = [
             row.work_type_id for row in UserRole.query.filter(
                 UserRole.user_id == user_ctx.user_id,
-                UserRole.role_code == ROLE_WORKTYPE_ADMIN,
+                UserRole.role_code.in_([ROLE_WORKTYPE_ADMIN, ROLE_WORKTYPE_VIEWER]),
                 UserRole.work_type_id.isnot(None),
             )
         ]
-        if not user_ctx.approval_group_ids and not admin_work_type_ids:
+        if not user_ctx.approval_group_ids and not staff_work_type_ids:
             return []
         query = query.filter(db.or_(
             ApprovalGroup.id.in_(user_ctx.approval_group_ids or []),
-            ApprovalGroup.work_type_id.in_(admin_work_type_ids),
+            ApprovalGroup.work_type_id.in_(staff_work_type_ids),
         ))
 
     return query.order_by(
