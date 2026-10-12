@@ -106,6 +106,17 @@ def get_work_item_and_line(event: str, dept: str, public_id: str, line_num: int,
     return work_item, line, ctx
 
 
+def _can_comment_on_line(line: WorkLine, work_item: WorkItem, user_ctx) -> bool:
+    """Return whether the user may post a standalone comment on this line.
+
+    The routed group's reviewers, plus admins of the line's work type, who can
+    already open every line of it. An admin of another work type cannot.
+    """
+    return is_reviewer_for_line(line, user_ctx) or is_worktype_admin(
+        user_ctx, work_item.portfolio.work_type_id,
+    )
+
+
 # ============================================================
 # Line Review View
 # ============================================================
@@ -256,6 +267,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         comments=comments,
         audit_events=audit_events,
         can_review=can_review,
+        can_comment=_can_comment_on_line(line, work_item, user_ctx),
         has_checkout=has_checkout,
         can_decide=can_decide,
         can_admin_decide=can_admin_decide,
@@ -755,8 +767,7 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
 
-    # Permission check: must be reviewer for this line
-    if not is_reviewer_for_line(line, user_ctx):
+    if not _can_comment_on_line(line, work_item, user_ctx):
         flash("You do not have permission to comment on this line.", "error")
         return redirect(url_for("approvals.line_review", event=event, dept=dept,
                                 public_id=public_id, line_num=line_num, work_type_slug=work_type_slug))
@@ -767,12 +778,8 @@ def line_comment(event: str, dept: str, public_id: str, line_num: int, work_type
         return redirect(url_for("approvals.line_review", event=event, dept=dept,
                                 public_id=public_id, line_num=line_num, work_type_slug=work_type_slug))
 
-    visibility = get_comment_visibility(
-        request.form,
-        user_ctx.is_super_admin
-        or is_reviewer_for_line(line, user_ctx)
-        or is_worktype_admin(user_ctx, work_item.portfolio.work_type_id),
-    )
+    # Everyone who passes the gate above may choose admin-only.
+    visibility = get_comment_visibility(request.form, True)
     comment = WorkLineComment(
         work_line_id=line.id,
         visibility=visibility,
