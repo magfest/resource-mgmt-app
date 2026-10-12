@@ -2,6 +2,7 @@
 {# Reusable queue table partial for approval dashboard #}
 {# Expected context: queue_items (or queues.pending), show_status (optional), show_decided_at (optional) #}
 
+{% from "macros/techops_line_facts.html" import render_line_space, render_line_summary %}
 {% set items = queue_items if queue_items is defined else queues.pending %}
 
 {# All rows in a single approval group's queue belong to the same worktype
@@ -9,8 +10,9 @@
    the first item to drive per-worktype column rendering.
 
    - BUDGET shows Expense Account + Description + Amount.
-   - TECHOPS shows Service + Details (location/usage or description); no
-     Amount column because TechOps lines have no monetary cost.
+   - TECHOPS shows Service + Space + Details, rendered by the same macros
+     as quick review; no Amount column because TechOps lines have no cost.
+     The dashboard supplies space_facts_by_item for the space names.
    - SUPPLY shows Item + qty (requester notes as secondary text); no Amount
      column (SupplyOrderLineDetail has no per-line price the requester sees).
    - Other worktypes (CONTRACT) fall through to a generic shape. #}
@@ -29,6 +31,7 @@
         <th>Description</th>
       {% elif is_techops %}
         <th style="width: 180px;">Service</th>
+        <th style="width: 150px;">Space</th>
         <th>Details</th>
       {% elif is_supply %}
         <th>Item</th>
@@ -98,24 +101,11 @@
               <span class="muted">-</span>
             {% endif %}
           </td>
+          <td data-label="Space">
+            {{ render_line_space(detail, space_facts_by_item.get(item.work_item.id, {})) }}
+          </td>
           <td data-label="Details">
-            {% if detail and st and st.instance_noun %}
-              {# Per-instance line: show location + usage with service-
-                 appropriate labels (RADIO_CHANNEL repurposes location for
-                 channel name). Truncate usage to keep the table readable;
-                 reviewers click through for full text. #}
-              {% if st.code == "RADIO_CHANNEL" %}
-                <div><strong>Channel:</strong> {{ detail.location or '-' }}</div>
-                <div class="muted small">{{ (detail.usage or '-')[:80] }}{% if detail.usage and detail.usage|length > 80 %}...{% endif %}</div>
-              {% else %}
-                <div><strong>{{ detail.location or '-' }}</strong></div>
-                <div class="muted small">{{ (detail.usage or '-')[:80] }}{% if detail.usage and detail.usage|length > 80 %}...{% endif %}</div>
-              {% endif %}
-            {% elif detail and detail.description %}
-              {{ detail.description[:80] }}{% if detail.description|length > 80 %}...{% endif %}
-            {% else %}
-              <span class="muted">-</span>
-            {% endif %}
+            {{ render_line_summary(detail, phone_line_not_chosen) }}
           </td>
         {% elif is_supply %}
           <td data-label="Item">

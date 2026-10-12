@@ -5,6 +5,7 @@
    and quick_review.html so the wording cannot drift across the three the
    way space_display_names() once drifted across its three callers
    (spaces.py's docstring). #}
+{% from "techops/_phone_number_config.html" import question_badge %}
 
 {% macro render_line_space(detail, space_facts) %}
   {%- if detail is none or detail.space_id is none -%}
@@ -24,4 +25,66 @@
   {%- else -%}
     {{ phone_line_not_chosen }}
   {%- endif -%}
+{% endmacro %}
+
+{# One compact cell per line: quick review's Details column and the review
+   dashboard's kicked-back panel. Text is cut at 120 characters; the line
+   page shows it in full. #}
+{% macro render_line_summary(detail, phone_line_not_chosen) %}
+  {% set st = detail.service_type if detail else None %}
+  {% if detail %}
+    {% if st and st.code == "RADIO_CHANNEL" %}
+      <div style="font-size: 13px;"><strong>Channel:</strong> {{ detail.location or '-' }}</div>
+      <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
+    {% elif st and st.code == "PHONE_NUMBER" %}
+      <div style="font-size: 13px;">
+        <strong>
+          {% if detail.purpose == "VOICE" %}Voice
+          {% elif detail.purpose == "TEXT" %}Text
+          {% elif detail.purpose == "BOTH" %}Voice &amp; text
+          {% else %}Purpose not chosen
+          {% endif %}
+        </strong>
+        {% if detail.internal_only %}(internal only){% endif %}
+        {{ question_badge(detail) }}
+      </div>
+      <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
+    {% elif st and st.code == "DESK_PHONE" %}
+      <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong>{{ question_badge(detail) }}</div>
+      <div class="muted small">{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
+    {% elif st and st.code == "NO_SERVICES" %}
+      <div style="font-size: 13px; max-width: 360px;"><strong>Reason:</strong> {{ (detail.description or 'No reason given.')[:120] }}{% if detail.description and detail.description|length > 120 %}...{% endif %}</div>
+    {% elif st and st.code == "PRINTER" %}
+      {% set printer_cfg = detail.config or {} %}
+      <div style="font-size: 13px;">
+        <strong>{{ {'ETHERNET': 'Ethernet', 'USB': 'USB'}.get(printer_cfg.get('connectivity'), 'Connection not given') }}, {{ {'UNDER_50': 'under 50 pages/day', '50_250': '50 to 250 pages/day', '250_500': '250 to 500 pages/day', 'OVER_500': 'more than 500 pages/day'}.get(printer_cfg.get('volume'), 'volume not given') }}</strong>
+        {{ question_badge(detail) }}
+      </div>
+      <div class="muted small">{{ (detail.location or '-')[:120] }}</div>
+    {% elif st and st.code == "PAYMENTS" %}
+      {% set pay_cfg = detail.config or {} %}
+      <div style="font-size: 13px;">
+        <strong>{{ detail.quantity or 0 }} checkout point{{ 's' if detail.quantity != 1 else '' }}</strong>
+        {{ question_badge(detail) }}
+      </div>
+      <div class="muted small">{{ [('cash' if pay_cfg.get('accepts_cash') else ''), ('paper receipts' if pay_cfg.get('paper_receipts') else ''), ('also used elsewhere' if pay_cfg.get('mobile') else '')]|select|join(', ') or '-' }}</div>
+    {% elif st and st.code == "ETHERNET" %}
+      <div style="font-size: 13px;">
+        <strong>{{ 'Wired network' }}</strong>
+        {% if (detail.config or {}).get('open_questions') %}
+          <span class="badge-blocked">{{ (detail.config or {}).get('open_questions')|length }} open question{{ 's' if (detail.config or {}).get('open_questions')|length != 1 else '' }}</span>
+        {% endif %}
+      </div>
+      <div class="muted small">{{ (detail.usage or detail.location or '-')[:120] }}</div>
+    {% elif st and st.instance_noun %}
+      <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
+      <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
+    {% elif detail.description %}
+      <div style="font-size: 13px; max-width: 360px;">{{ detail.description[:120] }}{% if detail.description|length > 120 %}...{% endif %}</div>
+    {% else %}
+      <span class="muted">-</span>
+    {% endif %}
+  {% else %}
+    <span class="muted">-</span>
+  {% endif %}
 {% endmacro %}
