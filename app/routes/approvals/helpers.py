@@ -693,8 +693,13 @@ def apply_review_decision(
         if not decision_lock_satisfied(work_item, user_ctx):
             return False, "You must checkout this work item before making review decisions."
 
-    # 2. Re-read the review under a row lock. Without review sessions two
-    # reviewers can submit at once, and the second must see the first's decision.
+    # 2. Re-read the request, then the review, under row locks. Without review
+    # sessions two reviewers can decide at once: the review lock refuses a second
+    # decision on one line, and the request lock lets the later of two last-line
+    # decisions see the earlier one and finalize. Lock the request first, always.
+    # Both refreshes discard unflushed changes; callers must not set attributes
+    # on work_item or review before this call.
+    db.session.refresh(work_item, with_for_update=True)
     db.session.refresh(review, with_for_update=True)
 
     # 3. Validate transition
