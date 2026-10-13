@@ -209,11 +209,20 @@ def create_app() -> Flask:
     app.config["SUPPLY_IMAGE_REGION"] = os.environ.get("SUPPLY_IMAGE_REGION", "us-east-1")
 
     # --- Proxy Fix for reverse proxies (Heroku, AWS, etc.) ---
+    # Trust only the headers the Heroku router writes: it appends the client
+    # address to X-Forwarded-For and sets -Proto and -Port. It does not set
+    # -Host or -Prefix, so trusting those lets a client choose the hostname in
+    # absolute URLs. Without ProxyFix, remote_addr is the router's 10.x address
+    # for every user, which breaks the scanner block and the audit log's IPs.
     if os.environ.get("BEHIND_PROXY", "false").lower() == "true":
         from werkzeug.middleware.proxy_fix import ProxyFix
-        app.wsgi_app = ProxyFix(
-            app.wsgi_app,
-            x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1,
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_port=1)
+    elif os.environ.get("DYNO"):
+        # Heroku sets DYNO on every dyno. An ERROR, not a refusal to boot, so a
+        # deploy that lands before the config var is set does not take the site down.
+        app.logger.error(
+            "BEHIND_PROXY is not 'true' on a Heroku dyno. Client IPs read as "
+            "the router's address; set BEHIND_PROXY=true in Config Vars."
         )
 
     db.init_app(app)
@@ -371,6 +380,21 @@ def create_app() -> Flask:
 
         return response
 
+    # --- CSP Nonce Generation ---
+    # Registered before block_scanners: a before_request hook that returns a
+    # response skips every later one, and add_security_headers still needs it.
+    @app.before_request
+    def generate_csp_nonce():
+        """Generate a unique nonce for Content Security Policy on each request.
+
+        This nonce is used to allow specific inline scripts while blocking
+        injected scripts. Each request gets a fresh nonce for security.
+
+        Access in templates via: {{ csp_nonce }}
+        Usage: <script nonce="{{ csp_nonce }}">...</script>
+        """
+        g.csp_nonce = stdlib_secrets.token_urlsafe(32)
+
     # --- Scanner / bot flood protection ---
     # Two layers:
     #   1. Block known scanner paths instantly (no DB, no template).
@@ -393,9 +417,10 @@ def create_app() -> Flask:
 
     @app.before_request
     def block_scanners():
-        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        if ip and ',' in ip:
-            ip = ip.split(',')[0].strip()
+        # Not the first X-Forwarded-For entry: the client writes that one. On
+        # Heroku, ProxyFix (BEHIND_PROXY=true) sets remote_addr from the entry
+        # the router appends. Without it every user shares the router's address.
+        ip = request.remote_addr
         now = _time.monotonic()
 
         # Check if IP is currently blocked
@@ -431,10 +456,7 @@ def create_app() -> Flask:
     def track_404_ips(response):
         """Track IPs that generate 404s from normal routes too."""
         if response.status_code == 404:
-            ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-            if ip and ',' in ip:
-                ip = ip.split(',')[0].strip()
-            _record_ip_404(ip, _time.monotonic())
+            _record_ip_404(request.remote_addr, _time.monotonic())
         return response
 
     # --- Session Management ---
@@ -442,19 +464,6 @@ def create_app() -> Flask:
     def make_session_permanent():
         """Make sessions permanent so PERMANENT_SESSION_LIFETIME applies."""
         session.permanent = True
-
-    # --- CSP Nonce Generation ---
-    @app.before_request
-    def generate_csp_nonce():
-        """Generate a unique nonce for Content Security Policy on each request.
-
-        This nonce is used to allow specific inline scripts while blocking
-        injected scripts. Each request gets a fresh nonce for security.
-
-        Access in templates via: {{ csp_nonce }}
-        Usage: <script nonce="{{ csp_nonce }}">...</script>
-        """
-        g.csp_nonce = stdlib_secrets.token_urlsafe(32)
 
     # -----------------------------
     # Helpers (auth + scoping)
