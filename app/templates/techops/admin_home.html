@@ -1,0 +1,92 @@
+{# templates/techops/admin_home.html #}
+{# Landing page for TechOps staff. Counts come from home.py and worklist.py;
+   every number links somewhere the staffer can act on it. #}
+{% extends "layout/base.html" %}
+
+{% block title %}TechOps Home{% endblock %}
+
+{% block content %}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:12px;">
+    <h1 style="margin:0;">TechOps</h1>
+    {% if event %}
+    <form method="get" action="{{ url_for('work.techops_home') }}">
+      <label for="event" class="muted" style="font-size:13px;">Event</label>
+      <select name="event" id="event">
+        {% for ec in event_cycles %}<option value="{{ ec.code }}"{% if ec.id == event.id %} selected{% endif %}>{{ ec.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn">Go</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:8px 16px; margin-bottom:16px;">
+    <a href="{{ url_for('work.techops_worklist', event=event.code if event else None) }}">Worklist</a>
+    {% if can_list_requests %}<a href="{{ url_for('work.techops_all_requests', event=event.code if event else None) }}">All TechOps Requests</a>{% endif %}
+    {% for g in reviewable %}<a href="{{ url_for('approvals.dashboard_group', group_code=g.code) }}">{{ g.name }} queue</a>{% endfor %}
+  </div>
+
+  {% if not event %}
+    <div class="card"><p>There are no active events.</p></div>
+  {% else %}
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px;">
+
+    <div class="card">
+      <h2 style="font-size:18px; margin-top:0;">What needs me</h2>
+      <table class="responsive-cards">
+        <thead><tr><th>Team</th><th>Pending</th><th>Waiting on requester</th><th>Oldest pending</th></tr></thead>
+        <tbody>
+          {% for q in queues %}
+          <tr>
+            <td data-label="Team"><a href="{{ url_for('approvals.dashboard_group', group_code=q.group.code) }}">{{ q.group.name }}</a></td>
+            <td data-label="Pending">{{ q.pending }}</td>
+            <td data-label="Waiting on requester">{{ q.waiting_on_requester }}</td>
+            <td data-label="Oldest pending">{{ q.oldest_pending_since.strftime('%b %d') if q.oldest_pending_since else '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p style="margin-bottom:0;">
+        {% if can_list_requests %}
+          <a href="{{ url_for('work.techops_all_requests', event=event.code, status='SUBMITTED') }}">{{ unfinished }} request{{ '' if unfinished == 1 else 's' }} not finished</a>
+        {% else %}
+          <a href="{{ url_for('work.techops_worklist', event=event.code, status='pending', team='all') }}">{{ unfinished }} request{{ '' if unfinished == 1 else 's' }} not finished</a>
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:18px; margin-top:0;">
+        Who hasn't asked yet
+        {% if event.submission_deadline %}<span class="muted" style="font-size:13px; font-weight:400;">· Deadline {{ event.submission_deadline.strftime('%b %d, %Y') }} · {{ no_request|length + draft_only|length }} not submitted</span>{% endif %}
+      </h2>
+      <p class="muted small" style="margin-top:0;">
+        {% if all_departments %}Every enabled department. <a href="{{ url_for('work.techops_home', event=event.code) }}">Only departments with a room</a>
+        {% else %}Departments with a room this event. <a href="{{ url_for('work.techops_home', event=event.code, all_departments=1) }}">Show all enabled departments</a>{% endif %}
+      </p>
+      <h3 style="font-size:15px;">No request ({{ no_request|length }})</h3>
+      <ul>
+        {% for m in no_request %}
+          <li>{% if can_list_requests %}<a href="{{ url_for('work.techops_portfolio_redirect', event=event.code, dept=m.department.code) }}">{{ m.department.name }}</a>{% else %}{{ m.department.name }}{% endif %}</li>
+        {% else %}<li class="muted">None</li>{% endfor %}
+      </ul>
+      <h3 style="font-size:15px;">Draft only, not submitted ({{ draft_only|length }})</h3>
+      <ul>
+        {% for m in draft_only %}
+          <li>{% if can_list_requests %}<a href="{{ url_for('work.techops_portfolio_redirect', event=event.code, dept=m.department.code) }}">{{ m.department.name }}</a>{% else %}{{ m.department.name }}{% endif %}
+            <span class="muted small">· edited {{ m.draft.updated_at.strftime('%b %d') }}</span></li>
+        {% else %}<li class="muted">None</li>{% endfor %}
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:18px; margin-top:0;">Scale</h2>
+      <ul style="padding-left:18px; margin:0;">
+        {% for t in totals %}
+          <li><a href="{{ url_for('work.techops_worklist', event=event.code, service=t.service.code, team='all', group='room') }}">{{ t.service.name }}</a>: {{ t.approved }} approved · {{ t.pending }} pending{% if t.estimate_label %} ({{ t.estimate_label }}){% endif %}</li>
+        {% else %}<li class="muted">No submitted lines yet.</li>{% endfor %}
+      </ul>
+    </div>
+
+  </div>
+  {% endif %}
+{% endblock %}

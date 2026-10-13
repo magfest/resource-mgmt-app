@@ -1,9 +1,10 @@
 """TechOps cross-department admin views under /admin/techops/.
 
 The all-requests view mirrors BUDGET's admin_final.all_requests, without a
-money column. The planning worklist and its CSV open to every TechOps
-staffer, including plain group members. Routes live on work_bp, not a
-separate blueprint, beside the rest of the TechOps work-type routing.
+money column. The admin home, the planning worklist and its CSV open to
+every TechOps staffer, including plain group members. Routes live on
+work_bp, not a separate blueprint, beside the rest of the TechOps work-type
+routing.
 """
 from __future__ import annotations
 
@@ -36,9 +37,10 @@ from app.routes.work.helpers.review_state import group_progress_for_items
 from .. import work_bp
 from .line_grain import SERVICE_NO_SERVICES
 from .preview import PHONE_LINE_NOT_CHOSEN
+from .home import departments_not_submitted, team_queues, unfinished_request_count
 from .worklist import (
-    GROUP_BYS, STATUS_FILTERS, group_rows, parse_filters, worklist_rows,
-    worklist_totals,
+    GROUP_BYS, STATUS_FILTERS, WorklistFilters, group_rows, parse_filters,
+    worklist_rows, worklist_totals,
 )
 from .worklist_csv import render_csv
 
@@ -274,4 +276,39 @@ def techops_worklist_csv():
         render_csv(query["rows"], link_for),
         mimetype="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@work_bp.get("/admin/techops/")
+def techops_home():
+    """TechOps admin home: links, what needs me, who hasn't asked, and scale."""
+    user_ctx = get_user_ctx()
+    reviewable = _require_techops_staffer(user_ctx)
+    techops_wt = WorkType.query.filter_by(code="TECHOPS").first()
+    can_list_requests = bool(techops_wt) and (
+        is_worktype_admin(user_ctx, techops_wt.id)
+        or is_worktype_viewer(user_ctx, techops_wt.id)
+    )
+    event = _resolve_event(request.args.get("event", "").strip())
+    all_departments = request.args.get("all_departments") == "1"
+
+    context = {"event": event, "queues": [], "unfinished": 0,
+               "no_request": [], "draft_only": [], "totals": []}
+    if event:
+        no_request, draft_only = departments_not_submitted(event, all_departments)
+        context.update(
+            queues=team_queues(event, reviewable),
+            unfinished=unfinished_request_count(event),
+            no_request=no_request,
+            draft_only=draft_only,
+            totals=worklist_totals(worklist_rows(event, WorklistFilters())),
+        )
+    return render_template(
+        "techops/admin_home.html",
+        user_ctx=user_ctx,
+        event_cycles=get_active_event_cycles(),
+        reviewable=reviewable,
+        can_list_requests=can_list_requests,
+        all_departments=all_departments,
+        **context,
     )
