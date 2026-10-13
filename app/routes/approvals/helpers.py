@@ -698,8 +698,10 @@ def apply_review_decision(
     # decision on one line, and the request lock lets the later of two last-line
     # decisions see the earlier one and finalize. Lock the request first, always.
     # Both refreshes discard unflushed changes; callers must not set attributes
-    # on work_item or review before this call.
-    db.session.refresh(work_item, with_for_update=True)
+    # on work_item or review before this call. refresh replays the caller's
+    # joinedload of portfolio, and PostgreSQL refuses a bare FOR UPDATE across
+    # that outer join; OF limits the lock to the request row.
+    db.session.refresh(work_item, with_for_update={"of": WorkItem})
     db.session.refresh(review, with_for_update=True)
 
     # 3. Validate transition

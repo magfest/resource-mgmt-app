@@ -125,3 +125,35 @@ def test_a_refusal_reports_the_review_status_not_a_stale_line(client, techops_re
 
     assert data["error"] == "This line was already decided."
     assert data["current_status"] == "APPROVED"
+
+
+def test_every_lock_on_an_approve_compiles_for_postgres(client, techops_review):
+    """PostgreSQL refuses FOR UPDATE on the nullable side of an outer join.
+    SQLite never renders FOR UPDATE, so compile each locking SELECT for
+    PostgreSQL and check that it names its table."""
+    from sqlalchemy import event
+    from sqlalchemy.dialects import postgresql
+
+    from app import db
+
+    locking = []
+
+    def capture(orm_execute_state):
+        stmt = orm_execute_state.statement
+        if getattr(stmt, "_for_update_arg", None) is not None:
+            locking.append(str(stmt.compile(dialect=postgresql.dialect())))
+
+    login(client, "test:reviewer")
+    # Each web request starts with an empty session. Without this the route
+    # reuses the fixture's WorkItem, which carries no joinedload to replay.
+    db.session.expunge_all()
+    event.listen(db.session, "do_orm_execute", capture)
+    try:
+        data = client.post(line_url(1, "approve"), data={"ajax": "1"}).get_json()
+    finally:
+        event.remove(db.session, "do_orm_execute", capture)
+
+    assert data["success"] is True
+    assert locking
+    for sql in locking:
+        assert "OUTER JOIN" not in sql or "FOR UPDATE OF" in sql, sql
