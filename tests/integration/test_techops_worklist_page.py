@@ -108,3 +108,47 @@ def test_a_wired_line_saved_per_drop_still_shows_its_location(client, techops_re
     html = client.get(WORKLIST).get_data(as_text=True)
 
     assert "Booth 4 by the stage" in html
+
+
+def test_a_member_can_read_another_teams_line_but_not_decide_it(client, techops_review):
+    from app.models import WorkLineReview, REVIEW_STATUS_PENDING
+    line = add_routed_line(techops_review["item"], 2, "TECHOPS_NET")
+    login(client, "test:reviewer")
+
+    resp = client.get(NET_LINE_URL)
+    client.post(f"{BASE}/item/{ITEM_ID}/line/2/approve")
+
+    assert resp.status_code == 200
+    assert "/line/2/approve" not in resp.get_data(as_text=True)
+    review = WorkLineReview.query.filter_by(work_line_id=line.id).one()
+    assert review.status == REVIEW_STATUS_PENDING
+
+
+def test_a_member_can_read_a_request_with_none_of_their_lines(client, techops_review):
+    from app.models import ApprovalGroup, UserRole, User, ROLE_APPROVER
+    from app import db
+    treasury = ApprovalGroup.query.filter_by(code="TREASURY").one()
+    db.session.add(User(id="test:treasurer", email="treasurer@test.local",
+                        display_name="Treasurer", is_active=True))
+    db.session.flush()
+    db.session.add(UserRole(user_id="test:treasurer", role_code=ROLE_APPROVER,
+                            approval_group_id=treasury.id))
+    db.session.commit()
+    login(client, "test:treasurer")
+
+    assert client.get(f"{BASE}/item/{ITEM_ID}").status_code == 200
+    assert client.get(REVIEW_URL).status_code == 200
+
+
+def test_budget_approvers_do_not_get_staff_read(techops_review):
+    from types import SimpleNamespace
+    from app.models import ApprovalGroup, WorkType
+    from app.routes.work.helpers.checkout import is_work_type_staffer
+    budget = WorkType.query.filter_by(code="BUDGET").one()
+    techops = WorkType.query.filter_by(code="TECHOPS").one()
+    budget_group = ApprovalGroup.query.filter_by(work_type_id=budget.id).first()
+    techops_group = techops_review["group"]
+
+    assert not is_work_type_staffer(SimpleNamespace(approval_group_ids={budget_group.id}), budget)
+    assert is_work_type_staffer(SimpleNamespace(approval_group_ids={techops_group.id}), techops)
+    assert not is_work_type_staffer(SimpleNamespace(approval_group_ids={techops_group.id}), budget)

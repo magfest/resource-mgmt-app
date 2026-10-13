@@ -74,6 +74,13 @@ The TechOps home, worklist and CSV use `get_reviewable_groups(user_ctx,
 "TECHOPS")`, so plain group members get in. All TechOps Requests stays limited
 to TechOps admins and viewers.
 
+A member of any TechOps approval group may also read every TechOps request
+and line, including other teams' lines. `is_work_type_staffer`
+(`work/helpers/checkout.py`) grants this read in `build_work_item_perms` and
+`line_review`. Deciding, commenting and reviewer-only notes still require the
+routed group. Budget is excluded on purpose: its approvers read only their own
+groups' lines. `STAFF_READ_WORK_TYPES` lists the types this applies to.
+
 On a work type without `has_admin_final` (TechOps, as of October 2026), a
 work-type admin also decides, reopens and comments on every line of that type,
 including lines routed to groups they are not in. Staff who only need to read
