@@ -117,6 +117,55 @@ def spaces_for_department(department_id: int, event_cycle_id: int) -> list[dict]
     return entries
 
 
+def event_space_names(event_cycle_id: int, space_ids) -> dict[int, str]:
+    """Name each space the way this event shows it, in three queries.
+
+    Same rule as spaces_for_department(): this event's alias, else a folded
+    primary's composed name, else Space.name. Unlike that function it does
+    not require a department to hold the space, so a room keeps one name
+    across every department's request on the TechOps worklist.
+    """
+    ids = {space_id for space_id in space_ids if space_id is not None}
+    if not ids:
+        return {}
+
+    spaces = db.session.query(Space).filter(Space.id.in_(ids)).all()
+    aliases = {
+        space_id: alias
+        for space_id, alias in db.session.query(
+            SpaceEventOverride.space_id, SpaceEventOverride.alias)
+        .filter(
+            SpaceEventOverride.event_cycle_id == event_cycle_id,
+            SpaceEventOverride.space_id.in_(ids),
+        )
+        .all()
+        if alias
+    }
+    folded: dict[int, list[str]] = {}
+    for override, member in (
+        db.session.query(SpaceEventOverride, Space)
+        .join(Space, Space.id == SpaceEventOverride.space_id)
+        .filter(
+            SpaceEventOverride.event_cycle_id == event_cycle_id,
+            SpaceEventOverride.combined_into_space_id.in_(ids),
+            Space.is_active.is_(True),
+        )
+        .order_by(Space.sort_order, Space.code)
+        .all()
+    ):
+        folded.setdefault(override.combined_into_space_id, []).append(member.name)
+
+    names = {}
+    for space in spaces:
+        if space.id in aliases:
+            names[space.id] = aliases[space.id]
+        elif space.id in folded:
+            names[space.id] = compose_combined_name([space.name] + folded[space.id])
+        else:
+            names[space.id] = space.name
+    return names
+
+
 def offerable_spaces(event_cycle) -> list[Space]:
     """Return the active spaces at this event's venue, permanent or this event's.
 

@@ -38,13 +38,7 @@
       <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
     {% elif st and st.code == "PHONE_NUMBER" %}
       <div style="font-size: 13px;">
-        <strong>
-          {% if detail.purpose == "VOICE" %}Voice
-          {% elif detail.purpose == "TEXT" %}Text
-          {% elif detail.purpose == "BOTH" %}Voice &amp; text
-          {% else %}Purpose not chosen
-          {% endif %}
-        </strong>
+        <strong>{{ techops_labels.PHONE_PURPOSE.get(detail.purpose, 'Purpose not chosen') }}</strong>
         {% if detail.internal_only %}(internal only){% endif %}
         {{ question_badge(detail) }}
       </div>
@@ -57,7 +51,7 @@
     {% elif st and st.code == "PRINTER" %}
       {% set printer_cfg = detail.config or {} %}
       <div style="font-size: 13px;">
-        <strong>{{ {'ETHERNET': 'Ethernet', 'USB': 'USB'}.get(printer_cfg.get('connectivity'), 'Connection not given') }}, {{ {'UNDER_50': 'under 50 pages/day', '50_250': '50 to 250 pages/day', '250_500': '250 to 500 pages/day', 'OVER_500': 'more than 500 pages/day'}.get(printer_cfg.get('volume'), 'volume not given') }}</strong>
+        <strong>{{ techops_labels.PRINTER_CONNECTIVITY.get(printer_cfg.get('connectivity'), 'Connection not given') }}, {{ techops_labels.PRINTER_VOLUME.get(printer_cfg.get('volume'), 'volume not given') }}</strong>
         {{ question_badge(detail) }}
       </div>
       <div class="muted small">{{ (detail.location or '-')[:120] }}</div>
@@ -69,13 +63,23 @@
       </div>
       <div class="muted small">{{ [('cash' if pay_cfg.get('accepts_cash') else ''), ('paper receipts' if pay_cfg.get('paper_receipts') else ''), ('also used elsewhere' if pay_cfg.get('mobile') else '')]|select|join(', ') or '-' }}</div>
     {% elif st and st.code == "ETHERNET" %}
+      {% set net_cfg = detail.config or {} %}
+      {% set net_questions = net_cfg.get('open_questions') or [] %}
       <div style="font-size: 13px;">
-        <strong>{{ 'Wired network' }}</strong>
-        {% if (detail.config or {}).get('open_questions') %}
-          <span class="badge-blocked">{{ (detail.config or {}).get('open_questions')|length }} open question{{ 's' if (detail.config or {}).get('open_questions')|length != 1 else '' }}</span>
+        {# A line saved before the per-room rebuild has no config; it keeps
+           the old one-drop summary below. #}
+        {% if not net_cfg %}<strong>Wired network</strong>
+        {% elif net_cfg.get('kinds') and 'kinds' not in net_questions %}<strong>{% for k in net_cfg.get('kinds') %}{{ techops_labels.NETWORK_KIND.get(k, k) }}{{ ', ' if not loop.last }}{% endfor %}</strong>
+        {% else %}<strong>What needs a cable: not given</strong>{% endif %}
+        {% if net_questions %}
+          <span class="badge-blocked">{{ net_questions|length }} open question{{ 's' if net_questions|length != 1 else '' }}</span>
         {% endif %}
       </div>
-      <div class="muted small">{{ (detail.usage or detail.location or '-')[:120] }}</div>
+      {% if net_cfg %}
+        <div class="muted small">Roughly how many: {{ net_cfg.get('rough_count') or '-' }}{% if detail.usage %} · {{ detail.usage[:120] }}{% if detail.usage|length > 120 %}...{% endif %}{% endif %}</div>
+      {% else %}
+        <div class="muted small">{{ (detail.usage or detail.location or '-')[:120] }}</div>
+      {% endif %}
     {% elif st and st.instance_noun %}
       <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
       <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>

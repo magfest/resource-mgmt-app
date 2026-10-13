@@ -62,9 +62,24 @@ prefix, and two pages under `/admin/config/` fall on opposite sides.
 | `/admin/config/approval-groups/` | `@require_super_admin` (`admin/approval_groups.py:66`) | SUPER_ADMIN only |
 | `/admin/config/expense-accounts/` | `@require_budget_admin` (`admin/expense_accounts.py:144`) | Budget admin or SUPER_ADMIN |
 | `/admin/budget/` | Checked inside the view (`admin_final/dashboard.py:301`) | Budget admin or SUPER_ADMIN |
+| `/admin/techops/requests/` | `_require_techops_staff` (`work/techops/admin.py:51`) | TechOps admin, TechOps viewer or SUPER_ADMIN |
+| `/admin/techops/` TechOps home | `_require_techops_staffer` (`work/techops/admin.py:172`) | Any TechOps approval group member, TechOps admin, TechOps viewer or SUPER_ADMIN |
+| `/admin/techops/worklist/` | `_require_techops_staffer` | Same as the TechOps home |
+| `/admin/techops/worklist.csv` | `_require_techops_staffer` | Same as the TechOps home |
 
 Approval groups are shared infrastructure, so their config pages sit behind
 SUPER_ADMIN even though budget admins use the groups daily.
+
+The TechOps home, worklist and CSV use `get_reviewable_groups(user_ctx,
+"TECHOPS")`, so plain group members get in. All TechOps Requests stays limited
+to TechOps admins and viewers.
+
+A member of any TechOps approval group may also read every TechOps request
+and line, including other teams' lines. `is_work_type_staffer`
+(`work/helpers/checkout.py`) grants this read in `build_work_item_perms` and
+`line_review`. Deciding, commenting and reviewer-only notes still require the
+routed group. Budget is excluded on purpose: its approvers read only their own
+groups' lines. `STAFF_READ_WORK_TYPES` lists the types this applies to.
 
 On a work type without `has_admin_final` (TechOps, as of October 2026), a
 work-type admin also decides, reopens and comments on every line of that type,

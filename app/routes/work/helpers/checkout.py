@@ -11,6 +11,7 @@ from flask import current_app
 
 from app import db
 from app.models import (
+    ApprovalGroup,
     WorkItem,
     REQUEST_KIND_PRIMARY,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
@@ -27,6 +28,27 @@ from .context import (
     is_worktype_viewer,
 )
 from .review_state import is_group_final
+
+
+# Permission boundary: on these work types, a member of any of the type's
+# approval groups may read every request and line of it. TechOps teams plan
+# around each other's work. Budget approvers must not read other groups'
+# requests, so BUDGET stays out. Deciding is still limited to the routed group.
+STAFF_READ_WORK_TYPES = frozenset({"TECHOPS"})
+
+
+def is_work_type_staffer(user_ctx: UserContext, work_type) -> bool:
+    """Return whether the user is in an active approval group of this staff-read type."""
+    if work_type is None or work_type.code not in STAFF_READ_WORK_TYPES:
+        return False
+    group_ids = user_ctx.approval_group_ids or ()
+    if not group_ids:
+        return False
+    return db.session.query(ApprovalGroup.id).filter(
+        ApprovalGroup.id.in_(group_ids),
+        ApprovalGroup.work_type_id == work_type.id,
+        ApprovalGroup.is_active.is_(True),
+    ).first() is not None
 
 
 # ============================================================
@@ -254,11 +276,13 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
     is_approver_for_item = _is_approver_for_work_item(item, ctx.user_ctx)
     is_reviewer = portfolio_perms.is_worktype_admin or is_approver_for_item
 
-    # View: portfolio can_view, a reviewer for this item, or a work-type viewer
+    # View: portfolio can_view, a reviewer for this item, a work-type viewer,
+    # or staff of a work type whose groups read each other's requests.
     can_view = (
         portfolio_perms.can_view
         or is_reviewer
         or is_worktype_viewer(ctx.user_ctx, ctx.work_type.id)
+        or is_work_type_staffer(ctx.user_ctx, ctx.work_type)
     )
 
     # Edit: (admin or membership.can_edit) AND status == DRAFT

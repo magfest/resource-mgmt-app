@@ -47,6 +47,8 @@
     <div class="top-nav-dropdown">
       <button type="button" class="top-nav-link top-nav-toggle">TechOps <span class="top-nav-caret">&#9662;</span></button>
       <div class="top-nav-menu">
+        <a href="{{ url_for('work.techops_home') }}">TechOps Home</a>
+        <a href="{{ url_for('work.techops_worklist') }}">Worklist</a>
         {% if techops_groups %}
         <div class="top-nav-menu-label">Review</div>
         {% for group in techops_groups %}
