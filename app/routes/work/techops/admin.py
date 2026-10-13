@@ -8,8 +8,9 @@ separate blueprint, beside the rest of the TechOps work-type routing.
 from __future__ import annotations
 
 from collections import Counter
+from datetime import date
 
-from flask import abort, render_template, request
+from flask import Response, abort, render_template, request, url_for
 from sqlalchemy.orm import joinedload, selectinload
 
 from app import db
@@ -39,6 +40,7 @@ from .worklist import (
     GROUP_BYS, STATUS_FILTERS, group_rows, parse_filters, worklist_rows,
     worklist_totals,
 )
+from .worklist_csv import render_csv
 
 
 _PER_PAGE = 25
@@ -252,5 +254,24 @@ def techops_worklist():
 
 @work_bp.get("/admin/techops/worklist.csv")
 def techops_worklist_csv():
-    """CSV of the worklist's current filters."""
-    abort(404)
+    """CSV of the worklist's current filters, in the page's sort order."""
+    user_ctx = get_user_ctx()
+    reviewable = _require_techops_staffer(user_ctx)
+    query = _worklist_query(user_ctx, reviewable)
+    event = query["event"]
+    if event is None:
+        abort(404, "There are no active events.")
+
+    def link_for(row):
+        return url_for(
+            "approvals.line_review", event=event.code, dept=row.department.code,
+            work_type_slug="techops", public_id=row.work_item.public_id,
+            line_num=row.line.line_number, _external=True,
+        )
+
+    filename = f"techops-worklist-{event.code}-{date.today():%Y%m%d}.csv"
+    return Response(
+        render_csv(query["rows"], link_for),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
