@@ -62,9 +62,17 @@ prefix, and two pages under `/admin/config/` fall on opposite sides.
 | `/admin/config/approval-groups/` | `@require_super_admin` (`admin/approval_groups.py:66`) | SUPER_ADMIN only |
 | `/admin/config/expense-accounts/` | `@require_budget_admin` (`admin/expense_accounts.py:144`) | Budget admin or SUPER_ADMIN |
 | `/admin/budget/` | Checked inside the view (`admin_final/dashboard.py:301`) | Budget admin or SUPER_ADMIN |
+| `/admin/techops/requests/` | `_require_techops_staff` (`work/techops/admin.py:51`) | TechOps admin, TechOps viewer or SUPER_ADMIN |
+| `/admin/techops/` TechOps home | `_require_techops_staffer` (`work/techops/admin.py:172`) | Any TechOps approval group member, TechOps admin, TechOps viewer or SUPER_ADMIN |
+| `/admin/techops/worklist/` | `_require_techops_staffer` | Same as the TechOps home |
+| `/admin/techops/worklist.csv` | `_require_techops_staffer` | Same as the TechOps home |
 
 Approval groups are shared infrastructure, so their config pages sit behind
 SUPER_ADMIN even though budget admins use the groups daily.
+
+The TechOps home, worklist and CSV use `get_reviewable_groups(user_ctx,
+"TECHOPS")`, so plain group members get in. All TechOps Requests stays limited
+to TechOps admins and viewers.
 
 On a work type without `has_admin_final` (TechOps, as of October 2026), a
 work-type admin also decides, reopens and comments on every line of that type,
