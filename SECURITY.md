@@ -15,7 +15,7 @@ We will acknowledge your report within 72 hours and work with you to understand 
 
 ## Scope
 
-This policy covers the MAGFest Budget System codebase and its deployment infrastructure. If you find an issue with a third-party dependency, please report it to us as well so we can assess the impact and update accordingly.
+This policy covers the MAGFest RMS codebase and its deployment infrastructure. If you find an issue with a third-party dependency, please report it to us as well so we can assess the impact and update accordingly.
 
 ## What We Consider In Scope
 
