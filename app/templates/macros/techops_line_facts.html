@@ -63,13 +63,23 @@
       </div>
       <div class="muted small">{{ [('cash' if pay_cfg.get('accepts_cash') else ''), ('paper receipts' if pay_cfg.get('paper_receipts') else ''), ('also used elsewhere' if pay_cfg.get('mobile') else '')]|select|join(', ') or '-' }}</div>
     {% elif st and st.code == "ETHERNET" %}
+      {% set net_cfg = detail.config or {} %}
+      {% set net_questions = net_cfg.get('open_questions') or [] %}
       <div style="font-size: 13px;">
-        <strong>{{ 'Wired network' }}</strong>
-        {% if (detail.config or {}).get('open_questions') %}
-          <span class="badge-blocked">{{ (detail.config or {}).get('open_questions')|length }} open question{{ 's' if (detail.config or {}).get('open_questions')|length != 1 else '' }}</span>
+        {# A line saved before the per-room rebuild has no config; it keeps
+           the old one-drop summary below. #}
+        {% if not net_cfg %}<strong>Wired network</strong>
+        {% elif net_cfg.get('kinds') and 'kinds' not in net_questions %}<strong>{% for k in net_cfg.get('kinds') %}{{ techops_labels.NETWORK_KIND.get(k, k) }}{{ ', ' if not loop.last }}{% endfor %}</strong>
+        {% else %}<strong>What needs a cable: not given</strong>{% endif %}
+        {% if net_questions %}
+          <span class="badge-blocked">{{ net_questions|length }} open question{{ 's' if net_questions|length != 1 else '' }}</span>
         {% endif %}
       </div>
-      <div class="muted small">{{ (detail.usage or detail.location or '-')[:120] }}</div>
+      {% if net_cfg %}
+        <div class="muted small">Roughly how many: {{ net_cfg.get('rough_count') or '-' }}{% if detail.usage %} · {{ detail.usage[:120] }}{% if detail.usage|length > 120 %}...{% endif %}{% endif %}</div>
+      {% else %}
+        <div class="muted small">{{ (detail.usage or detail.location or '-')[:120] }}</div>
+      {% endif %}
     {% elif st and st.instance_noun %}
       <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
       <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>

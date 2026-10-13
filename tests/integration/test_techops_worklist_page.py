@@ -69,3 +69,42 @@ def test_techops_menu_links_to_the_worklist(client, techops_review):
     html = client.get(WORKLIST).get_data(as_text=True)
 
     assert f'href="{WORKLIST}"' in html
+
+
+def _make_wired(techops_review, config, location=None):
+    from app import db
+    from app.models import TechOpsLineDetail, TechOpsServiceType
+    detail = db.session.get(TechOpsLineDetail, techops_review["line"].id)
+    detail.service_type_id = TechOpsServiceType.query.filter_by(code="ETHERNET").one().id
+    detail.config = config
+    detail.location = location
+    db.session.commit()
+
+
+def test_a_wired_line_shows_its_kinds_and_rough_count(client, techops_review):
+    _make_wired(techops_review, {"kinds": ["PRINTERS", "SCANNERS"], "rough_count": "6-10"})
+    login(client, "test:reviewer")
+
+    html = client.get(WORKLIST).get_data(as_text=True)
+
+    assert "Printers, Badge scanners" in html
+    assert "Roughly how many: 6-10" in html
+
+
+def test_a_wired_line_with_unanswered_kinds_says_so(client, techops_review):
+    _make_wired(techops_review, {"open_questions": ["kinds"]})
+    login(client, "test:reviewer")
+
+    html = client.get(WORKLIST).get_data(as_text=True)
+
+    assert "What needs a cable: not given" in html
+    assert "1 open question" in html
+
+
+def test_a_wired_line_saved_per_drop_still_shows_its_location(client, techops_review):
+    _make_wired(techops_review, None, location="Booth 4 by the stage")
+    login(client, "test:reviewer")
+
+    html = client.get(WORKLIST).get_data(as_text=True)
+
+    assert "Booth 4 by the stage" in html
