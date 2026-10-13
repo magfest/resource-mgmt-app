@@ -38,13 +38,7 @@
       <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
     {% elif st and st.code == "PHONE_NUMBER" %}
       <div style="font-size: 13px;">
-        <strong>
-          {% if detail.purpose == "VOICE" %}Voice
-          {% elif detail.purpose == "TEXT" %}Text
-          {% elif detail.purpose == "BOTH" %}Voice &amp; text
-          {% else %}Purpose not chosen
-          {% endif %}
-        </strong>
+        <strong>{{ techops_labels.PHONE_PURPOSE.get(detail.purpose, 'Purpose not chosen') }}</strong>
         {% if detail.internal_only %}(internal only){% endif %}
         {{ question_badge(detail) }}
       </div>
@@ -57,7 +51,7 @@
     {% elif st and st.code == "PRINTER" %}
       {% set printer_cfg = detail.config or {} %}
       <div style="font-size: 13px;">
-        <strong>{{ {'ETHERNET': 'Ethernet', 'USB': 'USB'}.get(printer_cfg.get('connectivity'), 'Connection not given') }}, {{ {'UNDER_50': 'under 50 pages/day', '50_250': '50 to 250 pages/day', '250_500': '250 to 500 pages/day', 'OVER_500': 'more than 500 pages/day'}.get(printer_cfg.get('volume'), 'volume not given') }}</strong>
+        <strong>{{ techops_labels.PRINTER_CONNECTIVITY.get(printer_cfg.get('connectivity'), 'Connection not given') }}, {{ techops_labels.PRINTER_VOLUME.get(printer_cfg.get('volume'), 'volume not given') }}</strong>
         {{ question_badge(detail) }}
       </div>
       <div class="muted small">{{ (detail.location or '-')[:120] }}</div>

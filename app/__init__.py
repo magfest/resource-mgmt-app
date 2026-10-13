@@ -835,6 +835,8 @@ def create_app() -> Flask:
     # blueprint's route modules.
     from app.routes.work.helpers.formatting import friendly_status
     app.jinja_env.globals['friendly_status'] = friendly_status
+    from app.routes.work.techops import labels as techops_labels
+    app.jinja_env.globals['techops_labels'] = techops_labels
 
     # Register CLI commands (flask seed, etc.)
     from app.cli import register_cli

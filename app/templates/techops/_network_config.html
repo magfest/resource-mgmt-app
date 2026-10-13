@@ -4,17 +4,8 @@
    line per drop, with a location and a use and no config. Those lines are
    still valid and are not migrated, so this renders either shape: the new
    answer when config is there, the old location and use when it is not. #}
-{% set KIND_WORDS = {
-     'COMPUTERS': 'Laptops or desktops',
-     'STREAMING': 'Streaming or capture gear',
-     'SCANNERS': 'Badge scanners',
-     'PRINTERS': 'Printers',
-     'CONSOLES': 'Consoles or arcade hardware',
-     'OTHER': 'Something else'} %}
-{% set TRAFFIC_WORDS = {
-     'INTERNET': 'Mostly internet',
-     'LOCAL': 'Mostly local network',
-     'UNSURE': 'Not sure'} %}
+{% set KIND_WORDS = techops_labels.NETWORK_KIND %}
+{% set TRAFFIC_WORDS = techops_labels.NETWORK_TRAFFIC %}
 
 {% macro render_network_config(detail) %}
   {% set cfg = detail.config or {} %}
