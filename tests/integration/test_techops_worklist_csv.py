@@ -2,10 +2,12 @@
 import csv
 import io
 
+import pytest
+
 from app import db
 from app.models import TechOpsLineDetail, TechOpsRequestDetail, TechOpsServiceType
 from app.routes.work.techops import labels
-from app.routes.work.techops.worklist_csv import CSV_HEADERS
+from app.routes.work.techops.worklist_csv import CSV_HEADERS, csv_cell
 
 from tests.integration.techops_review_helpers import login
 from tests.integration.test_techops_review_affordances import (  # noqa: F401
@@ -92,3 +94,12 @@ def test_csv_is_refused_to_a_requester(client, techops_review):
     login(client, "test:author")
 
     assert client.get(CSV_URL).status_code == 403
+
+
+@pytest.mark.parametrize("start", ["=", "+", "-", "@", "\t", "\r"])
+def test_every_formula_start_is_prefixed(start):
+    assert csv_cell(f"{start}1") == f"'{start}1"
+
+
+def test_plain_text_and_blanks_are_left_alone():
+    assert (csv_cell("Booth 4"), csv_cell(None), csv_cell(3)) == ("Booth 4", "", "3")

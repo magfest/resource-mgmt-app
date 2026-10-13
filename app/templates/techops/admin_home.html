@@ -73,7 +73,7 @@
       <ul>
         {% for m in draft_only %}
           <li>{% if can_list_requests %}<a href="{{ url_for('work.techops_portfolio_redirect', event=event.code, dept=m.department.code) }}">{{ m.department.name }}</a>{% else %}{{ m.department.name }}{% endif %}
-            <span class="muted small">· edited {{ m.draft.updated_at.strftime('%b %d') }}</span></li>
+            <span class="muted small">· edited {{ m.last_edited.strftime('%b %d') }}</span></li>
         {% else %}<li class="muted">None</li>{% endfor %}
       </ul>
     </div>

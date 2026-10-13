@@ -117,3 +117,29 @@ def test_home_is_refused_to_a_requester_and_linked_from_the_menu(client, techops
 
     login(client, "test:reviewer")
     assert f'href="{HOME}"' in client.get(HOME).get_data(as_text=True)
+
+
+def test_a_draft_reads_as_edited_when_its_content_last_changed(techops_review):
+    from app.models import WorkItemAuditEvent
+    draft = add_request("PANELS", WORK_ITEM_STATUS_DRAFT, "SMF2027-PANELS-TEC-1")
+    add_space("Panel Room", holder=draft.portfolio.department)
+    draft.updated_at = datetime(2026, 9, 1, 12, 0)
+    db.session.add(WorkItemAuditEvent(
+        work_item_id=draft.id, event_type="FIELD_CHANGE",
+        created_at=datetime(2026, 10, 10, 8, 0), created_by_user_id="test:author"))
+    db.session.commit()
+
+    _, draft_only = departments_not_submitted(_cycle())
+
+    assert draft_only[0].last_edited == datetime(2026, 10, 10, 8, 0)
+
+
+def test_a_draft_never_edited_reads_its_own_timestamp(techops_review):
+    draft = add_request("PANELS", WORK_ITEM_STATUS_DRAFT, "SMF2027-PANELS-TEC-1")
+    add_space("Panel Room", holder=draft.portfolio.department)
+    draft.updated_at = datetime(2026, 9, 1, 12, 0)
+    db.session.commit()
+
+    _, draft_only = departments_not_submitted(_cycle())
+
+    assert draft_only[0].last_edited == datetime(2026, 9, 1, 12, 0)

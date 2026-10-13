@@ -14,6 +14,7 @@ from app.models import (
     Department,
     SpaceAssignment,
     WorkItem,
+    WorkItemAuditEvent,
     WorkPortfolio,
     WorkType,
     WORK_ITEM_STATUS_DRAFT,
@@ -36,6 +37,7 @@ class TeamQueue:
 class MissingDepartment:
     department: Department
     draft: WorkItem | None = None
+    last_edited: datetime | None = None
 
 
 def _techops_items(event_cycle):
@@ -80,6 +82,25 @@ def unfinished_request_count(event_cycle) -> int:
         WorkItem.status == WORK_ITEM_STATUS_SUBMITTED).count()
 
 
+def _last_edited(updated_by_item_id: dict[int, datetime]) -> dict[int, datetime]:
+    """Latest audit event per draft, else the item's own updated_at.
+
+    A TechOps draft save writes the detail, spaces and lines but no
+    work_items column, so WorkItem.updated_at stays at creation.
+    """
+    if not updated_by_item_id:
+        return {}
+    latest = dict(
+        db.session.query(WorkItemAuditEvent.work_item_id,
+                         db.func.max(WorkItemAuditEvent.created_at))
+        .filter(WorkItemAuditEvent.work_item_id.in_(updated_by_item_id))
+        .group_by(WorkItemAuditEvent.work_item_id)
+        .all()
+    )
+    return {item_id: max(filter(None, (updated, latest.get(item_id))))
+            for item_id, updated in updated_by_item_id.items()}
+
+
 def departments_not_submitted(event_cycle, all_departments=False):
     """Departments expected to file that have not: (no request, draft only).
 
@@ -97,13 +118,16 @@ def departments_not_submitted(event_cycle, all_departments=False):
     if not expected:
         return [], []
 
+    items = _techops_items(event_cycle).all()
+    edited = _last_edited({item.id: item.updated_at for item in items
+                           if item.status == WORK_ITEM_STATUS_DRAFT})
     latest_draft: dict[int, WorkItem] = {}
     filed: set[int] = set()
-    for item in _techops_items(event_cycle).all():
+    for item in items:
         dept_id = item.portfolio.department_id
         if item.status != WORK_ITEM_STATUS_DRAFT:
             filed.add(dept_id)
-        elif dept_id not in latest_draft or item.updated_at > latest_draft[dept_id].updated_at:
+        elif dept_id not in latest_draft or edited[item.id] > edited[latest_draft[dept_id].id]:
             latest_draft[dept_id] = item
 
     no_request, draft_only = [], []
@@ -112,7 +136,8 @@ def departments_not_submitted(event_cycle, all_departments=False):
         if dept.id in filed:
             continue
         if dept.id in latest_draft:
-            draft_only.append(MissingDepartment(dept, latest_draft[dept.id]))
+            draft = latest_draft[dept.id]
+            draft_only.append(MissingDepartment(dept, draft, edited[draft.id]))
         else:
             no_request.append(MissingDepartment(dept))
     return no_request, draft_only

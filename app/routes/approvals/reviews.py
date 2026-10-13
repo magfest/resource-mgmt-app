@@ -41,7 +41,7 @@ from app.routes.work.helpers import (
     is_checked_out,
     is_worktype_admin,
 )
-from app.routes.work.helpers.checkout import user_holds_checkout
+from app.routes.work.helpers.checkout import is_work_type_staffer, user_holds_checkout
 from app.routes.work.helpers.review_state import (
     get_line_review_state, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP, AWAITING_REQUESTER,
 )
@@ -155,7 +155,10 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         # gating it on edit locked out most of the requesting department.
         is_requester = can_view_work_item_lines(work_item, ctx, user_ctx)
 
-        is_viewer = is_worktype_viewer(user_ctx, work_item.portfolio.work_type_id)
+        is_viewer = (
+            is_worktype_viewer(user_ctx, work_item.portfolio.work_type_id)
+            or is_work_type_staffer(user_ctx, work_item.portfolio.work_type)
+        )
 
         if not is_in_routed_group and not is_requester and not is_viewer:
             abort(403, "You do not have permission to view this line.")
