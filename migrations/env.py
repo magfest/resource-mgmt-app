@@ -9,9 +9,10 @@ from alembic import context
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
-fileConfig(config.config_file_name)
+# create_app() runs this file on each worker's first request. fileConfig's
+# default disables every existing logger, including app.logger, which drops
+# all tracebacks from that worker for its lifetime.
+fileConfig(config.config_file_name, disable_existing_loggers=False)
 logger = logging.getLogger('alembic.env')
 
 
