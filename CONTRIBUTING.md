@@ -1,4 +1,4 @@
-# Contributing to the MAGFest Budget System
+# Contributing to MAGFest RMS
 
 MAGFest is volunteer-run, and so is this application. Contributions are welcome.
 

@@ -48,7 +48,7 @@ class EmailSendResult:
 
 _FOOTER = (
     "\n\n---\n"
-    "This is an automated message from the MAGFest Budget System "
+    "This is an automated message from MAGFest RMS "
     "— replies here disappear into the void! "
     "For help, reach out on Slack or email accounting@magfest.org."
 )

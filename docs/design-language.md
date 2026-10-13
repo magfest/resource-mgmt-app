@@ -1,4 +1,4 @@
-# MAGFest Budget App - Design Language Guide
+# MAGFest RMS Design Language Guide
 
 This document records the UI patterns new templates follow. Written 2026-02-26
 and checked against the templates in August 2026; patterns marked `UNVERIFIED`

@@ -1,4 +1,4 @@
-# MAGFest Budget System
+# MAGFest RMS
 
 A request and approval workflow application for [MAGFest](https://www.magfest.org/) events, built with Flask. It is in production for budget requests.
 

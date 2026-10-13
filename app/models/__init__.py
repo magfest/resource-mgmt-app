@@ -1,5 +1,5 @@
 """
-Models package for MAGFest Budget application.
+Models package for MAGFest RMS.
 
 All models and constants are re-exported here for backwards compatibility.
 Existing imports like `from app.models import User, WorkItem` continue to work.
