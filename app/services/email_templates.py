@@ -62,6 +62,16 @@ EMAIL_TEMPLATE_VARIABLES = {
         'work_item.portfolio.event_cycle.code': 'Event code',
         'base_url': 'Base URL of the application',
     },
+    'sent_back': {
+        'work_item': 'The WorkItem returned to draft',
+        'work_item.public_id': 'Public ID of the request',
+        'work_item.portfolio.department.name': 'Department name',
+        'work_item.portfolio.department.code': 'Department code',
+        'work_item.portfolio.event_cycle.name': 'Event name',
+        'work_item.portfolio.event_cycle.code': 'Event code',
+        'base_url': 'Base URL of the application',
+        'reason': 'Why TechOps returned the request',
+    },
     'response_received': {
         'work_item': 'The WorkItem with the response',
         'work_item.public_id': 'Public ID of the request',
@@ -337,6 +347,7 @@ def get_sample_context() -> dict[str, Any]:
         # blanks where its numbers go.
         'line_count': 12,
         'total_requested_dollars': 4820.50,
+        'reason': 'Ballroom A is listed twice; please merge the two room cards.',
         # Supplied by the drainer on every send, undocumented but reachable.
         'work_type': MockWorkType(),
         'recipient_email': 'volunteer@example.org',

@@ -1,8 +1,8 @@
 """Enqueue side of the email outbox.
 
-Notification KIND is not template KEY. Kinds are fixed at seven; template keys
-grow with every work type, so dedup rules and required-entity rules key on the
-kind and stay at seven entries permanently.
+Notification KIND is not template KEY. Kinds are a short list, kept in
+NOTIFICATION_KINDS (app/models/constants.py); template keys grow with every
+work type, so dedup rules and required-entity rules key on the kind.
 """
 import json
 import logging
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # (admin_final/helpers.py:697) precisely so a re-finalize notifies again.
 # Keying on item id alone silently drops the second one, because the first
 # row still owns the key.
-_ONCE_PER_EVENT_KINDS = ("submission_confirmation", "finalized")
+_ONCE_PER_EVENT_KINDS = ("submission_confirmation", "finalized", "submitted", "sent_back")
 
 
 def resolve_template_key(kind: str, work_type_code: str | None) -> str:
@@ -56,7 +56,7 @@ def build_dedup_key(kind, *, work_item_id=None, event_cycle_id=None,
         day = now.strftime("%Y-%m-%d")
         return f"{kind}:{event_cycle_id}:{department_id}:{recipient_email}:{day}"
     if kind in _ONCE_PER_EVENT_KINDS:
-        # discriminator is the timestamp of THIS submission or THIS release.
+        # discriminator is the timestamp of THIS submission, release or send-back.
         # A duplicate click inside one event still collides; a genuine second
         # event produces a new key.
         stamp = event_stamp.isoformat() if event_stamp else "none"
