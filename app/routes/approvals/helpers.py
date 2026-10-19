@@ -49,6 +49,7 @@ from app.models import (
     WORK_LINE_STATUS_APPROVED,
     WORK_LINE_STATUS_APPROVED_NEEDS_REVIEW,
     WORK_LINE_STATUS_REJECTED,
+    WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_SUBMITTED,
     REVIEW_ACTION_APPROVE,
@@ -702,6 +703,17 @@ def apply_review_decision(
     # joinedload of portfolio, and PostgreSQL refuses a bare FOR UPDATE across
     # that outer join; OF limits the lock to the request row.
     db.session.refresh(work_item, with_for_update={"of": WorkItem})
+
+    # A TechOps send-back or pull-back deletes this item's reviews and leaves
+    # it DRAFT. A reviewer's stale page can still post here, and without this
+    # check try_auto_finalize finalizes the draft. Refuse before touching the
+    # review, which may be a deleted row.
+    if work_item.status == WORK_ITEM_STATUS_DRAFT:
+        return False, (
+            "This request is back with the department as a draft. "
+            "Reload the page to see where it stands."
+        )
+
     db.session.refresh(review, with_for_update=True)
 
     # 3. Validate transition

@@ -399,10 +399,14 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
     )
 
     if not success:
+        # Discard the review get_or_create_review may have flushed above; a
+        # refused decision on a returned draft must not leave one behind.
+        current_status = review.status
+        db.session.rollback()
         if is_ajax:
             # current_status lets quick review redraw a row someone else decided.
             # The review was re-read under its lock; the line may predate that.
-            return jsonify({"success": False, "error": error, "current_status": review.status})
+            return jsonify({"success": False, "error": error, "current_status": current_status})
         flash(error, "error")
     else:
         action_labels = {
