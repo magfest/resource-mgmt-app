@@ -1,10 +1,8 @@
 # Runs every migration against PostgreSQL, which the test suite never does.
 #
-# pytest builds its schema with db.create_all() on SQLite, so no migration is
-# ever executed by the suite and no migration ever meets PostgreSQL before a
-# deploy does. That gap let "UPDATE ... SET is_active = 0" reach staging in
-# September 2026: SQLite stores booleans as 0/1 and accepts it, PostgreSQL
-# raises DatatypeMismatch, and the release command crash-looped.
+# pytest builds its schema with db.create_all() on SQLite and runs no
+# migrations. SQLite also accepts SQL that PostgreSQL rejects, such as 0 for a
+# boolean, so a migration can pass the suite and still fail on deploy.
 name: Migrations
 
 on:
@@ -51,30 +49,32 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Two stages on purpose. tr7742b1c8e5 refuses to run unless the
-      # TECHOPS_NET and TECHOPS_GEN approval groups exist, and those come from
-      # `flask seed`, not from a migration. An environment that already has
-      # them upgrades in one step; a new database has to be seeded part-way.
+      # These four steps build a new database in the order it needs.
+      # tr7742b1c8e5 refuses to run unless the TECHOPS_NET and TECHOPS_GEN
+      # approval groups exist, and only `flask seed bootstrap` creates them.
+      # The pinned revision is the one just before tr7742b1c8e5. If a later
+      # migration needs seeded rows, pin to the revision before that one.
       #
-      # SEED_POINT is the revision immediately before the first migration that
-      # depends on seeded rows. When a new migration adds such a dependency,
-      # move this pin to the revision before it, or this job goes green while
-      # testing less than it claims.
+      # Both seeds use the models in the checked-out code, so a seed run at the
+      # pin fails on any table that gains a column after it. Bootstrap reads
+      # none of those tables; the demo seed reads event_cycles, so it runs
+      # after head.
       - name: Upgrade to the last migration that needs no seeded data
         run: flask db upgrade sp5539947d06
 
-      - name: Seed reference data
-        run: flask seed
+      - name: Seed bootstrap reference data
+        run: flask seed bootstrap
 
       - name: Upgrade to head
         run: flask db upgrade
 
+      - name: Seed demo data against the full schema
+        run: flask seed demo
+
       - name: Show the resulting head
         run: flask db current
 
-      # The boolean bug above had a twin in downgrade() that no forward run
-      # would ever reach. A rollback is the worst moment to discover a
-      # migration cannot run.
+      # An upgrade never runs downgrade(), so this step runs the newest one.
       - name: Downgrade one revision and upgrade again
         # "-- -1" not "-1": click parses a leading dash as an option and
         # fails with "No such option: -1" before alembic ever sees it.
@@ -82,10 +82,8 @@ jobs:
           flask db downgrade -- -1
           flask db upgrade
 
-      # The real protection is every step above: a migration that puts an
-      # integer in a boolean column raises DatatypeMismatch when it runs, so
-      # reaching this point is the proof. This only catches a chain that
-      # "succeeded" without building anything.
+      # Fails if the chain built no boolean columns, which means it built no
+      # schema. A migration with a type error fails the steps above instead.
       - name: Smoke check that the schema actually built
         run: |
           python - <<'PY'
