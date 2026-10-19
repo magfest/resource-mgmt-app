@@ -44,6 +44,11 @@ class EventCycle(db.Model):
     approval_target_date = db.Column(db.Date, nullable=True)      # Target for completing approvals
     finalization_date = db.Column(db.Date, nullable=True)         # When budgets are locked/finalized
 
+    # Ends a department's own return to draft at 23:59 US Eastern on this
+    # date. It does not block submitting; every department must still file,
+    # and a TechOps admin can send a request back at any time.
+    techops_submission_deadline = db.Column(db.Date, nullable=True)
+
     # The board's sign-off on the event topline. Latches: once set, budgets
     # finished afterward release without a second action. Clearing it does not
     # un-release anything, because sent email cannot be unsent.
