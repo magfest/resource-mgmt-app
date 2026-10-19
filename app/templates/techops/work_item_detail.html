@@ -86,6 +86,15 @@
       </form>
     {% endif %}
 
+    {% if return_options.can_pull_back %}
+      <form method="post" action="{{ url_for('work.techops_request_pull_back', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn" data-confirm="Return this request to draft? You will need to submit it again.">
+          Return to draft
+        </button>
+      </form>
+    {% endif %}
+
     {% set is_staff_reviewer = perms.is_worktype_admin or is_approver_for_item %}
     {% if not perms.is_draft and is_staff_reviewer %}
       <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='techops') }}">
@@ -96,11 +105,45 @@
       </a>
     {% endif %}
 
-    <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
+    {# The divider separates actions from the Back link; with no action
+       before it, it renders as a stray line beside Back. #}
+    {% if (perms.is_draft and perms.can_edit) or perms.can_submit
+          or return_options.can_pull_back or (not perms.is_draft and is_staff_reviewer) %}
+      <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>
+    {% endif %}
     <a class="btn" href="{{ url_for('work.department_home', event=ctx.event_cycle.code, dept=ctx.department.code) }}">
       &larr; Back to {{ ctx.department.name }}
     </a>
   </div>
+
+  {% if return_options.pull_back_note %}
+    <p class="muted small" style="margin: -8px 0 16px;">{{ return_options.pull_back_note }}</p>
+  {% endif %}
+
+  {# A details element rather than a script-driven reveal: it needs no CSP
+     nonce, and on a phone the reason box opens in place under the bar. #}
+  {% if return_options.can_send_back %}
+    <details class="card mb-16">
+      <summary class="btn">Send back to department</summary>
+      <form method="post" action="{{ url_for('work.techops_request_send_back', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}" style="margin-top: 12px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="muted small" style="margin: 0 0 8px;">
+          The request returns to draft and every review decision on it is
+          cleared. The department is emailed your reason.
+        </p>
+        <label for="send_back_reason" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">
+          Reason (the department sees this)
+        </label>
+        <textarea id="send_back_reason" name="reason" rows="3" required
+                  style="width: 100%; box-sizing: border-box;"></textarea>
+        <div style="margin-top: 8px;">
+          <button type="submit" class="btn btn-primary" data-confirm="Send this request back? Every review decision on it is cleared.">
+            Send back
+          </button>
+        </div>
+      </form>
+    </details>
+  {% endif %}
 
   {# Primary contact + per-request fields #}
   {% if request_detail %}

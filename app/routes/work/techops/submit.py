@@ -28,6 +28,7 @@ from ..helpers import (
     get_portfolio_context,
 )
 from .create import _do_submit
+from .send_back import submitted_message
 
 
 @work_bp.post("/<event>/<dept>/techops/item/<public_id>/submit")
@@ -74,7 +75,7 @@ def techops_request_submit(event: str, dept: str, public_id: str):
         return redirect(detail_url)
 
     flash(
-        "TechOps request submitted! TechOps will reach out if any clarifications are needed.",
+        submitted_message(work_item.portfolio.event_cycle),
         "success",
     )
     return redirect(detail_url)

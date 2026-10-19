@@ -76,10 +76,18 @@
     chairs and room setup go to the hotel request form.
   </div>
   <div style="margin-bottom: 6px;">
-    <strong>After you submit:</strong> TechOps reviews everything and will
-    email you with any questions within a couple of weeks of the deadline, so
-    keep an eye on your inbox. Anything else, ask in
-    <strong>#super-techops-requests</strong>.
+    <strong>After you submit:</strong> your request goes to TechOps for review.
+    {% set techops_deadline = ctx.event_cycle.techops_submission_deadline %}
+    {% if techops_deadline %}
+    You can return it to draft from the request page until
+    <strong>{{ techops_deadline.strftime('%b') }} {{ techops_deadline.day }}</strong>,
+    as long as TechOps has not started reviewing it. After that, ask for changes in
+    {% else %}
+    You can return it to draft from the request page until TechOps starts
+    reviewing it. After that, ask for changes in
+    {% endif %}
+    <strong>#super-techops-requests</strong>. TechOps will email you with any
+    questions, so keep an eye on your inbox.
   </div>
   <div>
     <strong>If you are not sure, do not guess.</strong> Leave it blank and
