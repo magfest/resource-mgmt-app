@@ -105,8 +105,8 @@
       </a>
     {% endif %}
 
-    {# The divider separates actions from the Back link; with no action
-       before it, it renders as a stray line beside Back. #}
+    {# The divider separates the actions from the Back link, so it renders
+       only when at least one action does. #}
     {% if (perms.is_draft and perms.can_edit) or perms.can_submit
           or return_options.can_pull_back or (not perms.is_draft and is_staff_reviewer) %}
       <span style="border-left: 1px solid #a7f3d0; height: 24px; margin: 0 4px;"></span>

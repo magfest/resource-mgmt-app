@@ -3,9 +3,7 @@
 Two actions share one reset. A department editor pulls back an order nobody
 at TechOps has decided yet. A TechOps admin sends back any submitted or
 finalized order, with a reason the department sees. The event's TechOps
-deadline also ends the pull-back; the send-back has no date limit. Budget's
-recall does not apply here: it needs the AWAITING_DISPATCH state, which
-TechOps skips.
+deadline also ends the pull-back; the send-back has no date limit.
 """
 from __future__ import annotations
 
@@ -56,8 +54,8 @@ DEADLINE_PASSED = (
 def pull_back_deadline_passed(event_cycle: EventCycle, now: datetime | None = None) -> bool:
     """Return True once the deadline day has ended in US Eastern time.
 
-    The server clock is UTC, so a plain date comparison would close the
-    window at 8 PM Eastern on the deadline day.
+    The server clock is UTC, so comparing against the UTC date would close the
+    window four or five hours early, depending on daylight saving.
     """
     deadline = event_cycle.techops_submission_deadline
     if deadline is None:
@@ -87,7 +85,7 @@ def submitted_message(event_cycle: EventCycle, now: datetime | None = None) -> s
 class ReturnOptions:
     can_pull_back: bool
     can_send_back: bool
-    # What the department reads beside the action bar; None shows nothing.
+    # The sentence the department reads under the action bar; None shows nothing.
     pull_back_note: str | None = None
 
 
@@ -195,9 +193,9 @@ def techops_request_pull_back(event: str, dept: str, public_id: str):
 def techops_request_send_back(event: str, dept: str, public_id: str):
     """Let a TechOps admin return an order to the department with a reason.
 
-    The reason is a PUBLIC comment because decision reasons in this app are
-    visible to the requester. The status change, comment and outbox rows
-    commit together.
+    The reason is stored as a PUBLIC comment, so the department reads it on the
+    request page as well as in the email. The status change, comment and
+    outbox rows commit together.
     """
     reason = (request.form.get("reason") or "").replace("\r\n", "\n").strip()
 

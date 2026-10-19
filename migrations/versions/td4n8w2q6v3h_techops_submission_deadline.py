@@ -1,8 +1,8 @@
 """TechOps request deadline on event cycles
 
 A department may return its own submitted TechOps request to draft until this
-date. The column is nullable, and a missing date keeps the earlier rule:
-pull-back stays open until TechOps starts reviewing.
+date. The column is nullable; with no date, pull-back stays open until
+TechOps starts reviewing.
 
 Revision ID: td4n8w2q6v3h
 Revises: sb7q2m4x9k1d
