@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from flask import current_app
 from typing import List, Set
 
@@ -139,6 +140,29 @@ def notify_submission_confirmation(work_item: WorkItem) -> int:
             total_requested_cents += compute_line_amount_cents(
                 detail.unit_price_cents, detail.quantity)
 
+    recipients = _department_and_contact_emails(work_item)
+
+    extra_context = {'line_count': line_count}
+    if work_type.code == 'BUDGET':
+        # TechOps carries no money, and Supply is requester-facing and never
+        # shows prices (supply/portfolio.py:28). Sending 0.00 would read as a
+        # decision rather than an absence.
+        extra_context['total_requested_dollars'] = total_requested_cents / 100
+
+    return _enqueue_emails(
+        recipients=recipients,
+        kind='submission_confirmation',
+        work_item=work_item,
+        empty_recipients_msg=(
+            "No department member recipients found for submission_confirmation"
+        ),
+        extra_context=extra_context,
+    )
+
+
+def _department_and_contact_emails(work_item: WorkItem) -> List[str]:
+    """Return department member emails plus the TechOps primary contact."""
+    portfolio = work_item.portfolio
     recipients = _get_department_member_emails(
         department_id=portfolio.department_id,
         event_cycle_id=portfolio.event_cycle_id,
@@ -158,22 +182,25 @@ def notify_submission_confirmation(work_item: WorkItem) -> int:
         known = {r.casefold() for r in recipients}
         if contact.casefold() not in known:
             recipients = list(recipients) + [contact]
+    return recipients
 
-    extra_context = {'line_count': line_count}
-    if work_type.code == 'BUDGET':
-        # TechOps carries no money, and Supply is requester-facing and never
-        # shows prices (supply/portfolio.py:28). Sending 0.00 would read as a
-        # decision rather than an absence.
-        extra_context['total_requested_dollars'] = total_requested_cents / 100
 
+def notify_sent_back(work_item: WorkItem, reason: str, sent_at: datetime) -> int:
+    """Tell the department a TechOps admin returned their request to draft.
+
+    Has no channel announcement. sent_at keys the dedup, so a second
+    send-back of the same request still emails; pass the audit event's
+    created_at.
+
+    Returns: Number of outbox rows queued.
+    """
     return _enqueue_emails(
-        recipients=recipients,
-        kind='submission_confirmation',
+        recipients=_department_and_contact_emails(work_item),
+        kind='sent_back',
         work_item=work_item,
-        empty_recipients_msg=(
-            "No department member recipients found for submission_confirmation"
-        ),
-        extra_context=extra_context,
+        empty_recipients_msg="No department or contact recipients found for sent_back",
+        extra_context={'reason': reason},
+        event_stamp=sent_at,
     )
 
 
@@ -349,7 +376,7 @@ def _event_stamp(kind: str, work_item: WorkItem):
     board release. Both recur on the same work item by design, so the key
     needs the event timestamp or the second one is dropped as a duplicate.
     """
-    if kind == 'submission_confirmation':
+    if kind in ('submission_confirmation', 'submitted'):
         return work_item.submitted_at
     if kind == 'finalized':
         return work_item.board_released_at
@@ -362,8 +389,12 @@ def _enqueue_emails(
     work_item: WorkItem,
     empty_recipients_msg: str,
     extra_context: dict | None = None,
+    event_stamp=None,
 ) -> int:
     """Queue one outbox row per recipient. Returns rows enqueued, not sent.
+
+    event_stamp overrides _event_stamp for a kind whose event time lives
+    outside the work item, such as sent_back.
 
     Nothing at enqueue time can know about delivery. The row is rendered at
     send time so the email reflects current names with frozen numbers, which
@@ -402,7 +433,7 @@ def _enqueue_emails(
                         kind,
                         work_item_id=work_item.id,
                         recipient_email=email,
-                        event_stamp=_event_stamp(kind, work_item),
+                        event_stamp=event_stamp or _event_stamp(kind, work_item),
                     ),
                 )
         except Exception:

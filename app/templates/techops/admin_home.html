@@ -57,7 +57,7 @@
     <div class="card">
       <h2 style="font-size:18px; margin-top:0;">
         Who hasn't asked yet
-        {% if event.submission_deadline %}<span class="muted" style="font-size:13px; font-weight:400;">· Deadline {{ event.submission_deadline.strftime('%b %d, %Y') }} · {{ no_request|length + draft_only|length }} not submitted</span>{% endif %}
+        {% if event.techops_submission_deadline %}<span class="muted" style="font-size:13px; font-weight:400;">· Deadline {{ event.techops_submission_deadline.strftime('%b %d, %Y') }} · {{ no_request|length + draft_only|length }} not submitted</span>{% endif %}
       </h2>
       <p class="muted small" style="margin-top:0;">
         {% if all_departments %}Every enabled department. <a href="{{ url_for('work.techops_home', event=event.code) }}">Only departments with a room</a>

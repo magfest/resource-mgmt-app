@@ -28,6 +28,7 @@ from app.models import (
     WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_SUBMITTED,
+    WORK_LINE_STATUS_PENDING,
 )
 from app.routing.registry import get_approval_group_for_line
 from app.routes.work.helpers.computations import compute_work_item_totals
@@ -120,6 +121,90 @@ def recall_to_draft(work_item: "WorkItem", user_ctx: "UserContext") -> None:
         snapshot={"from_status": prior_status},
     )
     db.session.add(audit_event)
+
+
+# Who started a reset_submitted_to_draft, recorded in its audit snapshot.
+RETURN_ACTION_PULL_BACK = "PULL_BACK"
+RETURN_ACTION_SEND_BACK = "SEND_BACK"
+
+
+def reset_submitted_to_draft(
+    work_item: "WorkItem",
+    user_ctx: "UserContext",
+    *,
+    action: str,
+    reason: str | None = None,
+) -> WorkItemAuditEvent:
+    """Return a submitted uses_dispatch=False item to DRAFT and delete its reviews.
+
+    This is not recall_to_draft. Without a dispatch step, submit creates the
+    review rows itself, so undoing it must remove them. Every decision is
+    dropped; resubmitting starts review over. The caller gates eligibility
+    and commits.
+
+    The audit snapshot copies each deleted review. It is the only record that
+    survives: the next draft save rebuilds the lines, and line-level audit
+    rows are deleted with them.
+    """
+    prior_status = work_item.status
+    lines = sorted(work_item.lines, key=lambda l: l.line_number)
+    line_ids = [line.id for line in lines]
+    line_numbers = {line.id: line.line_number for line in lines}
+
+    reviews = (
+        WorkLineReview.query
+        .filter(WorkLineReview.work_line_id.in_(line_ids))
+        .all()
+        if line_ids else []
+    )
+    deleted = sorted(
+        (
+            {
+                "line_number": line_numbers[review.work_line_id],
+                "approval_group_code": (
+                    review.approval_group.code if review.approval_group else None
+                ),
+                "status": review.status,
+                "decided_by_user_id": review.decided_by_user_id,
+                "note": review.note,
+            }
+            for review in reviews
+            if review.stage == REVIEW_STAGE_APPROVAL_GROUP
+        ),
+        key=lambda r: r["line_number"],
+    )
+    for review in reviews:
+        db.session.delete(review)
+
+    for line in lines:
+        line.status = WORK_LINE_STATUS_PENDING
+        line.needs_requester_action = False
+        line.current_review_stage = None
+
+    work_item.status = WORK_ITEM_STATUS_DRAFT
+    work_item.submitted_at = None
+    work_item.submitted_by_user_id = None
+    work_item.checked_out_by_user_id = None
+    work_item.checked_out_at = None
+    work_item.checked_out_expires_at = None
+    work_item.finalized_at = None
+    work_item.finalized_by_user_id = None
+
+    audit_event = WorkItemAuditEvent(
+        work_item_id=work_item.id,
+        event_type=AUDIT_EVENT_RECALL_TO_DRAFT,
+        old_value=prior_status,
+        new_value=WORK_ITEM_STATUS_DRAFT,
+        reason=reason,
+        snapshot={
+            "action": action,
+            "from_status": prior_status,
+            "reviews": deleted,
+        },
+        created_by_user_id=user_ctx.user_id,
+    )
+    db.session.add(audit_event)
+    return audit_event
 
 
 def try_auto_finalize(work_item: "WorkItem", user_ctx: "UserContext") -> bool:

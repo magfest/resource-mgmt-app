@@ -234,5 +234,5 @@ ENQUEUE_BLOCKED_OUTCOMES = (
 
 NOTIFICATION_KINDS = (
     "submitted", "dispatched", "needs_attention", "response_received",
-    "submission_confirmation", "finalized", "submission_reminder",
+    "submission_confirmation", "finalized", "submission_reminder", "sent_back",
 )

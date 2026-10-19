@@ -137,10 +137,17 @@
         </div>
 
         <div>
-          <label for="submission_deadline" class="form-label">Submission Deadline</label>
+          <label for="submission_deadline" class="form-label">Budget Submission Deadline</label>
           <input id="submission_deadline" name="submission_deadline" type="date"
                  value="{{ cycle.submission_deadline.isoformat() if cycle and cycle.submission_deadline else '' }}" />
           <div class="muted small mt-4">When departments should submit budgets</div>
+        </div>
+
+        <div>
+          <label for="techops_submission_deadline" class="form-label">TechOps Request Deadline</label>
+          <input id="techops_submission_deadline" name="techops_submission_deadline" type="date"
+                 value="{{ cycle.techops_submission_deadline.isoformat() if cycle and cycle.techops_submission_deadline else '' }}" />
+          <div class="muted small mt-4">Departments can return a submitted request to draft until the end of this day, Eastern. Late requests are still accepted.</div>
         </div>
 
         <div>

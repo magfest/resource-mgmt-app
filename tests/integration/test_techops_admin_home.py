@@ -104,7 +104,7 @@ def test_scale_card_links_each_service_into_the_worklist(client, techops_review)
 
 
 def test_deadline_shows_on_the_who_hasnt_asked_card(client, techops_review):
-    _cycle().submission_deadline = date(2026, 11, 1)
+    _cycle().techops_submission_deadline = date(2026, 11, 1)
     db.session.commit()
     login(client, "test:reviewer")
 

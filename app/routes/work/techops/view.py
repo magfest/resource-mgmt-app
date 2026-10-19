@@ -22,6 +22,7 @@ from app.routes import get_user_ctx
 from .. import work_bp
 from ..helpers import (
     _is_approver_for_work_item,
+    build_portfolio_perms,
     compute_work_item_totals,
     format_currency,
     friendly_status,
@@ -31,6 +32,7 @@ from ..helpers import (
 )
 from ..helpers.review_state import group_progress_for_items
 from .preview import PHONE_LINE_NOT_CHOSEN
+from .send_back import techops_return_options
 from .spaces import review_space_facts
 
 
@@ -128,4 +130,6 @@ def techops_work_item_detail(event: str, dept: str, public_id: str):
         is_approver_for_item=is_approver_for_item,
         group_progress=progress,
         progress_audience="staff" if is_staff else "requester",
+        return_options=techops_return_options(
+            work_item, perms, build_portfolio_perms(ctx).can_edit, user_ctx.user_id),
     )

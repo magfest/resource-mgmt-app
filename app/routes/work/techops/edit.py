@@ -45,6 +45,7 @@ from .form_utils import (
 )
 from .line_grain import SOURCE_NEW, expand_to_lines
 from .preview import build_preview_rows, rows_from_saved_lines
+from .send_back import submitted_message
 from .spaces import (
     offerable_spaces,
     phone_line_share_options,
@@ -308,7 +309,7 @@ def techops_request_update(event: str, dept: str, public_id: str):
                 event=event, dept=dept, public_id=work_item.public_id,
             ))
         flash(
-            "TechOps request submitted! TechOps will reach out if any clarifications are needed.",
+            submitted_message(work_item.portfolio.event_cycle),
             "success",
         )
         return redirect(url_for(

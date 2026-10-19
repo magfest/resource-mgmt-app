@@ -1,8 +1,8 @@
 """Enqueue side of the email outbox.
 
-Notification KIND is not template KEY. Kinds are fixed at seven; template keys
-grow with every work type, so dedup rules and required-entity rules key on the
-kind and stay at seven entries permanently.
+Notification KIND is not template KEY. Kinds are a short list, kept in
+NOTIFICATION_KINDS (app/models/constants.py); template keys grow with every
+work type, so dedup rules and required-entity rules key on the kind.
 """
 import json
 import logging
@@ -24,14 +24,14 @@ from app.services.email_templates import get_effective_template
 
 logger = logging.getLogger(__name__)
 
-# "Once ever" is per SUBMISSION and per RELEASE, not per work item for all
-# time. Both of these events legitimately recur on the same row: recall then
-# resubmit re-sets work_item.submitted_at (lifecycle.py:113 nulls it, :59
-# re-sets it), and unfinalize clears board_released_at
-# (admin_final/helpers.py:697) precisely so a re-finalize notifies again.
-# Keying on item id alone silently drops the second one, because the first
-# row still owns the key.
-_ONCE_PER_EVENT_KINDS = ("submission_confirmation", "finalized")
+# "Once ever" is per event, not per work item for all time, because each of
+# these events recurs on the same row. submit_work_item re-sets submitted_at
+# after recall_to_draft or reset_submitted_to_draft nulls it.
+# unfinalize_work_item (admin_final/helpers.py) clears board_released_at, so a
+# re-finalize notifies again. Each send-back writes a new audit event. Keying
+# on item id alone silently drops the second one, because the first row still
+# owns the key.
+_ONCE_PER_EVENT_KINDS = ("submission_confirmation", "finalized", "submitted", "sent_back")
 
 
 def resolve_template_key(kind: str, work_type_code: str | None) -> str:
@@ -56,7 +56,7 @@ def build_dedup_key(kind, *, work_item_id=None, event_cycle_id=None,
         day = now.strftime("%Y-%m-%d")
         return f"{kind}:{event_cycle_id}:{department_id}:{recipient_email}:{day}"
     if kind in _ONCE_PER_EVENT_KINDS:
-        # discriminator is the timestamp of THIS submission or THIS release.
+        # discriminator is the timestamp of THIS submission, release or send-back.
         # A duplicate click inside one event still collides; a genuine second
         # event produces a new key.
         stamp = event_stamp.isoformat() if event_stamp else "none"
