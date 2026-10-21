@@ -6,6 +6,9 @@ repos:
       hooks:
         - id: pip-audit
           args: ["-r", "requirements.txt", "--strict"]
+          # New advisories fail this without any local change, so it would block
+          # unrelated commits. CI (.github/workflows/security.yml) gates PRs instead.
+          stages: [manual]
 
     - repo: local
       hooks:
