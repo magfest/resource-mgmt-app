@@ -1385,10 +1385,9 @@ def request_for_an_aliased_room(app):
 
 def test_the_preview_shows_the_events_alias_not_the_venue_catalog_name(
         app, client, request_for_an_aliased_room):
-    """Round-1 review, item 4 (medium). The card shows "Main Stage"
-    (SpaceEventOverride.alias); the preview must show the same name, not
-    Potomac Ballroom C, the underlying Space.name a requester who filled
-    in the card never sees anywhere else on the page."""
+    """The card shows "Main Stage (Potomac Ballroom C)", the alias with its
+    room in brackets; the preview row must show that same label, not the
+    bare Space.name."""
     _login(client, "test:admin")
     room = request_for_an_aliased_room["room"]
     body = client.post(
@@ -1403,8 +1402,8 @@ def test_the_preview_shows_the_events_alias_not_the_venue_catalog_name(
             f"space_{room.id}_WIFI_enabled": "1",
             f"space_{room.id}_WIFI_description": "Badge scanners",
         }).get_data(as_text=True)
-    assert "Main Stage" in body
-    assert "Potomac Ballroom C" not in body
+    assert "<td>Main Stage (Potomac Ballroom C)</td>" in body
+    assert "<td>Potomac Ballroom C</td>" not in body
 
 
 def test_the_no_script_fallback_also_shows_the_events_alias(
@@ -1427,8 +1426,8 @@ def test_the_no_script_fallback_also_shows_the_events_alias(
     edit_url = f"/{cycle.code}/{dept.code}/techops/item/{work_item.public_id}/edit"
     body = html.unescape(client.get(edit_url).get_data(as_text=True))
     assert body.count('data-preview-line') == 1
-    assert "Main Stage" in body
-    assert "Potomac Ballroom C" not in body
+    assert "<td>Main Stage (Potomac Ballroom C)</td>" in body
+    assert "<td>Potomac Ballroom C</td>" not in body
 
 
 def test_a_blank_picker_selection_does_not_error_a_normal_save(

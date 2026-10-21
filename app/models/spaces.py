@@ -38,6 +38,30 @@ def compose_combined_name(names: list[str]) -> str:
     if len(names) == 1:
         return names[0]
 
+    split = _split_shared_prefix(names)
+    if split is None:
+        return " + ".join(names)
+    prefix, tails = split
+    return f"{prefix} {'/'.join(tails)}"
+
+
+def compose_aliased_name(alias: str, names: list[str]) -> str:
+    """Name an aliased space as its alias plus the rooms it occupies.
+
+    The alias alone left departments unable to tell two same-named spaces
+    apart, so the physical name follows in brackets: "LAN (Maryland 1-6, A,
+    B, D)". A run of three or more consecutive numbers or single letters
+    collapses to a range inside the brackets only; an unaliased combined
+    space keeps compose_combined_name()'s venue form, "RiverView 1/2/3".
+    """
+    location = _compose_ranged_name(names)
+    if not location or location == alias:
+        return alias
+    return f"{alias} ({location})"
+
+
+def _split_shared_prefix(names: list[str]) -> tuple[str, list[str]] | None:
+    """Return the shared leading words and each name's tail, or None."""
     word_lists = [name.split() for name in names]
     shortest = min(len(words) for words in word_lists)
     shared = 0
@@ -47,11 +71,53 @@ def compose_combined_name(names: list[str]) -> str:
     # A prefix that consumes an entire member's name leaves that member no
     # tail to join. Fall back rather than produce "Chesapeake /5".
     if shared == 0 or shared == shortest:
-        return " + ".join(names)
-
+        return None
     prefix = " ".join(word_lists[0][:shared])
-    tails = "/".join(" ".join(words[shared:]) for words in word_lists)
-    return f"{prefix} {tails}"
+    return prefix, [" ".join(words[shared:]) for words in word_lists]
+
+
+def _range_key(tail: str) -> tuple[str, int] | None:
+    if tail.isdigit():
+        return "number", int(tail)
+    if len(tail) == 1 and tail.isalpha():
+        return "letter", ord(tail.upper())
+    return None
+
+
+def _compose_ranged_name(names: list[str]) -> str:
+    """compose_combined_name(), with runs of three or more shown as ranges.
+
+    Members keep the order the caller passes, which is Event Ops'
+    sort_order; sorting here would produce a range the venue map does not
+    show. Any tail that is not a plain number or a single letter leaves the
+    slash form unchanged.
+    """
+    split = _split_shared_prefix(names) if len(names) > 1 else None
+    if split is None:
+        return compose_combined_name(names)
+    prefix, tails = split
+    keys = [_range_key(tail) for tail in tails]
+    if any(key is None for key in keys):
+        return compose_combined_name(names)
+
+    runs: list[list[str]] = []
+    for index, tail in enumerate(tails):
+        previous = keys[index - 1] if index else None
+        kind, value = keys[index]
+        if previous and previous == (kind, value - 1):
+            runs[-1].append(tail)
+        else:
+            runs.append([tail])
+
+    if all(len(run) < 3 for run in runs):
+        return compose_combined_name(names)
+    pieces = []
+    for run in runs:
+        if len(run) >= 3:
+            pieces.append(f"{run[0]}-{run[-1]}")
+        else:
+            pieces.extend(run)
+    return f"{prefix} {', '.join(pieces)}"
 
 
 class Venue(db.Model):

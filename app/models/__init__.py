@@ -199,7 +199,8 @@ from .techops import (
 
 # Re-export space models
 from .spaces import (
-    Venue, Space, SpaceEventOverride, SpaceAssignment, compose_combined_name,
+    Venue, Space, SpaceEventOverride, SpaceAssignment, compose_aliased_name,
+    compose_combined_name,
 )
 from .constants import (
     SPACE_KIND_ROOM,
@@ -392,6 +393,7 @@ __all__ = [
     "Space",
     "SpaceEventOverride",
     "SpaceAssignment",
+    "compose_aliased_name",
     "compose_combined_name",
     "SPACE_KIND_ROOM",
     "SPACE_KIND_SLICE",

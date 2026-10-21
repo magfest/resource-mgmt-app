@@ -42,7 +42,7 @@ def test_names_match_the_department_view_for_alias_fold_and_plain(app):
     names = event_space_names(cycle.id, [aliased.id, primary.id, plain.id, None])
 
     assert names == expected
-    assert names[aliased.id] == "Main Stage"
+    assert names[aliased.id] == "Main Stage (Chesapeake A)"
     assert names[primary.id] == "RiverView 1/2"
     assert names[plain.id] == "Storage Room"
 
@@ -59,5 +59,31 @@ def test_alias_applies_to_a_space_no_department_holds(app):
                                       alias="Arcade"))
     db.session.commit()
 
-    assert event_space_names(cycle.id, [room.id]) == {room.id: "Arcade"}
+    assert event_space_names(cycle.id, [room.id]) == {room.id: "Arcade (Expo Hall Z)"}
     assert event_space_names(cycle.id, []) == {}
+
+
+def test_an_aliased_fold_names_its_rooms_as_a_range_on_both_pages(app):
+    venue = Venue(code="GLN", name="Gaylord National")
+    db.session.add(venue)
+    db.session.flush()
+    cycle = EventCycle(code="SMF2027", name="Super MAGFest 2027", is_active=True,
+                       venue_id=venue.id)
+    dept = Department(code="TESTDEPT", name="Test Department", is_active=True)
+    db.session.add_all([cycle, dept])
+    db.session.flush()
+    primary, *members = [_space(venue, f"Potomac {tail}", f"PTB-{tail}")
+                         for tail in "ABCD"]
+    db.session.add(SpaceAssignment(space_id=primary.id, event_cycle_id=cycle.id,
+                                   department_id=dept.id))
+    db.session.add(SpaceEventOverride(space_id=primary.id, event_cycle_id=cycle.id,
+                                      alias="Mainstage"))
+    for member in members:
+        db.session.add(SpaceEventOverride(space_id=member.id, event_cycle_id=cycle.id,
+                                          combined_into_space_id=primary.id))
+    db.session.commit()
+
+    department_name = spaces_for_department(dept.id, cycle.id)[0]["display_name"]
+
+    assert department_name == "Mainstage (Potomac A-D)"
+    assert event_space_names(cycle.id, [primary.id]) == {primary.id: department_name}
