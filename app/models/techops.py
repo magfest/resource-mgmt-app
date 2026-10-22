@@ -227,6 +227,12 @@ class TechOpsRequestSpace(db.Model):
     # forces a reason for. No WiFi line exists to carry it.
     wifi_declined_reason = db.Column(db.Text, nullable=True)
 
+    # YES, NO, UNSURE, or NULL (never answered). Lines cannot carry this:
+    # "No" writes no ETHERNET line, and "Not sure" writes one shaped like a
+    # "Yes". Rows saved before this column existed are NULL and fall back
+    # to reading the ETHERNET line in space_cards().
+    network_needed = db.Column(db.String(8), nullable=True)
+
     # The per-space special request. Lives here once rather than being
     # copied onto every line in the space.
     notes = db.Column(db.Text, nullable=True)

@@ -28,6 +28,8 @@ from app.routes.work.techops.form_utils import (
     replace_spaces,
 )
 from app.routes.work.techops.line_grain import (
+    NETWORK_NO,
+    NETWORK_UNSURE,
     NETWORK_YES,
     VOICE_DELIVERY_DESK_PHONE, VOICE_DELIVERY_NONE,
     PhoneHandset,
@@ -469,3 +471,51 @@ def test_a_declined_wifi_with_no_reason_survives_a_reload(
     by_id = {c["space"].id: c for c in cards}
     assert by_id[assigned.id]["wifi_requested"] is False
     assert by_id[assigned.id]["wifi_declined_reason"] == ""
+
+
+@pytest.mark.parametrize("needed", [NETWORK_NO, NETWORK_UNSURE, NETWORK_YES])
+def test_the_network_answer_survives_a_reload(
+        app, techops_draft, cycle_with_venue, needed):
+    """"No" writes no ETHERNET line and "Not sure" writes one shaped like a
+    "Yes", so neither can be read back from lines. The answer comes from
+    TechOpsRequestSpace.network_needed."""
+    cycle, venue, assigned, unassigned = cycle_with_venue
+    department_id = techops_draft.portfolio.department_id
+
+    answers = _answers([
+        SpaceAnswer(space_id=assigned.id, display_name="Assigned Room",
+                   answer="NEEDS", wifi_requested=True,
+                   network_needed=needed),
+    ])
+    replace_spaces(techops_draft, answers)
+    replace_lines(techops_draft, answers)
+    db.session.commit()
+
+    assert techops_draft.techops_spaces[0].network_needed == needed
+
+    cards = space_cards(techops_draft, department_id=department_id, event_cycle=cycle)
+    by_id = {c["space"].id: c for c in cards}
+    assert by_id[assigned.id]["network_needed"] == needed
+
+
+def test_a_row_saved_before_the_network_column_reads_its_ethernet_line(
+        app, techops_draft, cycle_with_venue):
+    """A draft saved before network_needed existed has NULL there; its
+    ETHERNET line is the only record of a "Yes"."""
+    cycle, venue, assigned, unassigned = cycle_with_venue
+    department_id = techops_draft.portfolio.department_id
+
+    answers = _answers([
+        SpaceAnswer(space_id=assigned.id, display_name="Assigned Room",
+                   answer="NEEDS", wifi_requested=True,
+                   network_needed=NETWORK_YES, network_kinds=("COMPUTERS",)),
+    ])
+    replace_spaces(techops_draft, answers)
+    replace_lines(techops_draft, answers)
+    techops_draft.techops_spaces[0].network_needed = None
+    db.session.commit()
+
+    cards = space_cards(techops_draft, department_id=department_id, event_cycle=cycle)
+    by_id = {c["space"].id: c for c in cards}
+    assert by_id[assigned.id]["network_needed"] == NETWORK_YES
+    assert by_id[assigned.id]["network_kinds"] == ("COMPUTERS",)

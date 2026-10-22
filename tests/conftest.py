@@ -1,5 +1,5 @@
 """
-Shared pytest fixtures for the MAGFest Budget application.
+Shared pytest fixtures for MAGFest RMS.
 """
 import os
 

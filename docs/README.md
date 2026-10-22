@@ -1,4 +1,4 @@
-# MAGFest Budget System Documentation
+# MAGFest RMS Documentation
 
 ## Overview
 

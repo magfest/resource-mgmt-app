@@ -42,6 +42,7 @@ from .form_utils import (
 )
 from .line_grain import SOURCE_NEW, expand_to_lines
 from .preview import build_preview_rows
+from .send_back import submitted_message
 from .spaces import (
     offerable_spaces,
     phone_line_share_options,
@@ -112,6 +113,7 @@ def techops_request_new(event: str, dept: str):
         work_item=None,
         request_detail=None,
         existing_lines_by_code={},
+        payments=None,
         service_types=active_service_types(),
         # Defaults: account display name + email. Help text in the template
         # explains why someone might change these for a specific request.
@@ -210,6 +212,7 @@ def techops_request_create(event: str, dept: str):
                 no_services_needed=answers.no_services_needed,
             ),
             existing_lines_by_code=department_wide_redisplay(answers.department_wide),
+            payments=answers.payments,
             service_types=service_types_list,
             default_contact_name=answers.primary_contact_name,
             default_contact_email=answers.primary_contact_email,
@@ -271,7 +274,7 @@ def techops_request_create(event: str, dept: str):
                 event=event, dept=dept, public_id=work_item.public_id,
             ))
         flash(
-            "TechOps request submitted! TechOps will reach out if any clarifications are needed.",
+            submitted_message(work_item.portfolio.event_cycle),
             "success",
         )
         return redirect(url_for(

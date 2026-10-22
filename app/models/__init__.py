@@ -1,5 +1,5 @@
 """
-Models package for MAGFest Budget application.
+Models package for MAGFest RMS.
 
 All models and constants are re-exported here for backwards compatibility.
 Existing imports like `from app.models import User, WorkItem` continue to work.
@@ -51,6 +51,7 @@ from .constants import (
     # Role codes
     ROLE_SUPER_ADMIN,
     ROLE_WORKTYPE_ADMIN,
+    ROLE_WORKTYPE_VIEWER,
     ROLE_APPROVER,
     ROLE_SPACE_ADMIN,
     ROLE_INVENTORY_ADMIN,
@@ -125,6 +126,7 @@ from .constants import (
     REVIEW_ACTION_NEEDS_ADJUSTMENT,
     REVIEW_ACTION_RESET,
     REVIEW_ACTION_RESPOND,
+    REVIEW_ACTION_REOPEN,
     # Routing strategies
     ROUTING_STRATEGY_EXPENSE_ACCOUNT,
     ROUTING_STRATEGY_CONTRACT_TYPE,
@@ -200,7 +202,8 @@ from .techops import (
 
 # Re-export space models
 from .spaces import (
-    Venue, Space, SpaceEventOverride, SpaceAssignment, compose_combined_name,
+    Venue, Space, SpaceEventOverride, SpaceAssignment, compose_aliased_name,
+    compose_combined_name,
 )
 from .constants import (
     SPACE_KIND_ROOM,
@@ -268,6 +271,7 @@ __all__ = [
     # Constants - Role codes
     "ROLE_SUPER_ADMIN",
     "ROLE_WORKTYPE_ADMIN",
+    "ROLE_WORKTYPE_VIEWER",
     "ROLE_APPROVER",
     "ROLE_SPACE_ADMIN",
     "ROLE_INVENTORY_ADMIN",
@@ -342,6 +346,7 @@ __all__ = [
     "REVIEW_ACTION_NEEDS_ADJUSTMENT",
     "REVIEW_ACTION_RESET",
     "REVIEW_ACTION_RESPOND",
+    "REVIEW_ACTION_REOPEN",
     # Constants - Routing strategies
     "ROUTING_STRATEGY_EXPENSE_ACCOUNT",
     "ROUTING_STRATEGY_CONTRACT_TYPE",
@@ -400,6 +405,12 @@ __all__ = [
     "Space",
     "SpaceEventOverride",
     "SpaceAssignment",
+    "compose_aliased_name",
+    "compose_combined_name",
+    "SPACE_KIND_ROOM",
+    "SPACE_KIND_SLICE",
+    "SPACE_KIND_FREEFORM",
+    "SPACE_KINDS",
     # Inventory models
     "InvContainerKind",
     "InvContainer",
@@ -413,11 +424,6 @@ __all__ = [
     "InvMovement",
     "InvScanRequest",
     "InvLabelSequence",
-    "compose_combined_name",
-    "SPACE_KIND_ROOM",
-    "SPACE_KIND_SLICE",
-    "SPACE_KIND_FREEFORM",
-    "SPACE_KINDS",
     # Telemetry models
     "ActivityEvent",
     "NotificationLog",

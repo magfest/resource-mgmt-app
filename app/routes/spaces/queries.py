@@ -6,17 +6,20 @@ not Flask-free: `app.models` pulls Flask in, and every function here needs
 an application context because it queries `db.session`. What it avoids is
 the route layer, not the framework.
 
-The alias, availability and fold rules here must agree with
-`build_space_rows()` in `helpers.py`, which computes the same three things
-for the Spaces admin page. Both call `compose_combined_name()`
-(`app/models/spaces.py`) for a folded primary's name, so the two pages
-never drift onto two different names for the same combined space.
+The availability and fold rules here must agree with `build_space_rows()`
+in `helpers.py`, which computes the same things for the Spaces admin page.
+Both call `compose_combined_name()` (`app/models/spaces.py`) for a folded
+primary's physical name, so the two pages never disagree about it. An
+aliased space differs between them: requesters see `compose_aliased_name()`,
+the alias with the physical name in brackets, while the admin page lists
+the member rooms beneath the alias.
 """
 from __future__ import annotations
 
 from app import db
 from app.models import (
-    Space, SpaceAssignment, SpaceEventOverride, compose_combined_name,
+    Space, SpaceAssignment, SpaceEventOverride, compose_aliased_name,
+    compose_combined_name,
 )
 
 
@@ -29,8 +32,10 @@ def spaces_for_department(department_id: int, event_cycle_id: int) -> list[dict]
 
     Returns:
         Dicts with keys `space` (the Space row), `display_name` (this
-        event's alias; else, for a folded primary, its members composed
-        with `compose_combined_name()`; else space.name), `is_available`,
+        event's alias with its physical name in brackets, via
+        `compose_aliased_name()`; else, for a folded primary, its members
+        composed with `compose_combined_name()`; else space.name),
+        `is_available`,
         `unavailable_reason`, and `covers`: a room's active slices, or a
         primary slice's active folded members, empty when the assignment
         carries neither.
@@ -97,13 +102,13 @@ def spaces_for_department(department_id: int, event_cycle_id: int) -> list[dict]
         # ordered because each side is already sorted the same way.
         folded = folded_by_primary_id.get(space.id, [])
         covers = children_by_parent_id.get(space.id, []) + folded
+        # A room's own slices (children_by_parent_id) are not a combine;
+        # only a fold names one space after several.
+        member_names = [space.name] + [member.name for member in folded]
         if override and override.alias:
-            display_name = override.alias
+            display_name = compose_aliased_name(override.alias, member_names)
         elif folded:
-            # A room's own slices (children_by_parent_id) are not a
-            # combine; only a fold names one space after several.
-            display_name = compose_combined_name(
-                [space.name] + [member.name for member in folded])
+            display_name = compose_combined_name(member_names)
         else:
             display_name = space.name
         entries.append({
@@ -115,6 +120,57 @@ def spaces_for_department(department_id: int, event_cycle_id: int) -> list[dict]
             "covers": covers,
         })
     return entries
+
+
+def event_space_names(event_cycle_id: int, space_ids) -> dict[int, str]:
+    """Name each space the way this event shows it, in three queries.
+
+    Same rule as spaces_for_department(): this event's alias with its
+    physical name in brackets, else a folded primary's composed name, else
+    Space.name. Unlike that function it does
+    not require a department to hold the space, so a room keeps one name
+    across every department's request on the TechOps worklist.
+    """
+    ids = {space_id for space_id in space_ids if space_id is not None}
+    if not ids:
+        return {}
+
+    spaces = db.session.query(Space).filter(Space.id.in_(ids)).all()
+    aliases = {
+        space_id: alias
+        for space_id, alias in db.session.query(
+            SpaceEventOverride.space_id, SpaceEventOverride.alias)
+        .filter(
+            SpaceEventOverride.event_cycle_id == event_cycle_id,
+            SpaceEventOverride.space_id.in_(ids),
+        )
+        .all()
+        if alias
+    }
+    folded: dict[int, list[str]] = {}
+    for override, member in (
+        db.session.query(SpaceEventOverride, Space)
+        .join(Space, Space.id == SpaceEventOverride.space_id)
+        .filter(
+            SpaceEventOverride.event_cycle_id == event_cycle_id,
+            SpaceEventOverride.combined_into_space_id.in_(ids),
+            Space.is_active.is_(True),
+        )
+        .order_by(Space.sort_order, Space.code)
+        .all()
+    ):
+        folded.setdefault(override.combined_into_space_id, []).append(member.name)
+
+    names = {}
+    for space in spaces:
+        member_names = [space.name] + folded.get(space.id, [])
+        if space.id in aliases:
+            names[space.id] = compose_aliased_name(aliases[space.id], member_names)
+        elif space.id in folded:
+            names[space.id] = compose_combined_name(member_names)
+        else:
+            names[space.id] = space.name
+    return names
 
 
 def offerable_spaces(event_cycle) -> list[Space]:

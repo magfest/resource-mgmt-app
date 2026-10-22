@@ -22,6 +22,7 @@ from app.routes import get_user_ctx
 from .. import work_bp
 from ..helpers import (
     _is_approver_for_work_item,
+    build_portfolio_perms,
     compute_work_item_totals,
     format_currency,
     friendly_status,
@@ -29,7 +30,9 @@ from ..helpers import (
     get_unified_audit_events,
     require_work_item_view,
 )
+from ..helpers.review_state import group_progress_for_items
 from .preview import PHONE_LINE_NOT_CHOSEN
+from .send_back import techops_return_options
 from .spaces import review_space_facts
 
 
@@ -103,6 +106,10 @@ def techops_work_item_detail(event: str, dept: str, public_id: str):
     # the item's own department still holds that space for this event.
     space_facts = review_space_facts(work_item, ctx.department.id, ctx.event_cycle)
 
+    # Staff see "waiting on requester"; the department sees "waiting on you".
+    is_staff = perms.is_worktype_admin or is_approver_for_item
+    progress = group_progress_for_items([work_item.id]).get(work_item.id, [])
+
     return render_template(
         "techops/work_item_detail.html",
         ctx=ctx,
@@ -120,4 +127,9 @@ def techops_work_item_detail(event: str, dept: str, public_id: str):
         user_ctx=user_ctx,
         space_facts=space_facts,
         phone_line_not_chosen=PHONE_LINE_NOT_CHOSEN,
+        is_approver_for_item=is_approver_for_item,
+        group_progress=progress,
+        progress_audience="staff" if is_staff else "requester",
+        return_options=techops_return_options(
+            work_item, perms, build_portfolio_perms(ctx).can_edit, user_ctx.user_id),
     )

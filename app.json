@@ -1,6 +1,6 @@
 {
-  "name": "MAGFest Budget System",
-  "description": "A Flask-based budget request and approval system for MAGFest events.",
+  "name": "MAGFest RMS",
+  "description": "MAGFest Resources Management System: request and approval workflows for MAGFest events.",
   "keywords": [
     "flask",
     "python",

@@ -17,13 +17,16 @@ from .helpers import (
 
 @approvals_bp.get("/approvals/")
 def dashboard_home():
-    """
-    Dashboard home - redirect to first reviewable group or show selector.
+    """Redirect to the first group the user can open.
+
+    Team menus pass ?work_type=CODE so a user with groups on several teams
+    lands on the team they clicked, not on whichever group sorts first.
     """
     user_ctx = get_user_ctx()
 
-    # Get groups user can review
-    groups = get_reviewable_groups(user_ctx)
+    groups = get_reviewable_groups(
+        user_ctx, work_type_code=request.args.get("work_type", "").strip() or None,
+    )
 
     if not groups:
         abort(403, "You do not have permission to access the approvals dashboard.")
@@ -79,6 +82,23 @@ def dashboard_group(group_code: str):
         department_id=department_id,
     )
 
+    # TechOps kicked-back rows name their space the way the requester saw it,
+    # which only review_space_facts() composes. Local import: see the same
+    # note in approvals/reviews.py line_review.
+    space_facts_by_item = {}
+    phone_line_not_chosen = None
+    if group.work_type.code == "TECHOPS":
+        from app.routes.work.techops.preview import PHONE_LINE_NOT_CHOSEN
+        from app.routes.work.techops.spaces import review_space_facts
+        phone_line_not_chosen = PHONE_LINE_NOT_CHOSEN
+        for queue_item in queues.kicked_back:
+            work_item = queue_item.work_item
+            if work_item.id not in space_facts_by_item:
+                space_facts_by_item[work_item.id] = review_space_facts(
+                    work_item, work_item.portfolio.department_id,
+                    work_item.portfolio.event_cycle,
+                )
+
     # Get filter options
     event_cycles = get_active_event_cycles()
     departments = get_active_departments()
@@ -95,4 +115,6 @@ def dashboard_group(group_code: str):
         selected_dept=dept_code,
         format_currency=format_currency,
         friendly_status=friendly_status,
+        space_facts_by_item=space_facts_by_item,
+        phone_line_not_chosen=phone_line_not_chosen,
     )

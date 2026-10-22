@@ -23,6 +23,7 @@ from app.models import (
     REQUEST_KIND_PRIMARY,
     WORK_ITEM_STATUS_FINALIZED,
     ROLE_WORKTYPE_ADMIN,
+    ROLE_WORKTYPE_VIEWER,
 )
 from app.routes import get_user_ctx, UserContext
 from .event_enablement import is_department_enabled_for_event
@@ -252,6 +253,18 @@ def is_worktype_admin(user_ctx: UserContext, work_type_id: int) -> bool:
     ).first()
 
     return admin_role is not None
+
+
+def is_worktype_viewer(user_ctx: UserContext, work_type_id: int) -> bool:
+    """Return whether the user holds the read-only role for this work type.
+
+    Admins are not viewers; callers that mean "may read" check both.
+    """
+    return UserRole.query.filter_by(
+        user_id=user_ctx.user_id,
+        role_code=ROLE_WORKTYPE_VIEWER,
+        work_type_id=work_type_id,
+    ).first() is not None
 
 
 def is_budget_admin(user_ctx: UserContext, work_type_id: int | None = None) -> bool:

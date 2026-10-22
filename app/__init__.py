@@ -209,11 +209,20 @@ def create_app() -> Flask:
     app.config["SUPPLY_IMAGE_REGION"] = os.environ.get("SUPPLY_IMAGE_REGION", "us-east-1")
 
     # --- Proxy Fix for reverse proxies (Heroku, AWS, etc.) ---
+    # Trust only the headers the Heroku router writes: it appends the client
+    # address to X-Forwarded-For and sets -Proto and -Port. It does not set
+    # -Host or -Prefix, so trusting those lets a client choose the hostname in
+    # absolute URLs. Without ProxyFix, remote_addr is the router's 10.x address
+    # for every user, which breaks the scanner block and the audit log's IPs.
     if os.environ.get("BEHIND_PROXY", "false").lower() == "true":
         from werkzeug.middleware.proxy_fix import ProxyFix
-        app.wsgi_app = ProxyFix(
-            app.wsgi_app,
-            x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1,
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_port=1)
+    elif os.environ.get("DYNO"):
+        # Heroku sets DYNO on every dyno. An ERROR, not a refusal to boot, so a
+        # deploy that lands before the config var is set does not take the site down.
+        app.logger.error(
+            "BEHIND_PROXY is not 'true' on a Heroku dyno. Client IPs read as "
+            "the router's address; set BEHIND_PROXY=true in Config Vars."
         )
 
     db.init_app(app)
@@ -371,6 +380,21 @@ def create_app() -> Flask:
 
         return response
 
+    # --- CSP Nonce Generation ---
+    # Registered before block_scanners: a before_request hook that returns a
+    # response skips every later one, and add_security_headers still needs it.
+    @app.before_request
+    def generate_csp_nonce():
+        """Generate a unique nonce for Content Security Policy on each request.
+
+        This nonce is used to allow specific inline scripts while blocking
+        injected scripts. Each request gets a fresh nonce for security.
+
+        Access in templates via: {{ csp_nonce }}
+        Usage: <script nonce="{{ csp_nonce }}">...</script>
+        """
+        g.csp_nonce = stdlib_secrets.token_urlsafe(32)
+
     # --- Scanner / bot flood protection ---
     # Two layers:
     #   1. Block known scanner paths instantly (no DB, no template).
@@ -393,9 +417,10 @@ def create_app() -> Flask:
 
     @app.before_request
     def block_scanners():
-        ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        if ip and ',' in ip:
-            ip = ip.split(',')[0].strip()
+        # Not the first X-Forwarded-For entry: the client writes that one. On
+        # Heroku, ProxyFix (BEHIND_PROXY=true) sets remote_addr from the entry
+        # the router appends. Without it every user shares the router's address.
+        ip = request.remote_addr
         now = _time.monotonic()
 
         # Check if IP is currently blocked
@@ -431,10 +456,7 @@ def create_app() -> Flask:
     def track_404_ips(response):
         """Track IPs that generate 404s from normal routes too."""
         if response.status_code == 404:
-            ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-            if ip and ',' in ip:
-                ip = ip.split(',')[0].strip()
-            _record_ip_404(ip, _time.monotonic())
+            _record_ip_404(request.remote_addr, _time.monotonic())
         return response
 
     # --- Session Management ---
@@ -442,19 +464,6 @@ def create_app() -> Flask:
     def make_session_permanent():
         """Make sessions permanent so PERMANENT_SESSION_LIFETIME applies."""
         session.permanent = True
-
-    # --- CSP Nonce Generation ---
-    @app.before_request
-    def generate_csp_nonce():
-        """Generate a unique nonce for Content Security Policy on each request.
-
-        This nonce is used to allow specific inline scripts while blocking
-        injected scripts. Each request gets a fresh nonce for security.
-
-        Access in templates via: {{ csp_nonce }}
-        Usage: <script nonce="{{ csp_nonce }}">...</script>
-        """
-        g.csp_nonce = stdlib_secrets.token_urlsafe(32)
 
     # -----------------------------
     # Helpers (auth + scoping)
@@ -633,6 +642,7 @@ def create_app() -> Flask:
                 "env_banner_enabled": app.config.get("ENV_BANNER_ENABLED", False),
                 "env_banner_message": app.config.get("ENV_BANNER_MESSAGE", ""),
                 "nav_admin_work_types": [],
+                "nav_viewer_work_types": [],
                 "nav_is_space_admin": False,
                 "nav_is_inventory": False,
                 "nav_review_groups": {},
@@ -654,6 +664,7 @@ def create_app() -> Flask:
         # --- Nav bar context (role-gated menus) ---
         _is_super = is_super_admin()
         nav_admin_work_types: list[str] = []
+        nav_viewer_work_types: list[str] = []
         nav_is_space_admin = False
         nav_is_inventory = False
         nav_review_groups: dict[str, list] = {}
@@ -665,7 +676,7 @@ def create_app() -> Flask:
             from .models import (
                 UserRole, WorkType, ApprovalGroup, EventCycle,
                 DepartmentMembership, DivisionMembership, Department, Division,
-                ROLE_WORKTYPE_ADMIN, ROLE_SPACE_ADMIN,
+                ROLE_WORKTYPE_ADMIN, ROLE_WORKTYPE_VIEWER, ROLE_SPACE_ADMIN,
                 ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR,
             )
 
@@ -700,6 +711,21 @@ def create_app() -> Flask:
                             .all()
                         )
                     ]
+
+            # Read-only work types, for the team menus' read sections.
+            viewer_wt_ids = [
+                int(r[0]) for r in (
+                    db.session.query(UserRole.work_type_id)
+                    .filter(UserRole.user_id == u.id)
+                    .filter(UserRole.role_code == ROLE_WORKTYPE_VIEWER)
+                    .filter(UserRole.work_type_id.isnot(None))
+                    .all()
+                )
+            ]
+            if viewer_wt_ids:
+                nav_viewer_work_types = [
+                    wt.code for wt in WorkType.query.filter(WorkType.id.in_(viewer_wt_ids)).all()
+                ]
 
             nav_is_space_admin = _is_super or (ROLE_SPACE_ADMIN in roles)
             nav_is_inventory = _is_super or bool(
@@ -783,6 +809,7 @@ def create_app() -> Flask:
             "env_banner_message": app.config.get("ENV_BANNER_MESSAGE", ""),
             # Navigation bar
             "nav_admin_work_types": nav_admin_work_types,
+            "nav_viewer_work_types": nav_viewer_work_types,
             "nav_is_space_admin": nav_is_space_admin,
             "nav_is_inventory": nav_is_inventory,
             "nav_review_groups": nav_review_groups,
@@ -823,6 +850,8 @@ def create_app() -> Flask:
     # blueprint's route modules.
     from app.routes.work.helpers.formatting import friendly_status
     app.jinja_env.globals['friendly_status'] = friendly_status
+    from app.routes.work.techops import labels as techops_labels
+    app.jinja_env.globals['techops_labels'] = techops_labels
 
     # Register CLI commands (flask seed, etc.)
     from app.cli import register_cli

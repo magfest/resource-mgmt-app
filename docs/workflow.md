@@ -72,6 +72,7 @@ reachable in production.
 | SUBMITTED | Last approval-group review decided, `has_admin_final` false | FINALIZED | Whichever approver decides the last line (`lifecycle.py:169`) |
 | SUBMITTED | Finalize a supply order, setting approved quantities per line | FINALIZED | SUPPLY work-type admin or super admin (`work/supply/admin.py:525`) |
 | FINALIZED | Unfinalize with a written reason | SUBMITTED | Budget admin (`admin_final/helpers.py:729`) |
+| FINALIZED | A decided line is reopened, `has_admin_final` false | SUBMITTED | Whoever reopens the line (`approvals/helpers.py:738`) |
 | SUBMITTED (supplementary) | Its PRIMARY is unfinalized | PAUSED | Budget admin, as a side effect (`admin_final/helpers.py:771`) |
 | PAUSED (supplementary) | Its PRIMARY is re-finalized and the supplementary still routes | SUBMITTED | Budget admin, as a side effect (`admin_final/helpers.py:614`) |
 
@@ -142,6 +143,14 @@ forces them into line (`admin_final/helpers.py:487-522`).
 
 `NEEDS_ADJUSTMENT` is line level only.
 
+On a work type without `has_admin_final`, a decided line can be reopened. The
+note is required and posts as a public `[REOPENED]` comment.
+
+| State | Trigger | Next state | Who can do it |
+| --- | --- | --- | --- |
+| APPROVED or REJECTED | Reopen with a note | PENDING | Routed group member, that work type's admin, or super admin (`can_reopen_line`, `approvals/helpers.py:320`) |
+| NEEDS_INFO | Reopen | Refused | Nobody; the requester owes a response |
+
 ## Review stages
 
 Lines carry `current_review_stage`, either APPROVAL_GROUP or ADMIN_FINAL.
@@ -156,6 +165,11 @@ Approval group actions, all at `app/routes/approvals/reviews.py`: approve
 (`:268`), and request adjustment (`:275`). A kickback sets
 `needs_requester_action` on the line; the requester's response returns it to
 PENDING for re-review.
+
+`can_decide_line` (`approvals/helpers.py:305`) is the one rule the decision
+buttons and routes read. On a work type without `has_admin_final`, an admin of
+that work type counts as a reviewer of every line, including lines routed to
+groups they are not in (`is_reviewer_for_line`, `:142`).
 
 Admin final review is where the authoritative amounts are set. An admin can
 override an approval group recommendation, and finalize auto-approves any
@@ -190,6 +204,12 @@ are not checkoutable at all.
 Rules from `app/routes/work/helpers/checkout.py`:
 
 - Only a SUBMITTED item can be checked out (`:113`). No other status qualifies.
+- A work type without `has_admin_final` has no checkout at all; as of October
+  2026 that is TechOps alone. `can_checkout()` refuses (`checkout.py:118`) and
+  decisions skip the lock (`decision_lock_satisfied`, `approvals/helpers.py:293`).
+  The approval group's decision is final there, so a session would only block
+  the other groups. Row locks on the request and the review take its place
+  (`apply_review_decision`, `approvals/helpers.py:666`).
 - Eligible holders (`:116-123`): a SUPER_ADMIN, anyone with `approval_group_ids`,
   or the WORKTYPE_ADMIN for that item's work type. Work-type admins were added
   because admin-final decisions require the lock.

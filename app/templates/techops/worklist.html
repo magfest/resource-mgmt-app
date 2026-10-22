@@ -1,0 +1,109 @@
+{# templates/techops/worklist.html #}
+{# Planning view of every submitted TechOps line in one event. Read-only;
+   rows, groups and totals come from techops/worklist.py, which the CSV and
+   the admin home's Scale card also read. #}
+{% extends "layout/base.html" %}
+{% from "macros/techops_line_facts.html" import render_line_summary %}
+
+{% block title %}TechOps Worklist{% endblock %}
+
+{% set status_words = {'not_rejected': 'Not rejected', 'approved': 'Approved', 'pending': 'Pending', 'all': 'All statuses'} %}
+{% set group_words = {'room': 'Room', 'service': 'Service', 'department': 'Department', 'team': 'Team'} %}
+
+{% block content %}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:16px;">
+    <div>
+      <h1 style="margin:0;">TechOps Worklist</h1>
+      {% if event %}<div class="muted" style="margin-top:4px;">{{ event.name }} · {{ rows|length }} line{{ '' if rows|length == 1 else 's' }}</div>{% endif %}
+    </div>
+    {% if event %}
+      <a class="btn" href="{{ url_for('work.techops_worklist_csv', **csv_args) }}">Download CSV</a>
+    {% endif %}
+  </div>
+
+  {% if not event %}
+    <div class="card"><p>There are no active events.</p></div>
+  {% else %}
+  <div class="card" style="margin-bottom:16px; background:#f8f9fa;">
+    <form method="get" action="{{ url_for('work.techops_worklist') }}" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+      <div>
+        <label for="event" style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Event</label>
+        <select name="event" id="event">
+          {% for ec in event_cycles %}<option value="{{ ec.code }}"{% if ec.id == event.id %} selected{% endif %}>{{ ec.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="team" style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Team</label>
+        <select name="team" id="team">
+          {% if own_team_codes %}<option value=""{% if team_choice == '' %} selected{% endif %}>My teams</option>{% endif %}
+          <option value="all"{% if team_choice == 'all' or (team_choice == '' and not own_team_codes) %} selected{% endif %}>All teams</option>
+          {% for g in teams %}<option value="{{ g.code }}"{% if team_choice == g.code %} selected{% endif %}>{{ g.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="status" style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Status</label>
+        <select name="status" id="status">
+          {% for s in status_filters %}<option value="{{ s }}"{% if filters.status == s %} selected{% endif %}>{{ status_words[s] }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="service" style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Service</label>
+        <select name="service" id="service">
+          <option value="">All services</option>
+          {% for s in services %}<option value="{{ s.code }}"{% if filters.service_code == s.code %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="dept" style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Department</label>
+        <select name="dept" id="dept">
+          <option value="">All departments</option>
+          {% for d in departments %}<option value="{{ d.code }}"{% if filters.dept_code == d.code %} selected{% endif %}>{{ d.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="group" style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Group by</label>
+        <select name="group" id="group">
+          {% for g in group_bys %}<option value="{{ g }}"{% if group_by == g %} selected{% endif %}>{{ group_words[g] }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn">Apply</button>
+    </form>
+  </div>
+
+  {% if totals %}
+  <div class="card" style="margin-bottom:16px;">
+    <ul style="margin:0; padding-left:18px;">
+      {% for t in totals %}
+        <li><strong>{{ t.service.name }}:</strong> {{ t.approved }} approved · {{ t.pending }} pending{% if t.estimate_label %} ({{ t.estimate_label }}){% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% for group in groups %}
+    <h2 style="font-size:18px; margin:20px 0 8px;">{{ group.label }} · {{ group.approved }} approved · {{ group.pending }} pending</h2>
+    <table class="responsive-cards">
+      <thead>
+        <tr><th>Room</th><th>Service</th><th>Department</th><th>Details</th><th>Team</th><th>Status</th><th>Request</th></tr>
+      </thead>
+      <tbody>
+        {% for row in group.rows %}
+        <tr>
+          <td data-label="Room">{{ row.room_name }}</td>
+          <td data-label="Service">{{ row.detail.service_type.name }}</td>
+          <td data-label="Department">{{ row.department.name }}</td>
+          <td class="cell-stack" data-label="Details">{{ render_line_summary(row.detail, phone_line_not_chosen) }}</td>
+          <td data-label="Team">{{ row.team.name }}</td>
+          <td data-label="Status">{{ row.status_label }}</td>
+          <td data-label="Request">
+            <a href="{{ url_for('approvals.line_review', event=event.code, dept=row.department.code, work_type_slug='techops', public_id=row.work_item.public_id, line_num=row.line.line_number) }}">{{ row.work_item.public_id }} #{{ row.line.line_number }}</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="card"><p>No submitted TechOps lines for {{ event.code }} match these filters.</p></div>
+  {% endfor %}
+  {% endif %}
+{% endblock %}

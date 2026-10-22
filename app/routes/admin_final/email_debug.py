@@ -252,8 +252,8 @@ def email_test_send():
     from app.services.email import build_message_parts, send_via_ses, write_notification_log, is_email_enabled
     from app.models import NOTIF_STATUS_SENT, NOTIF_STATUS_SUPPRESSED
 
-    subject = "[MAGFest Budget] Test Email"
-    body = f"""This is a test email from the MAGFest Budget system.
+    subject = "[MAGFest RMS] Test Email"
+    body = f"""This is a test email from MAGFest RMS.
 
 Sent at: {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")}
 Sent to: {recipient}
@@ -308,7 +308,7 @@ def slack_test_send():
 
     from app.services.slack import send_slack_message, is_slack_enabled
 
-    text = ":test_tube: This is a test message from the MAGFest Budget system."
+    text = ":test_tube: This is a test message from MAGFest RMS."
     blocks = [
         {
             "type": "section",

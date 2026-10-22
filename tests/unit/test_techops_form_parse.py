@@ -12,6 +12,7 @@ from app.routes.work.techops.form_utils import (
     MAX_HANDSETS_PER_LINE,
     MAX_INT4,
     MAX_PHONE_LINES_PER_SPACE,
+    MAX_PRINTERS_PER_SPACE,
     MAX_SPACES_PER_REQUEST,
     _space_id_or_none,
     parse_form,
@@ -527,3 +528,75 @@ def test_an_unanswered_cable_question_parses_as_blank_not_as_no():
     form.add("space_412_answer", "NEEDS")
     answers, _ = parse_form(form, offerable_spaces={412: "Expo Hall E"})
     assert answers.spaces[0].network_needed == ""
+
+
+def test_printer_rows_parse_and_blank_rows_are_skipped():
+    form = _base()
+    form.add("space_ids", "7")
+    form.add("space_7_PRINTER_1_connectivity", "ETHERNET")
+    form.add("space_7_PRINTER_1_volume", "50_250")
+    form.add("space_7_PRINTER_2_location", "")
+    form.add("space_7_PRINTER_3_location", "Back office")
+    answers, errors = parse_form(form, {7: "Merch Booth"})
+    assert errors == []
+    printers = answers.spaces[0].printers
+    assert [p.connectivity for p in printers] == ["ETHERNET", ""]
+    assert printers[1].location == "Back office"
+
+
+def test_more_printers_than_the_cap_is_an_error():
+    form = _base()
+    form.add("space_ids", "7")
+    for n in range(1, MAX_PRINTERS_PER_SPACE + 2):
+        form.add(f"space_7_PRINTER_{n}_location", f"Spot {n}")
+    answers, errors = parse_form(form, {7: "Merch Booth"})
+    assert errors == ["Merch Booth: at most 10 printers per space."]
+    assert len(answers.spaces[0].printers) == MAX_PRINTERS_PER_SPACE
+
+
+def test_payments_numbers_accept_commas_and_dollar_signs_and_refuse_words():
+    form = _base()
+    form.add("payments_home_space_id", "7")
+    form.add("payments_checkout_points", "3")
+    form.add("payments_daily_sales", "$100,000")
+    form.add("payments_daily_transactions", "1,000")
+    form.add("payments_catalog_size", "lots")
+    answers, errors = parse_form(form, {7: "Merch Booth"})
+    assert answers.payments.daily_sales_dollars == 100000
+    assert answers.payments.daily_transactions == 1000
+    assert answers.payments.catalog_size is None
+    assert errors == ["Taking payments: items for sale must be a whole number."]
+
+
+def test_a_payments_block_with_only_a_checkbox_ticked_is_kept_and_an_empty_one_is_not():
+    ticked = _base()
+    ticked.add("payments_managing_department", "Test Department")
+    ticked.add("payments_accepts_cash", "1")
+    answers, _ = parse_form(ticked, {})
+    assert answers.payments is not None and answers.payments.accepts_cash
+
+    untouched = _base()
+    untouched.add("payments_managing_department", "Test Department")
+    answers, _ = parse_form(untouched, {})
+    assert answers.payments is None
+
+
+def test_a_home_base_outside_the_offerable_rooms_is_refused_without_echoing_it():
+    form = _base()
+    form.add("payments_home_space_id", "999")
+    form.add("payments_checkout_points", "3")
+    answers, errors = parse_form(form, {7: "Merch Booth"})
+    assert answers.payments.home_space_id is None
+    assert errors == [
+        "Taking payments: the home base room is not available at this "
+        "event. Pick another."]
+    assert not any("999" in e for e in errors)
+
+
+def test_an_offerable_home_base_carries_its_display_name():
+    form = _base()
+    form.add("payments_home_space_id", "7")
+    answers, errors = parse_form(form, {7: "Merch Booth"})
+    assert errors == []
+    assert answers.payments.home_space_id == 7
+    assert answers.payments.home_space_name == "Merch Booth"

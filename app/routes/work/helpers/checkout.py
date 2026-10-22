@@ -11,6 +11,7 @@ from flask import current_app
 
 from app import db
 from app.models import (
+    ApprovalGroup,
     WorkItem,
     REQUEST_KIND_PRIMARY,
     WORK_ITEM_STATUS_AWAITING_DISPATCH,
@@ -24,7 +25,30 @@ from .context import (
     WorkItemPerms,
     build_portfolio_perms,
     is_worktype_admin,
+    is_worktype_viewer,
 )
+from .review_state import is_group_final
+
+
+# Permission boundary: on these work types, a member of any of the type's
+# approval groups may read every request and line of it. TechOps teams plan
+# around each other's work. Budget approvers must not read other groups'
+# requests, so BUDGET stays out. Deciding is still limited to the routed group.
+STAFF_READ_WORK_TYPES = frozenset({"TECHOPS"})
+
+
+def is_work_type_staffer(user_ctx: UserContext, work_type) -> bool:
+    """Return whether the user is in an active approval group of this staff-read type."""
+    if work_type is None or work_type.code not in STAFF_READ_WORK_TYPES:
+        return False
+    group_ids = user_ctx.approval_group_ids or ()
+    if not group_ids:
+        return False
+    return db.session.query(ApprovalGroup.id).filter(
+        ApprovalGroup.id.in_(group_ids),
+        ApprovalGroup.work_type_id == work_type.id,
+        ApprovalGroup.is_active.is_(True),
+    ).first() is not None
 
 
 # ============================================================
@@ -112,6 +136,9 @@ def can_checkout(work_item: WorkItem, user_ctx: UserContext) -> tuple[bool, str]
     # Must be SUBMITTED status
     if work_item.status != WORK_ITEM_STATUS_SUBMITTED:
         return False, "Only SUBMITTED requests can be checked out for review."
+
+    if is_group_final(work_item):
+        return False, f"{work_item.portfolio.work_type.name} does not use review sessions."
 
     # Must be a reviewer (approver), a super admin, or a work-type admin of this
     # work type — the latter so budget admins can hold the lock to make admin-final
@@ -249,8 +276,14 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
     is_approver_for_item = _is_approver_for_work_item(item, ctx.user_ctx)
     is_reviewer = portfolio_perms.is_worktype_admin or is_approver_for_item
 
-    # View: portfolio can_view OR is a reviewer for this item
-    can_view = portfolio_perms.can_view or is_reviewer
+    # View: portfolio can_view, a reviewer for this item, a work-type viewer,
+    # or staff of a work type whose groups read each other's requests.
+    can_view = (
+        portfolio_perms.can_view
+        or is_reviewer
+        or is_worktype_viewer(ctx.user_ctx, ctx.work_type.id)
+        or is_work_type_staffer(ctx.user_ctx, ctx.work_type)
+    )
 
     # Edit: (admin or membership.can_edit) AND status == DRAFT
     can_edit = portfolio_perms.can_edit and is_draft
@@ -284,11 +317,19 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
         item.checked_out_by_user_id == ctx.user_ctx.user_id
     )
 
+    # Group-final work types have no review sessions, so neither action exists.
+    group_final = is_group_final(item)
+
     # Can checkout: is a reviewer AND item is SUBMITTED AND not already checked out
-    can_checkout_item = is_reviewer and is_submitted and not item_is_checked_out
+    can_checkout_item = (
+        is_reviewer and is_submitted and not item_is_checked_out and not group_final
+    )
 
     # Can checkin: current user has checkout OR admin can force release
-    can_checkin_item = is_checked_out_by_current_user or (portfolio_perms.is_worktype_admin and item_is_checked_out)
+    can_checkin_item = not group_final and (
+        is_checked_out_by_current_user
+        or (portfolio_perms.is_worktype_admin and item_is_checked_out)
+    )
 
     return WorkItemPerms(
         can_view=can_view,

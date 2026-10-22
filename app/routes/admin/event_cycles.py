@@ -91,6 +91,9 @@ def _cycle_to_dict(cycle: EventCycle) -> dict:
         "event_start_date": cycle.event_start_date.isoformat() if cycle.event_start_date else None,
         "event_end_date": cycle.event_end_date.isoformat() if cycle.event_end_date else None,
         "submission_deadline": cycle.submission_deadline.isoformat() if cycle.submission_deadline else None,
+        "techops_submission_deadline": (
+            cycle.techops_submission_deadline.isoformat()
+            if cycle.techops_submission_deadline else None),
         "approval_target_date": cycle.approval_target_date.isoformat() if cycle.approval_target_date else None,
         "finalization_date": cycle.finalization_date.isoformat() if cycle.finalization_date else None,
     }
@@ -215,6 +218,7 @@ def create_event_cycle():
         event_start_date=_parse_date(request.form.get("event_start_date")),
         event_end_date=_parse_date(request.form.get("event_end_date")),
         submission_deadline=_parse_date(request.form.get("submission_deadline")),
+        techops_submission_deadline=_parse_date(request.form.get("techops_submission_deadline")),
         approval_target_date=_parse_date(request.form.get("approval_target_date")),
         finalization_date=_parse_date(request.form.get("finalization_date")),
         created_by_user_id=h.get_active_user_id(),
@@ -318,6 +322,7 @@ def update_event_cycle(cycle_id: int):
     cycle.event_start_date = _parse_date(request.form.get("event_start_date"))
     cycle.event_end_date = _parse_date(request.form.get("event_end_date"))
     cycle.submission_deadline = _parse_date(request.form.get("submission_deadline"))
+    cycle.techops_submission_deadline = _parse_date(request.form.get("techops_submission_deadline"))
     cycle.approval_target_date = _parse_date(request.form.get("approval_target_date"))
     cycle.finalization_date = _parse_date(request.form.get("finalization_date"))
     cycle.updated_by_user_id = h.get_active_user_id()

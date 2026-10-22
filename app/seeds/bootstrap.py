@@ -116,6 +116,7 @@ def seed_approval_groups(work_types: dict[str, WorkType]) -> dict[str, ApprovalG
         "TECHOPS": [
             ("TECHOPS_NET", "TechOps Networking", "Reviews network and phone services (WiFi, ethernet, bandwidth, phone lines)", 10),
             ("TECHOPS_GEN", "TechOps Generic", "Reviews dedicated radio channels, consultations, and any other TechOps requests", 20),
+            ("TREASURY", "Treasury", "Reviews department payment setups: Square hardware, cash, and receipts", 30),
         ],
         "SUPPLY": [
             ("SUPPLY_GEN", "Supply — General", "Reviews office, event, and signage supply orders", 10),
@@ -462,6 +463,13 @@ def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dic
             "TECHOPS_NET", 42, "desk phone", True,
         ),
         (
+            "PRINTER",
+            "Printer",
+            "A black-and-white laser printer on loan from TechOps. Say how "
+            "it connects and roughly how much it prints.",
+            "TECHOPS_GEN", 45, "printer", True,
+        ),
+        (
             "RADIO_CHANNEL",
             "Dedicated radio channel",
             (
@@ -472,6 +480,13 @@ def seed_techops_service_types(approval_groups: dict[str, ApprovalGroup]) -> dic
                 "help, ask here."
             ),
             "TECHOPS_GEN", 50, "channel", True,
+        ),
+        (
+            "PAYMENTS",
+            "Taking payments (card or cash)",
+            "Your department's payments as a whole. Treasury and BizOps "
+            "follow up to configure Square.",
+            "TREASURY", 55, None, True,
         ),
         (
             "OTHER",

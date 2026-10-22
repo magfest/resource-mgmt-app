@@ -556,7 +556,7 @@ def test_a_failed_submit_preserves_every_kind_of_just_typed_space_field(
 def test_wifi_radios_show_what_was_just_submitted_not_the_forced_default(
         app, client, techops_portfolio):
     """Add a drop, leave WiFi unanswered, submit: validate() correctly
-    rejects it ("say why it needs no WiFi, or tick WiFi"), and both radios
+    rejects it ("say whether this space needs WiFi"), and both radios
     must redisplay unchecked, matching what was actually posted.
     `wifi_forced` explains why a decline would need a reason (the
     callout), it must not also pick an answer the requester never gave."""
@@ -574,7 +574,7 @@ def test_wifi_radios_show_what_was_just_submitted_not_the_forced_default(
         # WIFI_enabled deliberately omitted: neither radio was posted.
     })
     body = response.get_data(as_text=True)
-    assert "no WiFi, or tick WiFi" in body  # validate()'s error landed
+    assert "say whether this space needs WiFi." in body  # validate()'s error landed
     radios = re.findall(
         rf'<input[^>]*name="space_{room.id}_WIFI_enabled"[^>]*>', body)
     assert len(radios) == 2
@@ -680,7 +680,31 @@ def test_the_forced_wifi_banner_no_longer_claims_wifi_was_auto_included(
     })
     body = response.get_data(as_text=True)
     assert "Included automatically" not in body
-    assert "This space has wired gear" in body
+    assert "This room has wired network or phone gear" in body
+
+
+def test_the_forced_wifi_callout_sits_inside_the_hidden_decline_field(
+        app, client, techops_portfolio):
+    """A forced card answered "WiFi needed" must not show the warning.
+    Requesters read it as an error on a card with nothing wrong."""
+    _login(client, "test:admin")
+    room = techops_portfolio["room"]
+    response = client.post(techops_portfolio["new_request_url"], data={
+        "primary_contact_email": "ada@magfest.org",
+        "action": "save_draft",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_WIFI_enabled": "1",
+        f"space_{room.id}_NETWORK_needed": "YES",
+        f"space_{room.id}_NETWORK_kinds": "COMPUTERS",
+    })
+    body = response.get_data(as_text=True)
+    assert re.search(
+        r'data-wifi-declined-field\s+style="display:\s*none;"', body)
+    field = body.index("data-wifi-declined-field")
+    callout = body.index("data-wifi-forced-callout")
+    description = body.index("data-wifi-description-field")
+    assert field < callout < description
 
 
 def test_wifi_decline_reason_field_hidden_when_wifi_is_needed_not_declined(
@@ -704,9 +728,8 @@ def test_wifi_decline_reason_field_hidden_when_wifi_is_needed_not_declined(
 
 def test_submit_rejects_a_needs_card_with_no_wifi_answer_on_a_forced_space(
         app, client, techops_portfolio):
-    """Item 4, end to end: a forced space that never answers WiFi is
-    refused by name, folded into the same message as an explicit decline
-    with no reason."""
+    """A forced space that never answers WiFi is asked for an answer. The
+    gear reason is for a decline, and this card has not declined."""
     _login(client, "test:admin")
     room = techops_portfolio["room"]
     response = client.post(techops_portfolio["new_request_url"], data={
@@ -720,7 +743,8 @@ def test_submit_rejects_a_needs_card_with_no_wifi_answer_on_a_forced_space(
         f"space_{room.id}_ETHERNET_drop_1_usage": "Switch uplink",
     })
     body = html.unescape(response.get_data(as_text=True))
-    assert "Expo Hall E: this space has wired gear, so say why it needs no WiFi, or tick WiFi." in body
+    assert "Expo Hall E: say whether this space needs WiFi." in body
+    assert "so say why it needs no WiFi" not in body
     assert response.status_code == 200
     assert WorkItem.query.count() == 0
 
@@ -1385,10 +1409,9 @@ def request_for_an_aliased_room(app):
 
 def test_the_preview_shows_the_events_alias_not_the_venue_catalog_name(
         app, client, request_for_an_aliased_room):
-    """Round-1 review, item 4 (medium). The card shows "Main Stage"
-    (SpaceEventOverride.alias); the preview must show the same name, not
-    Potomac Ballroom C, the underlying Space.name a requester who filled
-    in the card never sees anywhere else on the page."""
+    """The card shows "Main Stage (Potomac Ballroom C)", the alias with its
+    room in brackets; the preview row must show that same label, not the
+    bare Space.name."""
     _login(client, "test:admin")
     room = request_for_an_aliased_room["room"]
     body = client.post(
@@ -1403,8 +1426,8 @@ def test_the_preview_shows_the_events_alias_not_the_venue_catalog_name(
             f"space_{room.id}_WIFI_enabled": "1",
             f"space_{room.id}_WIFI_description": "Badge scanners",
         }).get_data(as_text=True)
-    assert "Main Stage" in body
-    assert "Potomac Ballroom C" not in body
+    assert "<td>Main Stage (Potomac Ballroom C)</td>" in body
+    assert "<td>Potomac Ballroom C</td>" not in body
 
 
 def test_the_no_script_fallback_also_shows_the_events_alias(
@@ -1427,8 +1450,8 @@ def test_the_no_script_fallback_also_shows_the_events_alias(
     edit_url = f"/{cycle.code}/{dept.code}/techops/item/{work_item.public_id}/edit"
     body = html.unescape(client.get(edit_url).get_data(as_text=True))
     assert body.count('data-preview-line') == 1
-    assert "Main Stage" in body
-    assert "Potomac Ballroom C" not in body
+    assert "<td>Main Stage (Potomac Ballroom C)</td>" in body
+    assert "<td>Potomac Ballroom C</td>" not in body
 
 
 def test_a_blank_picker_selection_does_not_error_a_normal_save(
@@ -1929,7 +1952,7 @@ def test_ethernet_and_phone_summaries_carry_the_catalog_description(
 
 def test_the_disclosure_marker_swaps_between_open_and_closed(app, client, techops_portfolio):
     """The glyph must actually change state, not just exist once: an
-    ethernet section with no saved drops (closed) and a phone section on
+    ethernet section left unanswered (closed) and a phone section on
     a request with a saved line (open) must render with the two different
     marker rules in play."""
     _login(client, "test:admin")
@@ -1939,7 +1962,6 @@ def test_the_disclosure_marker_swaps_between_open_and_closed(app, client, techop
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
-        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_PHONE_line_1_purpose": "VOICE",
         f"space_{room.id}_PHONE_line_1_usage": "Front desk",
     })
@@ -2109,3 +2131,246 @@ def test_the_requester_form_says_desk_phone_not_handset(
     visible = re.sub(r"<[^>]+>", " ", stripped)
     assert "handset" not in visible.lower()
     assert "phone line" not in visible.lower()
+
+
+def test_printer_and_payments_seed_with_their_own_approval_groups(app):
+    _seed_techops_worktype()
+    db.session.flush()
+    printer = TechOpsServiceType.query.filter_by(code="PRINTER").one()
+    payments = TechOpsServiceType.query.filter_by(code="PAYMENTS").one()
+    assert printer.default_approval_group.code == "TECHOPS_GEN"
+    assert printer.instance_noun == "printer"
+    assert payments.default_approval_group.code == "TREASURY"
+    assert payments.default_approval_group.work_type.code == "TECHOPS"
+    assert payments.instance_noun is None
+
+
+def _printer_and_payments_post(space_id, **extra):
+    data = {
+        "primary_contact_name": "Ada",
+        "primary_contact_email": "ada@magfest.org",
+        "action": "save_draft",
+        "space_ids": str(space_id),
+        f"space_{space_id}_answer": "NEEDS",
+        f"space_{space_id}_WIFI_enabled": "1",
+        f"space_{space_id}_NETWORK_needed": "YES",
+        f"space_{space_id}_PRINTER_1_connectivity": "ETHERNET",
+        f"space_{space_id}_PRINTER_1_volume": "250_500",
+        f"space_{space_id}_PRINTER_1_location": "Cash wrap",
+        "payments_home_space_id": str(space_id),
+        "payments_checkout_points": "4",
+        "payments_managing_department": "Merch",
+        "payments_accepts_cash": "1",
+    }
+    data.update(extra)
+    return data
+
+
+def test_a_saved_printer_and_payments_block_reload_into_the_form(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    client.post(techops_portfolio["new_request_url"],
+                data=_printer_and_payments_post(sid))
+    item = techops_portfolio["latest_item"]()
+    edit_url = (f"/{techops_portfolio['cycle'].code}/"
+                f"{techops_portfolio['department'].code}/techops/item/"
+                f"{item.public_id}/edit")
+    body = client.get(edit_url).get_data(as_text=True)
+    assert 'value="Cash wrap"' in body
+    assert re.search(r'name="payments_checkout_points"[^>]*value="4"', body)
+    assert re.search(r'name="payments_accepts_cash"[^>]*checked', body)
+    assert re.search(
+        rf'name="space_{sid}_NETWORK_kinds" value="PRINTERS"[^>]*checked', body)
+
+
+def test_the_payments_line_does_not_leak_into_the_home_base_card(
+        app, client, techops_portfolio):
+    from app.routes.work.techops.spaces import space_cards, saved_payments
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    client.post(techops_portfolio["new_request_url"],
+                data=_printer_and_payments_post(sid))
+    item = techops_portfolio["latest_item"]()
+    payments = saved_payments(item)
+    assert payments.home_space_id == sid and payments.checkout_points == 4
+    card = next(c for c in space_cards(item, techops_portfolio["department"].id,
+                                       techops_portfolio["cycle"])
+                if c["space"].id == sid)
+    assert len(card["printers"]) == 1
+    assert card["wifi_forced"] is True
+
+
+def test_a_failed_submit_keeps_the_typed_payments_block(app, client,
+                                                       techops_portfolio):
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    data = _printer_and_payments_post(
+        sid, primary_contact_name="", payments_daily_sales="$100,000",
+        payments_mobile="1", payments_mobile_where="Concert hall")
+    body = client.post(techops_portfolio["new_request_url"],
+                       data=data).get_data(as_text=True)
+    assert "These questions cover your department's payments as a whole" in body
+    assert re.search(r'name="payments_daily_sales"[^>]*value="100000"', body)
+    assert 'Concert hall' in body
+    assert re.search(
+        rf'<option value="{sid}"[^>]*selected', body)
+    assert "Badge scanners or printers" not in body
+
+
+def test_the_order_preview_describes_printers_and_payments(app, client,
+                                                         techops_portfolio):
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    body = client.post(techops_portfolio["preview_url"],
+                       data=_printer_and_payments_post(sid)).get_data(as_text=True)
+    rows = _preview_rows(body)
+    specs = {row[1]: row[3] for row in rows}
+    assert "Ethernet, 250 to 500 pages/day" in specs["Printer"]
+    assert specs["Taking payments (card or cash)"].startswith("4 checkout points, cash")
+
+
+def _item_url(portfolio, item):
+    return (f"/{portfolio['cycle'].code}/{portfolio['department'].code}"
+            f"/techops/item/{item.public_id}")
+
+
+def _submitted_printer_and_payments(client, portfolio):
+    """Submit one PRINTER and one PAYMENTS line, past the open-questions stop."""
+    _login(client, "test:admin")
+    data = _printer_and_payments_post(
+        portfolio["space_id"], action=ACTION_SUBMIT,
+        open_questions_acknowledged="1")
+    response = client.post(portfolio["new_request_url"], data=data)
+    assert response.status_code == 302
+    item = portfolio["latest_item"]()
+    assert item.status == WORK_ITEM_STATUS_SUBMITTED
+    return item
+
+
+def test_a_saved_printer_row_and_the_blank_template_both_offer_remove(
+        app, client, techops_portfolio):
+    """A printer's radios have no blank option; removing the row is the only
+    way back once one is clicked."""
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    client.post(techops_portfolio["new_request_url"],
+                data=_printer_and_payments_post(sid))
+    item = techops_portfolio["latest_item"]()
+    body = client.get(_item_url(techops_portfolio, item) + "/edit").get_data(as_text=True)
+    template = _template_body(body, f'data-printer-template="{sid}"')
+    saved_rows = body.split(f'data-printer-template="{sid}"')[0]
+    assert "data-remove-printer" in template
+    assert saved_rows.count("data-remove-printer") == 1
+    # The delegated handler renumbers what is left and resets the add
+    # button's wording when the last row goes.
+    assert "e.target.closest('[data-remove-printer]')" in body
+    assert "'+ Add a printer'" in body
+
+
+def test_the_printer_badge_updates_by_the_same_rule_as_the_summary(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    body = client.get(techops_portfolio["new_request_url"]).get_data(as_text=True)
+    rows_src = _extract_js_function(body, "filledPrinterRows")
+    assert "(f.type === 'radio') ? f.checked : !!f.value.trim()" in rows_src
+    assert "filledPrinterRows(details)" in _extract_js_function(body, "updatePrinterBadge")
+    assert "filledPrinterRows(card)" in _extract_js_function(body, "summarizeCard")
+    assert "updatePrinterBadge(printerDetails)" in _extract_js_function(body, "updateBadgeFor")
+
+
+def test_a_home_base_at_another_venue_is_refused_and_not_saved(
+        app, client, techops_portfolio, other_venue_space):
+    _login(client, "test:admin")
+    data = _printer_and_payments_post(
+        techops_portfolio["space_id"],
+        payments_home_space_id=str(other_venue_space.id))
+    body = client.post(techops_portfolio["new_request_url"],
+                       data=data).get_data(as_text=True)
+    assert ("Taking payments: the home base room is not available at this "
+            "event. Pick another.") in html.unescape(body)
+    assert "Room Elsewhere" not in body
+    assert techops_portfolio["latest_item"]() is None
+
+
+def test_a_stale_home_base_is_refused_by_its_name(app, client, techops_portfolio):
+    """The room is offerable but its card is gone from the post, the state
+    a requester reaches by removing the room after picking it."""
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    data = {key: value for key, value in _printer_and_payments_post(
+                sid, action=ACTION_SUBMIT).items()
+            if not key.startswith(f"space_{sid}_") and key != "space_ids"}
+    body = client.post(techops_portfolio["new_request_url"],
+                       data=data).get_data(as_text=True)
+    assert ("Taking payments: the home base room, Expo Hall E, is no longer "
+            "on this request.") in html.unescape(body)
+
+
+def test_a_home_base_with_no_gear_explains_wifi_by_payments(
+        app, client, techops_portfolio):
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    data = _printer_and_payments_post(sid, **{
+        f"space_{sid}_WIFI_enabled": "0",
+        f"space_{sid}_NETWORK_needed": "NO",
+        f"space_{sid}_PRINTER_1_connectivity": "",
+        f"space_{sid}_PRINTER_1_volume": "",
+        f"space_{sid}_PRINTER_1_location": "",
+    })
+    client.post(techops_portfolio["new_request_url"], data=data)
+    item = techops_portfolio["latest_item"]()
+    body = client.get(_item_url(techops_portfolio, item) + "/edit").get_data(as_text=True)
+    assert "This room is the payments home base, so TechOps needs a reason to leave WiFi out." in body
+    assert "This room has wired network or phone gear" not in body
+    assert "A printer here uses a network cable" not in body
+
+
+def test_an_ethernet_printer_shows_the_network_callout(
+        app, client, techops_portfolio):
+    from app.routes.work.techops.spaces import space_cards
+    _login(client, "test:admin")
+    sid = techops_portfolio["space_id"]
+    client.post(techops_portfolio["new_request_url"],
+                data=_printer_and_payments_post(sid))
+    item = techops_portfolio["latest_item"]()
+    card = next(c for c in space_cards(item, techops_portfolio["department"].id,
+                                       techops_portfolio["cycle"])
+                if c["space"].id == sid)
+    assert card["network_forced"] is True
+    assert card["wifi_forced_reason"] == "payments"
+    body = client.get(_item_url(techops_portfolio, item) + "/edit").get_data(as_text=True)
+    assert "A printer here uses a network cable, so answer Yes or Not sure." in body
+
+
+@pytest.mark.parametrize("page, expected", [
+    ("detail", "250 to 500 pages/day (mid volume)"),
+    ("quick_review", "4 checkout points"),
+    ("printer_review", "250 to 500 pages/day (mid volume)"),
+    ("payments_review", "Checkout points:"),
+])
+def test_reviewer_pages_render_printer_and_payments_lines(
+        app, client, techops_portfolio, page, expected):
+    item = _submitted_printer_and_payments(client, techops_portfolio)
+    numbers = {line.techops_detail.service_type.code: line.line_number
+               for line in item.lines}
+    base = _item_url(techops_portfolio, item)
+    url = {
+        "detail": base,
+        "quick_review": base + "/quick-review",
+        "printer_review": f"{base}/line/{numbers['PRINTER']}/review",
+        "payments_review": f"{base}/line/{numbers['PAYMENTS']}/review",
+    }[page]
+    response = client.get(url)
+    assert response.status_code == 200
+    assert expected in response.get_data(as_text=True)
+
+
+def test_printers_route_to_techops_and_payments_to_treasury(
+        app, client, techops_portfolio):
+    item = _submitted_printer_and_payments(client, techops_portfolio)
+    routed = {line.techops_detail.service_type.code:
+              line.techops_detail.routed_approval_group.code
+              for line in item.lines
+              if line.techops_detail.service_type.code in ("PRINTER", "PAYMENTS")}
+    assert routed == {"PRINTER": "TECHOPS_GEN", "PAYMENTS": "TREASURY"}

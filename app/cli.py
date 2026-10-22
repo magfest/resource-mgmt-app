@@ -88,6 +88,52 @@ def register_cli(app: Flask) -> None:
         summary = prune_email_audit()
         click.echo(f"bodies={summary.bodies} logs={summary.logs}")
 
+    @app.cli.command("mirror-work-type-access")
+    @click.argument("event_code")
+    @click.option("--source", default="BUDGET", show_default=True,
+                  help="Work type code to copy access from.")
+    @click.option("--target", "targets", multiple=True,
+                  default=("TECHOPS", "SUPPLY"), show_default=True,
+                  help="Work type code to copy access to. Repeatable.")
+    @click.option("--apply", is_flag=True, default=False,
+                  help="Write the rows. Without this flag, the command runs as a dry-run.")
+    @with_appcontext
+    def mirror_work_type_access_command(event_code, source, targets, apply):
+        """Copy each membership's SOURCE access onto TARGET work types for one event.
+
+        \b
+        EVENT_CODE  Required. The EventCycle.code (e.g. SMF2027).
+
+        Insert-only: a membership that already has a row for a target keeps
+        it unchanged. Dry-run by default; pass --apply to commit.
+
+        Exit codes:
+          0  Success (dry-run completed, or rows written)
+          1  Event code or a work type code didn't resolve
+        """
+        import sys
+        from app.models import EventCycle
+        from app.services.membership_access import mirror_work_type_access
+
+        cycle = EventCycle.query.filter_by(code=event_code).first()
+        if cycle is None:
+            click.echo(f"Event code {event_code!r} not found.", err=True)
+            sys.exit(1)
+
+        try:
+            summary = mirror_work_type_access(cycle, source, list(targets), apply=apply)
+        except ValueError as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(1)
+
+        mode = "APPLIED" if apply else "DRY RUN (nothing written; pass --apply)"
+        click.echo(
+            f"{mode}: {source} -> {', '.join(targets)} for {cycle.code}\n"
+            f"department rows added={summary.department_rows_added} "
+            f"division rows added={summary.division_rows_added} "
+            f"skipped (row already existed)={summary.skipped_existing}"
+        )
+
     @app.cli.command("send-submission-reminders")
     @click.argument("event_code")
     @click.option(

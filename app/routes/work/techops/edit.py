@@ -45,11 +45,13 @@ from .form_utils import (
 )
 from .line_grain import SOURCE_NEW, expand_to_lines
 from .preview import build_preview_rows, rows_from_saved_lines
+from .send_back import submitted_message
 from .spaces import (
     offerable_spaces,
     phone_line_share_options,
     picker_candidates,
     redisplay_cards,
+    saved_payments,
     space_cards,
     space_display_names,
 )
@@ -104,6 +106,8 @@ def techops_request_edit(event: str, dept: str, public_id: str):
         if not d or not d.service_type:
             continue
         st = d.service_type
+        if st.code in ("PAYMENTS", "PRINTER"):
+            continue
         bucket = existing_lines_by_code.setdefault(st.code, [])
         if st.instance_noun:
             bucket.append({
@@ -127,6 +131,7 @@ def techops_request_edit(event: str, dept: str, public_id: str):
         work_item=work_item,
         request_detail=rd,
         existing_lines_by_code=existing_lines_by_code,
+        payments=saved_payments(work_item),
         service_types=active_service_types(),
         default_contact_name=(rd.primary_contact_name if rd else ""),
         default_contact_email=(rd.primary_contact_email if rd else ""),
@@ -215,6 +220,7 @@ def techops_request_update(event: str, dept: str, public_id: str):
                 no_services_needed=answers.no_services_needed,
             ),
             existing_lines_by_code=department_wide_redisplay(answers.department_wide),
+            payments=answers.payments,
             service_types=service_types_list,
             default_contact_name=answers.primary_contact_name,
             default_contact_email=answers.primary_contact_email,
@@ -274,6 +280,7 @@ def techops_request_update(event: str, dept: str, public_id: str):
             work_item=work_item,
             request_detail=work_item.techops_detail,
             existing_lines_by_code=department_wide_redisplay(answers.department_wide),
+            payments=answers.payments,
             service_types=service_types_list,
             default_contact_name=answers.primary_contact_name,
             default_contact_email=answers.primary_contact_email,
@@ -302,7 +309,7 @@ def techops_request_update(event: str, dept: str, public_id: str):
                 event=event, dept=dept, public_id=work_item.public_id,
             ))
         flash(
-            "TechOps request submitted! TechOps will reach out if any clarifications are needed.",
+            submitted_message(work_item.portfolio.event_cycle),
             "success",
         )
         return redirect(url_for(

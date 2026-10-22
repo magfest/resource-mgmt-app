@@ -1,11 +1,12 @@
 {% extends "layout/base.html" %}
 
-{% block title %}Sign In - MAGFest Budget{% endblock %}
+{% block title %}Sign In - MAGFest RMS{% endblock %}
 
 {% block content %}
 <div style="max-width: 400px; margin: 80px auto; text-align: center;">
-  <h1 style="margin-bottom: 8px;">MAGFest Budget</h1>
-  <p class="muted" style="margin-bottom: 32px;">Sign in to access budget management tools</p>
+  <h1 style="margin-bottom: 4px;">MAGFest RMS</h1>
+  <p style="margin: 0 0 8px 0; font-weight: 600;">Resources Management System</p>
+  <p class="muted" style="margin-bottom: 32px;">Sign in to submit and review requests</p>
 
   <div class="card" style="padding: 32px;">
     {% if keycloak_auth_enabled %}

@@ -5,6 +5,7 @@
    and quick_review.html so the wording cannot drift across the three the
    way space_display_names() once drifted across its three callers
    (spaces.py's docstring). #}
+{% from "techops/_phone_number_config.html" import question_badge %}
 
 {% macro render_line_space(detail, space_facts) %}
   {%- if detail is none or detail.space_id is none -%}
@@ -24,4 +25,70 @@
   {%- else -%}
     {{ phone_line_not_chosen }}
   {%- endif -%}
+{% endmacro %}
+
+{# One compact cell per line: quick review's Details column and the review
+   dashboard's kicked-back panel. Text is cut at 120 characters; the line
+   page shows it in full. #}
+{% macro render_line_summary(detail, phone_line_not_chosen) %}
+  {% set st = detail.service_type if detail else None %}
+  {% if detail %}
+    {% if st and st.code == "RADIO_CHANNEL" %}
+      <div style="font-size: 13px;"><strong>Channel:</strong> {{ detail.location or '-' }}</div>
+      <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
+    {% elif st and st.code == "PHONE_NUMBER" %}
+      <div style="font-size: 13px;">
+        <strong>{{ techops_labels.PHONE_PURPOSE.get(detail.purpose, 'Purpose not chosen') }}</strong>
+        {% if detail.internal_only %}(internal only){% endif %}
+        {{ question_badge(detail) }}
+      </div>
+      <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
+    {% elif st and st.code == "DESK_PHONE" %}
+      <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong>{{ question_badge(detail) }}</div>
+      <div class="muted small">{{ render_phone_ring(detail, phone_line_not_chosen) }}</div>
+    {% elif st and st.code == "NO_SERVICES" %}
+      <div style="font-size: 13px; max-width: 360px;"><strong>Reason:</strong> {{ (detail.description or 'No reason given.')[:120] }}{% if detail.description and detail.description|length > 120 %}...{% endif %}</div>
+    {% elif st and st.code == "PRINTER" %}
+      {% set printer_cfg = detail.config or {} %}
+      <div style="font-size: 13px;">
+        <strong>{{ techops_labels.PRINTER_CONNECTIVITY.get(printer_cfg.get('connectivity'), 'Connection not given') }}, {{ techops_labels.PRINTER_VOLUME.get(printer_cfg.get('volume'), 'volume not given') }}</strong>
+        {{ question_badge(detail) }}
+      </div>
+      <div class="muted small">{{ (detail.location or '-')[:120] }}</div>
+    {% elif st and st.code == "PAYMENTS" %}
+      {% set pay_cfg = detail.config or {} %}
+      <div style="font-size: 13px;">
+        <strong>{{ detail.quantity or 0 }} checkout point{{ 's' if detail.quantity != 1 else '' }}</strong>
+        {{ question_badge(detail) }}
+      </div>
+      <div class="muted small">{{ [('cash' if pay_cfg.get('accepts_cash') else ''), ('paper receipts' if pay_cfg.get('paper_receipts') else ''), ('also used elsewhere' if pay_cfg.get('mobile') else '')]|select|join(', ') or '-' }}</div>
+    {% elif st and st.code == "ETHERNET" %}
+      {% set net_cfg = detail.config or {} %}
+      {% set net_questions = net_cfg.get('open_questions') or [] %}
+      <div style="font-size: 13px;">
+        {# A line saved before the per-room rebuild has no config; it keeps
+           the old one-drop summary below. #}
+        {% if not net_cfg %}<strong>Wired network</strong>
+        {% elif net_cfg.get('kinds') and 'kinds' not in net_questions %}<strong>{% for k in net_cfg.get('kinds') %}{{ techops_labels.NETWORK_KIND.get(k, k) }}{{ ', ' if not loop.last }}{% endfor %}</strong>
+        {% else %}<strong>What needs a cable: not given</strong>{% endif %}
+        {% if net_questions %}
+          <span class="badge-blocked">{{ net_questions|length }} open question{{ 's' if net_questions|length != 1 else '' }}</span>
+        {% endif %}
+      </div>
+      {% if net_cfg %}
+        <div class="muted small">Roughly how many: {{ net_cfg.get('rough_count') or '-' }}{% if detail.usage %} · {{ detail.usage[:120] }}{% if detail.usage|length > 120 %}...{% endif %}{% endif %}</div>
+      {% else %}
+        <div class="muted small">{{ (detail.usage or detail.location or '-')[:120] }}</div>
+      {% endif %}
+    {% elif st and st.instance_noun %}
+      <div style="font-size: 13px;"><strong>{{ detail.location or '-' }}</strong></div>
+      <div class="muted small">{{ (detail.usage or '-')[:120] }}{% if detail.usage and detail.usage|length > 120 %}...{% endif %}</div>
+    {% elif detail.description %}
+      <div style="font-size: 13px; max-width: 360px;">{{ detail.description[:120] }}{% if detail.description|length > 120 %}...{% endif %}</div>
+    {% else %}
+      <span class="muted">-</span>
+    {% endif %}
+  {% else %}
+    <span class="muted">-</span>
+  {% endif %}
 {% endmacro %}

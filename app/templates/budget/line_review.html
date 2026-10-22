@@ -684,8 +684,8 @@
           </div>
         {% endif %}
 
-        {# Add Comment Form - visible to reviewers #}
-        {% if can_review %}
+        {# Add Comment Form - visible to reviewers and work-type admins #}
+        {% if can_comment %}
           <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee;">
             <form method="post" action="{{ url_for('approvals.line_comment', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -693,7 +693,7 @@
                 <label for="standalone_comment" style="font-size: 13px; font-weight: 600;">Add Comment:</label>
                 <textarea name="comment" id="standalone_comment" rows="3" style="width: 100%; margin-top: 4px;" placeholder="Enter your comment..."></textarea>
               </div>
-              {% if is_admin or can_review %}
+              {% if can_comment %}
                 <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer;">
                   <input type="checkbox" name="admin_only" value="1" style="margin-right: 4px;" />
                   Admin-only (not visible to requesters)

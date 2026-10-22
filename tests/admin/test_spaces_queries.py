@@ -142,7 +142,7 @@ def test_an_archived_space_appears_nowhere(app):
     assert [s.code for s in result[0]["covers"]] == ["R4-A"]
 
 
-def test_an_alias_replaces_the_name(app):
+def test_an_alias_leads_and_the_room_name_follows_in_brackets(app):
     venue, cycle = _venue_and_cycle()
     dept = _department()
 
@@ -157,7 +157,7 @@ def test_an_alias_replaces_the_name(app):
 
     result = spaces_for_department(dept.id, cycle.id)
 
-    assert result[0]["display_name"] == "Consoles"
+    assert result[0]["display_name"] == "Consoles (Room Six)"
 
 
 def test_an_unavailable_space_reports_its_reason(app):
@@ -205,7 +205,7 @@ def test_a_folded_primarys_name_composes_from_its_members(app):
     assert result[0]["display_name"] == "Chesapeake 4/5"
 
 
-def test_an_alias_on_a_folded_primary_wins_over_composition(app):
+def test_an_alias_on_a_folded_primary_leads_its_composed_room_name(app):
     venue, cycle = _venue_and_cycle()
     dept = _department()
 
@@ -229,7 +229,7 @@ def test_an_alias_on_a_folded_primary_wins_over_composition(app):
 
     result = spaces_for_department(dept.id, cycle.id)
 
-    assert result[0]["display_name"] == "Main Stage"
+    assert result[0]["display_name"] == "Main Stage (Chesapeake 4/5)"
 
 
 def test_the_department_page_and_the_spaces_admin_page_agree_on_a_combined_name(app):
