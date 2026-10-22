@@ -13,8 +13,13 @@ from sqlalchemy import BigInteger, Integer
 
 from app import db
 from app.models.constants import (
-    INV_CONDITION_IN_SERVICE, INV_IDENT_FESTOPS_LABEL, INV_OWNERSHIP_OWNED,
+    INV_CONDITION_IN_SERVICE, INV_IDENT_UNIQUE_KINDS, INV_OWNERSHIP_OWNED,
+    INV_STATION_LOOKUP,
 )
+
+# SQL for the partial unique index on active identifiers.
+_ACTIVE_UNIQUE_KIND = "retired_at IS NULL AND kind IN ({})".format(
+    ", ".join(f"'{kind}'" for kind in INV_IDENT_UNIQUE_KINDS))
 
 
 def _bigint_pk():
@@ -34,8 +39,14 @@ class InvContainerKind(db.Model):
     code = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(64), nullable=False)
     sort_order = db.Column(db.Integer, nullable=True)
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True,
+                          server_default=db.true())
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.CheckConstraint("sort_order BETWEEN 0 AND 10000",
+                           name="ck_inv_container_kinds_sort_order"),
+    )
 
 
 class InvContainer(db.Model):
@@ -67,7 +78,8 @@ class InvContainer(db.Model):
         db.ForeignKey("departments.id", name="fk_inv_containers_owner_department_id"),
         nullable=True,
     )
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True,
+                          server_default=db.true())
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by_user_id = db.Column(db.String(64), nullable=True)
 
@@ -105,11 +117,12 @@ class InvUnit(db.Model):
 
 
 class InvUnitIdentifier(db.Model):
-    """One code that finds a unit: a FestOps label, vendor serial, or tag.
+    """One code that finds a unit: a FestOps label, MAGFest tag, serial, or MAC.
 
     value keeps the text as scanned, because vendor reconciliation reports
     use the vendor's own serials. Matching uses normalized_value. Only an
-    active FESTOPS_LABEL must be unique; two vendors can share a serial.
+    active FESTOPS_LABEL or MAGFEST_TAG must be unique; two vendors can share
+    a serial.
     """
     __tablename__ = "inv_unit_identifiers"
 
@@ -127,12 +140,10 @@ class InvUnitIdentifier(db.Model):
 
     __table_args__ = (
         db.Index(
-            "uq_inv_unit_identifiers_active_label", "normalized_value",
+            "uq_inv_unit_identifiers_active_tag", "kind", "normalized_value",
             unique=True,
-            postgresql_where=db.text(
-                f"retired_at IS NULL AND kind = '{INV_IDENT_FESTOPS_LABEL}'"),
-            sqlite_where=db.text(
-                f"retired_at IS NULL AND kind = '{INV_IDENT_FESTOPS_LABEL}'"),
+            postgresql_where=db.text(_ACTIVE_UNIQUE_KIND),
+            sqlite_where=db.text(_ACTIVE_UNIQUE_KIND),
         ),
     )
 
@@ -152,7 +163,11 @@ class InvStock(db.Model):
         db.ForeignKey("inv_containers.id", name="fk_inv_stock_container_id"),
         nullable=False, index=True,
     )
-    quantity = db.Column(db.Integer, nullable=False, default=0)
+    quantity = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
+    # "About 200 pens" is stored as 200 and shown as approximate until an
+    # exact count clears the flag.
+    is_approximate = db.Column(db.Boolean, nullable=False, default=False,
+                               server_default=db.false())
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
                            onupdate=datetime.utcnow)
 
@@ -180,22 +195,31 @@ class InvDevice(db.Model):
     last_seen_at = db.Column(db.DateTime, nullable=True)
     revoked_at = db.Column(db.DateTime, nullable=True)
     revoked_by_user_id = db.Column(db.String(64), nullable=True)
+    station_code = db.Column(db.String(16), nullable=False, default=INV_STATION_LOOKUP,
+                             server_default=INV_STATION_LOOKUP)
+    # Containers created at this station are placed here. NULL means top level.
+    home_container_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_containers.id", name="fk_inv_devices_home_container_id"),
+        nullable=True,
+    )
+
+    home_container = db.relationship("InvContainer")
 
 
-class InvBadgeSession(db.Model):
+class InvShift(db.Model):
     """One volunteer's shift on one shared device.
 
-    Attendee data boundary: badge_code resolves to an attendee in Ubersystem.
-    Do not log it or put it in a URL.
+    The volunteer picks a name; no badge code is read or stored.
     """
-    __tablename__ = "inv_badge_sessions"
+    __tablename__ = "inv_shifts"
 
     id = _bigint_pk()
     device_id = db.Column(
-        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_badge_sessions_device_id"),
+        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_shifts_device_id"),
         nullable=False, index=True,
     )
-    badge_code = db.Column(db.String(16), nullable=False)
+    person_name = db.Column(db.String(64), nullable=False)
     started_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     last_activity_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     ended_at = db.Column(db.DateTime, nullable=True)
@@ -214,9 +238,9 @@ class InvCount(db.Model):
         nullable=False, index=True,
     )
     user_id = db.Column(db.String(64), nullable=True)
-    badge_session_id = db.Column(
+    shift_id = db.Column(
         BigInteger().with_variant(Integer(), "sqlite"),
-        db.ForeignKey("inv_badge_sessions.id", name="fk_inv_counts_badge_session_id"),
+        db.ForeignKey("inv_shifts.id", name="fk_inv_counts_shift_id"),
         nullable=True,
     )
     device_id = db.Column(
@@ -246,8 +270,17 @@ class InvCountLine(db.Model):
     expected_quantity = db.Column(db.Integer, nullable=False)
     counted_quantity = db.Column(db.Integer, nullable=True)
     outcome = db.Column(db.String(16), nullable=True)
+    is_approximate = db.Column(db.Boolean, nullable=False, default=False,
+                               server_default=db.false())
+    discarded_quantity = db.Column(db.Integer, nullable=True)
+    discard_reason = db.Column(db.String(16), nullable=True)
 
     item = db.relationship("SupplyItem")
+
+    __table_args__ = (
+        db.CheckConstraint("discarded_quantity IS NULL OR discarded_quantity > 0",
+                           name="ck_inv_count_lines_discarded_positive"),
+    )
 
 
 class InvMovement(db.Model):
@@ -286,9 +319,9 @@ class InvMovement(db.Model):
         nullable=True, index=True,
     )
     performed_by_user_id = db.Column(db.String(64), nullable=True)
-    badge_session_id = db.Column(
+    shift_id = db.Column(
         BigInteger().with_variant(Integer(), "sqlite"),
-        db.ForeignKey("inv_badge_sessions.id", name="fk_inv_movements_badge_session_id"),
+        db.ForeignKey("inv_shifts.id", name="fk_inv_movements_shift_id"),
         nullable=True, index=True,
     )
     device_id = db.Column(
@@ -299,6 +332,7 @@ class InvMovement(db.Model):
         db.Integer, db.ForeignKey("inv_counts.id", name="fk_inv_movements_count_id"),
         nullable=True,
     )
+    reason = db.Column(db.String(32), nullable=True)
     note = db.Column(db.String(256), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
 
@@ -307,12 +341,187 @@ class InvMovement(db.Model):
     subject_container = db.relationship("InvContainer", foreign_keys=[subject_container_id])
     from_container = db.relationship("InvContainer", foreign_keys=[from_container_id])
     to_container = db.relationship("InvContainer", foreign_keys=[to_container_id])
-    badge_session = db.relationship("InvBadgeSession")
+    shift = db.relationship("InvShift")
     device = db.relationship("InvDevice")
 
     __table_args__ = (
         db.CheckConstraint("quantity IS NULL OR quantity > 0",
                            name="ck_inv_movements_quantity_positive"),
+    )
+
+
+class InvCheckItem(db.Model):
+    """One yes/no line on the check for a model."""
+    __tablename__ = "inv_check_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(
+        db.Integer, db.ForeignKey("supply_items.id", name="fk_inv_check_items_item_id"),
+        nullable=False, index=True,
+    )
+    position = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
+    prompt = db.Column(db.String(128), nullable=False)
+    # FAIL: a NO fails the check. NOTE: a NO passes and records the prompt.
+    missing_means = db.Column(db.String(8), nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True,
+                          server_default=db.true())
+
+    item = db.relationship("SupplyItem")
+
+
+class InvCheck(db.Model):
+    """One check of one unit at one station in one event."""
+    __tablename__ = "inv_checks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    unit_id = db.Column(
+        db.Integer, db.ForeignKey("inv_units.id", name="fk_inv_checks_unit_id"),
+        nullable=False, index=True,
+    )
+    event_cycle_id = db.Column(
+        db.Integer, db.ForeignKey("event_cycles.id", name="fk_inv_checks_event_cycle_id"),
+        nullable=True,
+    )
+    station_code = db.Column(db.String(16), nullable=False)
+    status = db.Column(db.String(16), nullable=False)
+    performed_by_user_id = db.Column(db.String(64), nullable=True)
+    shift_id = db.Column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        db.ForeignKey("inv_shifts.id", name="fk_inv_checks_shift_id"),
+        nullable=True, index=True,
+    )
+    device_id = db.Column(
+        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_checks_device_id"),
+        nullable=True, index=True,
+    )
+    started_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    note = db.Column(db.String(256), nullable=True)
+    # The unit's condition before this check finished; undo restores it.
+    previous_condition = db.Column(db.String(16), nullable=True)
+
+    unit = db.relationship("InvUnit")
+    answers = db.relationship("InvCheckAnswer", backref="check",
+                              order_by="InvCheckAnswer.id")
+
+
+class InvCheckAnswer(db.Model):
+    """The answer to one check line."""
+    __tablename__ = "inv_check_answers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    check_id = db.Column(
+        db.Integer, db.ForeignKey("inv_checks.id", name="fk_inv_check_answers_check_id"),
+        nullable=False, index=True,
+    )
+    check_item_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_check_items.id", name="fk_inv_check_answers_check_item_id"),
+        nullable=False,
+    )
+    answer = db.Column(db.String(8), nullable=False)
+    note = db.Column(db.String(256), nullable=True)
+
+    check_item = db.relationship("InvCheckItem")
+
+    __table_args__ = (
+        db.UniqueConstraint("check_id", "check_item_id", name="uq_inv_check_answers_line"),
+    )
+
+
+class InvPrepStatus(db.Model):
+    """One step in a unit's preparation for an event. Never updated or deleted.
+
+    The newest row for a unit and event is its prep status. No row means the
+    unit is unchecked. A prep status never records location.
+    """
+    __tablename__ = "inv_prep_status"
+
+    id = _bigint_pk()
+    unit_id = db.Column(
+        db.Integer, db.ForeignKey("inv_units.id", name="fk_inv_prep_status_unit_id"),
+        nullable=False,
+    )
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", name="fk_inv_prep_status_event_cycle_id"),
+        nullable=True,
+    )
+    status = db.Column(db.String(16), nullable=False)
+    check_id = db.Column(
+        db.Integer, db.ForeignKey("inv_checks.id", name="fk_inv_prep_status_check_id"),
+        nullable=True,
+    )
+    performed_by_user_id = db.Column(db.String(64), nullable=True)
+    shift_id = db.Column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        db.ForeignKey("inv_shifts.id", name="fk_inv_prep_status_shift_id"),
+        nullable=True, index=True,
+    )
+    device_id = db.Column(
+        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_prep_status_device_id"),
+        nullable=True, index=True,
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    unit = db.relationship("InvUnit")
+
+    __table_args__ = (
+        db.Index("ix_inv_prep_status_unit_event", "unit_id", "event_cycle_id"),
+    )
+
+
+class InvFlag(db.Model):
+    """A "flag for a lead" raised at a station and fixed later at a laptop."""
+    __tablename__ = "inv_flags"
+
+    id = db.Column(db.Integer, primary_key=True)
+    unit_id = db.Column(
+        db.Integer, db.ForeignKey("inv_units.id", name="fk_inv_flags_unit_id"),
+        nullable=True, index=True,
+    )
+    container_id = db.Column(
+        db.Integer, db.ForeignKey("inv_containers.id", name="fk_inv_flags_container_id"),
+        nullable=True, index=True,
+    )
+    station_code = db.Column(db.String(16), nullable=False)
+    reason = db.Column(db.String(16), nullable=False)
+    note = db.Column(db.String(256), nullable=True)
+    performed_by_user_id = db.Column(db.String(64), nullable=True)
+    shift_id = db.Column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        db.ForeignKey("inv_shifts.id", name="fk_inv_flags_shift_id"),
+        nullable=True, index=True,
+    )
+    device_id = db.Column(
+        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_flags_device_id"),
+        nullable=True, index=True,
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    resolved_by_user_id = db.Column(db.String(64), nullable=True)
+    resolution_note = db.Column(db.String(256), nullable=True)
+
+    unit = db.relationship("InvUnit")
+    container = db.relationship("InvContainer")
+
+
+class InvStationItem(db.Model):
+    """One of "the usual items" the count station offers before search."""
+    __tablename__ = "inv_station_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    station_code = db.Column(db.String(16), nullable=False)
+    item_id = db.Column(
+        db.Integer, db.ForeignKey("supply_items.id", name="fk_inv_station_items_item_id"),
+        nullable=False,
+    )
+    position = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
+
+    item = db.relationship("SupplyItem")
+
+    __table_args__ = (
+        db.UniqueConstraint("station_code", "item_id", name="uq_inv_station_items_item"),
     )
 
 

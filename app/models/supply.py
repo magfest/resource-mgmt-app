@@ -83,6 +83,11 @@ class SupplyItem(db.Model):
     is_orderable = db.Column(db.Boolean, nullable=False, default=True)
     # A manufacturer UPC or a FestOps I- label code, stored normalized.
     barcode = db.Column(db.String(64), nullable=True, index=True)
+    # Base units per pack, such as 12 for a box of Sharpies. NULL means the
+    # model is never counted in packs.
+    pack_size = db.Column(db.Integer, nullable=True)
+    # TV_CHECK or PRINTER_CHECK; NULL for models no station checks.
+    check_station = db.Column(db.String(16), nullable=True)
 
     unit_cost_cents = db.Column(db.Integer, nullable=True)
     qty_on_hand = db.Column(db.Integer, nullable=True)

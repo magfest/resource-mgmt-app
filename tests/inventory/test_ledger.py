@@ -52,6 +52,7 @@ def test_serialized_item_is_refused_as_counted_stock(inv):
     with pytest.raises(InventoryError, match="serialized"):
         add_stock(inv.laptop, pallet, 1, ACTOR)
     unit = add_unit(inv.laptop, pallet, ACTOR, label_code="U-00001", vendor_serial="abc 123")
+    assert unit.identifiers[1].kind == "SERIAL"
     assert unit.identifiers[1].value == "abc 123"
     assert unit.identifiers[1].normalized_value == "ABC 123"
 

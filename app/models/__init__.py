@@ -215,7 +215,8 @@ from .constants import (
 # Re-export inventory models
 from .inventory import (
     InvContainerKind, InvContainer, InvUnit, InvUnitIdentifier, InvStock,
-    InvDevice, InvBadgeSession, InvCount, InvCountLine, InvMovement,
+    InvDevice, InvShift, InvCount, InvCountLine, InvMovement,
+    InvCheckItem, InvCheck, InvCheckAnswer, InvPrepStatus, InvFlag, InvStationItem,
     InvScanRequest, InvLabelSequence,
 )
 
@@ -418,10 +419,16 @@ __all__ = [
     "InvUnitIdentifier",
     "InvStock",
     "InvDevice",
-    "InvBadgeSession",
+    "InvShift",
     "InvCount",
     "InvCountLine",
     "InvMovement",
+    "InvCheckItem",
+    "InvCheck",
+    "InvCheckAnswer",
+    "InvPrepStatus",
+    "InvFlag",
+    "InvStationItem",
     "InvScanRequest",
     "InvLabelSequence",
     # Telemetry models

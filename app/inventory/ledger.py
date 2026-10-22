@@ -20,7 +20,7 @@ from app.models import (
 )
 from app.models.constants import (
     INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_MOVE, INV_IDENT_FESTOPS_LABEL,
-    INV_IDENT_VENDOR_SERIAL,
+    INV_IDENT_SERIAL,
 )
 
 
@@ -30,9 +30,9 @@ class InventoryError(Exception):
 
 @dataclass(frozen=True)
 class Actor:
-    """Who performed a write: a signed-in user, or a badge on a shared device."""
+    """Who performed a write: a signed-in user, or a named shift on a shared device."""
     user_id: str | None = None
-    badge_session_id: int | None = None
+    shift_id: int | None = None
     device_id: int | None = None
 
 
@@ -40,7 +40,7 @@ def _movement(action: str, actor: Actor, **columns) -> InvMovement:
     movement = InvMovement(
         action=action,
         performed_by_user_id=actor.user_id,
-        badge_session_id=actor.badge_session_id,
+        shift_id=actor.shift_id,
         device_id=actor.device_id,
         **columns,
     )
@@ -165,7 +165,7 @@ def add_unit(item, container, actor, label_code, vendor_serial=None) -> InvUnit:
     db.session.flush()
     add_identifier(unit, INV_IDENT_FESTOPS_LABEL, label_code)
     if vendor_serial:
-        add_identifier(unit, INV_IDENT_VENDOR_SERIAL, vendor_serial)
+        add_identifier(unit, INV_IDENT_SERIAL, vendor_serial)
     _movement(INV_ACTION_ADD, actor, item_id=item.id, unit_id=unit.id,
               to_container_id=container.id)
     return unit

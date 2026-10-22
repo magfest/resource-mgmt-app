@@ -6,13 +6,6 @@ from app.models import InvMovement, User
 from app.models.constants import INV_ACTION_ADD, INV_ACTION_ADJUST
 
 
-def mask_badge(code: str | None) -> str:
-    """Show a badge code as `~z…9Q`. Full codes are never displayed."""
-    if not code:
-        return ""
-    return f"{code[:2]}…{code[-2:]}"
-
-
 def _where(container) -> str:
     return container.label_code if container else "top level"
 
@@ -45,8 +38,8 @@ def describe_actor(m: InvMovement) -> str:
         user = db.session.get(User, m.performed_by_user_id)
         return user.display_name if user else m.performed_by_user_id
     parts = []
-    if m.badge_session is not None:
-        parts.append(mask_badge(m.badge_session.badge_code))
+    if m.shift is not None:
+        parts.append(m.shift.person_name)
     if m.device is not None:
         parts.append(f"on {m.device.name}")
     return " ".join(parts) or "unknown"
