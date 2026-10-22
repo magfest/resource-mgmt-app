@@ -7,6 +7,7 @@ update. Nothing here commits.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -31,6 +32,21 @@ INV_CONDITIONS = (INV_CONDITION_IN_SERVICE, INV_CONDITION_REPAIR,
 
 class InventoryError(Exception):
     """A refusal. The scanner shows the message to the operator verbatim."""
+
+
+@contextmanager
+def savepoint():
+    """Isolate a write that may fail from the caller's transaction.
+
+    Skipped on SQLite: pysqlite opens a SAVEPOINT in autocommit when no write
+    precedes it, so the release commits and the caller's rollback cannot undo
+    it. See app.services.notifications.enqueue_savepoint for the full reasoning.
+    """
+    if db.session.get_bind().dialect.name == "sqlite":
+        yield
+        return
+    with db.session.begin_nested():
+        yield
 
 
 @dataclass(frozen=True)
@@ -69,7 +85,7 @@ def _locked_stock(item_id: int, container_id: int) -> InvStock:
     if row is not None:
         return row
     try:
-        with db.session.begin_nested():
+        with savepoint():
             row = InvStock(item_id=item_id, container_id=container_id, quantity=0)
             db.session.add(row)
     except IntegrityError:
@@ -173,10 +189,12 @@ def add_identifier(unit: InvUnit, kind: str, value: str) -> InvUnitIdentifier:
     identifier = InvUnitIdentifier(unit_id=unit.id, kind=kind, value=value.strip(),
                                    normalized_value=normalized)
     # The check above can lose a race; the partial unique index decides, and the
-    # savepoint keeps the caller's transaction usable after the loss.
+    # savepoint keeps the caller's transaction usable after the loss on PostgreSQL;
+    # on SQLite the caller rolls back.
     try:
-        with db.session.begin_nested():
+        with savepoint():
             db.session.add(identifier)
+            db.session.flush()
     except IntegrityError as error:
         raise _already_taken(normalized) from error
     # The identifiers collection may already be loaded and would miss this row.
@@ -214,7 +232,7 @@ def add_unit(item, container, actor, identifiers: list[tuple[str, str]]) -> InvU
     if not identifiers:
         raise InventoryError("A unit needs at least one identifier.")
     container_id = container.id if container else None
-    with db.session.begin_nested():
+    with savepoint():
         unit = InvUnit(item_id=item.id, current_container_id=container_id,
                        created_by_user_id=actor.user_id)
         db.session.add(unit)

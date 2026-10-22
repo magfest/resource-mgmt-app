@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.inventory.codes import normalize_code
+from app.inventory.ledger import savepoint
 from app.models import InvLabelSequence
 
 PREFIX_CONTAINER = "C"
@@ -44,7 +45,7 @@ def _locked_sequence(prefix: str) -> InvLabelSequence:
     if row is not None:
         return row
     try:
-        with db.session.begin_nested():
+        with savepoint():
             row = InvLabelSequence(prefix=prefix, next_value=1)
             db.session.add(row)
     except IntegrityError:

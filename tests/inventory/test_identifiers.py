@@ -124,15 +124,31 @@ def test_other_conditions_keep_identifiers_and_unknown_is_refused(inv):
 
 def test_refused_unit_leaves_nothing_behind(inv):
     add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
+    db.session.commit()
     with pytest.raises(InventoryError, match="already on another unit"):
         add_unit(inv.laptop, None, ACTOR, [("SERIAL", "x"), ("MAGFEST_TAG", "net1")])
+    # SQLite has no savepoint here; the caller's rollback removes the half-built unit.
+    db.session.rollback()
     assert InvUnit.query.count() == 1
     assert InvMovement.query.count() == 1
 
 
 def test_losing_the_uniqueness_race_is_an_inventory_error(inv, monkeypatch):
     add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
+    db.session.commit()
     monkeypatch.setattr(ledger, "_is_taken", lambda *args: False)
     with pytest.raises(InventoryError, match="NET00001 is already on another unit"):
         add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
+    # SQLite has no savepoint here, so the caller rolls back, as a route does.
+    db.session.rollback()
     assert InvUnit.query.count() == 1
+    assert unit_tag(InvUnit.query.one()) == "NET00001"
+
+
+def test_rollback_after_the_first_write_removes_the_unit(inv):
+    # pysqlite commits a SAVEPOINT opened before any write, which would make
+    # the unit survive the caller's rollback.
+    db.session.commit()
+    add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net9")])
+    db.session.rollback()
+    assert InvUnit.query.count() == 0
