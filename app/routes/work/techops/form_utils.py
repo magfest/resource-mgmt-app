@@ -624,19 +624,13 @@ def validate(answers: "RequestAnswers", *, has_space_cards: bool) -> list[Valida
             continue
 
         # WiFi is a radio pair with no default (unlike the space answer
-        # above); an unanswered card and a bare decline both need a
-        # requester decision before submit, or the radios would be a
-        # checkbox with extra clicks. A forced space folds "never
-        # answered" into the same message as "declined with no reason":
-        # both leave TechOps without a line or a stated reason for one.
+        # above), so an unanswered card needs a decision before submit.
+        # The forced reason applies only to a decline; on an unanswered
+        # card it sends the requester looking for a decline they never made.
         forced_by = wifi_forced_reason(space, home_id)
         if space.wifi_requested is None:
-            if forced_by:
-                errors.append(ValidationError(
-                    _forced_wifi_message(name, forced_by), sid))
-            else:
-                errors.append(ValidationError(
-                    f"{name}: say whether this space needs WiFi.", sid))
+            errors.append(ValidationError(
+                f"{name}: say whether this space needs WiFi.", sid))
         elif (space.wifi_requested is False and forced_by
               and not space.wifi_declined_reason):
             # Invariant 2's escape hatch. No WiFi line exists to carry the
@@ -756,10 +750,11 @@ def _validate_phone_line(
 def _forced_wifi_message(name: str, forced_by: str) -> str:
     """Word the forced-WiFi refusal by its cause, from wifi_forced_reason()."""
     if forced_by == WIFI_FORCED_BY_PAYMENTS:
-        return (f"{name}: this room is the payments home base, so say why "
-                "it needs no WiFi, or tick WiFi.")
-    return (f"{name}: this space has wired gear, so say why it needs no "
-            "WiFi, or tick WiFi.")
+        cause = "this room is the payments home base"
+    else:
+        cause = "this room has wired network or phone gear"
+    return (f"{name}: {cause}, so say why it needs no WiFi, or choose "
+            "\"WiFi needed in this space\".")
 
 
 def _validate_payments(answers: "RequestAnswers", errors: list[str]) -> None:

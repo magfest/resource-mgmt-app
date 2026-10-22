@@ -556,7 +556,7 @@ def test_a_failed_submit_preserves_every_kind_of_just_typed_space_field(
 def test_wifi_radios_show_what_was_just_submitted_not_the_forced_default(
         app, client, techops_portfolio):
     """Add a drop, leave WiFi unanswered, submit: validate() correctly
-    rejects it ("say why it needs no WiFi, or tick WiFi"), and both radios
+    rejects it ("say whether this space needs WiFi"), and both radios
     must redisplay unchecked, matching what was actually posted.
     `wifi_forced` explains why a decline would need a reason (the
     callout), it must not also pick an answer the requester never gave."""
@@ -574,7 +574,7 @@ def test_wifi_radios_show_what_was_just_submitted_not_the_forced_default(
         # WIFI_enabled deliberately omitted: neither radio was posted.
     })
     body = response.get_data(as_text=True)
-    assert "no WiFi, or tick WiFi" in body  # validate()'s error landed
+    assert "say whether this space needs WiFi." in body  # validate()'s error landed
     radios = re.findall(
         rf'<input[^>]*name="space_{room.id}_WIFI_enabled"[^>]*>', body)
     assert len(radios) == 2
@@ -728,9 +728,8 @@ def test_wifi_decline_reason_field_hidden_when_wifi_is_needed_not_declined(
 
 def test_submit_rejects_a_needs_card_with_no_wifi_answer_on_a_forced_space(
         app, client, techops_portfolio):
-    """Item 4, end to end: a forced space that never answers WiFi is
-    refused by name, folded into the same message as an explicit decline
-    with no reason."""
+    """A forced space that never answers WiFi is asked for an answer. The
+    gear reason is for a decline, and this card has not declined."""
     _login(client, "test:admin")
     room = techops_portfolio["room"]
     response = client.post(techops_portfolio["new_request_url"], data={
@@ -744,7 +743,8 @@ def test_submit_rejects_a_needs_card_with_no_wifi_answer_on_a_forced_space(
         f"space_{room.id}_ETHERNET_drop_1_usage": "Switch uplink",
     })
     body = html.unescape(response.get_data(as_text=True))
-    assert "Expo Hall E: this space has wired gear, so say why it needs no WiFi, or tick WiFi." in body
+    assert "Expo Hall E: say whether this space needs WiFi." in body
+    assert "so say why it needs no WiFi" not in body
     assert response.status_code == 200
     assert WorkItem.query.count() == 0
 
