@@ -82,3 +82,17 @@ def test_log_page_loads_related_rows_in_bulk(client, inv):
     assert html.count("1 Blue Pen") == 8
     container_loads = [s for s in statements if "FROM inv_containers" in s]
     assert len(container_loads) <= 3
+
+
+def test_a_discard_reads_as_a_discard_with_its_reason(inv):
+    from app.inventory.describe import describe_movement
+    from app.inventory.ledger import discard_stock
+    bin_ = make_container(inv, "C-0001", kind="BIN")
+    add_stock(inv.pens, bin_, 10, ACTOR)
+    texts = {}
+    for reason in ("DRIED_OUT", "BROKEN", "EXPIRED", "OTHER"):
+        texts[reason] = describe_movement(discard_stock(inv.pens, bin_, 1, reason, ACTOR))
+    assert texts["DRIED_OUT"] == "Discarded 1 Blue Pen from C-0001: dried out"
+    assert texts["BROKEN"] == "Discarded 1 Blue Pen from C-0001: broken"
+    assert texts["EXPIRED"] == "Discarded 1 Blue Pen from C-0001: expired"
+    assert texts["OTHER"] == "Discarded 1 Blue Pen from C-0001: other reason"

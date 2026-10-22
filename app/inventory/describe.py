@@ -4,13 +4,17 @@ from __future__ import annotations
 from app import db
 from app.models import InvMovement, User
 from app.models.constants import (
-    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC,
-    INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL, INV_IDENT_VENDOR_TAG,
+    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_DISCARD, INV_IDENT_FESTOPS_LABEL,
+    INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL, INV_IDENT_VENDOR_TAG,
 )
 
 # The most recognizable code first: a MAGFest tag is on the gear itself.
 _TAG_ORDER = (INV_IDENT_MAGFEST_TAG, INV_IDENT_FESTOPS_LABEL, INV_IDENT_VENDOR_TAG,
               INV_IDENT_SERIAL, INV_IDENT_MAC)
+
+
+_DISCARD_REASON_WORDS = {"DRIED_OUT": "dried out", "BROKEN": "broken",
+                         "EXPIRED": "expired", "OTHER": "other reason"}
 
 
 def _where(container) -> str:
@@ -47,6 +51,9 @@ def describe_movement(m: InvMovement) -> str:
     what = f"{m.quantity} {m.item.item_name}"
     if m.action == INV_ACTION_ADD:
         return f"Added {what} to {_where(m.to_container)}"
+    if m.action == INV_ACTION_DISCARD:
+        reason = _DISCARD_REASON_WORDS.get(m.reason, m.reason or "no reason recorded")
+        return f"Discarded {what} from {_where(m.from_container)}: {reason}"
     if m.action == INV_ACTION_ADJUST:
         # A count writes the gain as to-only and the loss as from-only.
         if m.to_container is not None:

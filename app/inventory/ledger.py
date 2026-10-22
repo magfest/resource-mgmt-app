@@ -248,7 +248,7 @@ def add_unit(item, container, actor, identifiers: list[tuple[str, str]]) -> InvU
     """Create a unit from one or more (kind, value) identifiers.
 
     The container may be None for gear that has not been shelved yet. A
-    refusal rolls back the unit it had started.
+    refusal raises InventoryError; the caller rolls back the partial unit.
     """
     if not item.is_serialized:
         raise InventoryError(
