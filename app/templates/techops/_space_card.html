@@ -376,22 +376,11 @@
         reason. If you think your space needs it, say why and TechOps will talk
         it through with you.
       </div>
-        {% if card.wifi_forced %}
-          <div class="callout callout-warning mb-8">
-            {% if card.wifi_forced_reason == "payments" %}
-              This room is the payments home base, so WiFi needs an answer.
-              Declining it needs a reason.
-            {% else %}
-              This space has wired gear, so WiFi needs an answer. Declining it
-              needs a reason.
-            {% endif %}
-          </div>
-        {% endif %}
         {# A radio pair, not a checkbox: "declined" and "never answered"
            both leave a checkbox unticked with nothing to tell them
            apart. Neither radio defaults checked here; `wifi_forced`
-           explains why a decline needs a reason (the callout above), it
-           does not pre-select an answer the requester has not given. #}
+           explains why a decline needs a reason (the callout in the
+           decline field below), it does not pre-select an answer. #}
         <label class="space-card-field" style="display: flex; gap: 6px; align-items: center;">
           <input type="radio" name="space_{{ sid }}_WIFI_enabled" value="1"
                  data-wifi-answer-radio
@@ -411,6 +400,18 @@
            wifi_forced. #}
         <div class="space-card-field" data-wifi-declined-field
              {% if card.wifi_requested is not false %}style="display: none;"{% endif %}>
+          {# Inside the decline field, not above the radios: shown on every
+             forced card, requesters read it as an error even after
+             answering "WiFi needed". #}
+          {% if card.wifi_forced %}
+            <div class="callout callout-warning mb-8" data-wifi-forced-callout>
+              {% if card.wifi_forced_reason == "payments" %}
+                This room is the payments home base, so TechOps needs a reason to leave WiFi out.
+              {% else %}
+                This room has wired network or phone gear, so TechOps needs a reason to leave WiFi out.
+              {% endif %}
+            </div>
+          {% endif %}
           <label for="space_{{ sid }}_WIFI_declined_reason">Why is WiFi not needed here?</label>
           <div class="muted small">TechOps needs this on record so nobody adds it back by mistake.</div>
           <input type="text" id="space_{{ sid }}_WIFI_declined_reason"
