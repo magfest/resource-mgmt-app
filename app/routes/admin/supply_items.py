@@ -42,7 +42,7 @@ supply_items_bp = Blueprint('supply_items', __name__, url_prefix='/supply-items'
 _TEMPLATE_EXAMPLE_ROW = [
     "OFFICE", "Ballpoint Pens (Box of 12)", "box", "Standard blue ink pens",
     "1 box lasts about a month for a 10-person team",
-    "3.50", "50", "A1", "B2", "false", "true", "true", "false", "true",
+    "3.50", "50", "A1", "B2", "false", "true", "true", "false", "true", "true",
 ]
 
 

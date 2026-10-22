@@ -242,11 +242,30 @@ def test_supply_items_list_marks_and_filters_models(app, client):
 
     everything = client.get("/admin/config/supply-items/").data.decode()
     assert "Blue Pens" in everything and "Lobby TV" in everything
-    assert everything.count("Not orderable") == 1
+    assert everything.count('class="pill pill-info"') == 1
 
     models = client.get("/admin/config/supply-items/?orderable=0").data.decode()
     assert "Lobby TV" in models and "Blue Pens" not in models
 
     orderable = client.get("/admin/config/supply-items/?orderable=1").data.decode()
     assert "Blue Pens" in orderable and "Lobby TV" not in orderable
-    assert "Not orderable" not in orderable
+    assert 'class="pill pill-info"' not in orderable
+
+
+def test_supply_items_list_says_when_a_filter_matches_nothing(app, client):
+    category_id = _seed_admin_and_category(app)
+    with app.app_context():
+        db.session.add(SupplyItem(category_id=category_id, item_name="Blue Pens", unit="box"))
+        db.session.commit()
+    _login(client, "test:admin")
+
+    filtered = client.get("/admin/config/supply-items/?orderable=0").data.decode()
+    assert "No items match this filter." in filtered
+    assert "Create a category first" not in filtered
+
+
+def test_template_example_row_fills_every_column(app, client):
+    from app.routes.admin.supply_items import _TEMPLATE_EXAMPLE_ROW
+
+    assert len(_TEMPLATE_EXAMPLE_ROW) == len(EXPECTED_COLUMNS)
+    assert _TEMPLATE_EXAMPLE_ROW[EXPECTED_COLUMNS.index("is_orderable")] == "true"

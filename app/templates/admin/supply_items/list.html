@@ -14,7 +14,7 @@
   <span class="muted small">Show:</span>
   <a class="btn {% if orderable_filter is none %}btn-primary{% endif %}" href="{{ url_for('admin_config.supply_items.list_supply_items') }}">All</a>
   <a class="btn {% if orderable_filter == '1' %}btn-primary{% endif %}" href="{{ url_for('admin_config.supply_items.list_supply_items', orderable=1) }}">Orderable</a>
-  <a class="btn {% if orderable_filter == '0' %}btn-primary{% endif %}" href="{{ url_for('admin_config.supply_items.list_supply_items', orderable=0) }}">Models</a>
+  <a class="btn {% if orderable_filter == '0' %}btn-primary{% endif %}" href="{{ url_for('admin_config.supply_items.list_supply_items', orderable=0) }}">Not orderable</a>
 </div>
 
 {% for cat_name, cat_items in items_by_category.items() %}
@@ -67,7 +67,9 @@
   </table>
 </section>
 {% else %}
-<div class="card muted">No supply items found. Create a category first, then add items.</div>
+<div class="card muted">
+  {% if orderable_filter is none %}No supply items found. Create a category first, then add items.{% else %}No items match this filter.{% endif %}
+</div>
 {% endfor %}
 
 <div class="muted small" style="margin-top: 16px;">

@@ -182,9 +182,8 @@ def _parse_row_fields(row: dict) -> tuple[dict, list[str]]:
         except ValueError as exc:
             problems.append(str(exc))
 
-    # is_orderable has no default. A blank cell or a missing column leaves it out
-    # of `parsed`, so a re-import never flips a model (is_orderable False) back
-    # to orderable and a new item takes the model default.
+    # A blank cell or a missing column leaves is_orderable out of the record.
+    # A re-import never makes a non-orderable item orderable.
     if _clean_str(row.get("is_orderable")) is not None:
         try:
             parsed["is_orderable"] = _parse_bool(row.get("is_orderable"), True)
