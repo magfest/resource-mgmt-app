@@ -63,8 +63,15 @@ def create_containers():
     name = ((request.form.get("name") or "").strip()[:128] or None) if count == 1 else None
     actor = admin_actor()
     codes = allocate(PREFIX_CONTAINER, count)
-    for code in codes:
-        create_container(code, kind, actor, parent=parent, name=name)
+    try:
+        for code in codes:
+            create_container(code, kind, actor, parent=parent, name=name)
+    except InventoryError as exc:
+        # The whole batch rolls back, including the allocated codes, so no label
+        # is skipped and no half-made batch is left behind.
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("inventory.containers"))
     db.session.commit()
     flash(f"Created {', '.join(codes)}.", "success")
     return redirect(url_for("inventory.containers"))

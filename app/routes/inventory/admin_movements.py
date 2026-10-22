@@ -3,11 +3,12 @@ from datetime import datetime
 
 from flask import flash, request
 from sqlalchemy import or_
+from sqlalchemy.orm import selectinload
 
 from app import db
 from app.inventory.codes import normalize_code
 from app.inventory.describe import describe_actor, describe_movement
-from app.models import InvContainer, InvDevice, InvMovement, SupplyItem
+from app.models import InvContainer, InvDevice, InvMovement, InvUnit, SupplyItem
 
 from . import inventory_bp
 from .helpers import render_inventory_page, require_inventory_admin
@@ -40,7 +41,15 @@ def movements():
             query = query.filter(InvMovement.created_at >= datetime.strptime(since, "%Y-%m-%d"))
         except ValueError:
             flash("Since must be a date (YYYY-MM-DD).", "error")
-    rows = query.order_by(InvMovement.id.desc()).limit(PAGE_SIZE).all()
+    rows = (query.options(
+                selectinload(InvMovement.item),
+                selectinload(InvMovement.unit).selectinload(InvUnit.identifiers),
+                selectinload(InvMovement.subject_container),
+                selectinload(InvMovement.from_container),
+                selectinload(InvMovement.to_container),
+                selectinload(InvMovement.shift),
+                selectinload(InvMovement.device))
+            .order_by(InvMovement.id.desc()).limit(PAGE_SIZE).all())
     return render_inventory_page(
         "inventory/movements.html",
         rows=[(m, describe_movement(m), describe_actor(m)) for m in rows],

@@ -47,3 +47,19 @@ def test_inactive_kind_stays_selected_when_renaming(client, inv):
     saved = db.session.get(InvContainer, pallet_container.id)
     assert saved.kind_id == inv.kinds["PALLET"].id
     assert saved.name == "Front stage pallet"
+
+
+def test_batch_create_reports_a_code_that_is_already_a_container(client, inv, monkeypatch):
+    from app.inventory import ledger
+    make_container(inv, "C-0001", kind="BIN")
+    db.session.commit()
+    # Skip the pre-check so the unique constraint decides, as it does in a race.
+    monkeypatch.setattr(ledger, "_container_exists", lambda code: False)
+    monkeypatch.setattr("app.routes.inventory.admin_containers.allocate",
+                        lambda prefix, count: ["C-0001"])
+    login(client, "test:invadmin")
+    response = client.post("/inv/admin/containers", data={
+        "kind_id": str(inv.kinds["BIN"].id), "count": "1"}, follow_redirects=True)
+    assert response.status_code == 200
+    assert "C-0001 is already a container" in response.get_data(as_text=True)
+    assert InvContainer.query.count() == 1

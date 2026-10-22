@@ -71,5 +71,8 @@ def was_issued(code: str | None) -> bool:
     if parsed is None:
         return False
     prefix, number = parsed
-    row = db.session.query(InvLabelSequence).filter_by(prefix=prefix).first()
+    # populate_existing: a sequence row already in the session would otherwise
+    # report a stale next_value and refuse a label another scanner just issued.
+    row = (db.session.query(InvLabelSequence).filter_by(prefix=prefix)
+           .populate_existing().first())
     return row is not None and 1 <= number < row.next_value

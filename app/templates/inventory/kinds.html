@@ -10,7 +10,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="row">
     <label>Name <input type="text" name="name" required maxlength="64"></label>
-    <label>Sort <input type="number" name="sort_order" style="width: 80px;"></label>
+    <label>Sort <input type="number" name="sort_order" min="0" max="10000" style="width: 80px;"></label>
   </div>
   <button type="submit" class="btn btn-primary">Add kind</button>
 </form>
@@ -21,7 +21,7 @@
     <tr>
       <td><code>{{ k.code }}</code></td>
       <td><input type="text" form="kind-{{ k.id }}" name="name" value="{{ k.name }}" maxlength="64" required></td>
-      <td><input type="number" form="kind-{{ k.id }}" name="sort_order" value="{{ k.sort_order if k.sort_order is not none else '' }}" style="width: 80px;"></td>
+      <td><input type="number" form="kind-{{ k.id }}" name="sort_order" min="0" max="10000" value="{{ k.sort_order if k.sort_order is not none else '' }}" style="width: 80px;"></td>
       <td><input type="checkbox" form="kind-{{ k.id }}" name="is_active" value="1" {% if k.is_active %}checked{% endif %}></td>
       <td>
         <form id="kind-{{ k.id }}" method="post" action="{{ url_for('inventory.update_kind', kind_id=k.id) }}">

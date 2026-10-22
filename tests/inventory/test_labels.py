@@ -37,3 +37,13 @@ def test_allocation_rereads_a_counter_changed_underneath(inv):
     db.session.execute(text("UPDATE inv_label_sequences SET next_value = 10 WHERE prefix = 'C'"))
     assert row.next_value == 3  # stale on purpose; row must stay referenced
     assert allocate("C", 1) == ["C-0010"]
+
+
+def test_was_issued_rereads_a_counter_changed_underneath(inv):
+    allocate("C", 2)
+    db.session.commit()
+    row = db.session.get(InvLabelSequence, "C")
+    assert was_issued("C-0005") is False
+    db.session.execute(text("UPDATE inv_label_sequences SET next_value = 10 WHERE prefix = 'C'"))
+    assert row.next_value == 3  # stale on purpose; row must stay referenced
+    assert was_issued("C-0005") is True

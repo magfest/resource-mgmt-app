@@ -23,3 +23,39 @@ def test_a_kind_in_use_can_be_deactivated_and_still_lists(client, inv):
 def test_operator_cannot_manage_kinds(client, inv):
     login(client, "test:operator")
     assert client.post("/inv/admin/kinds", data={"name": "Shelf"}).status_code == 403
+
+
+def test_a_sort_order_outside_the_allowed_range_is_refused(client, inv):
+    login(client, "test:invadmin")
+    pallet = inv.kinds["PALLET"]
+    for bad in ("-1", "10001", "abc", "1.5"):
+        response = client.post(f"/inv/admin/kinds/{pallet.id}", data={
+            "name": "Renamed", "sort_order": bad, "is_active": "1"},
+            follow_redirects=True)
+        assert response.status_code == 200
+        assert "Sort order must be a whole number from 0 to 10000" in response.get_data(as_text=True)
+        response = client.post("/inv/admin/kinds", data={"name": "Shelf", "sort_order": bad},
+                               follow_redirects=True)
+        assert "Sort order must be a whole number from 0 to 10000" in response.get_data(as_text=True)
+    db.session.expire_all()
+    assert db.session.get(InvContainerKind, pallet.id).name == "Pallet"
+    assert InvContainerKind.query.filter_by(code="SHELF").first() is None
+
+
+def test_a_blank_or_boundary_sort_order_is_saved(client, inv):
+    login(client, "test:invadmin")
+    pallet = inv.kinds["PALLET"]
+    client.post(f"/inv/admin/kinds/{pallet.id}", data={
+        "name": "Pallet", "sort_order": "", "is_active": "1"})
+    assert db.session.get(InvContainerKind, pallet.id).sort_order is None
+    client.post(f"/inv/admin/kinds/{pallet.id}", data={
+        "name": "Pallet", "sort_order": "10000", "is_active": "1"})
+    assert db.session.get(InvContainerKind, pallet.id).sort_order == 10000
+    client.post("/inv/admin/kinds", data={"name": "Shelf", "sort_order": "0"})
+    assert InvContainerKind.query.filter_by(code="SHELF").one().sort_order == 0
+
+
+def test_kinds_page_bounds_the_sort_inputs(client, inv):
+    login(client, "test:invadmin")
+    html = client.get("/inv/admin/kinds").get_data(as_text=True)
+    assert html.count('min="0" max="10000"') >= 2

@@ -21,9 +21,10 @@ from app.models import (
     InvUnitIdentifier, SupplyItem,
 )
 from app.models.constants import (
-    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_MOVE, INV_CONDITION_IN_SERVICE,
+    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_DISCARD, INV_ACTION_MOVE,
+    INV_CONDITION_IN_SERVICE,
     INV_CONDITION_LOST, INV_CONDITION_REPAIR, INV_CONDITION_RETIRED,
-    INV_IDENT_UNIQUE_KINDS, INV_IDENT_VENDOR_TAG,
+    INV_DISCARD_REASONS, INV_IDENT_UNIQUE_KINDS, INV_IDENT_VENDOR_TAG,
 )
 
 INV_CONDITIONS = (INV_CONDITION_IN_SERVICE, INV_CONDITION_REPAIR,
@@ -138,16 +139,39 @@ def move_stock(item, source, destination, quantity, actor) -> InvMovement:
                      from_container_id=source.id, to_container_id=destination.id)
 
 
-def set_counted_quantity(item, container, counted, actor, count_id=None):
+def discard_stock(item, container, quantity, reason, actor, count_id=None) -> InvMovement:
+    """Remove thrown-out stock from a container and log why.
+
+    The reason must be one of INV_DISCARD_REASONS. A discard is an outflow, so
+    the balance check treats it like a move with no destination.
+    """
+    if reason not in INV_DISCARD_REASONS:
+        raise InventoryError("A discard needs a reason: " + ", ".join(INV_DISCARD_REASONS) + ".")
+    _require_positive(quantity)
+    _require_counted(item)
+    stock = _locked_stock(item.id, container.id)
+    if stock.quantity < quantity:
+        raise InventoryError(
+            f"{container.label_code} holds {stock.quantity} {item.item_name}; cannot "
+            f"discard {quantity}. Count the container.")
+    stock.quantity -= quantity
+    return _movement(INV_ACTION_DISCARD, actor, item_id=item.id, quantity=quantity,
+                     from_container_id=container.id, reason=reason, count_id=count_id)
+
+
+def set_counted_quantity(item, container, counted, actor, count_id=None,
+                         is_approximate=False):
     """Set a counted balance and log the difference as an ADJUST.
 
     Returns None when the count matches, since a zero-quantity movement is
-    refused by ck_inv_movements_quantity_positive.
+    refused by ck_inv_movements_quantity_positive. The approximate flag follows
+    the latest count, including a count that matches.
     """
     _require_counted(item)
     if not isinstance(counted, int) or counted < 0:
         raise InventoryError("A count must be a whole number, zero or more.")
     stock = _locked_stock(item.id, container.id)
+    stock.is_approximate = is_approximate
     difference = counted - stock.quantity
     if difference == 0:
         return None
@@ -257,30 +281,48 @@ def move_unit(unit, destination, actor, action=INV_ACTION_MOVE, count_id=None) -
                      count_id=count_id)
 
 
+def _container_exists(code: str) -> bool:
+    return db.session.query(InvContainer.id).filter_by(label_code=code).first() is not None
+
+
+def _lock_container(container: InvContainer) -> InvContainer:
+    """Lock the container row and refresh it from the database."""
+    return (db.session.query(InvContainer).filter_by(id=container.id)
+            .with_for_update().populate_existing().one())
+
+
 def create_container(label_code, kind: InvContainerKind, actor, parent=None,
                      name=None) -> InvContainer:
     """Create a container. The caller has already checked the label was issued."""
     code = normalize_code(label_code)
-    if db.session.query(InvContainer).filter_by(label_code=code).first():
+    if _container_exists(code):
         raise InventoryError(f"{code} is already a container.")
     container = InvContainer(label_code=code, kind_id=kind.id,
                              parent_id=parent.id if parent else None,
                              name=(name or "").strip() or None,
                              created_by_user_id=actor.user_id)
-    db.session.add(container)
-    db.session.flush()
+    # The check above can lose a race; the unique label decides. The savepoint
+    # keeps the caller's transaction usable on PostgreSQL; on SQLite the caller
+    # rolls back.
+    try:
+        with savepoint():
+            db.session.add(container)
+            db.session.flush()
+    except IntegrityError as error:
+        raise InventoryError(f"{code} is already a container.") from error
     _movement(INV_ACTION_ADD, actor, subject_container_id=container.id,
               to_container_id=parent.id if parent else None)
     return container
 
 
 def move_container(container, new_parent, actor) -> InvMovement:
+    # Lock first: the cycle check reads the parent chain, which a concurrent
+    # move of this container or an ancestor can change.
+    _lock_container(container)
     if would_cycle(container, new_parent):
         raise InventoryError(
             f"{new_parent.label_code} is inside {container.label_code}; a container "
             f"cannot go inside itself.")
-    (db.session.query(InvContainer).filter_by(id=container.id)
-     .with_for_update().populate_existing().one())
     old_parent_id = container.parent_id
     container.parent_id = new_parent.id if new_parent else None
     return _movement(INV_ACTION_MOVE, actor, subject_container_id=container.id,

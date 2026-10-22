@@ -59,3 +59,26 @@ def test_unknown_container_label_is_reported(client, inv):
     login(client, "test:invadmin")
     html = client.get("/inv/admin/movements?container=C-9999").get_data(as_text=True)
     assert "No container has the label C-9999." in html
+
+
+def test_log_page_loads_related_rows_in_bulk(client, inv):
+    from sqlalchemy import event
+    for n in range(8):
+        add_stock(inv.pens, make_container(inv, f"C-{n + 1:04d}", kind="BIN"), 1, ACTOR)
+    db.session.commit()
+    db.session.expunge_all()
+    login(client, "test:invadmin")
+    statements = []
+
+    def record(conn, cursor, statement, *rest):
+        statements.append(statement)
+
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        html = client.get("/inv/admin/movements").get_data(as_text=True)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert html.count("1 Blue Pen") == 8
+    container_loads = [s for s in statements if "FROM inv_containers" in s]
+    assert len(container_loads) <= 3
