@@ -308,3 +308,92 @@ def test_parse_bool_and_int_stay_loud_for_junk_tokens():
         _parse_int("nan")
     with pytest.raises(ValueError):
         _parse_cents("nan")
+
+
+def _model_item(import_seed) -> SupplyItem:
+    item = import_seed["item"]
+    item.is_orderable = False
+    db.session.commit()
+    return item
+
+
+def _import(text: str):
+    preview = classify_rows(parse_catalog_upload(_csv_upload(text)))
+    apply_import(preview.creates, preview.updates, user_id="test:admin")
+    db.session.commit()
+    return preview
+
+
+def test_reimport_without_the_column_keeps_models_unorderable(app, import_seed):
+    item = _model_item(import_seed)
+    text = (
+        CSV_HEADER + "\n"
+        "OFFICE,Ballpoint pens (box of 12),box,,3.00,,,,false,false,false,false,true\n"
+    )
+    preview = _import(text)
+
+    assert len(preview.updates) == 1
+    assert "is_orderable" not in preview.updates[0]["changed_fields"]
+    db.session.refresh(item)
+    assert item.is_orderable is False
+
+
+def test_reimport_with_a_blank_cell_keeps_models_unorderable(app, import_seed):
+    item = _model_item(import_seed)
+    text = (
+        CSV_HEADER + ",is_orderable\n"
+        "OFFICE,Ballpoint pens (box of 12),box,,3.00,,,,false,false,false,false,true,\n"
+    )
+    preview = _import(text)
+
+    assert "is_orderable" not in preview.updates[0]["changed_fields"]
+    db.session.refresh(item)
+    assert item.is_orderable is False
+
+
+def test_new_item_without_the_column_takes_the_model_default(app, import_seed):
+    text = (
+        CSV_HEADER + "\n"
+        "OFFICE,Corkboard,each,,,,,,false,false,false,false,true\n"
+    )
+    _import(text)
+
+    item = db.session.query(SupplyItem).filter_by(item_name="Corkboard").one()
+    assert item.is_orderable is True
+
+
+def test_import_with_the_column_creates_an_unorderable_item(app, import_seed):
+    text = (
+        CSV_HEADER + ",is_orderable\n"
+        "OFFICE,Lobby TV,each,,,,,,false,false,false,false,true,false\n"
+    )
+    preview = _import(text)
+
+    assert preview.errors == []
+    item = db.session.query(SupplyItem).filter_by(item_name="Lobby TV").one()
+    assert item.is_orderable is False
+
+
+def test_import_with_the_column_updates_an_existing_item(app, import_seed):
+    item = _model_item(import_seed)
+    text = (
+        CSV_HEADER + ",is_orderable\n"
+        "OFFICE,Ballpoint pens (box of 12),box,,3.00,,,,false,false,false,false,true,yes\n"
+    )
+    preview = _import(text)
+
+    assert "is_orderable" in preview.updates[0]["changed_fields"]
+    db.session.refresh(item)
+    assert item.is_orderable is True
+
+
+def test_invalid_is_orderable_value_is_a_row_error(app, import_seed):
+    text = (
+        CSV_HEADER + ",is_orderable\n"
+        "OFFICE,Lobby TV,each,,,,,,false,false,false,false,true,maybe\n"
+    )
+    preview = classify_rows(parse_catalog_upload(_csv_upload(text)))
+
+    assert preview.creates == []
+    assert len(preview.errors) == 1
+    assert any("Invalid boolean value" in p for p in preview.errors[0]["problems"])

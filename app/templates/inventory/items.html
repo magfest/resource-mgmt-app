@@ -5,7 +5,8 @@
 <div class="muted mb-16">
   Serialized items are tracked one unit at a time. Unorderable items are
   inventory-only and never appear in the Supply catalog. Barcode holds a
-  manufacturer UPC or a FestOps I- label.
+  manufacturer UPC or a FestOps I- label. Pack size is the number of units in
+  one pack. Check station is the station that checks the item before an event.
 </div>
 <form method="post" action="{{ url_for('inventory.create_deploy_item') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -23,7 +24,7 @@
   <button type="submit" class="btn btn-primary">Add item</button>
 </form>
 <table>
-  <thead><tr><th>Category</th><th>Item</th><th>Serialized</th><th>Orderable</th><th>Barcode</th><th></th></tr></thead>
+  <thead><tr><th>Category</th><th>Item</th><th>Serialized</th><th>Orderable</th><th>Barcode</th><th>Pack size</th><th>Check station</th><th></th></tr></thead>
   <tbody>
   {% for i in items %}
     <tr>
@@ -32,6 +33,13 @@
       <td><input type="checkbox" form="item-{{ i.id }}" name="is_serialized" value="1" {% if i.is_serialized %}checked{% endif %}></td>
       <td><input type="checkbox" form="item-{{ i.id }}" name="is_orderable" value="1" {% if i.is_orderable %}checked{% endif %}></td>
       <td><input type="text" form="item-{{ i.id }}" name="barcode" value="{{ i.barcode or '' }}" maxlength="64" style="width: 140px;"></td>
+      <td><input type="number" form="item-{{ i.id }}" name="pack_size" value="{{ i.pack_size if i.pack_size is not none else '' }}" min="1" step="1" style="width: 80px;"></td>
+      <td>
+        <select form="item-{{ i.id }}" name="check_station">
+          <option value=""></option>
+          {% for code, label in stations %}<option value="{{ code }}" {% if i.check_station == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </td>
       <td>
         <form id="item-{{ i.id }}" method="post" action="{{ url_for('inventory.update_item', item_id=i.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -40,7 +48,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="6" class="muted">No items yet.</td></tr>
+    <tr><td colspan="8" class="muted">No items yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>

@@ -28,7 +28,7 @@ EXPECTED_COLUMNS = [
     "category_code", "item_name", "unit", "notes", "order_guidance",
     "unit_cost", "qty_on_hand", "location_zone", "bin_location",
     "is_limited", "is_popular", "is_expendable", "notes_required",
-    "is_active",
+    "is_active", "is_orderable",
 ]
 
 # Only these are load-bearing for classification; the rest are optional.
@@ -182,6 +182,15 @@ def _parse_row_fields(row: dict) -> tuple[dict, list[str]]:
         except ValueError as exc:
             problems.append(str(exc))
 
+    # is_orderable has no default. A blank cell or a missing column leaves it out
+    # of `parsed`, so a re-import never flips a model (is_orderable False) back
+    # to orderable and a new item takes the model default.
+    if _clean_str(row.get("is_orderable")) is not None:
+        try:
+            parsed["is_orderable"] = _parse_bool(row.get("is_orderable"), True)
+        except ValueError as exc:
+            problems.append(str(exc))
+
     parsed["notes"] = _clean_text(row.get("notes"))
     parsed["order_guidance"] = _clean_text(row.get("order_guidance"))
     parsed["location_zone"] = _clean_text(row.get("location_zone"))
@@ -264,6 +273,8 @@ def classify_rows(rows: list[dict]) -> ImportPreview:
                 field_name for field_name in _WRITABLE_FIELDS
                 if record.get(field_name) != getattr(existing, field_name)
             ]
+            if "is_orderable" in record and record["is_orderable"] != existing.is_orderable:
+                record["changed_fields"].append("is_orderable")
             preview.updates.append(record)
         else:
             preview.creates.append(record)
@@ -277,6 +288,8 @@ _WRITABLE_FIELDS = (
     "is_active", "unit_cost_cents", "qty_on_hand", "location_zone",
     "bin_location",
 )
+# Written only when the record carries the key; see _parse_row_fields.
+_OPTIONAL_FIELDS = ("is_orderable",)
 
 
 def apply_import(creates: list[dict], updates: list[dict], user_id) -> tuple[int, int]:
@@ -287,7 +300,9 @@ def apply_import(creates: list[dict], updates: list[dict], user_id) -> tuple[int
     data_upload.py's bulk uploads). Caller commits.
     """
     for record in creates:
-        item = SupplyItem(**{field: record.get(field) for field in _WRITABLE_FIELDS})
+        values = {field: record.get(field) for field in _WRITABLE_FIELDS}
+        values.update({f: record[f] for f in _OPTIONAL_FIELDS if f in record})
+        item = SupplyItem(**values)
         item.created_by_user_id = user_id
         item.updated_by_user_id = user_id
         db.session.add(item)
@@ -302,6 +317,9 @@ def apply_import(creates: list[dict], updates: list[dict], user_id) -> tuple[int
         item = db.session.get(SupplyItem, record["existing_id"])
         for field_name in _WRITABLE_FIELDS:
             setattr(item, field_name, record.get(field_name))
+        for field_name in _OPTIONAL_FIELDS:
+            if field_name in record:
+                setattr(item, field_name, record[field_name])
         item.updated_by_user_id = user_id
         log_config_change(
             "supply_item", item.id, CONFIG_AUDIT_UPDATE,

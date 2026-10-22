@@ -93,10 +93,17 @@ def _item_to_dict(item: SupplyItem) -> dict:
 @supply_items_bp.get("/")
 @require_supply_admin
 def list_supply_items():
-    """List all supply items."""
+    """List supply items; ?orderable=0 shows only models, ?orderable=1 only orderable items."""
+    orderable = request.args.get("orderable")
+    query = db.session.query(SupplyItem).join(SupplyCategory)
+    if orderable == "0":
+        query = query.filter(SupplyItem.is_orderable.is_(False))
+    elif orderable == "1":
+        query = query.filter(SupplyItem.is_orderable.is_(True))
+    else:
+        orderable = None
     items = (
-        db.session.query(SupplyItem)
-        .join(SupplyCategory)
+        query
         .order_by(*sort_with_override(SupplyCategory), *sort_with_override(SupplyItem, name_attr=SupplyItem.item_name))
         .all()
     )
@@ -113,6 +120,7 @@ def list_supply_items():
         "admin/supply_items/list.html",
         items=items,
         items_by_category=items_by_category,
+        orderable_filter=orderable,
     )
 
 

@@ -223,3 +223,30 @@ def test_plain_user_still_403s_on_supply_admin_pages(app, client):
 
     assert client.get("/admin/config/supply-items/").status_code == 403
     assert client.get(IMPORT_URL).status_code == 403
+
+
+def _seed_list_items(app):
+    category_id = _seed_admin_and_category(app)
+    with app.app_context():
+        db.session.add_all([
+            SupplyItem(category_id=category_id, item_name="Blue Pens", unit="box"),
+            SupplyItem(category_id=category_id, item_name="Lobby TV", unit="each",
+                       is_orderable=False),
+        ])
+        db.session.commit()
+
+
+def test_supply_items_list_marks_and_filters_models(app, client):
+    _seed_list_items(app)
+    _login(client, "test:admin")
+
+    everything = client.get("/admin/config/supply-items/").data.decode()
+    assert "Blue Pens" in everything and "Lobby TV" in everything
+    assert everything.count("Not orderable") == 1
+
+    models = client.get("/admin/config/supply-items/?orderable=0").data.decode()
+    assert "Lobby TV" in models and "Blue Pens" not in models
+
+    orderable = client.get("/admin/config/supply-items/?orderable=1").data.decode()
+    assert "Blue Pens" in orderable and "Lobby TV" not in orderable
+    assert "Not orderable" not in orderable

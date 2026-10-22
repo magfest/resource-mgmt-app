@@ -1,7 +1,7 @@
 """Inventory flags on SupplyItem, editable by inventory admins.
 
-The Supply item form is gated to Supply admins, so the three inventory
-columns get their own page. Deploy-only items are created here because they
+The Supply item form is gated to Supply admins, so the inventory columns
+get their own page. Deploy-only items are created here because they
 never belong in the Supply catalog.
 """
 from flask import abort, flash, redirect, request, url_for
@@ -9,6 +9,7 @@ from flask import abort, flash, redirect, request, url_for
 from app import db
 from app.inventory.codes import normalize_code
 from app.models import InvStock, InvUnit, SupplyCategory, SupplyItem
+from app.models.constants import INV_CHECK_STATIONS, INV_STATION_NAMES
 
 from . import inventory_bp
 from .helpers import render_inventory_page, require_inventory_admin
@@ -22,7 +23,9 @@ def items():
             .order_by(SupplyCategory.name, SupplyItem.item_name).all())
     categories = (db.session.query(SupplyCategory).filter_by(is_active=True)
                   .order_by(SupplyCategory.name).all())
-    return render_inventory_page("inventory/items.html", items=rows, categories=categories)
+    stations = [(code, INV_STATION_NAMES[code]) for code in INV_CHECK_STATIONS]
+    return render_inventory_page("inventory/items.html", items=rows, categories=categories,
+                                 stations=stations)
 
 
 def _barcode_error(item_id: int | None, barcode: str | None) -> str | None:
@@ -35,6 +38,17 @@ def _barcode_error(item_id: int | None, barcode: str | None) -> str | None:
     if other:
         return f"{barcode} is already on {other.item_name}."
     return None
+
+
+def _parse_pack_size(raw: str | None) -> tuple[int | None, str | None]:
+    """Return (pack size, error). Blank means no pack size."""
+    text = (raw or "").strip()
+    if not text:
+        return None, None
+    # The column is a 32-bit Integer; a larger value would fail at commit.
+    if not text.isascii() or not text.isdigit() or not 0 < int(text) <= 2_147_483_647:
+        return None, "A pack size is blank or a whole number above zero."
+    return int(text), None
 
 
 @inventory_bp.post("/admin/items/<int:item_id>")
@@ -55,7 +69,11 @@ def update_item(item_id: int):
             item_id=item.id).first():
         flash(f"{item.item_name} has serialized units and must stay serialized.", "error")
         return redirect(url_for("inventory.items"))
-    error = _barcode_error(item.id, barcode)
+    pack_size, error = _parse_pack_size(request.form.get("pack_size"))
+    check_station = (request.form.get("check_station") or "").strip() or None
+    if check_station is not None and check_station not in INV_CHECK_STATIONS:
+        error = "Pick a check station from the list, or leave it blank."
+    error = error or _barcode_error(item.id, barcode)
     if error:
         flash(error, "error")
         return redirect(url_for("inventory.items"))
@@ -63,6 +81,8 @@ def update_item(item_id: int):
     item.is_serialized = serialized
     item.is_orderable = request.form.get("is_orderable") == "1"
     item.barcode = barcode
+    item.pack_size = pack_size
+    item.check_station = check_station
     db.session.commit()
     flash(f"Saved {item.item_name}.", "success")
     return redirect(url_for("inventory.items"))
