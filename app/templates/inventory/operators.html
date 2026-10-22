@@ -4,7 +4,7 @@
 <h1>Scanner operators</h1>
 <div class="muted mb-16">
   Operators use the scanner under their own name. Volunteers on shared
-  scanners scan a badge instead and need no account.
+  scanners pick their name at the start of a shift and need no account.
 </div>
 <form method="post" action="{{ url_for('inventory.grant_operator') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

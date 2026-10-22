@@ -83,6 +83,7 @@ ROLE_INVENTORY_OPERATOR = "INVENTORY_OPERATOR"
 INV_ACTION_ADD = "ADD"
 INV_ACTION_MOVE = "MOVE"
 INV_ACTION_ADJUST = "ADJUST"
+INV_ACTION_DISCARD = "DISCARD"
 
 # A unit's lasting condition across events. Per-event pipeline state is a
 # separate record with a separate lifetime.
@@ -109,10 +110,10 @@ INV_IDENT_UNIQUE_KINDS = (INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG)
 MAGFEST_TAG_PREFIXES = ("NET", "TECH")
 MAGFEST_TAG_WIDTH = 5
 
-INV_ACTION_DISCARD = "DISCARD"
 INV_DISCARD_REASONS = ("DRIED_OUT", "BROKEN", "EXPIRED", "OTHER")
 
-# A scanner station. The first two take any scan; the last two run a check.
+# A scanner station. Look up shows what a scan is. Count records quantities in
+# a container. TV check and Printer check run a per-model checklist on one unit.
 INV_STATION_LOOKUP = "LOOKUP"
 INV_STATION_COUNT = "COUNT"
 INV_STATION_TV_CHECK = "TV_CHECK"

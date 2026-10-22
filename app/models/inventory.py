@@ -210,7 +210,9 @@ class InvDevice(db.Model):
 class InvShift(db.Model):
     """One volunteer's shift on one shared device.
 
-    The volunteer picks a name; no badge code is read or stored.
+    The volunteer picks a name; no badge code is read or stored. person_name
+    is personal data shown in the movement log; do not export it outside
+    inventory screens and reports.
     """
     __tablename__ = "inv_shifts"
 
@@ -380,7 +382,7 @@ class InvCheck(db.Model):
     )
     event_cycle_id = db.Column(
         db.Integer, db.ForeignKey("event_cycles.id", name="fk_inv_checks_event_cycle_id"),
-        nullable=True,
+        nullable=False,
     )
     station_code = db.Column(db.String(16), nullable=False)
     status = db.Column(db.String(16), nullable=False)
@@ -445,7 +447,7 @@ class InvPrepStatus(db.Model):
     event_cycle_id = db.Column(
         db.Integer,
         db.ForeignKey("event_cycles.id", name="fk_inv_prep_status_event_cycle_id"),
-        nullable=True,
+        nullable=False,
     )
     status = db.Column(db.String(16), nullable=False)
     check_id = db.Column(
