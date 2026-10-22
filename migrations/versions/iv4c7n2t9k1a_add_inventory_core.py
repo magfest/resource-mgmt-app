@@ -6,7 +6,7 @@ receipts, and label sequences. Seeds seven container kinds with guarded
 inserts.
 
 Revision ID: iv4c7n2t9k1a
-Revises: so3k8v1n5w2e
+Revises: tn5w9c3k7r2p
 Create Date: 2026-10-07
 
 """
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 
 revision = "iv4c7n2t9k1a"
-down_revision = "so3k8v1n5w2e"
+down_revision = "tn5w9c3k7r2p"
 branch_labels = None
 depends_on = None
 
