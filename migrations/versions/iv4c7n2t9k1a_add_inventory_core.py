@@ -334,6 +334,10 @@ def upgrade():
         sa.Column("resolved_at", sa.DateTime(), nullable=True),
         sa.Column("resolved_by_user_id", sa.String(64), nullable=True),
         sa.Column("resolution_note", sa.String(256), nullable=True),
+        sa.CheckConstraint(
+            "(unit_id IS NOT NULL AND container_id IS NULL) OR "
+            "(unit_id IS NULL AND container_id IS NOT NULL)",
+            name="ck_inv_flags_one_subject"),
     )
     for col in ("unit_id", "container_id", "shift_id", "device_id"):
         op.create_index(f"ix_inv_flags_{col}", "inv_flags", [col])

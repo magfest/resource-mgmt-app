@@ -9,11 +9,11 @@ from app.models import (
     InvDevice, InvFlag, InvPrepStatus, InvShift, InvStationItem, InvStock, InvUnit,
     InvUnitIdentifier, SupplyItem,
 )
-from app.models.org import EventCycle
 from app.models.constants import (
     INV_CHECK_OPEN, INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
     INV_MISSING_FAIL, INV_PREP_CHECKED, INV_STATION_COUNT, INV_STATION_TV_CHECK,
 )
+from app.models.org import EventCycle
 from tests.inventory.helpers import make_container
 
 
@@ -163,7 +163,7 @@ def test_container_kind_sort_order_is_bounded(inv):
         db.session.flush()
 
 
-def test_checks_and_prep_status_require_an_event(inv):
+def test_check_requires_an_event(inv):
     unit, _ = _two_units(inv)
     db.session.add(InvCheck(unit_id=unit.id, station_code=INV_STATION_TV_CHECK,
                             status=INV_CHECK_OPEN))
@@ -206,3 +206,16 @@ def test_server_defaults_fill_columns_a_raw_insert_omits(inv):
     row = db.session.execute(text("SELECT quantity, is_approximate FROM inv_stock")).one()
     assert row.quantity == 0
     assert not row.is_approximate
+
+
+def test_a_flag_names_exactly_one_subject(inv):
+    unit, _ = _two_units(inv)
+    tote = make_container(inv, "C-0004", kind="BIN")
+    db.session.add(InvFlag(unit_id=unit.id, station_code=INV_STATION_COUNT, reason="OTHER"))
+    db.session.flush()
+
+    for subject in ({}, {"unit_id": unit.id, "container_id": tote.id}):
+        with pytest.raises(IntegrityError):
+            with db.session.begin_nested():
+                db.session.add(InvFlag(station_code=INV_STATION_COUNT, reason="OTHER",
+                                       **subject))

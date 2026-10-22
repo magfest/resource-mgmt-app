@@ -507,6 +507,15 @@ class InvFlag(db.Model):
     unit = db.relationship("InvUnit")
     container = db.relationship("InvContainer")
 
+    # An unknown item found in a tote is flagged on the tote, so no flag
+    # names neither subject.
+    __table_args__ = (
+        db.CheckConstraint(
+            "(unit_id IS NOT NULL AND container_id IS NULL) OR "
+            "(unit_id IS NULL AND container_id IS NOT NULL)",
+            name="ck_inv_flags_one_subject"),
+    )
+
 
 class InvStationItem(db.Model):
     """One of "the usual items" the count station offers before search."""
