@@ -786,13 +786,17 @@ def create_expense_account(
     return account
 
 
-def run_bootstrap() -> None:
+def run_bootstrap(skip_supply_items: bool = False) -> None:
     """Run the full bootstrap seed.
 
     Order matters: worktypes → approval groups → configs → typed children
     (contracts, supply, techops) → spend types → reference data → hotel
     accounts. Each function commits via db.session.flush(); the final
     commit happens here.
+
+    skip_supply_items exists for the migrations job, which seeds at a pinned
+    revision: the checked-out SupplyItem model names columns that revision
+    lacks, so its inserts fail there.
     """
     print("=" * 60)
     print("Bootstrap seed (required structural data)...")
@@ -803,7 +807,8 @@ def run_bootstrap() -> None:
     seed_work_type_configs(work_types)
     seed_contract_types(approval_groups)
     supply_categories = seed_supply_categories(approval_groups)
-    seed_supply_items(supply_categories)
+    if not skip_supply_items:
+        seed_supply_items(supply_categories)
     seed_techops_service_types(approval_groups)
     spend_types = seed_spend_types()
     seed_reference_data()

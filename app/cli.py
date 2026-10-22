@@ -23,8 +23,12 @@ def register_cli(app: Flask) -> None:
         type=click.Choice(["bootstrap", "demo", "all"], case_sensitive=False),
         default="all",
     )
+    @click.option(
+        "--skip-supply-items", is_flag=True,
+        help="Leave out Supply items; for seeding a database below head.",
+    )
     @with_appcontext
-    def seed_command(target):
+    def seed_command(target, skip_supply_items):
         """Seed the database. TARGET is one of: bootstrap, demo, all (default).
 
         \b
@@ -44,7 +48,7 @@ def register_cli(app: Flask) -> None:
         target = target.lower()
 
         if target in ("bootstrap", "all"):
-            run_bootstrap()
+            run_bootstrap(skip_supply_items=skip_supply_items)
 
         if target in ("demo", "all"):
             run_demo_data()
