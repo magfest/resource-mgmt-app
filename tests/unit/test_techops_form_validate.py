@@ -29,15 +29,15 @@ def test_submitting_with_an_unanswered_space_is_rejected_by_name():
     assert any("Expo Hall E" in e for e in errors)
 
 
-def test_an_unanswered_wifi_question_on_a_forced_space_is_rejected_like_a_bare_decline():
-    """Item 4: an untouched WiFi radio pair on a space with wired gear
-    must be refused the same way an explicit decline with no reason is,
-    since both leave TechOps without either a line or a stated reason."""
+def test_an_unanswered_wifi_question_on_a_forced_space_asks_for_an_answer():
+    """Gear in the room only matters once WiFi is declined. Leading with
+    "say why it needs no WiFi" sent requesters looking for a decline
+    they never made."""
     space = _space(display_name="Regdesk A", wifi_requested=None,
                    network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
-    assert space.wifi_requested is None
     errors = validate(_answers([space], action=ACTION_SUBMIT), has_space_cards=True)
-    assert any("Regdesk A" in e and "WiFi" in e for e in errors)
+    assert "Regdesk A: say whether this space needs WiFi." in errors
+    assert not any("say why it needs no WiFi" in e for e in errors)
 
 
 def test_an_unanswered_wifi_question_on_a_space_with_no_gear_is_rejected_by_name():
@@ -63,7 +63,8 @@ def test_declining_wifi_without_a_reason_is_rejected():
                    wifi_declined_reason="",
                    network_needed=NETWORK_YES, network_kinds=("COMPUTERS",))
     errors = validate(_answers([space], action=ACTION_SUBMIT), has_space_cards=True)
-    assert any("Regdesk A" in e and "WiFi" in e for e in errors)
+    assert ("Regdesk A: this room has wired network or phone gear, so say why "
+            "it needs no WiFi, or choose \"WiFi needed in this space\".") in errors
 
 
 def test_declining_wifi_is_fine_when_a_reason_is_given():
@@ -409,13 +410,17 @@ def test_a_payments_only_home_base_submits_but_payments_hide_no_other_empty_card
 def test_a_home_base_with_no_gear_is_told_why_wifi_is_forced():
     payments = PaymentsAnswer(home_space_id=1, checkout_points=2,
                               managing_department="Merch")
-    for wifi in (None, False):
-        home = _space(1, display_name="Merch Booth", wifi_requested=wifi)
-        errors = validate(replace(_submit(spaces=[home]), payments=payments),
-                          has_space_cards=True)
-        assert ("Merch Booth: this room is the payments home base, so say "
-                "why it needs no WiFi, or tick WiFi.") in errors
-        assert not any("wired gear" in e for e in errors)
+    home = _space(1, display_name="Merch Booth", wifi_requested=False)
+    errors = validate(replace(_submit(spaces=[home]), payments=payments),
+                      has_space_cards=True)
+    assert ("Merch Booth: this room is the payments home base, so say why it "
+            "needs no WiFi, or choose \"WiFi needed in this space\".") in errors
+    assert not any("phone gear" in e for e in errors)
+
+    unanswered = _space(1, display_name="Merch Booth", wifi_requested=None)
+    errors = validate(replace(_submit(spaces=[unanswered]), payments=payments),
+                      has_space_cards=True)
+    assert "Merch Booth: say whether this space needs WiFi." in errors
 
 
 def test_a_stale_home_base_is_refused_by_name():
