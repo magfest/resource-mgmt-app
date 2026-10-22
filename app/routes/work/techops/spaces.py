@@ -433,6 +433,10 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
         # and "needed" from a WIFI line's presence, which left a decline
         # typed with no reason indistinguishable from an untouched card.
         wifi_requested = row.wifi_requested if row is not None else None
+        # NULL here is a row saved before the column existed; its
+        # ETHERNET line is the only record of the answer.
+        network_needed = ((row.network_needed if row is not None else None)
+                          or extra["network"]["needed"])
         answer = SpaceAnswer(
             space_id=space.id,
             display_name=entry["display_name"],
@@ -444,7 +448,7 @@ def space_cards(work_item, department_id: int, event_cycle) -> list[dict]:
             wifi_requested=wifi_requested,
             wifi_declined_reason=(row.wifi_declined_reason or "") if row else "",
             wifi_description=extra["wifi_description"],
-            network_needed=extra["network"]["needed"],
+            network_needed=network_needed,
             network_kinds=extra["network"]["kinds"],
             network_count=extra["network"]["count"],
             network_traffic=extra["network"]["traffic"],

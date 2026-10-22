@@ -680,7 +680,31 @@ def test_the_forced_wifi_banner_no_longer_claims_wifi_was_auto_included(
     })
     body = response.get_data(as_text=True)
     assert "Included automatically" not in body
-    assert "This space has wired gear" in body
+    assert "This room has wired network or phone gear" in body
+
+
+def test_the_forced_wifi_callout_sits_inside_the_hidden_decline_field(
+        app, client, techops_portfolio):
+    """A forced card answered "WiFi needed" must not show the warning.
+    Requesters read it as an error on a card with nothing wrong."""
+    _login(client, "test:admin")
+    room = techops_portfolio["room"]
+    response = client.post(techops_portfolio["new_request_url"], data={
+        "primary_contact_email": "ada@magfest.org",
+        "action": "save_draft",
+        "space_ids": str(room.id),
+        f"space_{room.id}_answer": "NEEDS",
+        f"space_{room.id}_WIFI_enabled": "1",
+        f"space_{room.id}_NETWORK_needed": "YES",
+        f"space_{room.id}_NETWORK_kinds": "COMPUTERS",
+    })
+    body = response.get_data(as_text=True)
+    assert re.search(
+        r'data-wifi-declined-field\s+style="display:\s*none;"', body)
+    field = body.index("data-wifi-declined-field")
+    callout = body.index("data-wifi-forced-callout")
+    description = body.index("data-wifi-description-field")
+    assert field < callout < description
 
 
 def test_wifi_decline_reason_field_hidden_when_wifi_is_needed_not_declined(
@@ -1928,7 +1952,7 @@ def test_ethernet_and_phone_summaries_carry_the_catalog_description(
 
 def test_the_disclosure_marker_swaps_between_open_and_closed(app, client, techops_portfolio):
     """The glyph must actually change state, not just exist once: an
-    ethernet section with no saved drops (closed) and a phone section on
+    ethernet section left unanswered (closed) and a phone section on
     a request with a saved line (open) must render with the two different
     marker rules in play."""
     _login(client, "test:admin")
@@ -1938,7 +1962,6 @@ def test_the_disclosure_marker_swaps_between_open_and_closed(app, client, techop
         "action": "save_draft",
         "space_ids": str(room.id),
         f"space_{room.id}_answer": "NEEDS",
-        f"space_{room.id}_NETWORK_needed": "NO",
         f"space_{room.id}_PHONE_line_1_purpose": "VOICE",
         f"space_{room.id}_PHONE_line_1_usage": "Front desk",
     })
@@ -2298,8 +2321,8 @@ def test_a_home_base_with_no_gear_explains_wifi_by_payments(
     client.post(techops_portfolio["new_request_url"], data=data)
     item = techops_portfolio["latest_item"]()
     body = client.get(_item_url(techops_portfolio, item) + "/edit").get_data(as_text=True)
-    assert "This room is the payments home base, so WiFi needs an answer." in body
-    assert "This space has wired gear" not in body
+    assert "This room is the payments home base, so TechOps needs a reason to leave WiFi out." in body
+    assert "This room has wired network or phone gear" not in body
     assert "A printer here uses a network cable" not in body
 
 

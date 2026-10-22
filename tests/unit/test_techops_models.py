@@ -283,7 +283,7 @@ def test_request_space_declares_a_unique_constraint_on_item_and_space():
     assert cols == {
         "id", "work_item_id", "space_id", "answer",
         "no_services_reason", "wifi_requested", "wifi_declined_reason",
-        "notes",
+        "network_needed", "notes",
     }
     uniques = [c for c in TechOpsRequestSpace.__table__.constraints
                if c.__class__.__name__ == "UniqueConstraint"]

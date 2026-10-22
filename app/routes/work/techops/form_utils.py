@@ -883,6 +883,7 @@ def replace_spaces(work_item: "WorkItem", answers: "RequestAnswers") -> None:
             no_services_reason=space.no_services_reason or None,
             wifi_requested=space.wifi_requested,
             wifi_declined_reason=space.wifi_declined_reason or None,
+            network_needed=space.network_needed or None,
             notes=space.notes or None,
         ))
 
