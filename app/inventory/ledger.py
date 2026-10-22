@@ -8,20 +8,25 @@ update. Nothing here commits.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 
 from app import db
-from app.inventory.codes import normalize_code
+from app.inventory.codes import normalize_code, normalize_identifier
 from app.inventory.tree import would_cycle
 from app.models import (
     InvContainer, InvContainerKind, InvMovement, InvStock, InvUnit,
     InvUnitIdentifier, SupplyItem,
 )
 from app.models.constants import (
-    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_MOVE, INV_IDENT_FESTOPS_LABEL,
-    INV_IDENT_SERIAL,
+    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_MOVE, INV_CONDITION_IN_SERVICE,
+    INV_CONDITION_LOST, INV_CONDITION_REPAIR, INV_CONDITION_RETIRED,
+    INV_IDENT_UNIQUE_KINDS, INV_IDENT_VENDOR_TAG,
 )
+
+INV_CONDITIONS = (INV_CONDITION_IN_SERVICE, INV_CONDITION_REPAIR,
+                  INV_CONDITION_RETIRED, INV_CONDITION_LOST)
 
 
 class InventoryError(Exception):
@@ -138,36 +143,86 @@ def set_counted_quantity(item, container, counted, actor, count_id=None):
                      from_container_id=container.id, count_id=count_id)
 
 
+def _already_taken(normalized: str) -> InventoryError:
+    return InventoryError(f"{normalized} is already on another unit.")
+
+
+def _is_taken(unit: InvUnit, kind: str, normalized: str) -> bool:
+    """Report whether an active identifier already claims this code."""
+    query = (db.session.query(InvUnitIdentifier.id)
+             .filter(InvUnitIdentifier.kind == kind,
+                     InvUnitIdentifier.normalized_value == normalized,
+                     InvUnitIdentifier.retired_at.is_(None)))
+    if kind == INV_IDENT_VENDOR_TAG:
+        # A vendor tag is only unique within one vendor's numbering.
+        query = (query.join(InvUnit, InvUnit.id == InvUnitIdentifier.unit_id)
+                 .filter(InvUnit.vendor_name == unit.vendor_name))
+    return query.first() is not None
+
+
 def add_identifier(unit: InvUnit, kind: str, value: str) -> InvUnitIdentifier:
-    normalized = normalize_code(value)
+    try:
+        normalized = normalize_identifier(kind, value or "")
+    except ValueError as error:
+        raise InventoryError(str(error)) from error
     if not normalized:
         raise InventoryError("That code is blank.")
-    if kind == INV_IDENT_FESTOPS_LABEL:
-        taken = db.session.query(InvUnitIdentifier).filter_by(
-            kind=INV_IDENT_FESTOPS_LABEL, normalized_value=normalized, retired_at=None,
-        ).first()
-        if taken is not None:
-            raise InventoryError(f"{normalized} is already on another unit.")
+    if (kind in INV_IDENT_UNIQUE_KINDS or kind == INV_IDENT_VENDOR_TAG) \
+            and _is_taken(unit, kind, normalized):
+        raise _already_taken(normalized)
     identifier = InvUnitIdentifier(unit_id=unit.id, kind=kind, value=value.strip(),
                                    normalized_value=normalized)
-    db.session.add(identifier)
-    db.session.flush()
+    # The check above can lose a race; the partial unique index decides, and the
+    # savepoint keeps the caller's transaction usable after the loss.
+    try:
+        with db.session.begin_nested():
+            db.session.add(identifier)
+    except IntegrityError as error:
+        raise _already_taken(normalized) from error
+    # The identifiers collection may already be loaded and would miss this row.
+    db.session.expire(unit, ["identifiers"])
     return identifier
 
 
-def add_unit(item, container, actor, label_code, vendor_serial=None) -> InvUnit:
+def retire_identifier(identifier: InvUnitIdentifier) -> None:
+    """Free an identifier's code for reuse. The row stays as history."""
+    if identifier.retired_at is None:
+        identifier.retired_at = datetime.utcnow()
+        db.session.flush()
+
+
+def set_condition(unit: InvUnit, condition: str) -> None:
+    """Set a unit's lasting condition; retiring a unit retires its identifiers."""
+    if condition not in INV_CONDITIONS:
+        raise InventoryError(f"{condition} is not a condition.")
+    unit.condition = condition
+    if condition == INV_CONDITION_RETIRED:
+        for identifier in unit.identifiers:
+            retire_identifier(identifier)
+    db.session.flush()
+
+
+def add_unit(item, container, actor, identifiers: list[tuple[str, str]]) -> InvUnit:
+    """Create a unit from one or more (kind, value) identifiers.
+
+    The container may be None for gear that has not been shelved yet. A
+    refusal rolls back the unit it had started.
+    """
     if not item.is_serialized:
         raise InventoryError(
             f"{item.item_name} is counted stock; scan the item and enter a quantity.")
-    unit = InvUnit(item_id=item.id, current_container_id=container.id,
-                   created_by_user_id=actor.user_id)
-    db.session.add(unit)
-    db.session.flush()
-    add_identifier(unit, INV_IDENT_FESTOPS_LABEL, label_code)
-    if vendor_serial:
-        add_identifier(unit, INV_IDENT_SERIAL, vendor_serial)
-    _movement(INV_ACTION_ADD, actor, item_id=item.id, unit_id=unit.id,
-              to_container_id=container.id)
+    if not identifiers:
+        raise InventoryError("A unit needs at least one identifier.")
+    container_id = container.id if container else None
+    with db.session.begin_nested():
+        unit = InvUnit(item_id=item.id, current_container_id=container_id,
+                       created_by_user_id=actor.user_id)
+        db.session.add(unit)
+        db.session.flush()
+        for kind, value in identifiers:
+            add_identifier(unit, kind, value)
+        _movement(INV_ACTION_ADD, actor, item_id=item.id, unit_id=unit.id,
+                  to_container_id=container_id)
     return unit
 
 
