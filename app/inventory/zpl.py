@@ -14,7 +14,8 @@ SUPPORTED_DPI = (203, 300)
 
 # Narrow bar width in dots, about 0.01 in at each resolution.
 _MODULE_DOTS = {203: 2, 300: 3}
-# Code 128 for 15 characters plus a quiet zone each side fills the printable width at both resolutions; longer codes clip.
+# Code 128 for 15 characters plus a quiet zone each side fills the printable
+# width at both resolutions; longer codes clip.
 MAX_CODE_LENGTH = 15
 
 
@@ -30,14 +31,19 @@ def _dots(inches: float, dpi: int) -> int:
 
 
 def _field(text: str) -> str:
-    """Replace ^, ~ and control characters with spaces and cut to 40 characters; ZPL reads ^ and ~ as commands even inside field data."""
+    """Replace ^, ~ and control characters with spaces; cut to 40 characters.
+
+    ZPL reads ^ and ~ as commands even inside field data.
+    """
     for ch in ("^", "~", "\r", "\n", "\t"):
         text = text.replace(ch, " ")
     return text[:40]
 
 
 def _barcode_data(code: str) -> str:
-    """Return the code for the barcode, refusing any value the barcode would encode differently."""
+    """Return the code for the barcode, refusing any value the barcode
+    would encode differently.
+    """
     if (
         not code
         or len(code) > MAX_CODE_LENGTH
