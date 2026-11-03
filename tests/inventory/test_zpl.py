@@ -23,3 +23,20 @@ def test_unsupported_dpi_is_refused_and_batches_join():
     batch = render_batch([LabelSpec("C-0001", "C-0001", None),
                           LabelSpec("C-0002", "C-0002", None)], 300)
     assert batch.count("^XA") == 2
+
+
+@pytest.mark.parametrize("code", ["", "C-" + "1" * 14, "A>5B", "A^B", "A~B", "CAFÉ-1"])
+def test_codes_the_barcode_would_change_are_refused(code):
+    with pytest.raises(ValueError):
+        render_label(LabelSpec(code, "x", None), 300)
+
+
+def test_a_fifteen_character_code_prints_unchanged():
+    code = "C-" + "1" * 13
+    zpl = render_label(LabelSpec(code, "x", None), 300)
+    assert "^FD" + code + "^FS" in zpl
+
+
+def test_line_breaks_in_names_become_spaces():
+    zpl = render_label(LabelSpec("C-0001", "C-0001", "Bin\nA"), 300)
+    assert "^FDBin A^FS" in zpl

@@ -12,9 +12,10 @@ LABEL_WIDTH_IN = 2.25
 LABEL_HEIGHT_IN = 1.25
 SUPPORTED_DPI = (203, 300)
 
-# Narrow bar width in dots, about 0.01 in at each resolution. Code 128 for an
-# 8-character code then spans about 1.1 in, inside the 2.05 in printable width.
+# Narrow bar width in dots, about 0.01 in at each resolution.
 _MODULE_DOTS = {203: 2, 300: 3}
+# Code 128 for 15 characters plus a quiet zone each side fills the printable width at both resolutions; longer codes clip.
+MAX_CODE_LENGTH = 15
 
 
 @dataclass(frozen=True)
@@ -29,8 +30,22 @@ def _dots(inches: float, dpi: int) -> int:
 
 
 def _field(text: str) -> str:
-    """Strip ^ and ~, which ZPL reads as commands even inside field data."""
-    return text.replace("^", " ").replace("~", " ")[:40]
+    """Replace ^, ~ and control characters with spaces and cut to 40 characters; ZPL reads ^ and ~ as commands even inside field data."""
+    for ch in ("^", "~", "\r", "\n", "\t"):
+        text = text.replace(ch, " ")
+    return text[:40]
+
+
+def _barcode_data(code: str) -> str:
+    """Return the code for the barcode, refusing any value the barcode would encode differently."""
+    if (
+        not code
+        or len(code) > MAX_CODE_LENGTH
+        or any(not 33 <= ord(ch) <= 126 for ch in code)
+        or any(ch in code for ch in "^~>")
+    ):
+        raise ValueError(f"Label code {code!r} cannot be printed as a barcode.")
+    return code
 
 
 def render_label(spec: LabelSpec, dpi: int) -> str:
@@ -45,7 +60,7 @@ def render_label(spec: LabelSpec, dpi: int) -> str:
         "^XA", "^CI28",
         f"^PW{_dots(LABEL_WIDTH_IN, dpi)}", f"^LL{_dots(LABEL_HEIGHT_IN, dpi)}", "^LH0,0",
         f"^FO{margin},{margin}^BY{_MODULE_DOTS[dpi]},3,{bar_h}"
-        f"^BCN,{bar_h},N,N,N^FD{_field(spec.code)}^FS",
+        f"^BCN,{bar_h},N,N,N^FD{_barcode_data(spec.code)}^FS",
         f"^FO{margin},{title_y}^A0N,{title_h},{title_h}^FD{_field(spec.title)}^FS",
     ]
     if spec.subtitle:
