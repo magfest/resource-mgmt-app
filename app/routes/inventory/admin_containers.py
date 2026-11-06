@@ -73,7 +73,7 @@ def create_containers():
         flash(str(exc), "error")
         return redirect(url_for("inventory.containers"))
     db.session.commit()
-    flash(f"Created {', '.join(codes)}.", "success")
+    flash(f"Created {', '.join(codes)}. Print their labels on the Labels page.", "success")
     return redirect(url_for("inventory.containers"))
 
 

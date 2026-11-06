@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Containers</h1>
 <div class="muted mb-16">
-  Create containers here in batches. Use Edit to rename a container or
+  Create containers here in batches, then print their labels. Use Edit to rename a container or
   move it inside another.
 </div>
 <form method="post" action="{{ url_for('inventory.create_containers') }}" class="card mb-16">
@@ -28,6 +28,7 @@
       {{ stock_lines.get(c.id, 0) }} stock lines, {{ unit_counts.get(c.id, 0) }} units
     </span>
     <a class="btn btn-small" href="{{ url_for('inventory.containers', edit=c.id) }}#container-{{ c.id }}">Edit</a>
+    <a class="btn btn-small" href="{{ url_for('inventory.labels', codes=c.label_code) }}">Label</a>
     {% if edit_id == c.id %}
     <form method="post" action="{{ url_for('inventory.update_container', container_id=c.id) }}" class="card">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

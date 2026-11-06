@@ -1,0 +1,47 @@
+{% extends "layout/base.html" %}
+{% block title %}Print labels - Inventory{% endblock %}
+{% block content %}
+<h1>{{ specs|length }} labels at {{ dpi }} dpi</h1>
+{% if unknown %}
+<div class="card mb-16"><strong>Not printed, no record holds these codes:</strong> {{ unknown|join(', ') }}</div>
+{% endif %}
+<div class="mb-16">
+  <button type="button" class="btn btn-primary" id="send-zpl">Send to printer</button>
+  <button type="button" class="btn" id="download-zpl">Download .zpl</button>
+  <span id="print-status" class="muted"></span>
+</div>
+<div class="muted small mb-16">
+  Without Browser Print: download the file and send it to the printer with Zebra Setup Utilities.
+</div>
+<ul>{% for s in specs %}<li><code>{{ s.code }}</code> {{ s.subtitle or '' }}</li>{% endfor %}</ul>
+<textarea id="zpl" hidden>{{ zpl }}</textarea>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    var zpl = document.getElementById('zpl').value;
+    var status = document.getElementById('print-status');
+    // Browser Print's local HTTP API; confirmed in the hardware test.
+    var agent = 'http://localhost:9100';
+    document.getElementById('send-zpl').addEventListener('click', function () {
+      status.textContent = 'Sending...';
+      fetch(agent + '/default?type=printer')
+        .then(function (r) { if (!r.ok) throw new Error('no printer'); return r.json(); })
+        .then(function (device) {
+          return fetch(agent + '/write', { method: 'POST', body: JSON.stringify({ device: device, data: zpl }) });
+        })
+        .then(function (r) {
+          if (!r.ok) throw new Error('write failed');
+          status.textContent = 'Sent. Check the printer.';
+        })
+        .catch(function () {
+          status.textContent = 'Browser Print is not reachable, or it has not accepted this site. Use Download .zpl instead.';
+        });
+    });
+    document.getElementById('download-zpl').addEventListener('click', function () {
+      var link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([zpl], { type: 'text/plain' }));
+      link.download = 'labels.zpl';
+      link.click();
+    });
+  })();
+</script>
+{% endblock %}

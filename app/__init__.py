@@ -370,6 +370,11 @@ def create_app() -> Flask:
             "base-uri 'self'",
             "object-src 'none'",
         ]
+        # Zebra Browser Print listens on localhost. Only the labels page opts
+        # in; every other page keeps default-src 'self' for fetches.
+        connect_extra = getattr(g, "csp_connect_src_extra", None)
+        if connect_extra:
+            csp_directives.append("connect-src 'self' " + " ".join(connect_extra))
         if not self_policing:
             response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
 
@@ -394,6 +399,8 @@ def create_app() -> Flask:
         Usage: <script nonce="{{ csp_nonce }}">...</script>
         """
         g.csp_nonce = stdlib_secrets.token_urlsafe(32)
+        # Test clients share one app context, so g outlives a request there.
+        g.csp_connect_src_extra = None
 
     # --- Scanner / bot flood protection ---
     # Two layers:
