@@ -105,11 +105,6 @@ INV_IDENT_SERIAL = "SERIAL"
 INV_IDENT_MAC = "MAC"
 INV_IDENT_UNIQUE_KINDS = (INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG)
 
-# A code is a MAGFest tag only when its letters match a listed prefix, so a
-# serial such as ABC123 is never mistaken for one. Prefix list as of October 2026.
-MAGFEST_TAG_PREFIXES = ("NET", "TECH")
-MAGFEST_TAG_WIDTH = 5
-
 INV_DISCARD_REASONS = ("DRIED_OUT", "BROKEN", "EXPIRED", "OTHER")
 
 # A scanner station. Look up shows what a scan is. Count records quantities in

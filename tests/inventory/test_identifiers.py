@@ -2,7 +2,7 @@
 import pytest
 
 from app import db
-from app.inventory.codes import magfest_tag, normalize_identifier, normalize_mac
+from app.inventory.codes import normalize_identifier, normalize_mac
 from app.inventory.describe import describe_movement, unit_tag
 from app.inventory.ledger import (
     Actor, InventoryError, add_identifier, add_unit, retire_identifier,
@@ -16,11 +16,10 @@ ACTOR = Actor(user_id="test:invadmin")
 
 
 @pytest.mark.parametrize("raw,expected", [
-    ("net0001", "NET00001"), ("NET00001", "NET00001"), (" tech412 ", "TECH00412"),
-    ("ABC123", None), ("NET123456", None), ("NET0", None), ("C-0001", None),
-    (None, None)])
-def test_magfest_tag(raw, expected):
-    assert magfest_tag(raw) == expected
+    (" lat100081 ", "LAT100081"), ("FEST00001", "FEST00001"),
+    ("net0001", "NET0001"), ("NET00001", "NET00001"), ("A1-B2", "A1-B2")])
+def test_a_magfest_tag_is_the_text_on_the_barcode(raw, expected):
+    assert normalize_identifier("MAGFEST_TAG", raw) == expected
 
 
 def test_mac_accepts_separators_and_refuses_junk():
@@ -30,18 +29,15 @@ def test_mac_accepts_separators_and_refuses_junk():
 
 
 def test_normalize_identifier_speaks_to_the_operator():
-    assert normalize_identifier("MAGFEST_TAG", "net0001") == "NET00001"
     assert normalize_identifier("MAC", "aa-bb-cc-dd-ee-0f") == "AABBCCDDEE0F"
     assert normalize_identifier("SERIAL", " abc 123 ") == "ABC 123"
-    with pytest.raises(ValueError, match="net0 is not a MAGFest tag"):
-        normalize_identifier("MAGFEST_TAG", "net0")
     with pytest.raises(ValueError, match="AABBCC is not a MAC address"):
         normalize_identifier("MAC", "AABBCC")
 
 
 def test_unit_from_a_tag_alone_and_tag_reuse_refused(inv):
     bin_ = make_container(inv, "C-0001", kind="BIN")
-    unit = add_unit(inv.laptop, bin_, ACTOR, [("MAGFEST_TAG", "tech0001")])
+    unit = add_unit(inv.laptop, bin_, ACTOR, [("MAGFEST_TAG", "tech00001")])
     assert unit_tag(unit) == "TECH00001"
     with pytest.raises(InventoryError, match="already on another unit"):
         add_unit(inv.laptop, bin_, ACTOR, [("MAGFEST_TAG", "TECH00001")])
@@ -49,10 +45,10 @@ def test_unit_from_a_tag_alone_and_tag_reuse_refused(inv):
         add_unit(inv.laptop, bin_, ACTOR, [])
 
 
-def test_invalid_tag_surfaces_as_an_inventory_error(inv):
+def test_a_blank_tag_surfaces_as_an_inventory_error(inv):
     bin_ = make_container(inv, "C-0001", kind="BIN")
-    with pytest.raises(InventoryError, match="not a MAGFest tag"):
-        add_unit(inv.laptop, bin_, ACTOR, [("MAGFEST_TAG", "net0")])
+    with pytest.raises(InventoryError, match="blank"):
+        add_unit(inv.laptop, bin_, ACTOR, [("MAGFEST_TAG", "   ")])
 
 
 def test_unit_can_start_without_a_container(inv):
@@ -73,7 +69,7 @@ def test_unit_tag_prefers_tag_then_label_then_serial(inv):
         ("SERIAL", "sn-1"), ("FESTOPS_LABEL", "U-00001")])
     assert unit_tag(unit) == "U-00001"
     add_identifier(unit, "MAGFEST_TAG", "net7")
-    assert unit_tag(unit) == "NET00007"
+    assert unit_tag(unit) == "NET7"
     for identifier in list(unit.identifiers):
         retire_identifier(identifier)
     assert unit_tag(unit) == f"unit {unit.id}"
@@ -83,7 +79,7 @@ def test_retired_tag_can_be_reused(inv):
     unit = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
     retire_identifier(unit.identifiers[0])
     other = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
-    assert unit_tag(other) == "NET00001"
+    assert unit_tag(other) == "NET1"
 
 
 def test_vendor_tag_is_unique_per_vendor_only(inv):
@@ -137,12 +133,12 @@ def test_losing_the_uniqueness_race_is_an_inventory_error(inv, monkeypatch):
     add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
     db.session.commit()
     monkeypatch.setattr(ledger, "_is_taken", lambda *args: False)
-    with pytest.raises(InventoryError, match="NET00001 is already on another unit"):
+    with pytest.raises(InventoryError, match="NET1 is already on another unit"):
         add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
     # SQLite has no savepoint here, so the caller rolls back, as a route does.
     db.session.rollback()
     assert InvUnit.query.count() == 1
-    assert unit_tag(InvUnit.query.one()) == "NET00001"
+    assert unit_tag(InvUnit.query.one()) == "NET1"
 
 
 def test_rollback_after_the_first_write_removes_the_unit(inv):
