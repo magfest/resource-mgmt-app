@@ -4,11 +4,13 @@
 <h1>Labels</h1>
 <div class="muted mb-16">
   New labels reserve the next codes and are bound when first scanned.
-  Reprint replaces a faded label with the same code. Use S-18452 removable
+  Reprint replaces a faded label with the same code.
+  To print a label for an existing container, use Reprint. Use S-18452 removable
   stock for rental and smooth-gear U- labels, and S-6801 permanent stock for
   containers; removable stock does not hold on recycled cardboard.
   The first print from a laptop makes Browser Print ask to accept this site; accept it once.
 </div>
+{% set new_form %}
 <form method="post" action="{{ url_for('inventory.new_labels') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <strong>New labels</strong>
@@ -27,6 +29,8 @@
   </div>
   <button type="submit" class="btn btn-primary">Reserve and show</button>
 </form>
+{% endset %}
+{% set reprint_form %}
 <form method="post" action="{{ url_for('inventory.reprint_labels') }}" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <strong>Reprint</strong>
@@ -37,6 +41,8 @@
   </select></label>
   <button type="submit" class="btn btn-primary">Show labels</button>
 </form>
+{% endset %}
+{% if prefill %}{{ reprint_form }}{{ new_form }}{% else %}{{ new_form }}{{ reprint_form }}{% endif %}
 <script nonce="{{ csp_nonce }}">
   // Each print station remembers its own printer resolution.
   document.querySelectorAll('.dpi-select').forEach(function (sel) {

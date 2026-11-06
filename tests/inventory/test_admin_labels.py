@@ -1,4 +1,5 @@
 from app import db
+from app.inventory.labels import parse
 from app.inventory.ledger import Actor, add_unit
 from app.models import InvLabelSequence
 from tests.inventory.helpers import login, make_container
@@ -14,12 +15,13 @@ def test_new_batch_allocates_codes_and_returns_zpl(client, inv):
 
 def test_reprint_uses_existing_codes_and_refuses_unknown(client, inv):
     make_container(inv, "C-0001", name="Main Warehouse", kind="LOCATION")
+    db.session.commit()
     login(client, "test:invadmin")
-    response = client.post("/inv/admin/labels/zpl", data={
-        "codes": "c-0001\nC-0999", "dpi": "203"})
-    body = response.get_data(as_text=True)
-    assert response.headers["Content-Disposition"].startswith("attachment")
-    assert "Main Warehouse" in body and "C-0999" not in body
+    html = client.post("/inv/admin/labels/reprint", data={
+        "codes": "c-0001\nC-0999", "dpi": "203"}).get_data(as_text=True)
+    assert "Main Warehouse" in html and "^PW457" in html
+    assert "Not printed" in html and "C-0999" in html
+    assert "^FDC-0999" not in html
 
 
 def test_only_the_labels_page_may_reach_browser_print(client, inv):
@@ -28,6 +30,34 @@ def test_only_the_labels_page_may_reach_browser_print(client, inv):
     other_csp = client.get("/inv/admin/kinds").headers["Content-Security-Policy"]
     assert "connect-src 'self' http://localhost:9100" in labels_csp
     assert "localhost:9100" not in other_csp
+
+
+def test_the_batch_page_may_reach_browser_print(client, inv):
+    login(client, "test:invadmin")
+    response = client.post("/inv/admin/labels/new", data={"prefix": "U", "count": "1"})
+    assert "connect-src 'self' http://localhost:9100" in response.headers["Content-Security-Policy"]
+
+
+def test_creating_containers_lands_on_the_reprint_form(client, inv):
+    login(client, "test:invadmin")
+    response = client.post("/inv/admin/containers", data={
+        "kind_id": str(inv.kinds["PALLET"].id), "count": "2"})
+    assert response.status_code == 302
+    assert "/inv/admin/labels" in response.headers["Location"]
+    html = client.get(response.headers["Location"]).get_data(as_text=True)
+    area = html[html.index("<textarea"):html.index("</textarea>")]
+    assert "C-0001" in area and "C-0002" in area
+
+
+def test_a_batch_of_only_unknown_codes_prints_nothing(client, inv):
+    login(client, "test:invadmin")
+    html = client.post("/inv/admin/labels/reprint",
+                       data={"codes": "C-0999"}).get_data(as_text=True)
+    assert "Nothing to print." in html and "send-zpl" not in html
+
+
+def test_unicode_digits_are_not_a_label_code():
+    assert parse("I-\u0661\u0662") is None
 
 
 def test_reprint_finds_a_unit_label(client, inv):

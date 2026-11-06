@@ -73,8 +73,8 @@ def create_containers():
         flash(str(exc), "error")
         return redirect(url_for("inventory.containers"))
     db.session.commit()
-    flash(f"Created {', '.join(codes)}. Print their labels on the Labels page.", "success")
-    return redirect(url_for("inventory.containers"))
+    flash(f"Created {', '.join(codes)}. Their codes are filled in under Reprint.", "success")
+    return redirect(url_for("inventory.labels", codes="\n".join(codes)))
 
 
 @inventory_bp.post("/admin/containers/<int:container_id>")

@@ -1,11 +1,11 @@
 """Print new label batches and reprint existing codes as ZPL.
 
 The app renders ZPL; the print-station laptop delivers it. Browser Print, a
-Zebra agent on localhost, is used when present; otherwise the operator
-downloads a .zpl file and sends it with Zebra Setup Utilities. Heroku cannot reach the
-warehouse LAN, so the server never talks to a printer.
+Zebra agent on localhost, is used when present. Otherwise the operator
+downloads a .zpl file and sends it with Zebra Setup Utilities. Heroku cannot
+reach the warehouse LAN, so the server never talks to a printer.
 """
-from flask import Response, flash, g, redirect, request, url_for
+from flask import flash, g, redirect, request, url_for
 
 from app import db
 from app.inventory.codes import normalize_code
@@ -93,12 +93,3 @@ def new_labels():
 def reprint_labels():
     specs, unknown = _specs_from_codes(request.form.get("codes"))
     return _batch_page(specs, _dpi(), unknown)
-
-
-@inventory_bp.post("/admin/labels/zpl")
-@require_inventory_admin
-def download_zpl():
-    """Plain-form download, for a laptop without Browser Print or JavaScript."""
-    specs, _ = _specs_from_codes(request.form.get("codes"))
-    return Response(render_batch(specs, _dpi()), mimetype="text/plain",
-                    headers={"Content-Disposition": "attachment; filename=labels.zpl"})

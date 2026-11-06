@@ -22,7 +22,7 @@ PREFIX_ITEM = "I"
 WIDTHS = {PREFIX_CONTAINER: 4, PREFIX_UNIT: 5, PREFIX_ITEM: 4}
 MAX_BATCH = 500
 
-_CODE = re.compile(r"^([CUI])-(\d{1,9})$")
+_CODE = re.compile(r"^([CUI])-(\d{1,9})$", re.ASCII)
 
 
 def format_code(prefix: str, number: int) -> str:

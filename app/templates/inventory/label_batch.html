@@ -1,10 +1,11 @@
 {% extends "layout/base.html" %}
 {% block title %}Print labels - Inventory{% endblock %}
 {% block content %}
-<h1>{{ specs|length }} labels at {{ dpi }} dpi</h1>
+<h1>{{ specs|length }} label{{ '' if specs|length == 1 else 's' }} at {{ dpi }} dpi</h1>
 {% if unknown %}
 <div class="card mb-16"><strong>Not printed, no record holds these codes:</strong> {{ unknown|join(', ') }}</div>
 {% endif %}
+{% if specs %}
 <div class="mb-16">
   <button type="button" class="btn btn-primary" id="send-zpl">Send to printer</button>
   <button type="button" class="btn" id="download-zpl">Download .zpl</button>
@@ -13,13 +14,17 @@
 <div class="muted small mb-16">
   Without Browser Print: download the file and send it to the printer with Zebra Setup Utilities.
 </div>
+{% else %}
+<p>Nothing to print.</p>
+{% endif %}
 <ul>{% for s in specs %}<li><code>{{ s.code }}</code> {{ s.subtitle or '' }}</li>{% endfor %}</ul>
 <textarea id="zpl" hidden>{{ zpl }}</textarea>
+{% if specs %}
 <script nonce="{{ csp_nonce }}">
   (function () {
     var zpl = document.getElementById('zpl').value;
     var status = document.getElementById('print-status');
-    // Browser Print's local HTTP API; confirmed in the hardware test.
+    // Browser Print's local HTTP API.
     var agent = 'http://localhost:9100';
     document.getElementById('send-zpl').addEventListener('click', function () {
       status.textContent = 'Sending...';
@@ -44,4 +49,5 @@
     });
   })();
 </script>
+{% endif %}
 {% endblock %}
