@@ -17,7 +17,7 @@
 {% else %}
 <p>Nothing to print.</p>
 {% endif %}
-<ul>{% for s in specs %}<li><code>{{ s.code }}</code> {{ s.subtitle or '' }}</li>{% endfor %}</ul>
+<ul>{% for s in specs %}<li><code>{{ s.code }}</code> {{ s.rows|map('last')|join(', ') }}</li>{% endfor %}</ul>
 <textarea id="zpl" hidden>{{ zpl }}</textarea>
 {% if specs %}
 <script nonce="{{ csp_nonce }}">

@@ -10,7 +10,7 @@ def test_new_batch_allocates_codes_and_returns_zpl(client, inv):
     html = client.post("/inv/admin/labels/new", data={
         "prefix": "U", "count": "2", "dpi": "300"}).get_data(as_text=True)
     assert "U-00001" in html and "U-00002" in html
-    assert "^PW675" in html
+    assert "^PW600" in html
 
 
 def test_reprint_uses_existing_codes_and_refuses_unknown(client, inv):
@@ -19,7 +19,7 @@ def test_reprint_uses_existing_codes_and_refuses_unknown(client, inv):
     login(client, "test:invadmin")
     html = client.post("/inv/admin/labels/reprint", data={
         "codes": "c-0001\nC-0999", "dpi": "203"}).get_data(as_text=True)
-    assert "Main Warehouse" in html and "^PW457" in html
+    assert "Main Warehouse" in html and "^PW406" in html
     assert "Not printed" in html and "C-0999" in html
     assert "^FDC-0999" not in html
 
@@ -77,3 +77,15 @@ def test_a_bad_count_is_refused_and_reserves_nothing(client, inv):
     assert response.status_code == 302
     row = db.session.get(InvLabelSequence, "U")
     assert row is None or row.next_value == 1
+
+
+def test_reprint_finds_a_unit_by_its_magfest_tag(client, inv):
+    add_unit(inv.laptop, None, Actor(user_id="test:invadmin"),
+             [("FESTOPS_LABEL", "U-00001"), ("MAGFEST_TAG", "FEST00001"),
+              ("SERIAL", "SN-1")])
+    db.session.commit()
+    login(client, "test:invadmin")
+    for code in ("fest00001", "u-00001"):
+        html = client.post("/inv/admin/labels/reprint", data={"codes": code}).get_data(as_text=True)
+        assert "^FDFEST00001^FS" in html and "^FDSN-1^FS" in html
+        assert "Return to MAGFest FestOps" in html and "^FDPrinted^FS" in html

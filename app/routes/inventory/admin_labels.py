@@ -10,9 +10,12 @@ from flask import flash, g, redirect, request, url_for
 from app import db
 from app.inventory.codes import normalize_code
 from app.inventory.labels import MAX_BATCH, PREFIX_CONTAINER, PREFIX_ITEM, PREFIX_UNIT, allocate, parse
+from app.inventory.printing import (
+    fields_for_container, fields_for_item, fields_for_unit, local_today, unit_number,
+)
 from app.inventory.zpl import SUPPORTED_DPI, LabelSpec, render_batch
 from app.models import InvContainer, InvUnitIdentifier, SupplyItem
-from app.models.constants import INV_IDENT_FESTOPS_LABEL
+from app.models.constants import INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG
 
 from . import inventory_bp
 from .helpers import render_inventory_page, require_inventory_admin
@@ -25,25 +28,28 @@ def _dpi() -> int:
     return dpi if dpi in SUPPORTED_DPI else 300
 
 
+def _spec(code: str, fields: dict, printed: bool = False) -> LabelSpec:
+    rows = [tuple(row) for row in fields["rows"]]
+    if printed:
+        rows.append(("Printed", local_today().isoformat()))
+    return LabelSpec(code, tuple(rows), fields["footer"])
+
+
 def _spec_for(code: str) -> LabelSpec | None:
     """Return the label for an existing code, or None when nothing holds it."""
     parsed = parse(code)
-    if parsed is None:
-        return None
-    prefix = parsed[0]
-    if prefix == PREFIX_CONTAINER:
+    if parsed is not None and parsed[0] == PREFIX_CONTAINER:
         c = db.session.query(InvContainer).filter_by(label_code=code).first()
-        if c:
-            return LabelSpec(code, code, f"{c.kind.name} {c.name}" if c.name else c.kind.name)
-    elif prefix == PREFIX_UNIT:
-        ident = db.session.query(InvUnitIdentifier).filter_by(
-            kind=INV_IDENT_FESTOPS_LABEL, normalized_value=code, retired_at=None).first()
-        if ident:
-            return LabelSpec(code, code, ident.unit.item.item_name)
-    elif prefix == PREFIX_ITEM:
+        return _spec(code, fields_for_container(c)) if c else None
+    if parsed is not None and parsed[0] == PREFIX_ITEM:
         item = db.session.query(SupplyItem).filter_by(barcode=code).first()
-        if item:
-            return LabelSpec(code, code, item.item_name)
+        return _spec(code, fields_for_item(item)) if item else None
+    ident = db.session.query(InvUnitIdentifier).filter(
+        InvUnitIdentifier.kind.in_((INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG)),
+        InvUnitIdentifier.normalized_value == code,
+        InvUnitIdentifier.retired_at.is_(None)).first()
+    if ident:
+        return _spec(unit_number(ident.unit) or code, fields_for_unit(ident.unit), printed=True)
     return None
 
 
@@ -85,7 +91,7 @@ def new_labels():
         return redirect(url_for("inventory.labels"))
     codes = allocate(prefix, count)
     db.session.commit()
-    return _batch_page([LabelSpec(c, c, None) for c in codes], _dpi())
+    return _batch_page([LabelSpec(c, (), None) for c in codes], _dpi())
 
 
 @inventory_bp.post("/admin/labels/reprint")

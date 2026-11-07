@@ -6,16 +6,20 @@ collection and never stored. Nothing here commits. Times are naive UTC.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.inventory.ledger import Actor, InventoryError, savepoint
+from app.inventory.zpl import LabelSpec, render_label
 from app.models import InvPrinter, InvPrintJob, InvPrintRoute
 from app.models.constants import (
     INV_JOB_CANCELLED, INV_JOB_CLAIMED, INV_JOB_FAILED, INV_JOB_QUEUED,
-    INV_JOB_SENT, INV_JOB_SOURCE_SCAN, INV_JOB_TYPES,
+    INV_JOB_SENT, INV_JOB_SOURCE_SCAN, INV_JOB_TYPES, INV_IDENT_FESTOPS_LABEL,
+    INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL, INV_IDENT_VENDOR_TAG,
+    INV_OWNERSHIP_RENTED,
 )
 
 CLAIM_TIMEOUT = timedelta(seconds=60)
@@ -23,6 +27,65 @@ COLLECT_LIMIT = 10
 STATION_SEEN_WITHIN = timedelta(seconds=15)
 NO_REPORT = "No report from the print station."
 _ERROR_MAX = 200
+
+FOOTER_OWNED = "Return to MAGFest FestOps"
+FOOTER_RENTED = "Rented unit. Return to MAGFest FestOps"
+# The printed date is the event's local date; the server clock is UTC.
+INV_LOCAL_TZ = "America/New_York"
+
+
+def local_today() -> date:
+    return datetime.now(ZoneInfo(INV_LOCAL_TZ)).date()
+
+
+def _active_value(unit, kind: str) -> str | None:
+    for ident in unit.identifiers:
+        if ident.kind == kind and ident.retired_at is None:
+            return ident.value
+    return None
+
+
+def unit_number(unit) -> str | None:
+    """Return the number printed on a unit: its MAGFest tag, else its FestOps label.
+
+    Retired identifiers are skipped; a corrected tag must not print again.
+    """
+    return (_active_value(unit, INV_IDENT_MAGFEST_TAG)
+            or _active_value(unit, INV_IDENT_FESTOPS_LABEL))
+
+
+def fields_for_unit(unit) -> dict:
+    """Return the label rows and footer for a unit. Blank rows are left out."""
+    rows = [["Type", unit.item.item_name]]
+    rented = unit.ownership == INV_OWNERSHIP_RENTED
+    tag = _active_value(unit, INV_IDENT_VENDOR_TAG) if rented else None
+    if tag:
+        rows.append(["Vendor tag", f"{unit.vendor_name}: {tag}" if unit.vendor_name else tag])
+    serial = _active_value(unit, INV_IDENT_SERIAL)
+    if serial:
+        rows.append(["Serial", serial])
+    return {"rows": rows, "footer": FOOTER_RENTED if rented else FOOTER_OWNED}
+
+
+def fields_for_container(container) -> dict:
+    rows = [["Kind", container.kind.name]]
+    if container.name:
+        rows.append(["Name", container.name])
+    return {"rows": rows, "footer": None}
+
+
+def fields_for_item(item) -> dict:
+    return {"rows": [["Type", item.item_name]], "footer": None}
+
+
+def render_job(job: InvPrintJob) -> str:
+    """Render a queued job as ZPL for its printer."""
+    rows = [tuple(row) for row in job.fields.get("rows", [])]
+    if job.printed_date:
+        rows.append(("Printed", job.printed_date.isoformat()))
+    printer = job.printer
+    spec = LabelSpec(job.code, tuple(rows), job.fields.get("footer"))
+    return render_label(spec, printer.dpi, float(printer.width_in), float(printer.height_in))
 
 
 def printer_for(job_type: str) -> InvPrinter:

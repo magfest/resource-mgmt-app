@@ -174,3 +174,68 @@ def test_status_reports_an_absent_station_and_waiting_jobs(inv):
     assert printer_status(printer, now=T0) == {"station_seen": False, "waiting": 2}
     device.last_seen_at = T0 - timedelta(seconds=5)
     assert printer_status(printer, now=T0)["station_seen"] is True
+
+
+def _unit(inv, idents, **kw):
+    from app.inventory.ledger import add_unit
+    unit = add_unit(inv.laptop, None, NO_ONE, idents)
+    for key, value in kw.items():
+        setattr(unit, key, value)
+    db.session.flush()
+    return unit
+
+
+def test_unit_number_prefers_the_active_tag_and_skips_a_retired_one(inv):
+    from app.inventory.printing import unit_number
+    unit = _unit(inv, [("FESTOPS_LABEL", "U-00001"), ("MAGFEST_TAG", "FEST00001")])
+    assert unit_number(unit) == "FEST00001"
+    for ident in unit.identifiers:
+        if ident.kind == "MAGFEST_TAG":
+            ident.retired_at = T0
+    assert unit_number(unit) == "U-00001"
+
+
+def test_unit_fields_leave_out_blanks_and_pick_the_footer(inv):
+    from app.inventory.printing import FOOTER_OWNED, FOOTER_RENTED, fields_for_unit
+    owned = _unit(inv, [("FESTOPS_LABEL", "U-00001")])
+    assert fields_for_unit(owned) == {"rows": [["Type", "Laptop"]], "footer": FOOTER_OWNED}
+    rented = _unit(inv, [("FESTOPS_LABEL", "R-00038"), ("VENDOR_TAG", "A0038"),
+                         ("SERIAL", "SN1")], ownership="RENTED", vendor_name="Vendor A")
+    fields = fields_for_unit(rented)
+    assert fields["rows"] == [["Type", "Laptop"], ["Vendor tag", "Vendor A: A0038"],
+                              ["Serial", "SN1"]]
+    assert fields["footer"] == FOOTER_RENTED
+    rented.vendor_name = None
+    assert ["Vendor tag", "A0038"] in fields_for_unit(rented)["rows"]
+
+
+def test_container_and_item_fields_carry_no_footer(inv):
+    from app.inventory.printing import fields_for_container, fields_for_item
+    from tests.inventory.helpers import make_container
+    named = make_container(inv, "C-0001", name="Main")
+    plain = make_container(inv, "C-0002")
+    assert fields_for_container(named) == {"rows": [["Kind", "Pallet"], ["Name", "Main"]],
+                                           "footer": None}
+    assert fields_for_container(plain)["rows"] == [["Kind", "Pallet"]]
+    assert fields_for_item(inv.laptop) == {"rows": [["Type", "Laptop"]], "footer": None}
+
+
+def test_render_job_adds_the_printed_date_row_only_when_the_job_has_one(inv):
+    from datetime import date
+    from app.inventory.printing import render_job
+    printer = _printer("Big", _station(), INV_JOB_OWNED_UNIT)
+    printer.height_in, printer.width_in, printer.dpi = 3, 2, 300
+    db.session.flush()
+    fields = {"rows": [["Type", "Laptop"]], "footer": None}
+    dated = request_label(INV_JOB_OWNED_UNIT, "FEST00001", fields, NO_ONE,
+                          INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
+    undated = request_label(INV_JOB_OWNED_UNIT, "FEST00002", fields, NO_ONE,
+                            INV_JOB_SOURCE_SCAN)
+    assert "^FD2026-11-07^FS" in render_job(dated) and "^PW600" in render_job(dated)
+    assert "Printed" not in render_job(undated)
+
+
+def test_local_today_is_a_date():
+    from datetime import date
+    from app.inventory.printing import local_today
+    assert isinstance(local_today(), date)

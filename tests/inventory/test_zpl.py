@@ -1,42 +1,94 @@
+import re
+
 import pytest
 
-from app.inventory.zpl import LabelSpec, render_batch, render_label
+from app.inventory.zpl import MAX_CODE_LENGTH, LabelSpec, render_batch, render_label
+
+SERIAL_22 = "PF3XK9R2MJ0K8LQ3N7Y2AB"
 
 
-def test_layout_is_in_inches_so_both_printers_match():
-    spec = LabelSpec(code="C-0001", title="C-0001", subtitle="Pallet")
-    assert "^PW675" in render_label(spec, 300)
-    assert "^PW457" in render_label(spec, 203)
-    assert "^BY3," in render_label(spec, 300)
-    assert "^BY2," in render_label(spec, 203)
+def _value_height(zpl, value):
+    return int(re.search(rf"\^A0R,(\d+),\d+\^FB\d+,1,0,R\^FD{re.escape(value)}\^FS", zpl).group(1))
+
+
+def test_label_is_3_wide_by_2_tall_on_a_2_in_roll():
+    z = render_label(LabelSpec("FEST00001", (("Type", "Laptop"),), "Return to MAGFest FestOps"), 300)
+    assert "^PW600" in z and "^LL900" in z
+    assert "^PW406" in render_label(LabelSpec("U-00001", (), None), 203)
+    assert "^LL609" in render_label(LabelSpec("U-00001", (), None), 203)
+    assert "^BY3," in z and "^BY2," in render_label(LabelSpec("U-00001", (), None), 203)
+
+
+def test_the_fullest_label_stays_inside_the_printable_area():
+    spec = LabelSpec("R-00038", (("Type", "Laptop"), ("Vendor tag", "Vendor A: A0038"),
+                                 ("Serial", SERIAL_22), ("Printed", "2026-11-07")),
+                     "Rented unit. Return to MAGFest FestOps")
+    for dpi, pw, ll in ((300, 600, 900), (203, 406, 609)):
+        for line in render_label(spec, dpi).splitlines():
+            origin = re.match(r"\^FO(\d+),(\d+)", line)
+            if not origin:
+                continue
+            x, y = int(origin.group(1)), int(origin.group(2))
+            assert 0 <= x < pw and 0 <= y < ll, line
+
+
+def test_the_barcode_is_centred_along_the_length():
+    z = render_label(LabelSpec("R-00038", (), None), 300)
+    y = int(re.search(r"\^FO\d+,(\d+)\^BY", z).group(1))
+    assert y == (900 - (11 * 7 + 35) * 3) // 2
+
+
+def test_a_22_character_serial_prints_whole_at_the_normal_size():
+    z = render_label(LabelSpec("R-00038", (("Serial", SERIAL_22),), None), 300)
+    assert "^FD" + SERIAL_22 + "^FS" in z
+    assert _value_height(z, SERIAL_22) == 45
+
+
+@pytest.mark.parametrize("dpi", [300, 203])
+def test_a_longer_serial_is_smaller_and_never_cut(dpi):
+    long_serial = "PF3XK9R2MJ0K8LQ3N7Y2ABCDEFGH12"
+    assert len(long_serial) == 30
+    normal = render_label(LabelSpec("R-00038", (("Serial", SERIAL_22),), None), dpi)
+    long = render_label(LabelSpec("R-00038", (("Serial", long_serial),), None), dpi)
+    assert "^FD" + long_serial + "^FS" in long
+    assert _value_height(long, long_serial) < _value_height(normal, SERIAL_22)
+
+
+def test_a_row_without_a_footer_prints_no_rule():
+    assert "^GB" not in render_label(LabelSpec("C-0001", (("Kind", "Pallet"),), None), 300)
+    assert "^GB" in render_label(LabelSpec("U-00001", (), "Return"), 300)
 
 
 def test_caret_and_tilde_in_names_cannot_break_the_label():
-    zpl = render_label(LabelSpec(code="C-0001", title="C-0001", subtitle="Bin ^XZ~JR"), 300)
+    zpl = render_label(LabelSpec("C-0001", (("Name", "Bin ^XZ~JR"),), "Foot ^XZ"), 300)
     assert zpl.count("^XA") == 1 and zpl.count("^XZ") == 1
     assert "~JR" not in zpl
 
 
-def test_unsupported_dpi_is_refused_and_batches_join():
+def test_unsupported_dpi_and_size_are_refused_and_batches_join():
+    spec = LabelSpec("C-0001", (), None)
     with pytest.raises(ValueError):
-        render_label(LabelSpec("C-0001", "C-0001", None), 600)
-    batch = render_batch([LabelSpec("C-0001", "C-0001", None),
-                          LabelSpec("C-0002", "C-0002", None)], 300)
-    assert batch.count("^XA") == 2
+        render_label(spec, 600)
+    with pytest.raises(ValueError):
+        render_label(spec, 300, 2.25, 1.25)
+    assert render_batch([spec, LabelSpec("C-0002", (), None)], 300).count("^XA") == 2
 
 
-@pytest.mark.parametrize("code", ["", "C-" + "1" * 14, "A>5B", "A^B", "A~B", "CAFÉ-1"])
+@pytest.mark.parametrize("code", ["", "C-" + "1" * 19, "A>5B", "A^B", "A~B", "CAFÉ-1"])
 def test_codes_the_barcode_would_change_are_refused(code):
     with pytest.raises(ValueError):
-        render_label(LabelSpec(code, "x", None), 300)
+        render_label(LabelSpec(code, (), None), 300)
 
 
-def test_a_fifteen_character_code_prints_unchanged():
-    code = "C-" + "1" * 13
-    zpl = render_label(LabelSpec(code, "x", None), 300)
-    assert "^FD" + code + "^FS" in zpl
+def test_a_twenty_character_code_prints_unchanged_and_twenty_one_is_refused():
+    code = "C-" + "1" * 18
+    assert len(code) == MAX_CODE_LENGTH
+    for dpi in (300, 203):
+        assert "^FD" + code + "^FS" in render_label(LabelSpec(code, (), None), dpi)
+    with pytest.raises(ValueError):
+        render_label(LabelSpec(code + "1", (), None), 300)
 
 
 def test_line_breaks_in_names_become_spaces():
-    zpl = render_label(LabelSpec("C-0001", "C-0001", "Bin\nA"), 300)
+    zpl = render_label(LabelSpec("C-0001", (("Name", "Bin\nA"),), None), 300)
     assert "^FDBin A^FS" in zpl
