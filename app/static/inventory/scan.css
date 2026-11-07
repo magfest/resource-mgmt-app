@@ -24,7 +24,9 @@ body.not-saved-on { background: #f9c9c9; }
 .msg.info { color: #263238; }
 .panel { padding: 12px 14px; }
 .hint { color: #607d8b; }
-.capture { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
+/* At the top: a keyboard left open by Chrome's address bar pans the page to reveal this
+   field, which moves the card off screen if the field sits at the bottom. CT60 XP, 2026-11-07. */
+.capture { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
 .card { border: 1px solid #cfd8dc; border-radius: 8px; padding: 12px; }
 .card h2 { margin: 0 0 4px; font-size: 1.3rem; }
 .card .tag { font-family: ui-monospace, monospace; color: #455a64; }
