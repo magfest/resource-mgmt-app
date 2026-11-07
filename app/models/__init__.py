@@ -218,6 +218,7 @@ from .inventory import (
     InvDevice, InvShift, InvCount, InvCountLine, InvMovement,
     InvCheckItem, InvCheck, InvCheckAnswer, InvPrepStatus, InvFlag, InvStationItem,
     InvScanRequest, InvLabelSequence,
+    InvPrinter, InvPrintRoute, InvPrintJob, InvItemTotal,
 )
 
 # Re-export telemetry models
@@ -431,6 +432,10 @@ __all__ = [
     "InvStationItem",
     "InvScanRequest",
     "InvLabelSequence",
+    "InvPrinter",
+    "InvPrintRoute",
+    "InvPrintJob",
+    "InvItemTotal",
     # Telemetry models
     "ActivityEvent",
     "NotificationLog",

@@ -552,3 +552,106 @@ class InvLabelSequence(db.Model):
 
     prefix = db.Column(db.String(4), primary_key=True)
     next_value = db.Column(db.Integer, nullable=False, default=1)
+
+
+class InvPrinter(db.Model):
+    """A label printer served by one print station."""
+    __tablename__ = "inv_printers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), nullable=False)
+    dpi = db.Column(db.Integer, nullable=False)
+    width_in = db.Column(db.Numeric(4, 2), nullable=False)
+    height_in = db.Column(db.Numeric(4, 2), nullable=False)
+    # Free text such as "Removable"; shown to the person loading labels.
+    stock = db.Column(db.String(64), nullable=True)
+    device_id = db.Column(
+        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_printers_device_id"),
+        nullable=True, index=True,
+    )
+    # The name Browser Print knows the printer by.
+    device_name = db.Column(db.String(128), nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True,
+                          server_default=db.true())
+
+    device = db.relationship("InvDevice")
+
+
+class InvPrintRoute(db.Model):
+    """Which printer takes one job type. Changing it affects new jobs only."""
+    __tablename__ = "inv_print_routes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    job_type = db.Column(db.String(16), unique=True, nullable=False)
+    printer_id = db.Column(
+        db.Integer, db.ForeignKey("inv_printers.id", name="fk_inv_print_routes_printer_id"),
+        nullable=False,
+    )
+
+    printer = db.relationship("InvPrinter")
+
+
+class InvPrintJob(db.Model):
+    """One label, as short text. Queue and print history in one table.
+
+    Holds no image and no ZPL; the app renders ZPL when the print station
+    collects the job.
+    """
+    __tablename__ = "inv_print_jobs"
+
+    id = _bigint_pk()
+    printer_id = db.Column(
+        db.Integer, db.ForeignKey("inv_printers.id", name="fk_inv_print_jobs_printer_id"),
+        nullable=False, index=True,
+    )
+    job_type = db.Column(db.String(16), nullable=False)
+    unit_id = db.Column(
+        db.Integer, db.ForeignKey("inv_units.id", name="fk_inv_print_jobs_unit_id"),
+        nullable=True,
+    )
+    container_id = db.Column(
+        db.Integer, db.ForeignKey("inv_containers.id", name="fk_inv_print_jobs_container_id"),
+        nullable=True,
+    )
+    code = db.Column(db.String(64), nullable=False)
+    fields = db.Column(db.JSON, nullable=False)
+    printed_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(16), nullable=False, default="QUEUED",
+                       server_default="QUEUED", index=True)
+    source = db.Column(db.String(8), nullable=False)
+    batch_id = db.Column(db.String(32), nullable=True, index=True)
+    client_request_id = db.Column(db.String(64), unique=True, nullable=True)
+    error = db.Column(db.String(200), nullable=True)
+    performed_by_user_id = db.Column(db.String(64), nullable=True)
+    shift_id = db.Column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        db.ForeignKey("inv_shifts.id", name="fk_inv_print_jobs_shift_id"),
+        nullable=True,
+    )
+    device_id = db.Column(
+        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_print_jobs_device_id"),
+        nullable=True,
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    claimed_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+    printer = db.relationship("InvPrinter")
+    unit = db.relationship("InvUnit")
+    container = db.relationship("InvContainer")
+
+
+class InvItemTotal(db.Model):
+    """A typed total for one item, for stock that is counted in bulk."""
+    __tablename__ = "inv_item_totals"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(
+        db.Integer, db.ForeignKey("supply_items.id", name="fk_inv_item_totals_item_id"),
+        nullable=False, unique=True,
+    )
+    quantity = db.Column(db.Integer, nullable=False)
+    set_by_user_id = db.Column(db.String(64), nullable=True)
+    set_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    item = db.relationship("SupplyItem")
