@@ -62,7 +62,6 @@ def request_label(job_type, code, fields, actor: Actor, source, printed_date=Non
         existing = _by_request_id(client_request_id) if client_request_id else None
         if existing is None:
             raise
-        db.session.expunge(job)
         return existing
     return job
 
@@ -81,12 +80,12 @@ def collect_jobs(device, now: datetime | None = None) -> list[InvPrintJob]:
     """
     now = now or datetime.utcnow()
     device.last_seen_at = now
-    printer_ids = [p.id for p in db.session.query(InvPrinter).filter_by(
-        device_id=device.id, is_active=True)]
-    if not printer_ids:
+    printers = db.session.query(InvPrinter).filter_by(device_id=device.id).all()
+    if not printers:
         return []
+    # The sweep includes inactive printers, or a claimed job on one stays claimed forever.
     stale = (db.session.query(InvPrintJob)
-             .filter(InvPrintJob.printer_id.in_(printer_ids),
+             .filter(InvPrintJob.printer_id.in_([p.id for p in printers]),
                      InvPrintJob.status == INV_JOB_CLAIMED,
                      InvPrintJob.claimed_at <= now - CLAIM_TIMEOUT)
              .with_for_update().all())
@@ -97,7 +96,7 @@ def collect_jobs(device, now: datetime | None = None) -> list[InvPrintJob]:
     # BATCH sorts before SCAN alphabetically, so the order cannot come from the column.
     scan_first = db.case((InvPrintJob.source == INV_JOB_SOURCE_SCAN, 0), else_=1)
     jobs = (db.session.query(InvPrintJob)
-            .filter(InvPrintJob.printer_id.in_(printer_ids),
+            .filter(InvPrintJob.printer_id.in_([p.id for p in printers if p.is_active]),
                     InvPrintJob.status == INV_JOB_QUEUED)
             .order_by(scan_first, InvPrintJob.created_at, InvPrintJob.id)
             .limit(COLLECT_LIMIT).with_for_update().populate_existing().all())

@@ -101,6 +101,16 @@ def test_a_claim_with_no_report_fails_after_a_minute_and_is_not_resent(inv):
     assert job.finished_at is not None
 
 
+def test_a_claim_on_a_deactivated_printer_still_fails(inv):
+    station = _station()
+    printer = _printer("Main", station, INV_JOB_OWNED_UNIT)
+    job = _ask()
+    collect_jobs(station, now=T0)
+    printer.is_active = False
+    collect_jobs(station, now=T0 + CLAIM_TIMEOUT + timedelta(seconds=1))
+    assert job.status == INV_JOB_FAILED
+
+
 def test_a_claim_inside_the_timeout_is_left_alone(inv):
     device = _station()
     _printer("Permanent", device, INV_JOB_OWNED_UNIT)
