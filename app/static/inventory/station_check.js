@@ -40,6 +40,7 @@
       name: open.name,
       lines: lines,
       serialDone: !!open.serial_checked,
+      stale: false,
       hasLines: function () { return lines.length > 0; },
       answer: function (id, value) { answers[id] = value; condition = null; edits += 1; },
       answerFor: function (id) { return answers[id] || null; },
@@ -64,7 +65,7 @@
       canPutAway: function () { return condition !== 'RETIRED'; },
       version: function () { return edits; },
       body: function (putAwayCode) {
-        var out = {check_id: open.check_id, answers: {}};
+        var out = {check_id: open.check_id, answers: {}, line_ids: lines.map(function (l) { return l.id; })};
         lines.forEach(function (l) { if (answers[l.id]) { out.answers[l.id] = answers[l.id]; } });
         if (failed()) { out.failed_condition = condition; }
         if (!lines.length && floor === 'fail') { out.note = note; }
@@ -89,12 +90,32 @@
     };
   }
 
+  // Touches the server shift while the screen sends nothing. A touch needs a tap since the
+  // last one, so an abandoned screen still lets the shift expire. Same rule as the count page.
+  var KEEPALIVE_MS = 5 * 60 * 1000;
+  function createKeepAlive(options) {
+    var tapped = false;
+    var last = options.now();
+    return {
+      tap: function () { tapped = true; },
+      reset: function () { tapped = false; last = options.now(); },
+      check: function () {
+        if (!tapped || options.now() - last < options.everyMs) { return false; }
+        tapped = false;
+        last = options.now();
+        options.send();
+        return true;
+      }
+    };
+  }
+
   function resultText(answer) {
     if (answer.status === 'PASSED') { return 'PASSED'; }
     return answer.condition === 'RETIRED' ? 'FAILED: retired' : 'FAILED: needs repair';
   }
 
-  var pure = {createCheck: createCheck, createGate: createGate, resultText: resultText,
+  var pure = {createCheck: createCheck, createGate: createGate, createKeepAlive: createKeepAlive,
+              KEEPALIVE_MS: KEEPALIVE_MS, resultText: resultText,
               idleText: idleText, word: word, MESSAGES: MESSAGES};
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -111,7 +132,11 @@
   var sending = false;     // a finish is in flight; edits and a second tap wait
   var finishId = null;     // {key, id}: reused for a repeat tap of an unchanged finish
   var asideId = null;      // {check, id}: reused for a repeat tap of Set aside
+  var offerIds = {};       // item id -> request id: repeat taps of one model button save once
   var gate = createGate();
+  var keepAlive = createKeepAlive({now: Date.now, everyMs: KEEPALIVE_MS, send: function () {
+    S.read(cfg.keepAliveUrl, {});
+  }});
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -265,6 +290,7 @@
     finishId = null;
     asideId = null;
     check = createCheck(answer);
+    keepAlive.reset();
     phase = answer.serial_checked ? 'lines' : 'serial';
     S.showMessage('', 'info');
     S.feedback('ok');
@@ -285,12 +311,12 @@
 
   function openWrite(code, extra) {
     return S.write(cfg.openUrl, Object.assign({code: code, station_code: cfg.station}, extra || {}))
-      .then(function (answer) { return openAnswer(code, answer); });
+      .then(function (answer) { return openAnswer(code, answer, extra || {}); });
   }
 
   // Opening a check finishes nothing, so it reports ok:false and the shell's repeat guard
   // stays empty; a unit set aside can be scanned again at once.
-  function openAnswer(code, answer) {
+  function openAnswer(code, answer, extra) {
     if (stopped(answer)) { return {ok: false}; }
     if (!answer.ok) {
       if (answer.wrong_station) { wrongGear(answer); }
@@ -302,7 +328,12 @@
     if (answer.unused) { return startLabel(answer); }
     if (answer.create) { offerCreate(answer); return {ok: false}; }
     if (answer.candidates) { chooseUnit(code, answer.candidates); return {ok: false}; }
-    if (answer.already_checked) { askAgain(code, answer); return {ok: false}; }
+    if (answer.already_checked) { askAgain(code, answer, extra); return {ok: false}; }
+    if (check && check.id === answer.check_id && check.stale) {
+      // The checklist changed under this screen; rescanning the unit reloads its lines.
+      startCheck(Object.assign({}, answer, {serial_checked: check.serialDone || answer.serial_checked}));
+      return {ok: false};
+    }
     if (check && check.id === answer.check_id) {
       S.showMessage('You are already checking this unit.', 'info');
       return {ok: false};
@@ -362,12 +393,12 @@
       }, open.code + ' is not finished. ' + MESSAGES.asideAsk);
   }
 
-  function askAgain(code, answer) {
+  function askAgain(code, answer, extra) {
     var when = answer.already_checked;
     S.choose([{label: 'Check it again', value: 'again'}, {label: 'Cancel', value: 'cancel'}],
       function (pick) {
         if (pick !== 'again') { backToScreen(); return; }
-        gate.run(function () { return openWrite(code, {again: true}); });
+        gate.run(function () { return openWrite(code, Object.assign({}, extra, {again: true})); });
       }, answer.name + ' ' + answer.code + ' was checked: ' + when.result + ' on ' + when.when +
          '. Check it again?');
   }
@@ -384,9 +415,11 @@
     S.choose(answer.models.map(function (m) { return {label: m.name, value: m.id}; })
       .concat([{label: 'Cancel', value: null}]), function (itemId) {
         if (itemId === null) { backToScreen(); return; }
+        var key = answer.label_code + '|' + answer.serial + '|' + itemId;
+        if (!offerIds[key]) { offerIds[key] = S.requestId(); }
         gate.run(function () {
           return S.write(cfg.createUrl, {label_code: answer.label_code, serial: answer.serial,
-                                         item_id: itemId}).then(function (a) {
+                                         item_id: itemId}, offerIds[key]).then(function (a) {
             if (stopped(a)) { return; }
             if (!a.ok) { fail(a.message); startLabel({code: answer.label_code}); return; }
             startCheck(a);
@@ -399,7 +432,9 @@
     return S.write(cfg.bindUrl, {label_code: label.code, serial: serial}).then(function (answer) {
       if (stopped(answer)) { return {ok: false}; }
       if (!answer.ok) {
-        if (answer.wrong_station) { wrongGear(answer); } else { fail(answer.message); }
+        if (answer.wrong_station) { wrongGear(answer); }
+        else if (answer.open_check) { askAside(answer.open_check, label.code); }
+        else { fail(answer.message); }
         return {ok: false};
       }
       if (answer.create) { offerCreate(answer); return {ok: false}; }
@@ -413,7 +448,9 @@
     return S.write(cfg.serialUrl, {check_id: mine.id, code: code}).then(function (answer) {
       if (stopped(answer)) { return {ok: false}; }
       if (!answer.ok) {
-        if (answer.finished) { dropCheck(MESSAGES.alreadySaved); } else { fail(answer.message); }
+        if (answer.finished) { dropCheck(MESSAGES.alreadySaved); }
+        else if (answer.open_check) { askAside(answer.open_check, code); }
+        else { fail(answer.message); }
         return {ok: false};
       }
       if (check !== mine) { return {ok: false}; }
@@ -467,13 +504,23 @@
   function askCondition() {
     S.choose([
       {label: 'Needs repair', value: 'REPAIR'},
-      {label: 'Retire it (its number stops working)', value: 'RETIRED'},
+      {label: 'Retire it', value: 'RETIRED'},
       {label: 'Back', value: null}
     ], function (value) {
       if (value === null) { backToScreen(); return; }
+      if (value === 'RETIRED') { confirmRetire(); return; }
       check.setCondition(value);
       next();
     }, 'It failed. What happens to it?');
+  }
+
+  function confirmRetire() {
+    S.choose([{label: 'Retire', value: 'RETIRED'}, {label: 'Back', value: null}],
+      function (value) {
+        if (value === null) { askCondition(); return; }
+        check.setCondition('RETIRED');
+        next();
+      }, 'Retire ' + check.code + '? Its tag stops working.');
   }
 
   // A tap queues the save behind any scan in flight. `sending` is set at once, so a second
@@ -505,6 +552,7 @@
     if (!answer.ok) {
       if (answer.finished) { dropCheck(MESSAGES.alreadySaved); return {ok: false}; }
       phase = 'lines';
+      if (answer.changed) { mine.stale = true; }
       fail(answer.message);
       render();
       return {ok: false};
@@ -536,6 +584,8 @@
     });
   }
 
+  panel.addEventListener('click', function () { if (check) { keepAlive.tap(); } });
+  setInterval(function () { if (check) { keepAlive.check(); } }, 60 * 1000);
   S.holdLeave(function () { return !!check; });
   S.start({station: cfg.station, onScan: onScan});
   render();

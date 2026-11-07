@@ -7,6 +7,7 @@ never belong in the Supply catalog.
 from flask import abort, flash, redirect, request, url_for
 
 from app import db
+from app.inventory.checks import check_station_error
 from app.inventory.codes import normalize_code
 from app.models import InvStock, InvUnit, SupplyCategory, SupplyItem
 from app.models.constants import INV_CHECK_STATIONS, INV_STATION_NAMES
@@ -71,8 +72,7 @@ def update_item(item_id: int):
         return redirect(url_for("inventory.items"))
     pack_size, error = _parse_pack_size(request.form.get("pack_size"))
     check_station = (request.form.get("check_station") or "").strip() or None
-    if check_station is not None and check_station not in INV_CHECK_STATIONS:
-        error = "Pick a check station from the list, or leave it blank."
+    error = check_station_error(check_station) or error
     error = error or _barcode_error(item.id, barcode)
     if error:
         flash(error, "error")

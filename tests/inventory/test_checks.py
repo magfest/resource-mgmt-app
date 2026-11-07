@@ -10,14 +10,14 @@ from app import db
 from app.inventory import labels
 from app.inventory.checks import (
     active_check_items, bind_label, check_serial, create_checked_unit, finish_check,
-    open_check, prep_status, set_aside,
+    open_check, prep_status, set_aside, station_models,
 )
 from app.inventory.ledger import Actor, InventoryError, add_unit
 from app.inventory.resolver import KIND_UNKNOWN, resolve
 from app.inventory.shifts import start_shift
 from app.models import (
     EventCycle, InvCheck, InvCheckItem, InvDevice, InvMovement, InvPrepStatus,
-    InvStationItem, InvUnit, SupplyItem,
+    InvUnit, SupplyItem,
 )
 from tests.inventory.helpers import enrolled_client, login, make_container
 
@@ -50,14 +50,12 @@ def event(inv):
 def tv_checklist(inv, event):
     """A TV model with two lines, one TV with a tag and serial, and a second TV."""
     tv_item = SupplyItem(category_id=inv.category.id, item_name="Samsung 55 TV", unit="each",
-                         is_serialized=True, is_expendable=False)
+                         is_serialized=True, is_expendable=False, check_station="TV_CHECK")
     printer_item = SupplyItem(category_id=inv.category.id, item_name="Zebra Printer",
-                              unit="each", is_serialized=True, is_expendable=False)
+                              unit="each", is_serialized=True, is_expendable=False,
+                              check_station="PRINTER_CHECK")
     db.session.add_all([tv_item, printer_item])
     db.session.flush()
-    db.session.add_all([
-        InvStationItem(station_code="TV_CHECK", item_id=tv_item.id, position=1),
-        InvStationItem(station_code="PRINTER_CHECK", item_id=printer_item.id, position=1)])
     power = InvCheckItem(item_id=tv_item.id, position=0, prompt="Powered on?",
                          missing_means="FAIL", is_active=True)
     remote = InvCheckItem(item_id=tv_item.id, position=1, prompt="Remote present?",
@@ -109,7 +107,7 @@ def test_failed_check_changes_condition_never_location(inv, event, tv_checklist)
 def test_a_failed_check_with_a_condition_on_a_passed_check_is_refused(inv, event, tv_checklist):
     t = tv_checklist
     check = open_check(t.tv, "TV_CHECK", ACTOR, event)
-    with pytest.raises(InventoryError, match="only to a failed check"):
+    with pytest.raises(InventoryError, match="checklist changed"):
         finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, ACTOR,
                      failed_condition="REPAIR")
     assert t.tv.condition == "IN_SERVICE"
@@ -241,6 +239,131 @@ def test_create_checked_unit_uses_the_label_as_its_one_number(inv, event, tv_che
         create_checked_unit(t.tv_item, code, "NEW2", ACTOR)
     with pytest.raises(InventoryError, match="TECH00412"):
         create_checked_unit(t.tv_item, _issue_label(), "SN4471", ACTOR)
+
+
+def test_the_serial_guard_runs_on_every_path(inv, event, tv_checklist):
+    t = tv_checklist
+    t.tv_item.barcode = "012345678905"
+    db.session.commit()
+    code = _issue_label()
+    for scanned in ("TECH00413", "012345678905"):
+        with pytest.raises(InventoryError):
+            create_checked_unit(t.tv_item, code, scanned, ACTOR)
+        with pytest.raises(InventoryError):
+            bind_label(code, scanned, ACTOR)
+        assert resolve(code).kind == "UNUSED"
+    assert InvUnit.query.count() == 3
+    with pytest.raises(InventoryError, match=r"model barcode. Scan the serial \(S/N\)\."):
+        check_serial(t.tv, "012345678905")
+    with pytest.raises(InventoryError, match="model barcode"):
+        bind_label(code, "012345678905", ACTOR)
+    with pytest.raises(InventoryError, match="model barcode"):
+        create_checked_unit(t.tv_item, code, "012345678905", ACTOR)
+    with pytest.raises(InventoryError, match="not a serial"):
+        create_checked_unit(t.tv_item, code, "TECH00413", ACTOR)
+    assert [i.value for i in t.tv2.identifiers] == ["TECH00413"]
+
+
+def test_a_pass_returns_a_repaired_or_lost_unit_to_service(inv, event, tv_checklist):
+    t = tv_checklist
+    yes = {t.power.id: "YES", t.remote.id: "YES"}
+    for start in ("REPAIR", "LOST"):
+        t.tv.condition = start
+        check = open_check(t.tv, "TV_CHECK", ACTOR, event)
+        finish_check(check, yes, ACTOR)
+        assert t.tv.condition == "IN_SERVICE" and check.previous_condition == start
+    check = open_check(t.tv, "TV_CHECK", ACTOR, event)
+    finish_check(check, yes, ACTOR)
+    assert t.tv.condition == "IN_SERVICE" and check.previous_condition == "IN_SERVICE"
+
+
+def test_a_serial_replacement_is_written_to_the_check_note(inv, event, tv_checklist):
+    t = tv_checklist
+    check = open_check(t.tv, "TV_CHECK", ACTOR, event)
+    check_serial(t.tv, "SN4417", check)
+    assert check.note == "Serial changed from SN4471 to SN4417."
+    finish_check(check, {t.power.id: "YES", t.remote.id: "NO"}, ACTOR)
+    assert check.note.startswith("Serial changed from SN4471 to SN4417.")
+    assert "Remote present?" in check.note
+
+
+def test_a_new_shift_sets_aside_checks_left_open_by_an_ended_shift(client, tv_device):
+    a = _open(client, "TECH00412")
+    start_shift(InvDevice.query.one(), "Alex")
+    db.session.commit()
+    b = _open(client, "TECH00413")
+    assert b["ok"] is True and b["check_id"] != a["check_id"]
+    db.session.expire_all()
+    assert db.session.get(InvCheck, a["check_id"]).status == "SET_ASIDE"
+    assert db.session.get(InvCheck, b["check_id"]).status == "OPEN"
+
+
+def test_a_stale_checklist_asks_for_a_rescan_and_rescan_reloads_the_lines(client, tv_device):
+    t = tv_device
+    a = _open(client, "TECH00412")
+    db.session.add(InvCheckItem(item_id=t.tv_item.id, position=2, prompt="Stand present?",
+                                missing_means="NOTE", is_active=True))
+    db.session.commit()
+    done = _finish(client, a["check_id"], {t.power.id: "YES", t.remote.id: "YES"},
+                   line_ids=[t.power.id, t.remote.id])
+    assert done["ok"] is False and done["changed"] is True
+    assert done["message"] == "That checklist changed. Scan the unit again."
+    assert len(_open(client, "TECH00412")["lines"]) == 3
+    extra = InvCheckItem.query.filter_by(prompt="Stand present?").one()
+    bad = _finish(client, a["check_id"],
+                  {t.power.id: "YES", t.remote.id: "YES", extra.id: "YES"},
+                  failed_condition="REPAIR")
+    assert bad["changed"] is True
+    assert InvCheck.query.one().status == "OPEN"
+
+
+def test_opening_by_serial_counts_the_serial_as_checked(client, tv_device):
+    assert _open(client, "SN4471")["serial_checked"] is True
+    assert _open(client, "TECH00412")["serial_checked"] is False
+
+
+def test_an_unused_label_is_refused_while_another_check_is_open(client, tv_device):
+    a = _open(client, "TECH00412")
+    b = _open(client, _issue_label())
+    assert b["ok"] is False and b["open_check"]["check_id"] == a["check_id"]
+
+
+def test_a_serial_step_scan_of_another_units_number_names_the_open_check(client, tv_device):
+    a = _open(client, "TECH00412")
+    r = client.post(SERIAL, json={"client_request_id": _rid(), "check_id": a["check_id"],
+                                  "code": "TECH00413"}).get_json()
+    assert r["ok"] is False and r["message"] == "TECH00412 is not finished. Finish it, or set it aside?"
+    assert r["open_check"]["check_id"] == a["check_id"]
+
+
+def test_the_wrong_gear_switch_keeps_the_home_container_and_logs(client, tv_device, inv):
+    from app.models import SecurityAuditLog
+    device = InvDevice.query.one()
+    device.home_container_id = tv_device.where.id
+    db.session.commit()
+    r = client.post(STATION, json={"client_request_id": _rid(),
+                                   "station_code": "PRINTER_CHECK"}).get_json()
+    assert r["ok"] is True
+    db.session.expire_all()
+    device = InvDevice.query.one()
+    assert device.home_container_id == tv_device.where.id
+    assert any("inventory_device_station" in (e.details or "")
+               for e in SecurityAuditLog.query.all())
+
+
+def test_a_model_label_is_called_an_item_label(client, tv_device):
+    from app.inventory import labels as lab
+    code = lab.allocate(lab.PREFIX_ITEM, 1)[0]
+    db.session.commit()
+    a = _open(client, code)
+    assert a["ok"] is False and "item label" in a["message"]
+
+
+def test_the_check_keepalive_accepts_a_check_device_only(client, tv_device):
+    assert client.post("/inv/scan/api/check/keepalive", json={}).get_json()["ok"] is True
+    InvDevice.query.one().station_code = "COUNT"
+    db.session.commit()
+    assert client.post("/inv/scan/api/check/keepalive", json={}).get_json()["ok"] is False
 
 
 # ---- API ----
@@ -475,28 +598,35 @@ def test_checklist_page_sets_and_clears_the_station(client, inv):
     login(client, "test:invadmin")
     url = f"/inv/admin/checklists/{inv.laptop.id}/station"
 
-    def rows():
+    def station():
         db.session.expire_all()
-        return [(r.station_code, r.item_id) for r in InvStationItem.query]
+        return db.session.get(SupplyItem, inv.laptop.id).check_station
 
     client.post(url, data={"station": "TV_CHECK"})
-    assert rows() == [("TV_CHECK", inv.laptop.id)]
+    assert station() == "TV_CHECK"
     client.post(url, data={"station": "PRINTER_CHECK"})
-    assert rows() == [("PRINTER_CHECK", inv.laptop.id)]
+    assert station() == "PRINTER_CHECK"
     page = client.get(f"/inv/admin/checklists?item_id={inv.laptop.id}")
     assert b"Checked at" in page.data
     client.post(url, data={"station": "COUNT"})
-    assert rows() == [("PRINTER_CHECK", inv.laptop.id)]
+    assert station() == "PRINTER_CHECK"
     client.post(url, data={"station": ""})
-    assert rows() == []
+    assert station() is None
 
 
-def test_the_station_control_leaves_count_rows_alone(client, inv):
+def test_the_items_page_and_the_checklist_page_set_the_same_column(client, inv):
     login(client, "test:invadmin")
-    db.session.add(InvStationItem(station_code="COUNT", item_id=inv.laptop.id, position=1))
-    db.session.commit()
-    client.post(f"/inv/admin/checklists/{inv.laptop.id}/station", data={"station": ""})
-    assert [r.station_code for r in InvStationItem.query] == ["COUNT"]
+    laptop = inv.laptop
+    client.post(f"/inv/admin/items/{laptop.id}",
+                data={"is_serialized": "1", "pack_size": "", "check_station": "PRINTER_CHECK"})
+    db.session.expire_all()
+    assert db.session.get(SupplyItem, laptop.id).check_station == "PRINTER_CHECK"
+    page = client.get(f"/inv/admin/checklists?item_id={laptop.id}")
+    assert b'value="PRINTER_CHECK" selected' in page.data
+    client.post(f"/inv/admin/checklists/{laptop.id}/station", data={"station": "TV_CHECK"})
+    db.session.expire_all()
+    assert db.session.get(SupplyItem, laptop.id).check_station == "TV_CHECK"
+    assert laptop in station_models("TV_CHECK")
 
 
 # ---- page script, run under node on a stub DOM; none of this drives a browser ----
@@ -523,11 +653,11 @@ assert.equal(st.needsCondition(), true);
 assert.ok(st.version() > v);
 st.setCondition('RETIRED');
 assert.equal(st.canPutAway(), false);
-assert.deepEqual(st.body(null), {check_id: 5, answers: {1: 'NO', 2: 'NO'}, failed_condition: 'RETIRED'});
+assert.deepEqual(st.body(null), {check_id: 5, answers: {1: 'NO', 2: 'NO'}, line_ids: [1, 2], failed_condition: 'RETIRED'});
 st.answer(1, 'YES');
 assert.equal(st.condition(), null, 'a changed answer clears the condition');
 assert.deepEqual(st.body('C-0002'),
-  {check_id: 5, answers: {1: 'YES', 2: 'NO'}, put_away_code: 'C-0002'});
+  {check_id: 5, answers: {1: 'YES', 2: 'NO'}, line_ids: [1, 2], put_away_code: 'C-0002'});
 const bare = c.createCheck({check_id: 6, code: 'X', name: 'Bare', lines: []});
 assert.equal(bare.complete(), false);
 bare.setFloor('fail', 'Cracked');
@@ -535,9 +665,9 @@ assert.equal(bare.complete(), true);
 assert.equal(bare.needsCondition(), true);
 bare.setCondition('REPAIR');
 assert.deepEqual(bare.body(null),
-  {check_id: 6, answers: {}, failed_condition: 'REPAIR', note: 'Cracked'});
+  {check_id: 6, answers: {}, line_ids: [], failed_condition: 'REPAIR', note: 'Cracked'});
 bare.setFloor('pass');
-assert.deepEqual(bare.body(null), {check_id: 6, answers: {}});
+assert.deepEqual(bare.body(null), {check_id: 6, answers: {}, line_ids: []});
 assert.equal(c.resultText({status: 'FAILED', condition: 'RETIRED'}), 'FAILED: retired');
 assert.equal(c.idleText('PRINTER_CHECK'), 'Scan a printer: its asset tag, label or serial.');
 console.log('flow ok');
@@ -631,7 +761,7 @@ PAGE_SCRIPT = PAGE_PRELUDE + r"""
   await tick();
   assert.equal(writes.length, 3);
   assert.equal(writes[2].path, '/finish');
-  assert.deepEqual(writes[2].body, {check_id: 5, answers: {1: 'YES', 2: 'NO'}, put_away_code: 'C-0002'});
+  assert.deepEqual(writes[2].body, {check_id: 5, answers: {1: 'YES', 2: 'NO'}, line_ids: [1, 2], put_away_code: 'C-0002'});
   const rid = writes[2].rid;
   const during = onScan('TECH00413');
   buttons('Skip')[0].handlers.click();
@@ -667,7 +797,7 @@ FAILED_SCRIPT = PAGE_PRELUDE + r"""
   await tick();
   assert.equal(writes.length, 2);
   assert.deepEqual(writes[1].body,
-    {check_id: 5, answers: {1: 'NO', 2: 'YES'}, failed_condition: 'REPAIR'});
+    {check_id: 5, answers: {1: 'NO', 2: 'YES'}, line_ids: [1, 2], failed_condition: 'REPAIR'});
   writes[1].resolve({ok: true, status: 'FAILED', condition: 'REPAIR', code: 'TECH00412',
     put_away_error: 'C-0001 is full'});
   await tick();
@@ -680,6 +810,12 @@ FAILED_SCRIPT = PAGE_PRELUDE + r"""
   buttons('NO')[0].handlers.click();
   buttons('NO')[1].handlers.click();
   buttons('Finish')[0].handlers.click();
+  chosen.pick('RETIRED');
+  assert.equal(chosen.note, 'Retire TECH00412? Its tag stops working.');
+  assert.deepEqual(chosen.options.map((o) => o.label), ['Retire', 'Back']);
+  chosen.pick(null);
+  assert.deepEqual(chosen.options.map((o) => o.value), ['REPAIR', 'RETIRED', null], 'Back returns to the choice');
+  chosen.pick('RETIRED');
   chosen.pick('RETIRED');
   await tick();
   assert.equal(writes[writes.length - 1].path, '/finish');
@@ -765,7 +901,7 @@ LABEL_SCRIPT = PAGE_PRELUDE + r"""
   buttons('Finish')[0].handlers.click();
   buttons('Skip')[0].handlers.click();
   await tick();
-  assert.deepEqual(writes[3].body, {check_id: 9, answers: {}});
+  assert.deepEqual(writes[3].body, {check_id: 9, answers: {}, line_ids: []});
   writes[3].resolve({ok: true, status: 'PASSED', condition: 'IN_SERVICE', code: 'U-00001'});
   await tick();
 
@@ -782,10 +918,71 @@ LABEL_SCRIPT = PAGE_PRELUDE + r"""
   await tick();
   const last = writes[writes.length - 1];
   assert.deepEqual(last.body,
-    {check_id: 10, answers: {}, failed_condition: 'REPAIR', note: 'Cracked panel'});
+    {check_id: 10, answers: {}, line_ids: [], failed_condition: 'REPAIR', note: 'Cracked panel'});
   console.log('label ok');
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+
+STALE_SCRIPT = PAGE_PRELUDE + r"""
+(async () => {
+  await openCheck('TECH00412', {...tvOpen, serial_checked: true});
+  buttons('YES')[0].handlers.click();
+  buttons('YES')[1].handlers.click();
+  buttons('Finish')[0].handlers.click();
+  buttons('Skip')[0].handlers.click();
+  await tick();
+  assert.deepEqual(writes[1].body.line_ids, [1, 2]);
+  writes[1].resolve({ok: false, changed: true, message: 'That checklist changed. Scan the unit again.'});
+  await tick();
+  assert.equal(messages[messages.length - 1], 'That checklist changed. Scan the unit again.');
+  const again = onScan('TECH00412');
+  await tick();
+  writes[2].resolve({...tvOpen, serial_checked: false,
+    lines: [...tvOpen.lines, {id: 3, prompt: 'Stand?', fails: false}]});
+  await again;
+  assert.ok(texts().includes('Stand?'), 'a rescan reloads the lines');
+  assert.equal(buttons('YES').length, 3);
+  assert.ok(!texts().includes('Scan the serial barcode.'), 'the serial stays done');
+
+  // Repeat taps of one model button reuse a request id.
+  const c = onScan('U-00001');
+  await tick();
+  writes[3].resolve({ok: true, unused: true, code: 'U-00001'});
+  await c;
+  const bind = onScan('NEWSN');
+  await tick();
+  writes[4].resolve({ok: true, create: true, label_code: 'U-00001', serial: 'NEWSN',
+    models: [{id: 7, name: 'TV'}]});
+  await bind;
+  chosen.pick(7);
+  await tick();
+  const first = writes[5].rid;
+  writes[5].resolve({ok: false, message: 'busy'});
+  await tick();
+  chosen.pick(7);
+  await tick();
+  assert.equal(writes[6].path, '/create');
+  assert.equal(writes[6].rid, first);
+  console.log('stale ok');
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+KEEPALIVE_SCRIPT = r"""
+const assert = require('assert');
+const c = require(process.env.CHECK_JS);
+let t = 0; let sent = 0;
+const k = c.createKeepAlive({now: () => t, everyMs: 300000, send: () => { sent += 1; }});
+t = 400000;
+assert.equal(k.check(), false, 'no tap, no touch');
+k.tap();
+assert.equal(k.check(), true);
+assert.equal(sent, 1);
+k.tap(); t += 1000;
+assert.equal(k.check(), false);
+console.log('keepalive ok');
 """
 
 
@@ -804,7 +1001,9 @@ def _node(tmp_path, script, name):
     (FAILED_SCRIPT, "failed_check.js", "failed ok"),
     (GEAR_SCRIPT, "gear_check.js", "gear ok"),
     (LABEL_SCRIPT, "label_check.js", "label ok"),
-], ids=["flow", "page", "failed", "gear", "label"])
+    (STALE_SCRIPT, "stale_check.js", "stale ok"),
+    (KEEPALIVE_SCRIPT, "keepalive_check.js", "keepalive ok"),
+], ids=["flow", "page", "failed", "gear", "label", "stale", "keepalive"])
 def test_check_page_logic_under_node(tmp_path, script, name, marker):
     """Runs the pure logic and the page script on a stub DOM; it does not drive a browser."""
     result = _node(tmp_path, script, name)

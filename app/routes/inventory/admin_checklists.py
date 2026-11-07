@@ -2,7 +2,8 @@
 from flask import abort, flash, redirect, request, url_for
 
 from app import db
-from app.models import InvCheckItem, InvStationItem, SupplyItem
+from app.inventory.checks import check_station_error
+from app.models import InvCheckItem, SupplyItem
 from app.models.constants import INV_CHECK_STATIONS, INV_STATION_NAMES
 
 from . import inventory_bp
@@ -50,40 +51,23 @@ def checklists():
     lines = _lines(item.id) if item else []
     return render_inventory_page(
         "inventory/checklists.html", items=items, item=item, lines=lines,
-        prompt_max=PROMPT_MAX, station=_station_of(item.id) if item else None,
+        prompt_max=PROMPT_MAX, station=item.check_station if item else None,
         stations=[(code, INV_STATION_NAMES[code]) for code in INV_CHECK_STATIONS])
-
-
-def _station_rows(item_id: int) -> list[InvStationItem]:
-    return (db.session.query(InvStationItem)
-            .filter(InvStationItem.item_id == item_id,
-                    InvStationItem.station_code.in_(INV_CHECK_STATIONS)).all())
-
-
-def _station_of(item_id: int) -> str | None:
-    rows = _station_rows(item_id)
-    return rows[0].station_code if rows else None
 
 
 @inventory_bp.post("/admin/checklists/<int:item_id>/station")
 @require_inventory_admin
 def set_check_station(item_id: int):
-    """Choose which check station lists this model. Count rows are left alone."""
+    """Choose which check station checks this model; the Items page sets the same column."""
     item = db.session.get(SupplyItem, item_id)
     if item is None or not item.is_serialized:
         abort(404)
     station = (request.form.get("station") or "").strip()
-    if station and station not in INV_CHECK_STATIONS:
-        flash("Pick None, TV check or Printer check.", "error")
+    error = check_station_error(station)
+    if error:
+        flash(error, "error")
         return _back(item_id)
-    for row in _station_rows(item_id):
-        if row.station_code != station:
-            db.session.delete(row)
-    if station and _station_of(item_id) != station:
-        last = (db.session.query(db.func.max(InvStationItem.position))
-                .filter_by(station_code=station).scalar())
-        db.session.add(InvStationItem(station_code=station, item_id=item_id,
-                                      position=(last if last is not None else -1) + 1))
+    item.check_station = station or None
     db.session.commit()
     flash("Saved where this model is checked.", "success")
     return _back(item_id)

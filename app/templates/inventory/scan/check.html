@@ -11,5 +11,6 @@
         data-bind-url="{{ url_for('inventory.scan_check_bind_label') }}"
         data-create-url="{{ url_for('inventory.scan_check_create_unit') }}"
         data-station-url="{{ url_for('inventory.scan_station_switch') }}"
+        data-keep-alive-url="{{ url_for('inventory.scan_check_keepalive') }}"
         data-home-url="{{ url_for('inventory.scan_home') }}"></script>
 {% endif %}{% endblock %}

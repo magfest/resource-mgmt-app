@@ -24,14 +24,15 @@ from app.inventory.ledger import (
 )
 from app.inventory.printing import unit_number
 from app.inventory.receive import MAX_SERIAL, SAME_CODE, container_for_code
-from app.inventory.resolver import KIND_UNUSED, resolve
+from app.inventory.resolver import KIND_ITEM, KIND_UNUSED, resolve
 from app.models import (
-    InvCheck, InvCheckAnswer, InvCheckItem, InvMovement, InvPrepStatus, InvStationItem,
-    InvStock, InvUnit, InvUnitIdentifier, SupplyItem,
+    InvCheck, InvCheckAnswer, InvCheckItem, InvMovement, InvPrepStatus, InvStock, InvUnit,
+    InvUnitIdentifier, SupplyItem,
 )
 from app.models.constants import (
     INV_CHECK_FAILED, INV_CHECK_OPEN, INV_CHECK_PASSED, INV_CHECK_SET_ASIDE,
-    INV_CHECK_STATIONS, INV_CONDITION_REPAIR, INV_CONDITION_RETIRED, INV_IDENT_FESTOPS_LABEL,
+    INV_CHECK_STATIONS, INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
+    INV_CONDITION_RETIRED, INV_IDENT_FESTOPS_LABEL,
     INV_IDENT_SERIAL, INV_PREP_CHECKED, INV_PREP_FAILED_CHECK, INV_STATION_NAMES,
     INV_STATION_PRINTER_CHECK, INV_STATION_TV_CHECK,
 )
@@ -113,6 +114,14 @@ class WrongGear(InventoryError):
                       "can_switch": can_switch}
 
 
+class ChecklistChanged(InventoryError):
+    """The model's checklist changed after the screen loaded it. Rescanning reloads the lines."""
+
+    def __init__(self):
+        super().__init__("That checklist changed. Scan the unit again.")
+        self.extra = {"changed": True}
+
+
 class NoUnitForSerial(InventoryError):
     """No active unit holds the scanned serial; the station offers to create one."""
 
@@ -128,22 +137,24 @@ def _number(unit: InvUnit) -> str:
     return unit_number(unit) or unit_tag(unit)
 
 
+def check_station_error(raw) -> str | None:
+    """Return the refusal for a bad check-station value, or None. Blank clears the station."""
+    if raw and raw not in INV_CHECK_STATIONS:
+        return "Pick a check station from the list, or leave it blank."
+    return None
+
+
 def station_models(station_code: str) -> list[SupplyItem]:
-    """The active serialized models listed for a check station, in list order."""
+    """The active serialized models whose `check_station` is this station, by name."""
     return (db.session.query(SupplyItem)
-            .join(InvStationItem, InvStationItem.item_id == SupplyItem.id)
-            .filter(InvStationItem.station_code == station_code,
+            .filter(SupplyItem.check_station == station_code,
                     SupplyItem.is_serialized.is_(True), SupplyItem.is_active.is_(True))
-            .order_by(InvStationItem.position, SupplyItem.item_name, SupplyItem.id).all())
+            .order_by(SupplyItem.item_name, SupplyItem.id).all())
 
 
 def station_for(item: SupplyItem) -> str | None:
-    """The check station that lists this model, or None when no station does."""
-    row = (db.session.query(InvStationItem.station_code)
-           .filter(InvStationItem.item_id == item.id,
-                   InvStationItem.station_code.in_(INV_CHECK_STATIONS))
-           .order_by(InvStationItem.id).first())
-    return row[0] if row else None
+    """The check station set on this model, or None when it has none."""
+    return item.check_station if item.check_station in INV_CHECK_STATIONS else None
 
 
 def require_station(unit: InvUnit, station_code: str, can_switch: bool) -> None:
@@ -190,6 +201,7 @@ def open_check(unit: InvUnit, station_code: str, actor: Actor, event_cycle) -> I
         raise InventoryError("That unit is retired.")
     if station_for(unit.item) != station_code:
         raise InventoryError(f"{unit.item.item_name} is not checked at this station.")
+    _set_aside_ended_shifts(actor)
     other = blocking_check(actor, unit)
     if other is not None:
         raise CheckBlocked(other)
@@ -202,6 +214,18 @@ def open_check(unit: InvUnit, station_code: str, actor: Actor, event_cycle) -> I
     db.session.add(check)
     db.session.flush()
     return check
+
+
+def _set_aside_ended_shifts(actor: Actor) -> None:
+    """Close this device's checks left OPEN by a shift that has ended; they can never finish."""
+    if actor.device_id is None or actor.shift_id is None:
+        return
+    for stale in (db.session.query(InvCheck)
+                  .filter(InvCheck.status == INV_CHECK_OPEN, InvCheck.device_id == actor.device_id,
+                          InvCheck.shift_id != actor.shift_id).all()):
+        stale.status = INV_CHECK_SET_ASIDE
+        stale.finished_at = datetime.utcnow()
+    db.session.flush()
 
 
 def _locked(check: InvCheck) -> InvCheck:
@@ -252,20 +276,34 @@ def _is_a_number(normalized: str) -> bool:
                     InvUnitIdentifier.retired_at.is_(None)).first() is not None)
 
 
-def check_serial(unit: InvUnit, scanned: str) -> dict:
+def _require_serial_shape(raw: str, normalized: str) -> None:
+    """Refuse a scan that is a unit number or a model barcode before anything is written.
+
+    A mis-scan must not turn a tag or a UPC into a serial.
+    """
+    if labels.parse(normalized) is not None or _is_a_number(normalized):
+        raise InventoryError(f"{raw} is a unit number, not a serial. Scan the SERIAL.")
+    if resolve(raw).kind == KIND_ITEM:
+        raise InventoryError("That is the model barcode. Scan the serial (S/N).")
+
+
+def check_serial(unit: InvUnit, scanned: str, check: InvCheck | None = None) -> dict:
     """Compare a scanned serial with the record; the unit's barcode wins.
 
     Returns `{"result": "matches" | "recorded" | "replaced", "old": str | None}`.
-    A serial held by a different active unit is refused and nothing changes.
+    A serial held by a different active unit is refused and nothing changes. A
+    replacement is written to the check's note so the change has a who and a when.
     """
     _default_event()
     raw, normalized = _clean_serial(scanned)
     number = unit_number(unit)
     if number and normalize_code(number) == normalized:
         raise InventoryError(SAME_CODE)
-    # A volunteer scanning the wrong barcode must not turn a unit number into a serial.
-    if labels.parse(normalized) is not None or _is_a_number(normalized):
-        raise InventoryError(f"{raw} is a unit number, not a serial. Scan the SERIAL.")
+    if check is not None and (labels.parse(normalized) is not None or _is_a_number(normalized)):
+        other = resolve(raw).unit
+        if other is not None and other.id != check.unit_id:
+            raise CheckBlocked(check)
+    _require_serial_shape(raw, normalized)
     current = (db.session.query(InvUnitIdentifier)
                .filter(InvUnitIdentifier.unit_id == unit.id,
                        InvUnitIdentifier.kind == INV_IDENT_SERIAL,
@@ -280,6 +318,8 @@ def check_serial(unit: InvUnit, scanned: str) -> dict:
     for identifier in current:
         retire_identifier(identifier)
     add_identifier(unit, INV_IDENT_SERIAL, raw)
+    if current and check is not None:
+        check.note = _joined_note([check.note, f"Serial changed from {old} to {raw}."])
     return {"result": "replaced" if current else "recorded", "old": old}
 
 
@@ -323,6 +363,7 @@ def bind_label(label_code: str, serial: str, actor: Actor) -> InvUnit:
     raw, normalized = _clean_serial(serial)
     if normalize_code(code) == normalized:
         raise InventoryError(SAME_CODE)
+    _require_serial_shape(raw, normalized)
     matches = _units_with_serial(normalized)
     if not matches:
         raise NoUnitForSerial(f"No unit has serial {raw}.")
@@ -344,6 +385,7 @@ def create_checked_unit(item: SupplyItem, label_code: str, serial: str, actor: A
     raw, normalized = _clean_serial(serial)
     if normalize_code(code) == normalized:
         raise InventoryError(SAME_CODE)
+    _require_serial_shape(raw, normalized)
     if not item.is_serialized or not item.is_active:
         raise InventoryError(f"{item.item_name} cannot be checked as a unit.")
     holders = _units_with_serial(normalized)
@@ -387,12 +429,15 @@ def _joined_note(parts: list[str]) -> str | None:
 
 
 def finish_check(check: InvCheck, answers: dict, actor: Actor,
-                 failed_condition: str | None = None, note: str | None = None) -> InvCheck:
+                 failed_condition: str | None = None, note: str | None = None,
+                 line_ids: list | None = None) -> InvCheck:
     """Finish an open check from its answers and write the prep status.
 
     Every active line needs YES or NO. A NO on a FAIL line fails the check, which
     then needs a condition; a NO on a NOTE line passes and records the prompt. A
     model with no lines passes, or fails when `failed_condition` and a note are sent.
+    A pass returns a REPAIR or LOST unit to IN_SERVICE. `line_ids` lists the lines the
+    screen showed; a different active set raises ChecklistChanged.
     """
     _default_event()
     check = _locked(check)
@@ -403,7 +448,9 @@ def finish_check(check: InvCheck, answers: dict, actor: Actor,
     lines = active_check_items(unit.item)
     by_id = {line.id: line for line in lines}
     if not isinstance(answers, dict) or any(k not in by_id for k in answers):
-        raise InventoryError("That checklist changed. Set this check aside and scan the unit again.")
+        raise ChecklistChanged()
+    if line_ids is not None and set(line_ids) != set(by_id):
+        raise ChecklistChanged()
     if any(answers.get(line.id) not in ("YES", "NO") for line in lines):
         raise InventoryError("Answer every line.")
     clean_note = note.strip() if isinstance(note, str) and note.strip() else None
@@ -412,7 +459,7 @@ def finish_check(check: InvCheck, answers: dict, actor: Actor,
     else:
         failed = failed_condition is not None
     if not failed and failed_condition is not None:
-        raise InventoryError("A condition applies only to a failed check.")
+        raise ChecklistChanged()
     if failed and failed_condition not in FAILED_CONDITIONS:
         raise InventoryError("A failed check needs one more answer: repair or retire.")
     if failed and not lines and clean_note is None:
@@ -423,12 +470,14 @@ def finish_check(check: InvCheck, answers: dict, actor: Actor,
         db.session.add(InvCheckAnswer(
             check_id=check.id, check_item_id=line.id, answer=answers[line.id],
             note=line.prompt if line.prompt in noted else None))
-    check.note = _joined_note(noted + [clean_note])
+    check.note = _joined_note([check.note] + noted + [clean_note])
     check.status = INV_CHECK_FAILED if failed else INV_CHECK_PASSED
     check.finished_at = datetime.utcnow()
     check.previous_condition = unit.condition
     if failed:
         set_condition(unit, failed_condition)
+    elif unit.condition in (INV_CONDITION_REPAIR, INV_CONDITION_LOST):
+        set_condition(unit, INV_CONDITION_IN_SERVICE)
     db.session.add(InvPrepStatus(
         unit_id=unit.id, event_cycle_id=check.event_cycle_id,
         status=INV_PREP_FAILED_CHECK if failed else INV_PREP_CHECKED, check_id=check.id,

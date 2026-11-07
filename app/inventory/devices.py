@@ -115,11 +115,20 @@ def redeem_enroll_code(raw: str | None, now: datetime | None = None) -> tuple[In
 
 
 def set_station(device: InvDevice, station_code: str,
-                home_container: InvContainer | None = None) -> None:
-    """Change a device's station; the home container is replaced, not kept."""
+                home_container: InvContainer | None = None, keep_home: bool = False,
+                user_id: str | None = None) -> None:
+    """Change a device's station and write the security event; the caller commits.
+
+    The home container is replaced by `home_container` unless `keep_home` is set.
+    `user_id` is the admin who changed it; a scanner switching itself passes None.
+    """
     _check_station(station_code)
     device.station_code = station_code
-    device.home_container_id = home_container.id if home_container else None
+    if not keep_home:
+        device.home_container_id = home_container.id if home_container else None
+    log_security_event(EVENT_CONFIG_MODIFY, category=CATEGORY_ADMIN, user_id=user_id,
+                       details={"source": "inventory_device_station", "device_id": device.id,
+                                "station_code": device.station_code})
 
 
 def device_for_token(raw: str | None) -> InvDevice | None:

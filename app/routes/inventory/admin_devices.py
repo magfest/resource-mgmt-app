@@ -56,14 +56,11 @@ def device_station(device_id: int):
         return redirect(url_for("inventory.devices"))
     try:
         set_station(device, request.form.get("station_code", ""),
-                    home_container=home_container_from_form())
+                    home_container=home_container_from_form(),
+                    user_id=get_user_ctx().user_id)
     except InventoryError as exc:
         flash(str(exc), "error")
         return redirect(url_for("inventory.devices"))
-    log_security_event(EVENT_CONFIG_MODIFY, category=CATEGORY_ADMIN,
-                       user_id=get_user_ctx().user_id,
-                       details={"source": "inventory_device_station", "device_id": device.id,
-                                "station_code": device.station_code})
     db.session.commit()
     flash(f"{device.name} is now a {INV_STATION_NAMES[device.station_code]} scanner.", "success")
     return redirect(url_for("inventory.devices"))

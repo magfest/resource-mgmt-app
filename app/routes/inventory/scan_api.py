@@ -41,7 +41,8 @@ from app.inventory.zpl import can_print_code
 from app.inventory.shifts import current_shift, end_shift, start_shift, touch
 from app.models import InvCheck, InvContainerKind, InvCount, InvUnit, SupplyItem
 from app.models.constants import (
-    INV_CHECK_STATIONS, INV_CONDITION_RETIRED, INV_SHIFT_END_ENDED, INV_STATION_COUNT,
+    INV_CHECK_STATIONS, INV_CONDITION_RETIRED, INV_IDENT_SERIAL, INV_SHIFT_END_ENDED,
+    INV_STATION_COUNT,
     INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_TV_CHECK,
 )
 
@@ -635,8 +636,25 @@ def _unit_for_scan(resolution: Resolution, data: dict, station: str) -> dict | I
         return {"unused": True, "code": resolution.code}
     if kind == KIND_UNKNOWN:
         raise InventoryError(UNKNOWN_CODE)
-    what = "container" if kind in (KIND_CONTAINER, KIND_UNUSED) else "model barcode"
+    if kind == KIND_UNUSED and resolution.prefix == labels.PREFIX_ITEM:
+        what = "item label"
+    else:
+        what = "container" if kind in (KIND_CONTAINER, KIND_UNUSED) else "model barcode"
     raise InventoryError(f"This is a {what}; this station checks {plural}.")
+
+
+def _scanned_its_serial(unit: InvUnit, resolution: Resolution) -> bool:
+    """True when the scan matched one of the unit's active serials, so the serial step is done."""
+    return any(i.kind == INV_IDENT_SERIAL and i.retired_at is None
+               and i.normalized_value == resolution.code for i in unit.identifiers)
+
+
+@inventory_bp.post("/scan/api/check/keepalive")
+@api
+def scan_check_keepalive():
+    """Keep the shift open while a check has no server traffic. The `api` wrapper touches it."""
+    _check_station({})
+    return jsonify(ok=True)
 
 
 @inventory_bp.post("/scan/api/check/open")
@@ -652,8 +670,13 @@ def scan_check_open():
         resolution = resolve(_optional_text(data, "code"))
         found = _unit_for_scan(resolution, data, station)
         if isinstance(found, dict):
+            # An unused label must not start a bind while another unit's check is open.
+            open_one = open_check_for(actor) if found.get("unused") else None
+            if open_one is not None:
+                raise CheckBlocked(open_one)
             return found
-        return _begin_check(found, station, actor, event, again=data.get("again") is True)
+        return _begin_check(found, station, actor, event, again=data.get("again") is True,
+                            serial_checked=_scanned_its_serial(found, resolution))
 
     return jsonify(run_once(data.get("client_request_id"), start))
 
@@ -672,7 +695,7 @@ def scan_check_serial():
         if check.status != "OPEN":
             raise CheckFinished("This check is already finished.")
         scanned = _optional_text(data, "code")
-        answer = check_serial(check.unit, scanned)
+        answer = check_serial(check.unit, scanned, check)
         return {**answer, "message": serial_message(answer, scanned)}
 
     return jsonify(run_once(data.get("client_request_id"), compare))
@@ -696,8 +719,10 @@ def scan_check_finish():
         except (TypeError, ValueError):
             raise InventoryError("Answer every line.") from None
         condition = _optional_text(data, "failed_condition")
+        line_ids = data.get("line_ids")
         finish_check(check, answers, actor, failed_condition=condition,
-                     note=_optional_text(data, "note"))
+                     note=_optional_text(data, "note"),
+                     line_ids=line_ids if isinstance(line_ids, list) else None)
         unit = check.unit
         out = {"status": check.status, "condition": unit.condition,
                "code": unit_number(unit) or str(unit.id)}
@@ -796,7 +821,7 @@ def scan_station_switch():
         code = data.get("station_code")
         if code not in INV_CHECK_STATIONS:
             raise InventoryError("Pick TV check or Printer check.")
-        set_station(principal.device, code)
+        set_station(principal.device, code, keep_home=True)
         return {"station_code": code}
 
     return jsonify(run_once(data.get("client_request_id"), switch))
