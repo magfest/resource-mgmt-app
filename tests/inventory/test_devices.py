@@ -42,7 +42,9 @@ def test_admin_creates_a_code_and_the_device_redeems_it(app, inv):
     assert (device.name, device.station_code, device.home_container_id) == (
         "Scanner 3", "COUNT", bin_.id)
     assert device_client.get_cookie(COOKIE_NAME, path="/inv/scan/") is not None
-    assert device_client.get("/inv/scan/").status_code == 200
+    # A COUNT station asks for a name before it opens.
+    assert device_client.get("/inv/scan/").headers["Location"].endswith("/inv/scan/who")
+    assert device_client.get("/inv/scan/who").status_code == 200
     # The page that showed the code does not show it again.
     assert code not in admin.get("/inv/admin/devices").get_data(as_text=True)
 
