@@ -19,6 +19,18 @@
 </form>
 {% if item %}
 <h2>{{ item.item_name }}</h2>
+<form method="post" action="{{ url_for('inventory.set_check_station', item_id=item.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Checked at
+    <select name="station">
+      <option value="">None</option>
+      {% for code, name in stations %}
+      <option value="{{ code }}" {% if station == code %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Save</button>
+</form>
 <ul class="muted mb-16">
   <li><strong>FAIL:</strong> A no fails the check.</li>
   <li><strong>NOTE:</strong> A no passes, and the prompt is kept as a note.</li>

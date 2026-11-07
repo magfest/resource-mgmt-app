@@ -93,3 +93,27 @@ body.not-saved-on { background: #f9c9c9; }
 .cnt-submit { display: block; width: 100%; min-height: 60px; font-size: 1.3rem; font-weight: 700; border: 0; border-radius: 10px; background: #1565c0; color: #fff; }
 .cnt-step { font-size: 1.6rem; font-weight: 700; margin: 12px 0; }
 .cnt-stale { color: #b71c1c; font-weight: 600; margin-bottom: 6px; }
+/* Check. The unit name and number stay at the top; YES and NO sit side by side; Finish stays in reach. */
+.chk-head { position: sticky; top: 0; z-index: 5; padding: 6px 0; background: #fff; border-bottom: 2px solid #6a1b9a; }
+.station-PRINTER_CHECK .chk-head { border-bottom-color: #00796b; }
+.chk-name { font-size: 1.3rem; font-weight: 700; }
+.chk-code { font-family: ui-monospace, monospace; font-size: 1.6rem; font-weight: 700; }
+.chk-sub { color: #455a64; }
+.chk-idle, .chk-blocked { font-size: 1.3rem; font-weight: 600; }
+.chk-blocked { color: #b71c1c; }
+.chk-step { font-size: 1.6rem; font-weight: 700; margin: 12px 0; }
+.chk-line { padding: 8px 0; border-bottom: 1px solid #cfd8dc; }
+.chk-prompt { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; }
+.chk-yn { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.chk-btn { min-height: 56px; font-size: 1.3rem; font-weight: 700; border: 2px solid #90a4ae; border-radius: 10px; background: #eceff1; }
+.chk-yes.on { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+.chk-no.on { background: #c62828; border-color: #c62828; color: #fff; }
+.chk-foot { position: sticky; bottom: 0; padding: 8px 0; background: #fff; }
+.chk-finish { display: block; width: 100%; min-height: 60px; font-size: 1.3rem; font-weight: 700; border: 0; border-radius: 10px; background: #6a1b9a; color: #fff; }
+.station-PRINTER_CHECK .chk-finish { background: #00796b; }
+.chk-big { display: block; width: 100%; min-height: 64px; margin: 0 0 12px; font-size: 1.3rem; font-weight: 700; border: 2px solid #90a4ae; border-radius: 10px; background: #eceff1; }
+.chk-small { display: block; width: 100%; min-height: 48px; margin-top: 8px; font-size: 1.05rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.chk-result { font-size: 2rem; font-weight: 800; margin: 12px 0; }
+.chk-result.pass { color: #2e7d32; }
+.chk-result.fail { color: #c62828; }
+.chk-warn { color: #b71c1c; font-weight: 600; margin-bottom: 8px; }
