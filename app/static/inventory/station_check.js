@@ -494,6 +494,7 @@
   function next() {
     if (check.canPutAway()) {
       phase = 'putaway';
+      S.showMessage('');
       render();
       refocus();
       return;

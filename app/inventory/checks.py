@@ -22,7 +22,7 @@ from app.inventory.ledger import (
     NUMBER_KINDS, Actor, InventoryError, add_identifier, add_unit, move_unit, retire_identifier,
     set_condition,
 )
-from app.inventory.printing import unit_number
+from app.inventory.printing import local_stamp, unit_number
 from app.inventory.receive import MAX_SERIAL, SAME_CODE, container_for_code
 from app.inventory.resolver import KIND_ITEM, KIND_UNUSED, resolve
 from app.models import (
@@ -95,7 +95,7 @@ class CheckBlocked(InventoryError):
     """Another unit's check is open on this shift. `extra` rides in the answer."""
 
     def __init__(self, check: InvCheck):
-        number = _number(check.unit)
+        number = display_number(check.unit)
         super().__init__(f"{number} is not finished. Finish it, or set it aside?")
         self.extra = {"open_check": {"check_id": check.id, "code": number,
                                      "name": check.unit.item.item_name}}
@@ -133,7 +133,8 @@ def _default_event():
     return event
 
 
-def _number(unit: InvUnit) -> str:
+def display_number(unit: InvUnit) -> str:
+    """The unit's number, or its serial when it has no number yet."""
     return unit_number(unit) or unit_tag(unit)
 
 
@@ -313,13 +314,13 @@ def check_serial(unit: InvUnit, scanned: str, check: InvCheck | None = None) -> 
         return {"result": "matches", "old": None}
     holders = _units_with_serial(normalized, exclude=unit)
     if holders:
-        raise InventoryError(f"{raw} belongs to {_number(holders[0])}. Nothing was changed.")
+        raise InventoryError(f"{raw} belongs to {display_number(holders[0])}. Nothing was changed.")
     old = current[0].value if current else None
     for identifier in current:
         retire_identifier(identifier)
     add_identifier(unit, INV_IDENT_SERIAL, raw)
     if current and check is not None:
-        check.note = _joined_note([check.note, f"Serial changed from {old} to {raw}."])
+        check.note = _joined_note([check.note, f"Serial changed from {old} to {raw}"])
     return {"result": "replaced" if current else "recorded", "old": old}
 
 
@@ -349,7 +350,7 @@ def unused_unit_label(label_code) -> str:
 
 
 def _already_numbered(raw: str, unit: InvUnit) -> InventoryError:
-    return InventoryError(f"{raw} already has number {_number(unit)}. Use that label.")
+    return InventoryError(f"{raw} already has number {display_number(unit)}. Use that label.")
 
 
 def bind_label(label_code: str, serial: str, actor: Actor) -> InvUnit:
@@ -368,7 +369,7 @@ def bind_label(label_code: str, serial: str, actor: Actor) -> InvUnit:
     if not matches:
         raise NoUnitForSerial(f"No unit has serial {raw}.")
     if len(matches) > 1:
-        numbers = " and ".join(_number(u) for u in matches)
+        numbers = " and ".join(display_number(u) for u in matches)
         raise InventoryError(f"Serial {raw} is on {len(matches)} units: {numbers}. "
                              "An inventory admin must fix one.")
     unit = matches[0]
@@ -418,7 +419,7 @@ def last_result(unit: InvUnit, event_cycle) -> dict | None:
     if check is None:
         return None
     return {"result": "Passed" if check.status == INV_CHECK_PASSED else "Failed",
-            "when": f"{check.finished_at:%b %d %H:%M} UTC"}
+            "when": local_stamp(check.finished_at)}
 
 
 def _joined_note(parts: list[str]) -> str | None:

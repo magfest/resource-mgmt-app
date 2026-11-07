@@ -1,5 +1,6 @@
 """TV and printer check stations: the check rules, the API, the page and the page script."""
 import os
+from datetime import datetime
 import shutil
 import subprocess
 from types import SimpleNamespace
@@ -9,8 +10,8 @@ import pytest
 from app import db
 from app.inventory import labels
 from app.inventory.checks import (
-    active_check_items, bind_label, check_serial, create_checked_unit, finish_check,
-    open_check, prep_status, set_aside, station_models,
+    active_check_items, bind_label, check_serial, create_checked_unit, display_number,
+    finish_check, last_result, open_check, prep_status, set_aside, station_models,
 )
 from app.inventory.ledger import Actor, InventoryError, add_unit
 from app.inventory.resolver import KIND_UNKNOWN, resolve
@@ -281,9 +282,9 @@ def test_a_serial_replacement_is_written_to_the_check_note(inv, event, tv_checkl
     t = tv_checklist
     check = open_check(t.tv, "TV_CHECK", ACTOR, event)
     check_serial(t.tv, "SN4417", check)
-    assert check.note == "Serial changed from SN4471 to SN4417."
+    assert check.note == "Serial changed from SN4471 to SN4417"
     finish_check(check, {t.power.id: "YES", t.remote.id: "NO"}, ACTOR)
-    assert check.note.startswith("Serial changed from SN4471 to SN4417.")
+    assert check.note.startswith("Serial changed from SN4471 to SN4417; ")
     assert "Remote present?" in check.note
 
 
@@ -508,7 +509,7 @@ def test_a_checked_unit_asks_before_a_second_check(client, tv_device):
     _finish(client, a["check_id"], {t.power.id: "YES", t.remote.id: "YES"})
     again = _open(client, "TECH00412")
     assert again["ok"] is True and again["already_checked"]["result"] == "Passed"
-    assert "UTC" in again["already_checked"]["when"] and "check_id" not in again
+    assert "UTC" not in again["already_checked"]["when"] and "check_id" not in again
     assert InvCheck.query.count() == 1
     forced = _open(client, "TECH00412", again=True)
     assert forced["check_id"] and InvCheck.query.count() == 2
@@ -1009,3 +1010,19 @@ def test_check_page_logic_under_node(tmp_path, script, name, marker):
     result = _node(tmp_path, script, name)
     assert result.returncode == 0, result.stderr
     assert marker in result.stdout
+
+
+def test_already_checked_shows_the_local_time_not_utc(inv, event, tv_checklist):
+    t = tv_checklist
+    check = open_check(t.tv, "TV_CHECK", ACTOR, event)
+    finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, ACTOR)
+    check.finished_at = datetime(2026, 11, 8, 2, 23)
+    db.session.commit()
+    # INV_LOCAL_TZ is US Eastern, five hours behind UTC in November.
+    assert last_result(t.tv, event)["when"] == "Nov 7, 9:23 PM"
+
+
+def test_a_unit_with_only_a_serial_is_named_by_its_serial(inv, event, tv_checklist):
+    bare = add_unit(tv_checklist.tv_item, tv_checklist.where, ACTOR, [("SERIAL", "SN7777")])
+    db.session.commit()
+    assert display_number(bare) == "SN7777"

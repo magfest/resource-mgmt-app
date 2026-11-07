@@ -7,14 +7,13 @@ trustworthy. Nothing here commits.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import contains_eager
 
 from app import db
-from app.inventory.printing import INV_LOCAL_TZ
+from app.inventory.printing import local_stamp
 from app.inventory.ledger import (
     Actor, InventoryError, discard_stock, set_counted_quantity,
 )
@@ -78,12 +77,6 @@ def _is_blind(count: InvCount) -> bool:
     return earlier is None
 
 
-def _local_stamp(moment: datetime) -> str:
-    """Format a stored UTC time as `Nov 7, 9:23 PM` in INV_LOCAL_TZ."""
-    local = moment.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(INV_LOCAL_TZ))
-    return f"{local:%b} {local.day}, {local.hour % 12 or 12}:{local:%M} {local:%p}"
-
-
 def _last_counted(count: InvCount) -> dict[int, datetime]:
     """Latest submit time per item over this container's other submitted counts."""
     rows = (db.session.query(InvCountLine.item_id, func.max(InvCount.submitted_at))
@@ -106,7 +99,7 @@ def count_payload(count: InvCount) -> dict:
             line = {"item_id": r.item_id, "name": r.item.item_name, "expected": r.quantity,
                     "is_approximate": r.is_approximate}
             if last.get(r.item_id) is not None:
-                line["last_counted"] = _local_stamp(last[r.item_id])
+                line["last_counted"] = local_stamp(last[r.item_id])
             lines.append(line)
     usual = (db.session.query(InvStationItem).join(InvStationItem.item)
              .options(contains_eager(InvStationItem.item))

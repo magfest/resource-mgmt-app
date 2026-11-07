@@ -6,7 +6,7 @@ collection and never stored. Nothing here commits. Times are naive UTC.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
@@ -45,6 +45,12 @@ def _active_value(unit, kind: str) -> str | None:
         if ident.kind == kind and ident.retired_at is None:
             return ident.value
     return None
+
+
+def local_stamp(moment: datetime) -> str:
+    """Format a stored UTC time as `Nov 7, 9:23 PM` in INV_LOCAL_TZ."""
+    local = moment.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(INV_LOCAL_TZ))
+    return f"{local:%b} {local.day}, {local.hour % 12 or 12}:{local:%M} {local:%p}"
 
 
 def unit_number(unit) -> str | None:
