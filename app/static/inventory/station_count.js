@@ -527,12 +527,17 @@
       return;
     }
     if (!answer.ok) { fail(answer.message); return; }
+    var counted = count.code;
     count = null;
     result = {applied: answer.applied, stale: answer.stale || []};
     if (result.stale.length) { fail(staleText(result.stale)); } else {
       S.feedback('ok');
       S.showMessage('', 'info');
     }
+    S.offerUndo({kind: 'count', name: counted, onUndone: function () {
+      result = null;
+      render();
+    }});
     render();
     refocus();
   }

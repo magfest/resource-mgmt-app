@@ -26,6 +26,7 @@ from app.inventory.counts import (
     item_choice, start_count, submit_count,
 )
 from app.inventory.tree import display_name
+from app.inventory.undo import undo_last
 from app.inventory.ledger import InventoryError, create_container
 from app.inventory.receive import (
     check_tag, container_for_code, receive_unit, reprint_unit, undo_message, undo_receive,
@@ -113,6 +114,18 @@ def scan_flag():
         return {"flag_id": saved.id, "reason": FLAG_WORDS[saved.reason]}
 
     return jsonify(run_once(data.get("client_request_id"), flag))
+
+
+@inventory_bp.post("/scan/api/undo")
+@api
+def scan_undo():
+    """Undo this shift's newest finished check or submitted count, inside the window."""
+    data = _json_body()
+
+    def undo() -> dict:
+        return undo_last(scan_actor())
+
+    return jsonify(run_once(data.get("client_request_id"), undo))
 
 
 @inventory_bp.post("/scan/api/shift")

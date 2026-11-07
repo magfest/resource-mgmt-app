@@ -567,6 +567,11 @@
     finishId = null;
     if (answer.put_away_error) { fail('Check saved. Not moved: ' + answer.put_away_error); }
     else { S.feedback('ok'); S.showMessage('', 'info'); }
+    S.offerUndo({kind: 'check', name: result.code, onUndone: function () {
+      result = null;
+      phase = 'idle';
+      render();
+    }});
     render();
     refocus();
     return {ok: true};

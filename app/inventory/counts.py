@@ -23,6 +23,7 @@ from app.models import (
 )
 from app.models.constants import (
     INV_COUNT_LINE_APPLIED, INV_COUNT_LINE_STALE, INV_COUNT_LINE_UNCHANGED,
+    INV_COUNT_LINE_UNDONE,
     INV_DISCARD_REASONS, INV_STATION_COUNT,
 )
 
@@ -70,10 +71,17 @@ def start_count(container: InvContainer, actor: Actor) -> InvCount:
     return count
 
 
+def not_undone():
+    """Filter for counts that still stand; an undone count marks its lines UNDONE."""
+    return ~InvCount.lines.any(InvCountLine.outcome == INV_COUNT_LINE_UNDONE)
+
+
 def _is_blind(count: InvCount) -> bool:
+    # An undone count leaves no trusted number behind, so it cannot end blindness.
     earlier = (db.session.query(InvCount.id)
                .filter(InvCount.container_id == count.container_id,
-                       InvCount.submitted_at.isnot(None), InvCount.id != count.id).first())
+                       InvCount.submitted_at.isnot(None), InvCount.id != count.id,
+                       not_undone()).first())
     return earlier is None
 
 
@@ -82,7 +90,8 @@ def _last_counted(count: InvCount) -> dict[int, datetime]:
     rows = (db.session.query(InvCountLine.item_id, func.max(InvCount.submitted_at))
             .join(InvCount, InvCount.id == InvCountLine.count_id)
             .filter(InvCount.container_id == count.container_id,
-                    InvCount.submitted_at.isnot(None), InvCount.id != count.id)
+                    InvCount.submitted_at.isnot(None), InvCount.id != count.id,
+                    not_undone())
             .group_by(InvCountLine.item_id).all())
     return dict(rows)
 

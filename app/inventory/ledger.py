@@ -187,6 +187,32 @@ def set_counted_quantity(item, container, counted, actor, count_id=None,
                      from_container_id=container.id, count_id=count_id)
 
 
+def reverse_movement(movement: InvMovement, actor: Actor) -> InvMovement:
+    """Write the opposite of one stock ADJUST or DISCARD, noted "undo".
+
+    The original row stays. The reversal keeps the original's count_id so the
+    count's rows remain together. A removal larger than the balance is refused.
+    """
+    if movement.action not in (INV_ACTION_ADJUST, INV_ACTION_DISCARD) \
+            or movement.item_id is None or movement.quantity is None:
+        raise InventoryError("Only a stock adjustment or discard can be reversed.")
+    if movement.to_container_id is not None and movement.from_container_id is None:
+        stock = _locked_stock(movement.item_id, movement.to_container_id)
+        if stock.quantity < movement.quantity:
+            raise InventoryError("The balance is lower than the amount to take back.")
+        stock.quantity -= movement.quantity
+        return _movement(INV_ACTION_ADJUST, actor, item_id=movement.item_id,
+                         quantity=movement.quantity, from_container_id=movement.to_container_id,
+                         count_id=movement.count_id, note="undo")
+    if movement.from_container_id is not None and movement.to_container_id is None:
+        stock = _locked_stock(movement.item_id, movement.from_container_id)
+        stock.quantity += movement.quantity
+        return _movement(INV_ACTION_ADJUST, actor, item_id=movement.item_id,
+                         quantity=movement.quantity, to_container_id=movement.from_container_id,
+                         count_id=movement.count_id, note="undo")
+    raise InventoryError("Only a one-sided stock movement can be reversed.")
+
+
 def _already_taken(normalized: str) -> InventoryError:
     return InventoryError(f"{normalized} is already on another unit.")
 

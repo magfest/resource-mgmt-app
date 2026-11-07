@@ -10,6 +10,7 @@
   var REFOCUS_MS = 250;
   var PAUSE_SHOW_MS = 500;   // focus must stay lost this long before the paused banner shows
   var REQUEST_TIMEOUT_MS = 15000;
+  var UNDO_MS = 30000;       // how long Undo stays after a finished check or count
   var WAIT_ABOVE = 5;        // more queued labels than this reads as "Waiting for printer"
 
   // The error vocabulary every station shares. Wording matches the design spec.
@@ -259,7 +260,65 @@
     return waiting && (after === 'reason' || after === 'choices') ? 'ok' : 'error';
   }
 
-  var pure = {printerWaiting: printerWaiting, createPromptGate: createPromptGate,
+  // Offers "Undo" for a window after a finished check or count. offer() opens it; tap()
+  // sends one request and returns the same promise to a repeat tap; scan() and write()
+  // close it. scan() returns a promise while an undo is in flight, so the scan waits for
+  // the undo to settle, or null. send(id) resolves with the server answer.
+  function createUndoControl(opts) {
+    var spec = null;
+    var at = 0;
+    var id = null;
+    var open = false;
+    var flight = null;
+    var closeOnSettle = false;
+
+    function live() { return open && opts.now() - at < opts.windowMs; }
+    function close() { open = false; if (flight) { closeOnSettle = true; } }
+    function change() { if (opts.onChange) { opts.onChange(); } }
+    return {
+      offer: function (next) {
+        spec = next;
+        id = opts.mint ? opts.mint() : 'undo-' + at + '-' + Math.random();
+        at = opts.now();
+        open = true;
+        closeOnSettle = false;
+        change();
+      },
+      view: function () {
+        var shown = live();
+        return {visible: shown, busy: flight !== null,
+                text: spec ? 'Undo ' + spec.kind + ' of ' + spec.name : ''};
+      },
+      spec: function () { return spec; },
+      tap: function () {
+        if (flight) { return flight; }
+        if (!live()) { open = false; return Promise.resolve(null); }
+        var sent;
+        try { sent = Promise.resolve(opts.send(id)); } catch (e) { sent = Promise.reject(e); }
+        flight = sent.then(function (answer) { return answer || {ok: false}; }, function () {
+          return {ok: false, message: MESSAGES.offline};
+        }).then(function (answer) {
+          var finished = answer.ok === true || (answer.cancelled !== true && answer.message !== MESSAGES.offline);
+          flight = null;
+          if (finished || closeOnSettle || !live()) { open = false; }
+          closeOnSettle = false;
+          change();
+          return answer;
+        });
+        change();
+        return flight;
+      },
+      scan: function () {
+        var waiting = flight;
+        close();
+        change();
+        return waiting ? waiting.then(function () {}) : null;
+      },
+      write: function () { close(); change(); }
+    };
+  }
+
+  var pure = {createUndoControl: createUndoControl, printerWaiting: printerWaiting, createPromptGate: createPromptGate,
               flagScanSound: flagScanSound, createCapture: createCapture, createRepeatGuard: createRepeatGuard,
               createScanQueue: createScanQueue, createWriteQueue: createWriteQueue,
               createPauseWatch: createPauseWatch, interpretResponse: interpretResponse,
@@ -275,6 +334,7 @@
   var doneBtn = document.getElementById('done-btn');
   var flagBtn = document.getElementById('flag-btn');
   var flagPanel = document.getElementById('flag-panel');
+  var undoSlot = document.getElementById('undo-slot');
   var host = panel;         // where choose, askText and numberPad draw; the flag flow borrows it
   var notSaved = document.getElementById('not-saved');
   var asking = false;       // an askText field owns focus
@@ -407,9 +467,50 @@
 
   var writes = createWriteQueue({send: sendOnce, onBlock: showNotSaved, onUnblock: hideNotSaved});
 
+  // Undo goes through the write queue, so a failed save shows NOT SAVED and retries with its id.
+  var undoTimer = null;
+  var undoCtl = createUndoControl({
+    now: Date.now, windowMs: UNDO_MS, mint: newId,
+    send: function (id) { return writes.write(body.dataset.undoUrl, {client_request_id: id}); },
+    onChange: function () { renderUndo(); }
+  });
+
+  function renderUndo() {
+    if (!undoSlot) { return; }
+    var view = undoCtl.view();
+    undoSlot.textContent = '';
+    undoSlot.hidden = !view.visible;
+    if (!view.visible) { return; }
+    var b = el('button', 'choice undo-btn', view.text);
+    b.type = 'button';
+    b.disabled = view.busy;
+    b.addEventListener('click', tapUndo);
+    undoSlot.appendChild(b);
+  }
+
+  function tapUndo() {
+    var spec = undoCtl.spec();
+    undoCtl.tap().then(function (answer) {
+      if (!answer || answer.cancelled || answer.fatal || answer.need_name) { return; }
+      showMessage(answer.message, answer.ok ? 'ok' : 'error');
+      feedback(answer.ok ? 'ok' : 'error');
+      if (answer.ok && spec && spec.onUndone) { spec.onUndone(); }
+    });
+  }
+
+  // A station calls this after a finished check or submitted count: {kind: 'check' | 'count',
+  // name: 'FEST10001', onUndone: fn}. The button hides itself after 30 seconds.
+  function offerUndo(spec) {
+    undoCtl.offer(spec);
+    if (undoTimer !== null) { clearTimeout(undoTimer); }
+    undoTimer = setTimeout(function () { undoTimer = null; renderUndo(); }, UNDO_MS + 50);
+  }
+
   // A retry reuses the payload and its request id, so the server stores the answer once.
   // A caller may pass its own id and reuse it, so a repeat tap sends the same request.
   function write(path, data, requestId) {
+    // A flag leaves the undo window open; any other write closes it.
+    if (path !== body.dataset.flagUrl) { undoCtl.write(); }
     return writes.write(path, Object.assign({}, data, {client_request_id: requestId || newId()}));
   }
 
@@ -611,6 +712,7 @@
       msg.className = flagSaved.className;
     }
     flagSaved = null;
+    renderUndo();
     // The latest prompt a station tried to draw during the flow draws now.
     var held = gate.close();
     if (held) { held(); }
@@ -643,6 +745,7 @@
     if (stopped) { showMessage(stopped, 'error'); return; }
     if (scansBusy() || writes.pending() > 0) { showMessage(MESSAGES.lastScan, 'error'); return; }
     gate.open();
+    if (undoSlot) { undoSlot.hidden = true; }
     flagSaved = {text: msg.textContent, className: msg.className};
     panel.hidden = true;
     msg.hidden = true;
@@ -675,6 +778,13 @@
       show: function () { paused.hidden = false; },
       hide: function () { paused.hidden = true; }
     });
+    function submitScan(code) {
+      var outcome = scans.submit(code);
+      if (outcome.repeat != null) {
+        feedback('error');
+        showMessage(MESSAGES.repeat(outcome.repeat), 'info');
+      }
+    }
     var capture = createCapture({
       deliver: function (code) {
         if (stopped) { feedback('error'); showMessage(stopped, 'error'); return; }
@@ -687,11 +797,10 @@
           });
           return;
         }
-        var outcome = scans.submit(code);
-        if (outcome.repeat != null) {
-          feedback('error');
-          showMessage(MESSAGES.repeat(outcome.repeat), 'info');
-        }
+        // A scan closes the undo window; one that arrives mid-undo runs after the undo settles.
+        var waiting = undoCtl.scan();
+        if (waiting) { waiting.then(function () { submitScan(code); }); return; }
+        submitScan(code);
       },
       schedule: function (fn, ms) { return setTimeout(fn, ms); },
       cancel: function (handle) { clearTimeout(handle); },
@@ -748,7 +857,7 @@
   root.InvScan = {
     start: start, write: write, read: read, feedback: feedback, showMessage: showMessage,
     showPanel: showPanel, choose: choose, numberPad: numberPad, askText: askText, esc: esc,
-    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave, onActivity: onActivity, setFlagSubject: setFlagSubject,
+    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave, onActivity: onActivity, offerUndo: offerUndo, setFlagSubject: setFlagSubject,
     currentMessage: function () { return msg.textContent; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

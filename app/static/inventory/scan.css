@@ -120,3 +120,7 @@ body.not-saved-on { background: #f9c9c9; }
 .chk-result.pass { color: #2e7d32; }
 .chk-result.fail { color: #c62828; }
 .chk-warn { color: #b71c1c; font-weight: 600; margin-bottom: 8px; }
+.undo { padding: 0 14px; }
+.undo[hidden] { display: none; }
+.undo-btn { background: #fff3e0; border-color: #e65100; }
+.undo-btn:disabled { opacity: 0.6; }

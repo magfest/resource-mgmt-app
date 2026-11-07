@@ -581,6 +581,7 @@ globalThis.InvScan = {
   start: (cfg) => { onScan = cfg.onScan; },
   holdLeave: (fn) => { leaveHold = fn; },
   onActivity: () => {},
+  offerUndo: (spec) => { globalThis.offered = spec; },
   setFlagSubject() {},
   requestId: (() => { let n = 0; return () => 'rid-' + (++n); })(),
   feedback() {}, showMessage: (t) => messages.push(t),

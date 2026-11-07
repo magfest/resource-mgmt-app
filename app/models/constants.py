@@ -174,6 +174,7 @@ INV_FLAG_REASONS = ("WRONG_DATA", "DAMAGED", "UNKNOWN_ITEM", "OTHER")
 INV_COUNT_LINE_APPLIED = "APPLIED"
 INV_COUNT_LINE_STALE = "STALE"
 INV_COUNT_LINE_UNCHANGED = "UNCHANGED"
+INV_COUNT_LINE_UNDONE = "UNDONE"
 
 # Space kinds. A SLICE is part of a room. A FREEFORM space has no parent and
 # uses location_note for where it sits. Combining two slices for one event is
