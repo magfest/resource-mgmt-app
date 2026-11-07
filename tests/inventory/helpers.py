@@ -16,3 +16,14 @@ def make_container(inv, label_code, kind="PALLET", parent=None, name=None):
     db.session.add(container)
     db.session.flush()
     return container
+
+
+def enrolled_client(client, name="Scanner 1", station_code="LOOKUP"):
+    """Enroll a device and leave the client holding only its cookie."""
+    from app.inventory.devices import COOKIE_NAME, enroll_device
+    device, raw = enroll_device(name, "test:invadmin", station_code=station_code)
+    db.session.commit()
+    with client.session_transaction() as sess:
+        sess.clear()
+    client.set_cookie(COOKIE_NAME, raw, path="/inv/scan/")
+    return device

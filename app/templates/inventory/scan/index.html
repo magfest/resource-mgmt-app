@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scanner</title></head>
+<body style="font-family: system-ui, sans-serif; padding: 16px;">
+  <p>Scanner ready: {{ principal.device.name if principal.is_device else principal.user_id }}</p>
+  {% if principal.is_device %}<p>Station: {{ principal.device.station_code }}</p>{% endif %}
+</body></html>

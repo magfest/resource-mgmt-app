@@ -1,0 +1,46 @@
+{% extends "layout/base.html" %}
+{% block title %}Scanners - Inventory{% endblock %}
+{% block content %}
+<h1>Shared scanners</h1>
+<div class="muted mb-16">
+  To enroll a CT60, sign in on it as an inventory admin and open
+  <code>{{ url_for('inventory.scan_enroll', _external=True) }}</code>. Revoke a
+  lost scanner here; its next scan is refused.
+</div>
+<table>
+  <thead><tr><th>Name</th><th>Station</th><th>Home container</th><th>Enrolled</th><th>Last seen (UTC)</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for d in devices %}
+    <tr>
+      <td>{{ d.name }}</td>
+      <td>
+        {% if not d.revoked_at %}
+        <form method="post" action="{{ url_for('inventory.device_station', device_id=d.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="station_code" aria-label="Station for {{ d.name }}">
+            {% for code in stations %}
+            <option value="{{ code }}" {{ 'selected' if code == d.station_code }}>{{ station_names[code] }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="home_container_code" maxlength="32" placeholder="Home label"
+                 value="{{ d.home_container.label_code if d.home_container else '' }}" aria-label="Home container for {{ d.name }}">
+          <button type="submit" class="btn btn-small">Save</button>
+        </form>
+        {% else %}{{ station_names.get(d.station_code, d.station_code) }}{% endif %}
+      </td>
+      <td class="muted">{{ d.home_container.label_code if d.home_container else 'Top level' }}</td>
+      <td class="muted">{{ d.enrolled_at.strftime('%Y-%m-%d') }}</td>
+      <td class="muted">{{ d.last_seen_at.strftime('%Y-%m-%d %H:%M') if d.last_seen_at else 'never' }}</td>
+      <td>{{ 'Revoked' if d.revoked_at else 'Active' }}</td>
+      <td>{% if not d.revoked_at %}
+        <form method="post" action="{{ url_for('inventory.revoke_device_route', device_id=d.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Revoke</button>
+        </form>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No scanners enrolled.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

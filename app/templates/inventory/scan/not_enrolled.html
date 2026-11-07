@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scanner not signed in</title></head>
+<body style="font-family: system-ui, sans-serif; padding: 16px;">
+  <h1>This scanner is not signed in</h1>
+  {% if has_cookie %}
+    <p>It was revoked or is no longer enrolled.</p>
+    <form method="post" action="{{ url_for('inventory.scan_forget') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Forget this scanner</button>
+    </form>
+  {% elif can_enroll %}
+    <p><a href="{{ url_for('inventory.scan_enroll') }}">Enroll this device as a shared scanner</a></p>
+  {% else %}
+    <p>Ask an inventory lead to enroll it, or <a href="{{ url_for('auth.login_page') }}">sign in</a> if you are an operator.</p>
+  {% endif %}
+</body></html>
