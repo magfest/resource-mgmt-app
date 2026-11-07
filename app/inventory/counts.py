@@ -7,17 +7,20 @@ trustworthy. Nothing here commits.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import contains_eager
 
 from app import db
+from app.inventory.printing import INV_LOCAL_TZ
 from app.inventory.ledger import (
     Actor, InventoryError, discard_stock, set_counted_quantity,
 )
 from app.models import (
-    InvContainer, InvCount, InvCountLine, InvMovement, InvStationItem, InvStock, SupplyItem,
+    InvContainer, InvCount, InvCountLine, InvMovement, InvStationItem, InvStock, SupplyCategory,
+    SupplyItem,
 )
 from app.models.constants import (
     INV_COUNT_LINE_APPLIED, INV_COUNT_LINE_STALE, INV_COUNT_LINE_UNCHANGED,
@@ -75,14 +78,36 @@ def _is_blind(count: InvCount) -> bool:
     return earlier is None
 
 
+def _local_stamp(moment: datetime) -> str:
+    """Format a stored UTC time as `Nov 7, 9:23 PM` in INV_LOCAL_TZ."""
+    local = moment.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(INV_LOCAL_TZ))
+    return f"{local:%b} {local.day}, {local.hour % 12 or 12}:{local:%M} {local:%p}"
+
+
+def _last_counted(count: InvCount) -> dict[int, datetime]:
+    """Latest submit time per item over this container's other submitted counts."""
+    rows = (db.session.query(InvCountLine.item_id, func.max(InvCount.submitted_at))
+            .join(InvCount, InvCount.id == InvCountLine.count_id)
+            .filter(InvCount.container_id == count.container_id,
+                    InvCount.submitted_at.isnot(None), InvCount.id != count.id)
+            .group_by(InvCountLine.item_id).all())
+    return dict(rows)
+
+
 def count_payload(count: InvCount) -> dict:
     """Describe a count for the scanner. A blind count carries no quantities at all."""
     rows = _held_rows(count.container)
     blind = _is_blind(count)
     lines = []
     if not blind:
-        lines = [{"item_id": r.item_id, "name": r.item.item_name, "expected": r.quantity,
-                  "is_approximate": r.is_approximate} for r in rows]
+        last = _last_counted(count)
+        lines = []
+        for r in rows:
+            line = {"item_id": r.item_id, "name": r.item.item_name, "expected": r.quantity,
+                    "is_approximate": r.is_approximate}
+            if last.get(r.item_id) is not None:
+                line["last_counted"] = _local_stamp(last[r.item_id])
+            lines.append(line)
     usual = (db.session.query(InvStationItem).join(InvStationItem.item)
              .options(contains_eager(InvStationItem.item))
              .filter(InvStationItem.station_code == INV_STATION_COUNT,
@@ -185,3 +210,24 @@ def submit_count(count: InvCount, lines: list[CountLineIn], actor: Actor) -> dic
 
 def item_choice(item: SupplyItem) -> dict:
     return {"id": item.id, "name": item.item_name, "pack_size": item.pack_size}
+
+
+def browse_categories() -> list[dict]:
+    """Active categories that hold at least one active, non-serialized item."""
+    rows = (db.session.query(SupplyCategory.id, SupplyCategory.name)
+            .join(SupplyItem, SupplyItem.category_id == SupplyCategory.id)
+            .filter(SupplyCategory.is_active.is_(True), SupplyItem.is_active.is_(True),
+                    SupplyItem.is_serialized.is_(False))
+            .group_by(SupplyCategory.id, SupplyCategory.name)
+            .order_by(func.coalesce(SupplyCategory.sort_order, 1000000), SupplyCategory.name,
+                      SupplyCategory.id).all())
+    return [{"id": r.id, "name": r.name} for r in rows]
+
+
+def browse_items(category_id: int) -> list[dict]:
+    """Active, non-serialized items of one category by name. Carries no quantities."""
+    rows = (db.session.query(SupplyItem)
+            .filter(SupplyItem.category_id == category_id, SupplyItem.is_active.is_(True),
+                    SupplyItem.is_serialized.is_(False))
+            .order_by(SupplyItem.item_name, SupplyItem.id).all())
+    return [item_choice(i) for i in rows]

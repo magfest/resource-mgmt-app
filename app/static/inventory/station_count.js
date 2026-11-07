@@ -10,6 +10,7 @@
   ];
   var MESSAGES = {
     startFirst: 'Scan a container label to start counting.',
+    idle: 'Count: scan a container label to start.',
     finishFirst: 'Submit this count before starting another.',
     submitting: 'Submitting. Wait for it to finish.',
     nothingCounted: 'Count at least one item first.',
@@ -38,6 +39,16 @@
     return text;
   }
 
+  function headTitle(c) {
+    return (c.blind ? 'First count: ' : 'Recount: ') + c.code + (c.name ? ' ' + c.name : '');
+  }
+
+  // Expected number and when it was last counted, for a held item. Empty on a blind count.
+  function heldNote(expected, when) {
+    if (expected === null || expected === undefined) { return ''; }
+    return when ? expected + ' on ' + when : String(expected);
+  }
+
   function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
 
   // The lines of one open count. unresolved() lists held items with no line, which block
@@ -46,7 +57,11 @@
   function createCount(start) {
     var held = (start.held || []).slice();
     var expected = {};
-    (start.lines || []).forEach(function (l) { expected[l.item_id] = l.expected; });
+    var lastCounted = {};
+    (start.lines || []).forEach(function (l) {
+      expected[l.item_id] = l.expected;
+      if (l.last_counted) { lastCounted[l.item_id] = l.last_counted; }
+    });
     var order = [];
     var lines = {};
     var edits = 0;
@@ -69,6 +84,7 @@
       name: start.name || '',
       blind: !!start.blind,
       usual: start.usual || [],
+      lastCountedFor: function (id) { return lastCounted[id] || null; },
       expectedFor: function (id) { return expected[id] === undefined ? null : expected[id]; },
       setLine: function (item, kept, about) {
         var line = ensure(item.id, item.name);
@@ -147,7 +163,7 @@
     };
   }
 
-  var pure = {createKeepAlive: createKeepAlive, createCount: createCount, createGate: createGate, staleText: staleText,
+  var pure = {headTitle: headTitle, heldNote: heldNote, createKeepAlive: createKeepAlive, createCount: createCount, createGate: createGate, staleText: staleText,
               staleLine: staleLine, lineText: lineText, REASONS: REASONS, MESSAGES: MESSAGES,
               KEEPALIVE_MS: KEEPALIVE_MS};
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
@@ -190,9 +206,8 @@
 
   function headNode() {
     var head = el('div', 'cnt-head');
-    head.appendChild(el('div', 'cnt-title', count.code + (count.name ? ' ' + count.name : '')));
-    head.appendChild(el('div', 'cnt-sub', plural(count.lineCount(), 'line') + ' counted' +
-      (count.blind ? ' · first count' : '')));
+    head.appendChild(el('div', 'cnt-title', headTitle(count)));
+    head.appendChild(el('div', 'cnt-sub', plural(count.lineCount(), 'line') + ' counted'));
     return head;
   }
 
@@ -208,6 +223,7 @@
     box.appendChild(headNode());
 
     var usual = el('div', 'cnt-usual');
+    usual.appendChild(button('Browse', 'cnt-item cnt-search', browse));
     usual.appendChild(button('Search', 'cnt-item cnt-search', search));
     count.usual.forEach(function (item) {
       var line = count.line(item.item_id);
@@ -219,7 +235,7 @@
 
     var open = count.unresolved();
     if (open.length) {
-      box.appendChild(el('div', 'cnt-section', 'Still to count (' + open.length + ')'));
+      box.appendChild(el('div', 'cnt-section', 'Last count: confirm or correct (' + open.length + ')'));
       open.forEach(function (h) { box.appendChild(openRow(h)); });
     }
     var done = count.lines();
@@ -244,7 +260,9 @@
     var row = el('div', 'cnt-row');
     var expected = count.expectedFor(h.item_id);
     row.appendChild(el('div', 'cnt-name', h.name));
-    if (expected !== null) { row.appendChild(el('div', 'cnt-note', 'expected ' + expected)); }
+    if (expected !== null) {
+      row.appendChild(el('div', 'cnt-note', heldNote(expected, count.lastCountedFor(h.item_id))));
+    }
     var actions = el('div', 'cnt-actions');
     actions.appendChild(button('Count', 'cnt-small', function () {
       pickItem({id: h.item_id, name: h.name, pack_size: packSizeOf(h.item_id)});
@@ -290,7 +308,7 @@
         box.appendChild(el('div', 'cnt-stale', staleLine(name)));
       });
     }
-    box.appendChild(el('div', 'cnt-step', MESSAGES.startFirst));
+    box.appendChild(el('div', 'cnt-step', MESSAGES.idle));
     panel.appendChild(box);
   }
 
@@ -340,6 +358,38 @@
         S.showMessage('', 'info');
         chooseItem(answer.items, 'Up to 20 shown. Search again to narrow.');
       });
+    });
+  }
+
+  // Categories, then one category's items. Back from the items returns to the categories.
+  function browse() {
+    S.read(cfg.browseUrl, {}).then(function (answer) {
+      if (answer.need_name) { return; }
+      if (!answer.ok) { fail(answer.message); render(); return; }
+      if (!answer.categories.length) { fail(MESSAGES.noItems); render(); return; }
+      S.showMessage('', 'info');
+      showCategories(answer.categories);
+    });
+  }
+
+  function showCategories(categories) {
+    S.choose(categories.map(function (c) { return {label: c.name, value: c}; }),
+      function (category) { browseItems(category, categories); }, 'Pick a category.');
+    panel.appendChild(button('Back', 'choice', function () { render(); refocus(); }));
+    withHead();
+    refocus();
+  }
+
+  function browseItems(category, categories) {
+    S.read(cfg.browseUrl, {category_id: category.id}).then(function (answer) {
+      if (answer.need_name) { return; }
+      if (!answer.ok) { fail(answer.message); showCategories(categories); return; }
+      if (!answer.items.length) { fail(MESSAGES.noItems); showCategories(categories); return; }
+      S.choose(answer.items.map(function (item) { return {label: item.name, value: item}; }),
+        function (item) { pickItem(item); }, category.name);
+      panel.appendChild(button('Back', 'choice', function () { showCategories(categories); }));
+      withHead();
+      refocus();
     });
   }
 
@@ -438,7 +488,7 @@
     if (!count || submitting) { if (submitting) { S.showMessage(MESSAGES.submitting, 'info'); } return; }
     var open = count.unresolved();
     if (open.length) {
-      fail('Count or mark none: ' + open.map(function (h) { return h.name; }).join(', '));
+      fail('Confirm or correct first: ' + open.map(function (h) { return h.name; }).join(', '));
       render();
       return;
     }

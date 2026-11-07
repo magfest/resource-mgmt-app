@@ -24,6 +24,7 @@ START = "/inv/scan/api/count/start"
 SUBMIT = "/inv/scan/api/count/submit"
 FIND = "/inv/scan/api/count/find"
 KEEPALIVE = "/inv/scan/api/count/keepalive"
+BROWSE = "/inv/scan/api/count/browse"
 _n = [0]
 
 
@@ -406,6 +407,114 @@ def test_keepalive_extends_the_open_shift(client, ct):
     assert db.session.get(InvShift, shift.id).last_activity_at > before
 
 
+def test_the_second_count_dates_each_line_in_local_time(inv):
+    from datetime import datetime
+    tote = make_container(inv, "C-0001", kind="BIN")
+    first = start_count(tote, ACTOR)
+    submit_count(first, [CountLineIn(inv.pens.id, kept=20)], ACTOR)
+    first.submitted_at = datetime(2026, 11, 8, 2, 23)  # 9:23 PM on Nov 7 in New York
+    db.session.flush()
+    line = count_payload(start_count(tote, ACTOR))["lines"][0]
+    assert line["expected"] == 20 and line["last_counted"] == "Nov 7, 9:23 PM"
+
+
+def test_the_date_comes_from_the_latest_submitted_count_with_that_item(inv):
+    from datetime import datetime
+    tote = make_container(inv, "C-0001", kind="BIN")
+    old = start_count(tote, ACTOR)
+    submit_count(old, [CountLineIn(inv.pens.id, kept=5)], ACTOR)
+    old.submitted_at = datetime(2026, 11, 1, 15, 5)
+    new = start_count(tote, ACTOR)
+    submit_count(new, [CountLineIn(inv.pens.id, kept=6)], ACTOR)
+    new.submitted_at = datetime(2026, 11, 3, 17, 0)
+    start_count(tote, ACTOR)  # open and unsubmitted: ignored
+    db.session.flush()
+    line = count_payload(start_count(tote, ACTOR))["lines"][0]
+    assert line["last_counted"] == "Nov 3, 12:00 PM"
+
+
+def test_a_blind_payload_carries_no_expected_number_and_no_date(client, ct):
+    tote = make_container(ct, "C-0001", kind="BIN")
+    add_stock(ct.pens, tote, 37, ACTOR)
+    db.session.commit()
+    answer = _start(client, "C-0001")
+    assert answer["blind"] is True
+    body = json.dumps(answer)
+    assert "expected" not in body and "last_counted" not in body
+
+
+def test_browse_lists_categories_with_countable_items_only(client, ct):
+    from app.models import SupplyCategory, SupplyItem
+    empty = SupplyCategory(code="EMPTY", name="Empty", is_active=True)
+    off = SupplyCategory(code="OFF", name="Off", is_active=False)
+    units = SupplyCategory(code="UNITS", name="Units", is_active=True)
+    db.session.add_all([empty, off, units])
+    db.session.flush()
+    db.session.add_all([
+        SupplyItem(category_id=off.id, item_name="Hidden", unit="each"),
+        SupplyItem(category_id=units.id, item_name="Laptop 2", unit="each", is_serialized=True),
+        SupplyItem(category_id=empty.id, item_name="Retired", unit="each", is_active=False)])
+    db.session.commit()
+    answer = client.post(BROWSE, json={}).get_json()
+    assert answer["ok"] is True
+    assert answer["categories"] == [{"id": ct.category.id, "name": "General"}]
+
+
+def test_browse_lists_a_categorys_active_items_by_name_without_quantities(client, ct):
+    from app.models import SupplyItem
+    tote = make_container(ct, "C-0001", kind="BIN")
+    ct.pens.pack_size = 12
+    add_stock(ct.pens, tote, 37, ACTOR)
+    db.session.add_all([
+        SupplyItem(category_id=ct.category.id, item_name="Aardvark", unit="each"),
+        SupplyItem(category_id=ct.category.id, item_name="Gone", unit="each", is_active=False)])
+    db.session.commit()
+    answer = client.post(BROWSE, json={"category_id": ct.category.id}).get_json()
+    assert [i["name"] for i in answer["items"]] == ["Aardvark", "Blue Pen"]
+    assert answer["items"][1] == {"id": ct.pens.id, "name": "Blue Pen", "pack_size": 12}
+    assert "37" not in json.dumps(answer) and "quantity" not in json.dumps(answer)
+
+
+def test_browse_uses_a_fixed_number_of_queries(client, ct):
+    from sqlalchemy import event
+    from app.models import SupplyCategory, SupplyItem
+    for n in range(5):
+        cat = SupplyCategory(code=f"X{n}", name=f"Cat {n}", is_active=True)
+        db.session.add(cat)
+        db.session.flush()
+        db.session.add_all([SupplyItem(category_id=cat.id, item_name=f"I{n}{k}", unit="each")
+                            for k in range(4)])
+    db.session.commit()
+    seen = []
+    engine = db.engine
+    hook = lambda conn, cur, stmt, *a: seen.append(stmt)  # noqa: E731
+    event.listen(engine, "before_cursor_execute", hook)
+    try:
+        client.post(BROWSE, json={})
+        categories = len(seen)
+        seen.clear()
+        client.post(BROWSE, json={"category_id": ct.category.id})
+    finally:
+        event.remove(engine, "before_cursor_execute", hook)
+    assert categories <= 8 and len(seen) <= 8
+
+
+def test_browse_refuses_a_device_on_another_station_and_bad_ids(client, ct):
+    assert client.post(BROWSE, json={"category_id": "x"}).get_json()["ok"] is False
+    device = InvDevice.query.one()
+    device.station_code = "TV_CHECK"
+    db.session.commit()
+    assert client.post(BROWSE, json={}).get_json()["ok"] is False
+
+
+def test_the_unresolved_refusal_names_the_items_to_confirm(client, ct):
+    tote = make_container(ct, "C-0001", kind="BIN")
+    add_stock(ct.pens, tote, 4, ACTOR)
+    db.session.commit()
+    count_id = _start(client, "C-0001")["count_id"]
+    assert _submit(client, count_id, [])["message"] == "Confirm or correct first: Blue Pen"
+
+
 # ---- page logic, run under node; no browser is driven ----
 
 STATIC = os.path.join(os.path.dirname(__file__), "..", "..", "app", "static", "inventory")
@@ -564,7 +673,7 @@ FINISHED_SCRIPT = PAGE_PRELUDE + r"""
   await tick();
   assert.equal(messages[messages.length - 1],
     'This count was already saved. Scan a container to count again.');
-  assert.ok(texts(panel).includes('Scan a container label to start counting.'));
+  assert.ok(texts(panel).includes('Count: scan a container label to start.'));
   assert.equal(leaveHold(), false);
   const next = onScan('C-0002');
   await tick();
@@ -583,10 +692,70 @@ FINISHED_SCRIPT = PAGE_PRELUDE + r"""
   find(panel, 'Cancel count').handlers.click();
   assert.equal(leaveHold(), false);
   assert.equal(writes.length, 3, 'cancel sends nothing');
-  assert.ok(texts(panel).includes('Scan a container label to start counting.'));
+  assert.ok(texts(panel).includes('Count: scan a container label to start.'));
   console.log('finished ok');
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+BROWSE_SCRIPT = PAGE_PRELUDE + r"""
+(async () => {
+  const started = onScan('C-0001');
+  await tick();
+  writes[0].resolve(startAnswer);
+  await started;
+  const heads = () => texts(panel);
+  assert.ok(heads().includes('First count: C-0001'), 'blind header names the job');
+  assert.ok(find(panel, 'Browse') && find(panel, 'Search'));
+
+  const chosen = [];
+  globalThis.InvScan.choose = (opts, pick, note) => {
+    panel.textContent = '';
+    chosen.push(opts.map((o) => o.label));
+    chosen.pick = pick;
+  };
+  const answers = {
+    '{}': {ok: true, categories: [{id: 3, name: 'Markers'}]},
+    '{"category_id":3}': {ok: true, items: [{id: 9, name: 'Red marker', pack_size: 12}]}
+  };
+  globalThis.InvScan.read = (path, body) => {
+    reads.push([path, body]);
+    return Promise.resolve(answers[JSON.stringify(body)]);
+  };
+  globalThis.document.currentScript.dataset.browseUrl = '/browse';
+  find(panel, 'Browse').handlers.click();
+  await tick();
+  assert.deepEqual(chosen[0], ['Markers']);
+  assert.ok(find(panel, 'Back'));
+  chosen.pick({id: 3, name: 'Markers'});
+  await tick();
+  assert.deepEqual(chosen[1], ['Red marker']);
+  find(panel, 'Back').handlers.click();
+  await tick();
+  assert.deepEqual(chosen[2], ['Markers'], 'Back returns to the categories');
+  chosen.pick({id: 3, name: 'Markers'});
+  await tick();
+  let pad = null;
+  globalThis.InvScan.numberPad = (opts, cb) => { pad = opts; };
+  chosen.pick({id: 9, name: 'Red marker', pack_size: 12});
+  assert.equal(pad.packSize, 12, 'the pad opens as Search does');
+  console.log('browse ok');
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+HEADER_SCRIPT = r"""
+const assert = require('assert');
+const c = require(process.env.COUNT_JS);
+assert.equal(c.headTitle({blind: true, code: 'C-0010', name: 'SupplyOps Pallet 1'}),
+  'First count: C-0010 SupplyOps Pallet 1');
+assert.equal(c.headTitle({blind: false, code: 'C-0010', name: ''}), 'Recount: C-0010');
+const st = c.createCount({count_id: 1, code: 'C-1', blind: false,
+  held: [{item_id: 1, name: 'Pens'}], lines: [{item_id: 1, expected: 20, last_counted: 'Nov 7, 9:23 PM'}]});
+assert.equal(c.heldNote(st.expectedFor(1), st.lastCountedFor(1)), '20 on Nov 7, 9:23 PM');
+assert.equal(c.heldNote(20, null), '20');
+assert.equal(c.heldNote(null, null), '');
+console.log('header ok');
 """
 
 KEEPALIVE_SCRIPT = r"""
@@ -655,3 +824,18 @@ def test_keepalive_needs_a_tap_and_five_minutes_under_node(tmp_path):
     result = _node(tmp_path, KEEPALIVE_SCRIPT, "keepalive_check.js")
     assert result.returncode == 0, result.stderr
     assert "keepalive ok" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_browse_then_back_returns_to_the_categories_under_node(tmp_path):
+    """Runs the page script on a stub DOM under node; it does not drive a browser."""
+    result = _node(tmp_path, BROWSE_SCRIPT, "browse_check.js")
+    assert result.returncode == 0, result.stderr
+    assert "browse ok" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_header_and_held_note_text_under_node(tmp_path):
+    result = _node(tmp_path, HEADER_SCRIPT, "header_check.js")
+    assert result.returncode == 0, result.stderr
+    assert "header ok" in result.stdout

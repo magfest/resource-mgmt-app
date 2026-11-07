@@ -13,7 +13,8 @@ from app.inventory import labels
 from app.inventory.cards import candidate_card, card_for, default_event
 from app.inventory.codes import normalize_code
 from app.inventory.counts import (
-    SERIALIZED_REFUSAL, CountLineIn, count_payload, item_choice, start_count, submit_count,
+    SERIALIZED_REFUSAL, CountLineIn, browse_categories, browse_items, count_payload,
+    item_choice, start_count, submit_count,
 )
 from app.inventory.tree import display_name
 from app.inventory.ledger import InventoryError, create_container
@@ -477,6 +478,20 @@ def scan_count_find():
     return jsonify(ok=True, items=[item_choice(i) for i in items])
 
 
+@inventory_bp.post("/scan/api/count/browse")
+@api
+def scan_count_browse():
+    """List countable categories, or one category's items with `category_id`. Reads only."""
+    _count_device()
+    data = _json_body()
+    category_id = data.get("category_id")
+    if category_id is None:
+        return jsonify(ok=True, categories=browse_categories())
+    if type(category_id) is not int:
+        raise InventoryError("Pick a category.")
+    return jsonify(ok=True, items=browse_items(category_id))
+
+
 def _line_in(raw) -> CountLineIn:
     if not isinstance(raw, dict):
         raise InventoryError("Send each line as an object.")
@@ -521,7 +536,7 @@ def scan_count_submit():
         result = submit_count(count, [_line_in(r) for r in raw_lines], actor)
         if result["unresolved"]:
             refused.update(result)
-            raise InventoryError("Count or mark none: " + ", ".join(result["unresolved"]))
+            raise InventoryError("Confirm or correct first: " + ", ".join(result["unresolved"]))
         return result
 
     answer = run_once(data.get("client_request_id"), submit)

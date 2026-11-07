@@ -4,6 +4,7 @@
 <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/station_count.js') }}"
         data-start-url="{{ url_for('inventory.scan_count_start') }}"
         data-find-url="{{ url_for('inventory.scan_count_find') }}"
+        data-browse-url="{{ url_for('inventory.scan_count_browse') }}"
         data-keep-alive-url="{{ url_for('inventory.scan_count_keepalive') }}"
         data-submit-url="{{ url_for('inventory.scan_count_submit') }}"
         data-container-url="{{ url_for('inventory.scan_container_create') }}"></script>
