@@ -16,7 +16,7 @@ from app.inventory.resolver import resolve
 from app.inventory.labels import allocate
 from app.inventory.shifts import start_shift
 from app.models import (
-    EventCycle, InvContainer, InvFlag, InvPrepStatus, InvScanRequest,
+    EventCycle, InvCheck, InvContainer, InvFlag, InvPrepStatus, InvScanRequest,
 )
 from tests.inventory.helpers import enrolled_client, login, make_container
 
@@ -273,9 +273,15 @@ def test_lookup_card_shows_path_condition_prep_and_history(app, inv):
 def test_a_voided_prep_row_reads_as_not_checked(app, inv):
     event = _event()
     unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "S1")])
-    db.session.add(InvPrepStatus(unit_id=unit.id, event_cycle_id=event.id, status="CHECKED"))
+    check = InvCheck(unit_id=unit.id, event_cycle_id=event.id, station_code="TV_CHECK",
+                     status="VOIDED")
+    db.session.add(check)
     db.session.flush()
-    db.session.add(InvPrepStatus(unit_id=unit.id, event_cycle_id=event.id, status="VOIDED"))
+    db.session.add(InvPrepStatus(unit_id=unit.id, event_cycle_id=event.id, status="CHECKED",
+                                 check_id=check.id))
+    db.session.flush()
+    db.session.add(InvPrepStatus(unit_id=unit.id, event_cycle_id=event.id, status="VOIDED",
+                                 check_id=check.id))
     db.session.commit()
     assert "Not checked" in card_for(resolve("S1"), event)["lines"]
 
