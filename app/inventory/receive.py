@@ -19,12 +19,15 @@ from app.inventory.resolver import KIND_CONTAINER, resolve
 from app.inventory.zpl import can_print_code
 from app.models import InvContainer, InvMovement, InvPrintJob, InvUnit, InvUnitIdentifier
 from app.models.constants import (
-    INV_ACTION_ADD, INV_CONDITION_RETIRED, INV_IDENT_FESTOPS_LABEL,
-    INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL, INV_JOB_CANCELLED, INV_JOB_OWNED_UNIT,
+    INV_ACTION_ADD, INV_CONDITION_RETIRED, INV_JOB_CLAIMED, INV_JOB_FAILED,
+    INV_JOB_SENT, INV_IDENT_FESTOPS_LABEL,
+    INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL, INV_JOB_OWNED_UNIT,
     INV_JOB_QUEUED, INV_JOB_SOURCE_SCAN, INV_OWNERSHIP_OWNED,
 )
 
-MAX_SERIAL = 128
+# zpl._field cuts text at 64 characters, and a label must never print a cut serial.
+MAX_SERIAL = 64
+LABEL_SHAPED = "That is a FestOps label. Scan the asset tag, or tap Skip."
 NOT_PRINTABLE = "This tag cannot be printed as a barcode."
 SAME_CODE = "That is the same code as the tag. Scan the SERIAL."
 NOTHING_TO_UNDO = "Only the last unit this scanner received can be undone."
@@ -88,6 +91,20 @@ def _answer(unit: InvUnit, job: InvPrintJob) -> dict:
             "station_seen": status["station_seen"], "waiting": status["waiting"]}
 
 
+def check_tag(tag: str) -> None:
+    """Refuse a tag that cannot be received: label-shaped, unprintable, or already held.
+
+    Reads only. The check route and receive_unit share it so both give the same answer.
+    """
+    if labels.parse(tag) is not None:
+        raise InventoryError(LABEL_SHAPED)
+    if not can_print_code(tag):
+        raise InventoryError(NOT_PRINTABLE)
+    held = _active_holder(INV_IDENT_MAGFEST_TAG, normalize_code(tag))
+    if held is not None:
+        raise AlreadyReceived(held)
+
+
 def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
                  client_request_id=None) -> dict:
     """Create an owned unit from a tag and a serial, either of which may be missing.
@@ -106,18 +123,11 @@ def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
     if tag and serial and normalize_code(tag) == normalize_code(serial):
         raise InventoryError(SAME_CODE)
     if tag:
-        if labels.parse(tag) is not None:
-            raise InventoryError("That is a FestOps label, not an asset tag.")
-        if not can_print_code(tag):
-            raise InventoryError(NOT_PRINTABLE)
+        check_tag(tag)
     if serial and len(serial) > MAX_SERIAL:
-        raise InventoryError("That serial is too long.")
+        raise InventoryError(f"That serial is longer than {MAX_SERIAL} characters.")
     # Checked before anything is created, so a missing route leaves no unit behind.
     printer_for(INV_JOB_OWNED_UNIT)
-    if tag:
-        held = _active_holder(INV_IDENT_MAGFEST_TAG, normalize_code(tag))
-        if held is not None:
-            raise AlreadyReceived(held)
     if serial:
         held = _active_holder(INV_IDENT_SERIAL, normalize_code(serial), item)
         if held is not None:
@@ -129,7 +139,16 @@ def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
         identifiers.append((INV_IDENT_FESTOPS_LABEL, labels.allocate(labels.PREFIX_UNIT, 1)[0]))
     if serial:
         identifiers.append((INV_IDENT_SERIAL, serial))
-    unit = add_unit(item, container, actor, identifiers)
+    try:
+        unit = add_unit(item, container, actor, identifiers)
+    except InventoryError:
+        # Two scanners can pass the checks above together; the unique index picks one.
+        # The loser gets the same screen as a plain repeat.
+        held = tag and _active_holder(INV_IDENT_MAGFEST_TAG, normalize_code(tag))
+        held = held or (serial and _active_holder(INV_IDENT_SERIAL, normalize_code(serial), item))
+        if held:
+            raise AlreadyReceived(held) from None
+        raise
     return _answer(unit, _label_job(unit, actor, client_request_id))
 
 
@@ -159,24 +178,25 @@ def undo_receive(unit_id: int, actor: Actor) -> None:
             .with_for_update().populate_existing().one())
     if unit.condition == INV_CONDITION_RETIRED:
         raise InventoryError(NOTHING_TO_UNDO)
-    job = _newest_job(unit.id, lock=True)
+    jobs = (db.session.query(InvPrintJob).filter_by(unit_id=unit.id)
+            .with_for_update().populate_existing().all())
     retire_received_unit(unit, actor)
-    if job is not None and job.status == INV_JOB_QUEUED:
-        cancel_job(job)
-
-
-def _newest_job(unit_id: int, lock=False) -> InvPrintJob | None:
-    query = (db.session.query(InvPrintJob).filter_by(unit_id=unit_id)
-             .order_by(InvPrintJob.id.desc()))
-    if lock:
-        query = query.with_for_update().populate_existing()
-    return query.first()
+    for job in jobs:
+        if job.status == INV_JOB_QUEUED:
+            cancel_job(job)
 
 
 def undo_message(unit_id: int) -> str:
-    """What to tell the person after an undo: the label was stopped, or it exists."""
-    job = _newest_job(unit_id)
-    return LABEL_CANCELLED if job is not None and job.status == INV_JOB_CANCELLED else THROW_AWAY
+    """What to tell the person after an undo: the label was stopped, or it may exist.
+
+    FAILED counts as printed; a claim that timed out may have reached the printer.
+    """
+    collected = (db.session.query(InvPrintJob.id)
+                 .filter(InvPrintJob.unit_id == unit_id,
+                         InvPrintJob.status.in_(
+                             (INV_JOB_CLAIMED, INV_JOB_SENT, INV_JOB_FAILED)))
+                 .first())
+    return THROW_AWAY if collected is not None else LABEL_CANCELLED
 
 
 def reprint_unit(unit_id, actor: Actor, client_request_id=None) -> dict:
@@ -186,7 +206,8 @@ def reprint_unit(unit_id, actor: Actor, client_request_id=None) -> dict:
         raise InventoryError("That unit is not in use, so it has no label to print.")
     if unit.ownership != INV_OWNERSHIP_OWNED:
         raise InventoryError("Only owned gear prints from this station.")
-    previous = _newest_job(unit.id)
+    previous = (db.session.query(InvPrintJob).filter_by(unit_id=unit.id)
+                .order_by(InvPrintJob.id.desc()).first())
     job = _label_job(
         unit, actor, client_request_id,
         printed_date=previous.printed_date if previous else None,

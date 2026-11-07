@@ -3,16 +3,10 @@
 (function (root) {
   'use strict';
 
-  var WAIT_ABOVE = 5;   // more queued labels than this reads as "Waiting for printer"
   var MESSAGES = {
     noItems: 'No serialized item matches that.',
     notSaved: 'Not saved.'
   };
-
-  // Same rule as station_receive.js, which keeps its copy private to that page.
-  function printerWaiting(answer) {
-    return answer.station_seen === false || answer.waiting > WAIT_ABOVE;
-  }
 
   // Quick reprint is offered only while the last label's number is still the unit's number.
   function layout(answer) {
@@ -25,7 +19,7 @@
     };
   }
 
-  var pure = {printerWaiting: printerWaiting, layout: layout};
+  var pure = {layout: layout};
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
 
@@ -54,7 +48,7 @@
   function showResult(answer, back, text) {
     panel.textContent = '';
     var box = el('div', 'lbl');
-    var waiting = printerWaiting(answer);
+    var waiting = S.printerWaiting(answer);
     box.appendChild(el('p', 'lbl-line', waiting ? answer.code + ' is queued' : answer.code + ' sent to printer'));
     if (waiting) {
       box.appendChild(el('p', 'lbl-wait', 'Waiting for printer'));
@@ -65,7 +59,8 @@
     panel.appendChild(box);
   }
 
-  // One tap sends one write. The shell mints the request id, so a second tap is ignored here.
+  // One tap sends one write. `mine.ids` holds one request id per mode for this opening of the
+  // choices, so a repeat tap sends the same request and the server answers it once.
   function sender(target, mode, mine, back, after) {
     return function () {
       if (mine.sending) { return; }
@@ -73,7 +68,8 @@
       Array.prototype.forEach.call(panel.querySelectorAll('button'), function (b) { b.disabled = true; });
       var body = {code: target.code, mode: mode};
       if (target.unitId != null) { body.unit_id = target.unitId; }
-      after(S.write(cfg.printUrl, body), mine);
+      if (!mine.ids[mode]) { mine.ids[mode] = S.requestId(); }
+      after(S.write(cfg.printUrl, body, mine.ids[mode]), mine);
     };
   }
 
@@ -81,9 +77,15 @@
     promise.then(function (answer) {
       if (answer.need_name || answer.fatal) { return; }
       if (answer.ok) {
-        S.feedback('ok');
-        S.showMessage('', 'info');
-        if (mine.epoch === epoch) { showResult(answer, back); }
+        if (mine.epoch === epoch) {
+          S.feedback('ok');
+          S.showMessage('', 'info');
+          showResult(answer, back);
+        } else if (!S.currentMessage()) {
+          // A newer scan owns the screen. Its own message, an error above all, stays.
+          S.showMessage(answer.code + (S.printerWaiting(answer) ? ' is queued' : ' sent to printer'),
+            'info');
+        }
         return;
       }
       mine.sending = false;
@@ -97,7 +99,7 @@
 
   function render(target, answer, back) {
     var model = layout(answer);
-    var mine = {sending: false, epoch: epoch};
+    var mine = {sending: false, epoch: epoch, ids: {}};
     var date = 'ORIGINAL_DATE';
     panel.textContent = '';
     var box = el('div', 'lbl');
@@ -186,9 +188,11 @@
   function askSerial(code, item, back, seen) {
     S.askText('Serial (leave blank to skip)', function (serial) {
       if (serial === null) { back(); return; }
-      var mine = {sending: false, epoch: seen};
       var body = {tag: code, item_id: item.id, serial: serial || null};
-      mine.sending = true;
+      if (seen === epoch) {
+        panel.textContent = '';
+        panel.appendChild(el('p', 'hint', 'Saving...'));
+      }
       S.write(cfg.newTagUrl, body).then(function (answer) {
         if (answer.need_name || answer.fatal) { return; }
         if (answer.ok) {

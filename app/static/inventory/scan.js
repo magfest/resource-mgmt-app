@@ -10,6 +10,7 @@
   var REFOCUS_MS = 250;
   var PAUSE_SHOW_MS = 500;   // focus must stay lost this long before the paused banner shows
   var REQUEST_TIMEOUT_MS = 15000;
+  var WAIT_ABOVE = 5;        // more queued labels than this reads as "Waiting for printer"
 
   // The error vocabulary every station shares. Wording matches the design spec.
   var MESSAGES = {
@@ -227,7 +228,12 @@
     return {type: 'answer', data: data};
   }
 
-  var pure = {createCapture: createCapture, createRepeatGuard: createRepeatGuard,
+  // The print station is not polling, or the queue is long. Takes a print answer.
+  function printerWaiting(answer) {
+    return answer.station_seen === false || answer.waiting > WAIT_ABOVE;
+  }
+
+  var pure = {printerWaiting: printerWaiting, createCapture: createCapture, createRepeatGuard: createRepeatGuard,
               createScanQueue: createScanQueue, createWriteQueue: createWriteQueue,
               createPauseWatch: createPauseWatch, interpretResponse: interpretResponse,
               MESSAGES: MESSAGES, esc: esc, IDLE_MS: IDLE_MS, REPEAT_MS: REPEAT_MS};
@@ -368,9 +374,13 @@
   var writes = createWriteQueue({send: sendOnce, onBlock: showNotSaved, onUnblock: hideNotSaved});
 
   // A retry reuses the payload and its request id, so the server stores the answer once.
-  function write(path, data) {
-    return writes.write(path, Object.assign({}, data, {client_request_id: newId()}));
+  // A caller may pass its own id and reuse it, so a repeat tap sends the same request.
+  function write(path, data, requestId) {
+    return writes.write(path, Object.assign({}, data, {client_request_id: requestId || newId()}));
   }
+
+  // Mints a request id for a caller that holds one across several taps.
+  function requestId() { return newId(); }
 
   function read(path, data) {
     return post(path, data || {}).then(checked, function (err) {
@@ -548,6 +558,7 @@
   root.InvScan = {
     start: start, write: write, read: read, feedback: feedback, showMessage: showMessage,
     showPanel: showPanel, choose: choose, numberPad: numberPad, askText: askText, esc: esc,
-    messages: MESSAGES
+    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId,
+    currentMessage: function () { return msg.textContent; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

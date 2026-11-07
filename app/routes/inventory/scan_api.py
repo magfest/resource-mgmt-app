@@ -14,7 +14,7 @@ from app.inventory.cards import candidate_card, card_for, default_event
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import InventoryError, create_container
 from app.inventory.receive import (
-    container_for_code, receive_unit, reprint_unit, undo_message, undo_receive,
+    check_tag, container_for_code, receive_unit, reprint_unit, undo_message, undo_receive,
 )
 from app.inventory.printing import (
     REPRINT_MODES, job_answer, last_job_for, print_container, print_item, reprint,
@@ -213,6 +213,17 @@ def scan_receive_location():
     container = container_for_code(_optional_text(_json_body(), "code"))
     return jsonify(ok=True, code=container.label_code, name=container.name,
                    kind=container.kind.name)
+
+
+@inventory_bp.post("/scan/api/receive/check-tag")
+@api
+def scan_receive_check_tag():
+    """Check a scanned asset tag before the serial step. Reads only."""
+    tag = _optional_text(_json_body(), "tag")
+    if not tag or not tag.strip():
+        raise InventoryError("Scan an asset tag.")
+    check_tag(tag.strip())
+    return jsonify(ok=True)
 
 
 @inventory_bp.post("/scan/api/receive")

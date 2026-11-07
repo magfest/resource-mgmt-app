@@ -4,6 +4,7 @@
 <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/station_receive.js') }}"
         data-items-url="{{ url_for('inventory.scan_receive_items') }}"
         data-location-url="{{ url_for('inventory.scan_receive_location') }}"
+        data-check-tag-url="{{ url_for('inventory.scan_receive_check_tag') }}"
         data-receive-url="{{ url_for('inventory.scan_receive') }}"
         data-undo-url="{{ url_for('inventory.scan_receive_undo') }}"
         data-reprint-url="{{ url_for('inventory.scan_receive_reprint') }}"></script>

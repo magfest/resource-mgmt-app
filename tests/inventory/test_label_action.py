@@ -163,6 +163,37 @@ def test_cancelled_and_blank_jobs_are_not_history(client, lab):
     assert reprint_options(unit)["has_history"] is False
 
 
+def test_original_date_survives_a_later_today_reprint(client, lab):
+    r = _receive(client, lab, tag="FEST00001", serial="S1")
+    _age(r["unit_id"])
+    assert _print(client, "FEST00001", "TODAY")["ok"] is True
+    unit = db.session.get(InvUnit, r["unit_id"])
+    assert reprint_options(unit)["original_date"] == OLD.isoformat()
+    again = _print(client, "FEST00001", "ORIGINAL_DATE")
+    assert db.session.get(InvPrintJob, again["job_id"]).printed_date == OLD
+
+
+def test_original_date_ignores_cancelled_and_other_number_jobs(client, lab):
+    r = _receive(client, lab, tag="FEST00001", serial="S1")
+    first = _age(r["unit_id"])
+    first.status = INV_JOB_CANCELLED
+    db.session.commit()
+    unit = db.session.get(InvUnit, r["unit_id"])
+    assert reprint_options(unit)["has_history"] is False
+    later = _print(client, "FEST00001", "CURRENT_DETAILS")
+    assert reprint_options(unit)["original_date"] == local_today().isoformat()
+    assert later["ok"] is True
+
+
+def test_an_older_job_with_rows_counts_when_the_newest_is_blank(client, lab):
+    r = _receive(client, lab, tag="FEST00001", serial="S1")
+    unit = db.session.get(InvUnit, r["unit_id"])
+    for _ in range(2):
+        request_label(INV_JOB_OWNED_UNIT, "FEST00001", {"rows": [], "footer": None},
+                      Actor(user_id="test:admin"), INV_JOB_SOURCE_SCAN, unit=unit)
+    assert last_job_for(unit=unit).id == r["job_id"]
+
+
 def test_an_unknown_tag_creates_the_unit_and_prints(client, lab):
     unknown = _options(client, "FEST00077")
     assert unknown["ok"] is True and unknown["kind"] == "UNKNOWN"

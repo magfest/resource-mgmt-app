@@ -231,22 +231,41 @@ NUMBER_CHANGED = "The number on this unit changed. Print its current details."
 NO_HISTORY = "This unit has no earlier label. Print its current details."
 
 
-def last_job_for(unit=None, container=None) -> InvPrintJob | None:
-    """Return the newest job for a unit or container that is not cancelled.
-
-    A job with no rows is a blank reserved label; it is not history, so it returns None.
-    """
+def _unit_jobs(unit=None, container=None):
+    """Return the uncancelled jobs for a unit or container as a query, or None."""
     if unit is not None:
         query = db.session.query(InvPrintJob).filter_by(unit_id=unit.id)
     elif container is not None:
         query = db.session.query(InvPrintJob).filter_by(container_id=container.id)
     else:
         return None
-    job = (query.filter(InvPrintJob.status != INV_JOB_CANCELLED)
-           .order_by(InvPrintJob.id.desc()).first())
-    if job is None or not (job.fields or {}).get("rows"):
+    return query.filter(InvPrintJob.status != INV_JOB_CANCELLED)
+
+
+def last_job_for(unit=None, container=None) -> InvPrintJob | None:
+    """Return the newest job for a unit or container that is not cancelled.
+
+    A job with no rows is a blank reserved label; it is not history and is skipped,
+    so an older job with rows still counts. The rows test runs in Python because
+    JSON containment is not portable between SQLite and PostgreSQL.
+    """
+    query = _unit_jobs(unit, container)
+    if query is None:
         return None
-    return job
+    for job in query.order_by(InvPrintJob.id.desc()):
+        if (job.fields or {}).get("rows"):
+            return job
+    return None
+
+
+def original_job_for(unit) -> InvPrintJob | None:
+    """Return the earliest uncancelled job with a date whose code is the unit's number now."""
+    number = unit_number(unit)
+    if number is None:
+        return None
+    return (_unit_jobs(unit=unit)
+            .filter(InvPrintJob.printed_date.isnot(None), InvPrintJob.code == number)
+            .order_by(InvPrintJob.id).first())
 
 
 def reprint_options(unit) -> dict:
@@ -260,9 +279,10 @@ def reprint_options(unit) -> dict:
         return {"has_history": False, "details_changed": False, "original_date": None,
                 "quick_reprint": False}
     same_code = job.code == unit_number(unit)
+    original = original_job_for(unit)
     return {"has_history": True,
             "details_changed": not same_code or job.fields != fields_for_unit(unit),
-            "original_date": job.printed_date.isoformat() if job.printed_date else None,
+            "original_date": original.printed_date.isoformat() if original else None,
             "quick_reprint": same_code}
 
 
@@ -273,7 +293,8 @@ def _unit_job_type(unit) -> str:
 def reprint(unit, mode, actor: Actor, client_request_id=None) -> InvPrintJob:
     """Queue a unit's label again.
 
-    ORIGINAL_DATE and TODAY copy the last job's text and code; they refuse when the
+    ORIGINAL_DATE and TODAY copy the last job's text and code;
+    ORIGINAL_DATE dates the label from the earliest job that carries the current number; they refuse when the
     unit has no history or its number changed. CURRENT_DETAILS prints the unit as it is today.
     """
     if mode not in REPRINT_MODES:
@@ -292,8 +313,12 @@ def reprint(unit, mode, actor: Actor, client_request_id=None) -> InvPrintJob:
         if job.code != number:
             raise InventoryError(NUMBER_CHANGED)
         fields, code = dict(job.fields), job.code
-        printed = (job.printed_date or local_today()) if mode == REPRINT_ORIGINAL_DATE \
-            else local_today()
+        if mode == REPRINT_ORIGINAL_DATE:
+            original = original_job_for(unit)
+            printed = (original.printed_date if original
+                       else job.printed_date or local_today())
+        else:
+            printed = local_today()
     return request_label(_unit_job_type(unit), code, fields, actor, INV_JOB_SOURCE_SCAN,
                          printed_date=printed, unit=unit, client_request_id=client_request_id)
 

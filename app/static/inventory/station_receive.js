@@ -4,7 +4,7 @@
 (function (root) {
   'use strict';
 
-  var WAIT_ABOVE = 5;   // more queued labels than this reads as "Waiting for printer"
+  var MAX_SERIAL = 64;  // the label prints at most 64 characters and must never cut a serial
   var STEPS = {BOTH: ['tag', 'serial'], TAG: ['tag'], SERIAL: ['serial']};
   var STEP_TEXT = {tag: 'Scan the ASSET TAG', serial: 'Scan the SERIAL'};
   var SKIP_TEXT = {tag: 'Skip asset tag', serial: 'Skip serial'};
@@ -14,7 +14,8 @@
     notStarted: 'Press Start scanning first.',
     needItem: 'Choose an item type first.',
     noItems: 'No serialized item matches that.',
-    cancelled: 'Not saved.'
+    cancelled: 'Not saved.',
+    serialLong: 'That serial is longer than ' + MAX_SERIAL + ' characters. It cannot print whole.'
   };
 
   function sameCode(a, b) {
@@ -45,6 +46,9 @@
         if (step === 'serial' && held.tag && sameCode(held.tag, code)) {
           return {kind: 'refuse', message: MESSAGES.sameCode};
         }
+        if (step === 'serial' && String(code).trim().length > MAX_SERIAL) {
+          return {kind: 'refuse', message: MESSAGES.serialLong};
+        }
         return advance(step, code);
       },
       skip: function () { return advance(steps[index], null); },
@@ -57,13 +61,24 @@
     return {text: done + ' of ' + target, over: done > target};
   }
 
-  // The print station is not polling, or the queue is long.
-  function printerWaiting(answer) {
-    return answer.station_seen === false || answer.waiting > WAIT_ABOVE;
+  // Runs steps one at a time in call order. A step that starts while another is running waits
+  // for it, so a scan during a submit applies to the next unit and is never dropped.
+  function createGate() {
+    var tail = null;
+    return {
+      busy: function () { return tail !== null; },
+      run: function (fn) {
+        var result = (tail || Promise.resolve()).then(fn);
+        var mine = result.then(function () {}, function () {});
+        tail = mine;
+        mine.then(function () { if (tail === mine) { tail = null; } });
+        return result;
+      }
+    };
   }
 
-  var pure = {createLoop: createLoop, progress: progress, printerWaiting: printerWaiting,
-              MESSAGES: MESSAGES};
+  var pure = {createLoop: createLoop, createGate: createGate, progress: progress,
+              MESSAGES: MESSAGES, MAX_SERIAL: MAX_SERIAL};
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
 
@@ -81,7 +96,7 @@
   var note = null;         // {code, text, waiting} outcome shown above the buttons
   var already = null;      // the answer's `already` while the Already received screen shows
   var busy = false;        // a Reprint or Undo is in flight
-  var submitting = false;  // a receive is in flight; Skip must not start another step
+  var gate = createGate(); // scans and Skip run through it, one at a time
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -103,7 +118,15 @@
     var p = progress(done, setup.target);
     var node = el('div', 'rcv-progress' + (p.over ? ' over' : ''), p.text);
     if (p.over) { node.appendChild(el('span', 'rcv-flag', ' over the target')); }
-    return node;
+    if (!setup.target) { return node; }
+    var wrap = el('div');
+    var bar = el('div', 'rcv-bar' + (p.over ? ' over' : ''));
+    var fill = el('i');
+    fill.style.width = Math.min(100, Math.round(done / setup.target * 100)) + '%';
+    bar.appendChild(fill);
+    wrap.appendChild(node);
+    wrap.appendChild(bar);
+    return wrap;
   }
 
   function summary() {
@@ -149,8 +172,10 @@
       box.appendChild(el('div', 'rcv-sub', 'This is ' + already.code +
         (already.item_name ? ', ' + already.item_name : '')));
       box.appendChild(el('div', 'rcv-sub', 'Nothing was created'));
-      box.appendChild(button('Reprint ' + already.code, 'rcv-big', function () {
-        reprint(already.unit_id, already.code);
+      // A scan clears `already` while this screen shows; the button keeps its own copy.
+      var shown = already;
+      box.appendChild(button('Reprint ' + shown.code, 'rcv-big', function () {
+        reprint(shown.unit_id, shown.code);
       }));
       box.appendChild(button('Keep scanning', 'rcv-big', function () {
         already = null;
@@ -162,11 +187,11 @@
     }
     box.appendChild(el('div', 'rcv-head', summary()));
     box.appendChild(progressNode());
+    box.appendChild(noteNode());
     box.appendChild(el('div', 'rcv-step', loop.prompt()));
     var held = loop.held();
     if (held.tag) { box.appendChild(el('div', 'rcv-held', 'Asset tag: ' + held.tag + ' ✓')); }
     box.appendChild(button(loop.skipText(), 'rcv-skip', skip));
-    box.appendChild(noteNode());
     box.appendChild(footer());
     box.appendChild(button('Change setup', 'rcv-link', function () {
       running = false;
@@ -209,8 +234,9 @@
     var locExtra = null;
     if (locating || setup.location) {
       locExtra = button(locating ? 'Cancel' : 'Clear location', 'rcv-link', function () {
+        // Cancel abandons the re-scan; only Clear location drops the one already set.
+        if (!locating) { setup.location = null; }
         locating = false;
-        setup.location = null;
         renderSetup();
       });
     }
@@ -281,7 +307,13 @@
         }
         S.showMessage('', 'info');
         S.choose(answer.items.map(function (item) { return {label: item.name, value: item}; }),
-          function (item) { setup.item = item; renderSetup(); refocus(); },
+          function (item) {
+            // The count and target belong to one item type; a new type starts both over.
+            if (!setup.item || setup.item.id !== item.id) { done = 0; setup.target = null; }
+            setup.item = item;
+            renderSetup();
+            refocus();
+          },
           'Up to 20 shown. Search again to narrow.');
         panel.appendChild(button('Back', 'choice', function () { renderSetup(); refocus(); }));
         refocus();
@@ -311,10 +343,18 @@
     });
   }
 
+  // Skip does nothing while a scan or submit is in flight; a second tap must not skip the next step.
   function skip() {
-    if (submitting) { return; }
-    handleStep(loop.skip());
+    if (gate.busy()) { return; }
+    gate.run(function () { return handleStep(loop.skip()); });
     refocus();
+  }
+
+  function showAlready(found) {
+    already = found;
+    S.feedback('error');
+    S.showMessage('Already received', 'error');
+    render();
   }
 
   function handleStep(act) {
@@ -335,15 +375,13 @@
   function submit(payload) {
     var body = {item_id: setup.item.id, tag: payload.tag, serial: payload.serial,
                 container_code: setup.location ? setup.location.code : null};
-    submitting = true;
     return S.write(cfg.receiveUrl, body).then(function (answer) {
-      submitting = false;
       loop.reset();
       if (answer.need_name || answer.fatal) { return {ok: false}; }
       if (answer.ok) {
         done += 1;
         last = {unit_id: answer.unit_id, code: answer.code};
-        var waiting = printerWaiting(answer);
+        var waiting = S.printerWaiting(answer);
         note = {code: answer.code, waiting: waiting,
                 text: waiting ? answer.code + ' is queued' : answer.code + ' sent to printer'};
         already = null;
@@ -352,22 +390,42 @@
         render();
         return {ok: true};
       }
-      S.feedback('error');
       if (answer.already) {
-        already = answer.already;
-        S.showMessage('Already received', 'error');
-      } else {
-        S.showMessage(answer.message, 'error');
+        showAlready(answer.already);
+        return {ok: false};
       }
+      S.feedback('error');
+      S.showMessage(answer.message, 'error');
       render();
       return {ok: false};
     });
   }
 
+  // In BOTH mode the server checks the tag before it is held, so a bad tag is refused at the
+  // tag step. If the check cannot reach the server the tag is held and receive decides.
+  function scanStep(code) {
+    if (setup.mode !== 'BOTH' || loop.step() !== 'tag') { return handleStep(loop.scan(code)); }
+    return S.read(cfg.checkTagUrl, {tag: code}).then(function (answer) {
+      if (answer.need_name || answer.fatal) { return {ok: false}; }
+      if (answer.ok || answer.message === S.messages.offline) {
+        return handleStep(loop.scan(code));
+      }
+      if (answer.already) {
+        showAlready(answer.already);
+        return {ok: false};
+      }
+      S.feedback('error');
+      S.showMessage(answer.message, 'error');
+      return {ok: false};
+    });
+  }
+
   function onScan(code) {
-    if (!running) { return setupScan(code); }
-    if (already) { already = null; }
-    return handleStep(loop.scan(code));
+    return gate.run(function () {
+      if (!running) { return setupScan(code); }
+      if (already) { already = null; }
+      return scanStep(code);
+    });
   }
 
   // Reprint and Undo run one at a time; a second tap while one is in flight does nothing.
@@ -385,7 +443,7 @@
 
   function reprint(unitId, code) {
     guarded(cfg.reprintUrl, {unit_id: unitId}, function (answer) {
-      var waiting = printerWaiting(answer);
+      var waiting = S.printerWaiting(answer);
       note = {code: answer.code, waiting: waiting, text: 'Reprinting ' + (code || answer.code)};
       already = null;
       S.feedback('ok');

@@ -48,6 +48,9 @@ body.not-saved-on { background: #f9c9c9; }
 .rcv-head { color: #455a64; }
 .rcv-progress { font-size: 1.2rem; font-weight: 600; margin-bottom: 6px; }
 .rcv-progress.over { color: #b71c1c; }
+.rcv-bar { height: 10px; margin-bottom: 8px; border-radius: 5px; background: #cfd8dc; overflow: hidden; }
+.rcv-bar i { display: block; height: 100%; background: #e65100; }
+.rcv-bar.over i { background: #b71c1c; }
 .rcv-flag { font-weight: 700; }
 .rcv-step { font-size: 2.2rem; font-weight: 800; line-height: 1.15; margin: 8px 0 12px; }
 .rcv-step.bad { color: #b71c1c; }

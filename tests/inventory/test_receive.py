@@ -159,6 +159,105 @@ def test_undo_after_the_label_was_collected_says_to_throw_it_away(client, rc):
     assert InvPrintJob.query.one().status == "CLAIMED"
 
 
+def _undo(client, unit_id):
+    return client.post(RECEIVE + "/undo",
+                       json={"client_request_id": _rid(), "unit_id": unit_id}).get_json()
+
+
+def test_undo_cancels_every_queued_label_for_the_unit(client, rc):
+    a = _post(client, rc, tag="FEST00001")
+    client.post(RECEIVE + "/reprint", json={"client_request_id": _rid(), "unit_id": a["unit_id"]})
+    assert InvPrintJob.query.filter_by(status="QUEUED").count() == 2
+    r = _undo(client, a["unit_id"])
+    assert r["ok"] is True and r["message"] == "Label cancelled."
+    assert InvPrintJob.query.filter_by(status="QUEUED").count() == 0
+
+
+@pytest.mark.parametrize("state", ["CLAIMED", "SENT", "FAILED"])
+def test_undo_says_throw_it_away_when_the_original_was_collected(client, rc, state):
+    a = _post(client, rc, tag="FEST00001")
+    InvPrintJob.query.one().status = state
+    db.session.commit()
+    client.post(RECEIVE + "/reprint", json={"client_request_id": _rid(), "unit_id": a["unit_id"]})
+    r = _undo(client, a["unit_id"])
+    assert r["ok"] is True and r["message"] == "Throw that label away."
+    assert InvPrintJob.query.filter_by(status="QUEUED").count() == 0
+
+
+def test_a_serial_over_the_label_limit_is_refused(client, rc):
+    ok = _post(client, rc, serial="S" * 64)
+    assert ok["ok"] is True
+    r = _post(client, rc, serial="S" * 65)
+    assert r["ok"] is False and "64" in r["message"]
+    assert InvUnit.query.count() == 1
+
+
+def test_the_loser_of_a_tag_race_gets_the_already_received_answer(client, rc, monkeypatch):
+    first = _post(client, rc, tag="FEST00001")
+    # The loser passed the pre-checks before the winner committed.
+    monkeypatch.setattr("app.inventory.receive.check_tag", lambda tag: None)
+    r = _post(client, rc, tag="FEST00001")
+    assert r["ok"] is False and r["already"]["unit_id"] == first["unit_id"]
+    assert InvUnit.query.count() == 1 and InvPrintJob.query.count() == 1
+
+
+CHECK = RECEIVE + "/check-tag"
+
+
+def test_check_tag_accepts_a_free_printable_tag_and_creates_nothing(client, rc):
+    r = client.post(CHECK, json={"tag": "FEST00001"}).get_json()
+    assert r == {"ok": True}
+    assert InvUnit.query.count() == 0 and InvPrintJob.query.count() == 0
+
+
+def test_check_tag_refuses_unprintable_label_shaped_and_held_tags(client, rc):
+    assert client.post(CHECK, json={"tag": "T" * 21}).get_json()["message"] == \
+        "This tag cannot be printed as a barcode."
+    shaped = client.post(CHECK, json={"tag": "U-00001"}).get_json()
+    assert shaped["ok"] is False and "tap Skip" in shaped["message"]
+    first = _post(client, rc, tag="FEST00001")
+    held = client.post(CHECK, json={"tag": "fest00001"}).get_json()
+    assert held["ok"] is False and held["already"]["unit_id"] == first["unit_id"]
+    assert client.post(CHECK, json={"tag": ""}).get_json()["ok"] is False
+    assert client.post(CHECK, json={"tag": 5}).get_json()["ok"] is False
+
+
+def test_receive_and_check_tag_agree_on_a_label_shaped_tag(client, rc):
+    check = client.post(CHECK, json={"tag": "U-00001"}).get_json()
+    assert _post(client, rc, tag="U-00001")["message"] == check["message"]
+
+
+RECEIVE_ROUTES = [
+    (RECEIVE + "/items", {"q": ""}),
+    (RECEIVE + "/location", {"code": "C-0001"}),
+    (CHECK, {"tag": "FEST00001"}),
+    (RECEIVE, {"client_request_id": "g-1", "item_id": 1, "tag": "FEST00001"}),
+    (RECEIVE + "/undo", {"client_request_id": "g-2", "unit_id": 1}),
+    (RECEIVE + "/reprint", {"client_request_id": "g-3", "unit_id": 1}),
+]
+
+
+def test_receive_routes_refuse_a_print_device(client, inv):
+    _printer()
+    enrolled_client(client, station_code="PRINT")
+    for path, body in RECEIVE_ROUTES:
+        assert client.post(path, json=body).status_code == 403, path
+
+
+def test_receive_routes_need_json(client, rc):
+    for path, body in RECEIVE_ROUTES:
+        assert client.post(path, data=body).status_code == 415, path
+
+
+def test_receive_routes_are_csrf_exempt_with_csrf_on(app, client, rc):
+    app.config["WTF_CSRF_ENABLED"] = True
+    try:
+        statuses = [client.post(path, json=body).status_code for path, body in RECEIVE_ROUTES]
+    finally:
+        app.config["WTF_CSRF_ENABLED"] = False
+    assert statuses == [200] * len(RECEIVE_ROUTES)
+
+
 def test_undo_applies_only_to_the_last_unit_and_only_once(client, rc):
     a = _post(client, rc, tag="FEST00001")
     b = _post(client, rc, tag="FEST00002")
@@ -286,13 +385,16 @@ def test_the_page_needs_the_receive_station_and_a_shift(client, inv):
 
 FLOW_SCRIPT = r"""
 const r = require(process.env.RECEIVE_JS);
+const scan = require(process.env.SCAN_JS);
 const assert = require('assert');
 let l = r.createLoop('BOTH');
 assert.equal(l.prompt(), 'Scan the ASSET TAG');
 assert.deepEqual(l.scan('FEST1'), {kind: 'hold'});
 assert.equal(l.scan('fest1').kind, 'refuse');
 assert.equal(l.prompt(), 'Scan the SERIAL');
-assert.deepEqual(l.scan('S1'), {kind: 'submit', payload: {tag: 'FEST1', serial: 'S1'}});
+assert.equal(l.scan('S'.repeat(65)).kind, 'refuse');
+assert.equal(l.prompt(), 'Scan the SERIAL');
+assert.deepEqual(l.scan('S'.repeat(64)).kind, 'submit');
 l.reset(); l.skip();
 assert.deepEqual(l.skip(), {kind: 'submit', payload: {tag: null, serial: null}});
 assert.deepEqual(r.createLoop('SERIAL').scan('S2'),
@@ -300,21 +402,101 @@ assert.deepEqual(r.createLoop('SERIAL').scan('S2'),
 assert.deepEqual(r.progress(38, 200), {text: '38 of 200', over: false});
 assert.deepEqual(r.progress(38, null), {text: '38 done', over: false});
 assert.equal(r.progress(205, 200).over, true);
-assert.equal(r.printerWaiting({station_seen: false, waiting: 1}), true);
-assert.equal(r.printerWaiting({station_seen: true, waiting: 6}), true);
-assert.equal(r.printerWaiting({station_seen: true, waiting: 5}), false);
+assert.equal(scan.printerWaiting({station_seen: false, waiting: 1}), true);
+assert.equal(scan.printerWaiting({station_seen: true, waiting: 6}), true);
+assert.equal(scan.printerWaiting({station_seen: true, waiting: 5}), false);
 console.log('flow ok');
 """
+
+# Loads the whole page script against a stub document and shell, and drives a Skip submit.
+PAGE_SCRIPT = r"""
+const assert = require('assert');
+function Node(tag) {
+  this.tag = tag; this.children = []; this.className = ''; this.style = {};
+  this.handlers = {}; this._text = ''; this.disabled = false;
+}
+Node.prototype = {
+  get textContent() { return this._text; },
+  set textContent(v) { this._text = v; if (v === '') { this.children = []; } },
+  appendChild(c) { this.children.push(c); return c; },
+  addEventListener(t, f) { this.handlers[t] = f; },
+  setAttribute() {}, focus() {}
+};
+function all(n, out) { out.push(n); n.children.forEach((c) => all(c, out)); return out; }
+function texts(n) { return all(n, []).map((x) => x._text); }
+function find(n, label) { return all(n, []).find((x) => x.tag === 'button' && x._text === label); }
+const panel = new Node('div');
+const nodes = {panel: panel, 'scan-input': new Node('input')};
+globalThis.document = {
+  currentScript: {dataset: {itemsUrl: '/items', checkTagUrl: '/check', receiveUrl: '/receive',
+                            locationUrl: '/loc', undoUrl: '/undo', reprintUrl: '/reprint'}},
+  getElementById: (id) => nodes[id],
+  createElement: (t) => new Node(t)
+};
+const writes = [];
+const reads = [];
+let onScan;
+globalThis.InvScan = {
+  start: (cfg) => { onScan = cfg.onScan; },
+  messages: {offline: 'offline'},
+  printerWaiting: () => false,
+  feedback() {}, showMessage() {}, numberPad() {},
+  askText: (label, cb) => cb('lap'),
+  choose: (opts, pick) => pick(opts[0].value),
+  read: (path, body) => {
+    reads.push([path, body]);
+    if (path === '/items') { return Promise.resolve({ok: true, items: [{id: 1, name: 'Laptop'}]}); }
+    return Promise.resolve({ok: true});
+  },
+  write: (path, body) => new Promise((resolve) => writes.push({path, body, resolve}))
+};
+require(process.env.RECEIVE_JS);
+const tick = () => new Promise((r) => setTimeout(r, 0));
+(async () => {
+  find(panel, 'Choose item type').handlers.click();
+  await tick();
+  find(panel, 'Start scanning').handlers.click();
+  await onScan('T1');
+  await tick();
+  find(panel, 'Skip serial').handlers.click();
+  await tick();
+  assert.equal(writes.length, 1, 'skip submitted one unit');
+  const during = onScan('T2');
+  await tick();
+  assert.equal(writes.length, 1, 'a scan during the submit makes no second submit');
+  writes[0].resolve({ok: true, unit_id: 1, code: 'U-00001', station_seen: true, waiting: 0});
+  await during;
+  assert.equal(writes.length, 1);
+  assert.ok(texts(panel).includes('Asset tag: T2 ✓'), 'the scan is held for the next unit');
+  assert.ok(reads.some((x) => x[0] === '/check' && x[1].tag === 'T2'));
+  console.log('page ok');
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+STATIC = os.path.join(os.path.dirname(__file__), "..", "..", "app", "static", "inventory")
+
+
+def _node(tmp_path, script, name, **env):
+    path = tmp_path / name
+    path.write_text(script)
+    return subprocess.run(["node", str(path)], capture_output=True, text=True,
+                          env={**os.environ, **env})
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_receive_flow_logic_under_node(tmp_path):
     """Runs the pure step and progress logic under node; it does not drive a browser."""
-    script = tmp_path / "flow_check.js"
-    script.write_text(FLOW_SCRIPT)
-    path = os.path.join(os.path.dirname(__file__), "..", "..", "app", "static",
-                        "inventory", "station_receive.js")
-    result = subprocess.run(["node", str(script)], capture_output=True, text=True,
-                            env={**os.environ, "RECEIVE_JS": os.path.abspath(path)})
+    result = _node(tmp_path, FLOW_SCRIPT, "flow_check.js",
+                   RECEIVE_JS=os.path.abspath(os.path.join(STATIC, "station_receive.js")),
+                   SCAN_JS=os.path.abspath(os.path.join(STATIC, "scan.js")))
     assert result.returncode == 0, result.stderr
     assert "flow ok" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_scan_during_a_skip_submit_waits_for_the_next_unit(tmp_path):
+    """Runs the page script on a stub DOM under node; it does not drive a browser."""
+    result = _node(tmp_path, PAGE_SCRIPT, "page_check.js",
+                   RECEIVE_JS=os.path.abspath(os.path.join(STATIC, "station_receive.js")))
+    assert result.returncode == 0, result.stderr
+    assert "page ok" in result.stdout
