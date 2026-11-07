@@ -29,6 +29,9 @@ KIND_UNKNOWN = "UNKNOWN"
 class Resolution:
     """What a scan means. `candidates` holds every match when kind is AMBIGUOUS.
 
+    Candidates are units, or items when several share a barcode. Inactive containers
+    and items still resolve, so a station checks `is_active` before acting on one.
+
     `prefix` is set for UNUSED: the label prefix (C, U, or I) waiting to be bound.
     """
     kind: str
@@ -109,7 +112,12 @@ def resolve(raw: str | None) -> Resolution:
         return Resolution(KIND_UNKNOWN, code)
     parsed = labels.parse(code)
     if parsed is not None:
-        return _resolve_label(code, parsed[0])
+        # A typed C-1 means C-0001; without this a station could bind a second label.
+        canonical = labels.format_code(*parsed)
+        result = _resolve_label(canonical, parsed[0])
+        if result.kind != KIND_UNKNOWN:
+            return result
+        # Vendor text can look like a label, so a dead label still tries the identifier ranks.
 
     serial_values = {code}
     mac = normalize_mac(code)

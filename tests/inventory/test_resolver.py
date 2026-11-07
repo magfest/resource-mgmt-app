@@ -99,3 +99,27 @@ def test_an_item_label_or_barcode_finds_the_item(inv):
     assert resolve("i-0001").kind == KIND_ITEM
     assert resolve("i-0001").item == inv.pens
     assert resolve("012345678905").item == inv.laptop
+
+
+def test_a_typed_label_resolves_to_its_canonical_code(inv):
+    bin_ = make_container(inv, "C-0001", kind="BIN")
+    assert resolve("c-1").container == bin_
+    labels.allocate("U", 3)
+    db.session.flush()
+    result = resolve("U-3")
+    assert result.kind == KIND_UNUSED and result.code == "U-00003"
+
+
+def test_a_serial_shaped_like_a_label_still_resolves(inv):
+    bin_ = make_container(inv, "C-0001", kind="BIN")
+    unit = add_unit(inv.laptop, bin_, ACTOR, [("SERIAL", "C-1042")])
+    assert resolve("C-1042").unit == unit
+
+
+def test_a_serial_and_mac_on_two_units_are_ambiguous(inv):
+    bin_ = make_container(inv, "C-0001", kind="BIN")
+    add_unit(inv.laptop, bin_, ACTOR, [("SERIAL", "AABBCCDDEEFF")])
+    add_unit(inv.laptop, bin_, ACTOR, [("MAC", "AA:BB:CC:DD:EE:FF")])
+    result = resolve("aa-bb-cc-dd-ee-ff")
+    assert result.kind == KIND_AMBIGUOUS and len(result.candidates) == 2
+
