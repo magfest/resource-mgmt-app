@@ -219,8 +219,7 @@ def add_identifier(unit: InvUnit, kind: str, value: str) -> InvUnitIdentifier:
     Rented units are exempt: they carry an R- label and may also hold a tag.
     """
     if kind in NUMBER_KINDS and unit.ownership == INV_OWNERSHIP_OWNED:
-        other = [k for k in NUMBER_KINDS if k != kind]
-        if _active_numbers(unit, other):
+        if _active_numbers(unit):
             raise InventoryError(
                 "This unit already has a number. Replace it on the Units page.")
     try:

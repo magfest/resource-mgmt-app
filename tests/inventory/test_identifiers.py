@@ -229,3 +229,10 @@ def test_retire_received_unit_retires_every_identifier_and_stops_resolving(inv):
     assert _active(unit) == []
     assert resolve("FEST00001").kind == KIND_UNKNOWN
     assert resolve("sn-1").kind == KIND_UNKNOWN
+
+
+def test_an_owned_unit_cannot_take_a_second_number_of_the_same_kind(inv):
+    unit = add_unit(inv.laptop, None, Actor(user_id="test:invadmin"), [("MAGFEST_TAG", "FEST00001")])
+    with pytest.raises(InventoryError, match="already has a number"):
+        add_identifier(unit, "MAGFEST_TAG", "FEST00002")
+

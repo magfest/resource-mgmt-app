@@ -69,10 +69,18 @@ def test_reprint_finds_a_unit_by_its_magfest_tag(client, inv):
              [("MAGFEST_TAG", "FEST00001"), ("SERIAL", "SN-1")])
     db.session.commit()
     login(client, "test:invadmin")
-    for code in ("fest00001",):
-        html = client.post("/inv/admin/labels/reprint", data={"codes": code}).get_data(as_text=True)
-        assert "^FDFEST00001^FS" in html and "^FDSN-1^FS" in html
-        assert "Return to MAGFest FestOps" in html and "^FDPrinted^FS" in html
+    html = client.post("/inv/admin/labels/reprint", data={"codes": "fest00001"}).get_data(as_text=True)
+    assert "^FDFEST00001^FS" in html and "^FDSN-1^FS" in html
+    assert "Return to MAGFest FestOps" in html and "^FDPrinted^FS" in html
+
+
+def test_reprint_finds_a_unit_by_its_u_label(client, inv):
+    add_unit(inv.laptop, None, Actor(user_id="test:invadmin"),
+             [("FESTOPS_LABEL", "U-00001"), ("SERIAL", "SN-1")])
+    db.session.commit()
+    login(client, "test:invadmin")
+    html = client.post("/inv/admin/labels/reprint", data={"codes": "u-00001"}).get_data(as_text=True)
+    assert "^FDU-00001^FS" in html and "^FDSN-1^FS" in html
 
 
 def test_a_tag_no_barcode_can_hold_does_not_stop_the_batch(client, inv):
