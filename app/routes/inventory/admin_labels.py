@@ -1,14 +1,14 @@
 """Print new label batches and reprint existing codes as ZPL.
 
-The app renders ZPL; the print-station laptop delivers it. Browser Print, a
-Zebra agent on localhost, is used when present. Otherwise the operator
-downloads a .zpl file and sends it with Zebra Setup Utilities. Heroku cannot
-reach the warehouse LAN, so the server never talks to a printer.
+Printing goes through the queue in app.inventory.printing; a print station
+delivers each job. The .zpl download remains for a station that is down: send
+the file with Zebra Setup Utilities. Heroku cannot reach the warehouse LAN, so
+the server never talks to a printer.
 """
 from dataclasses import dataclass
 import secrets
 
-from flask import flash, g, redirect, request, url_for
+from flask import flash, redirect, request, url_for
 
 from app import db
 from app.inventory.codes import normalize_code
@@ -30,7 +30,6 @@ from .helpers import (
     admin_actor, render_inventory_page, require_inventory_admin, require_inventory_operator,
 )
 
-BROWSER_PRINT_ORIGINS = ["http://localhost:9100", "https://localhost:9101"]
 # send_token and "-<n>" must fit InvPrintJob.client_request_id, a String(64).
 _TOKEN_MAX = 40
 
@@ -133,7 +132,6 @@ def _specs_from_codes(raw: str):
 
 
 def _batch_page(specs, dpi, unknown=(), unprintable=(), overflow=()):
-    g.csp_connect_src_extra = BROWSER_PRINT_ORIGINS
     return render_inventory_page("inventory/label_batch.html", specs=specs, dpi=dpi,
                                  zpl=render_batch(specs, dpi), unknown=unknown,
                                  unprintable=unprintable, overflow=overflow,
@@ -143,7 +141,6 @@ def _batch_page(specs, dpi, unknown=(), unprintable=(), overflow=()):
 @inventory_bp.get("/admin/labels")
 @require_inventory_operator
 def labels():
-    g.csp_connect_src_extra = BROWSER_PRINT_ORIGINS
     return render_inventory_page("inventory/labels.html", max_batch=MAX_BATCH,
                                  prefill=request.args.get("codes", ""))
 

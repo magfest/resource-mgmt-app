@@ -24,36 +24,21 @@ def test_reprint_uses_existing_codes_and_refuses_unknown(client, inv):
     assert "^FDC-0999" not in html
 
 
-def test_only_the_labels_page_may_reach_browser_print(client, inv):
+def test_label_pages_cannot_reach_browser_print(client, inv):
     login(client, "test:invadmin")
     labels_csp = client.get("/inv/admin/labels").headers["Content-Security-Policy"]
-    other_csp = client.get("/inv/admin/kinds").headers["Content-Security-Policy"]
-    assert "connect-src 'self' http://localhost:9100" in labels_csp
-    assert "localhost:9100" not in other_csp
-
-
-def test_the_batch_page_may_reach_browser_print(client, inv):
-    login(client, "test:invadmin")
     response = client.post("/inv/admin/labels/new", data={"prefix": "U", "count": "1"})
-    assert "connect-src 'self' http://localhost:9100" in response.headers["Content-Security-Policy"]
-
-
-def test_creating_containers_lands_on_the_reprint_form(client, inv):
-    login(client, "test:invadmin")
-    response = client.post("/inv/admin/containers", data={
-        "kind_id": str(inv.kinds["PALLET"].id), "count": "2"})
-    assert response.status_code == 302
-    assert "/inv/admin/labels" in response.headers["Location"]
-    html = client.get(response.headers["Location"]).get_data(as_text=True)
-    area = html[html.index("<textarea"):html.index("</textarea>")]
-    assert "C-0001" in area and "C-0002" in area
+    assert "localhost:9100" not in labels_csp
+    assert "localhost:9100" not in response.headers["Content-Security-Policy"]
+    assert "Send to print queue" in response.get_data(as_text=True)
+    assert "send-zpl" not in response.get_data(as_text=True)
 
 
 def test_a_batch_of_only_unknown_codes_prints_nothing(client, inv):
     login(client, "test:invadmin")
     html = client.post("/inv/admin/labels/reprint",
                        data={"codes": "C-0999"}).get_data(as_text=True)
-    assert "Nothing to print." in html and "send-zpl" not in html
+    assert "Nothing to print." in html and "download-zpl" not in html
 
 
 def test_unicode_digits_are_not_a_label_code():

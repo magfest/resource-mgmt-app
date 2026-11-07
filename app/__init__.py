@@ -382,9 +382,8 @@ def create_app() -> Flask:
             "base-uri 'self'",
             "object-src 'none'",
         ]
-        # Zebra Browser Print listens on localhost. The print station, the labels
-        # page, and the label batch page opt in; every other page keeps
-        # default-src 'self' for fetches.
+        # Zebra Browser Print listens on localhost. Only the print station page
+        # opts in; every other page keeps default-src 'self' for fetches.
         connect_extra = getattr(g, "csp_connect_src_extra", None)
         if connect_extra:
             csp_directives.append("connect-src 'self' " + " ".join(connect_extra))

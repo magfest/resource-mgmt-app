@@ -20,12 +20,10 @@
   <button type="submit" class="btn btn-primary">Send to print queue</button>
 </form>
 <div class="mb-16">
-  <button type="button" class="btn" id="send-zpl">Send to printer</button>
   <button type="button" class="btn" id="download-zpl">Download .zpl</button>
-  <span id="print-status" class="muted"></span>
 </div>
 <div class="muted small mb-16">
-  Without Browser Print: download the file and send it to the printer with Zebra Setup Utilities.
+  If the print station is down: download the file and send it to the printer with Zebra Setup Utilities.
 </div>
 {% else %}
 <p>Nothing to print.</p>
@@ -36,24 +34,6 @@
 <script nonce="{{ csp_nonce }}">
   (function () {
     var zpl = document.getElementById('zpl').value;
-    var status = document.getElementById('print-status');
-    // Browser Print's local HTTP API.
-    var agent = 'http://localhost:9100';
-    document.getElementById('send-zpl').addEventListener('click', function () {
-      status.textContent = 'Sending...';
-      fetch(agent + '/default?type=printer')
-        .then(function (r) { if (!r.ok) throw new Error('no printer'); return r.json(); })
-        .then(function (device) {
-          return fetch(agent + '/write', { method: 'POST', body: JSON.stringify({ device: device, data: zpl }) });
-        })
-        .then(function (r) {
-          if (!r.ok) throw new Error('write failed');
-          status.textContent = 'Sent. Check the printer.';
-        })
-        .catch(function () {
-          status.textContent = 'Browser Print is not reachable, or it has not accepted this site. Use Download .zpl instead.';
-        });
-    });
     document.getElementById('download-zpl').addEventListener('click', function () {
       var link = document.createElement('a');
       link.href = URL.createObjectURL(new Blob([zpl], { type: 'text/plain' }));
