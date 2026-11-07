@@ -4,6 +4,7 @@
   'use strict';
   var S = window.InvScan;
   var resolveUrl = document.currentScript.dataset.resolveUrl;
+  var FOUND = ['CONTAINER', 'UNIT', 'ITEM'];
 
   function cardHtml(card) {
     var html = '<section class="card"><h2>' + S.esc(card.title) + '</h2>';
@@ -70,7 +71,8 @@
     onScan: function (code) {
       return S.read(resolveUrl, {code: code}).then(function (answer) {
         handle(answer);
-        return answer;
+        // Only a found thing counts as done, so a rescan of anything else shows its message again.
+        return {ok: answer.ok === true && FOUND.indexOf(answer.kind) !== -1};
       });
     }
   });

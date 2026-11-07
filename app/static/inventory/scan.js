@@ -362,6 +362,7 @@
     blocked = false;
     notSaved.hidden = true;
     body.classList.remove('not-saved-on');
+    if (msg.textContent === MESSAGES.blockedDone) { showMessage('', 'info'); }
   }
 
   var writes = createWriteQueue({send: sendOnce, onBlock: showNotSaved, onUnblock: hideNotSaved});
