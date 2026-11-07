@@ -1,6 +1,8 @@
 """The look-up card: what a scan is, where it is, and what happened to it."""
 from __future__ import annotations
 
+from sqlalchemy import or_
+
 from app import db
 from app.inventory.flags import FLAG_WORDS
 from app.inventory.describe import describe_actor, describe_movement, unit_tag
@@ -9,12 +11,13 @@ from app.inventory.resolver import (
 )
 from app.inventory.tree import display_name, path_text
 from app.models import (
-    EventCycle, InvContainer, InvFlag, InvMovement, InvPrepStatus, InvStock, InvUnit,
+    EventCycle, InvCheck, InvContainer, InvFlag, InvMovement, InvPrepStatus, InvStock, InvUnit,
     SupplyItem,
 )
 from app.models.constants import (
-    INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
+    INV_CHECK_VOIDED, INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
     INV_CONDITION_RETIRED, INV_OWNERSHIP_RENTED, INV_PREP_CHECKED, INV_PREP_FAILED_CHECK,
+    INV_PREP_VOIDED,
 )
 
 HISTORY_LIMIT = 10
@@ -49,13 +52,28 @@ def _flag_lines(*criteria) -> list[str]:
             for f in flags]
 
 
+def live_prep_row(unit: InvUnit, event_cycle) -> InvPrepStatus | None:
+    """The unit's newest prep row for the event that no undo has voided.
+
+    VOIDED rows stay as history. A row whose check was voided is skipped too, so
+    undoing a re-check leaves the earlier valid check standing.
+    """
+    if event_cycle is None:
+        return None
+    return (db.session.query(InvPrepStatus)
+            .outerjoin(InvCheck, InvCheck.id == InvPrepStatus.check_id)
+            .filter(InvPrepStatus.unit_id == unit.id,
+                    InvPrepStatus.event_cycle_id == event_cycle.id,
+                    InvPrepStatus.status != INV_PREP_VOIDED,
+                    or_(InvPrepStatus.check_id.is_(None),
+                        InvCheck.status != INV_CHECK_VOIDED))
+            .order_by(InvPrepStatus.id.desc()).first())
+
+
 def _prep_line(unit: InvUnit, event: EventCycle | None) -> str:
     if event is None:
         return "Not checked"
-    newest = (db.session.query(InvPrepStatus)
-              .filter_by(unit_id=unit.id, event_cycle_id=event.id)
-              .order_by(InvPrepStatus.id.desc()).first())
-    # A VOIDED row undoes the check before it, so it reads the same as no row.
+    newest = live_prep_row(unit, event)
     return _PREP_WORDS.get(newest.status, "Not checked") if newest else "Not checked"
 
 

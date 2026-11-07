@@ -15,7 +15,7 @@ from sqlalchemy import func
 
 from app import db
 from app.inventory import labels
-from app.inventory.cards import default_event
+from app.inventory.cards import default_event, live_prep_row
 from app.inventory.codes import normalize_code
 from app.inventory.describe import unit_tag
 from app.inventory.ledger import (
@@ -399,24 +399,18 @@ def create_checked_unit(item: SupplyItem, label_code: str, serial: str, actor: A
 
 
 def prep_status(unit: InvUnit, event_cycle) -> str | None:
-    """The unit's newest prep status for the event, or None when it has none."""
-    if event_cycle is None:
-        return None
-    row = (db.session.query(InvPrepStatus.status)
-           .filter_by(unit_id=unit.id, event_cycle_id=event_cycle.id)
-           .order_by(InvPrepStatus.id.desc()).first())
-    return row[0] if row else None
+    """The unit's newest live prep status for the event, or None when it has none."""
+    row = live_prep_row(unit, event_cycle)
+    return row.status if row else None
 
 
 def last_result(unit: InvUnit, event_cycle) -> dict | None:
-    """The newest finished check when the unit counts as checked for the event."""
-    if prep_status(unit, event_cycle) not in (INV_PREP_CHECKED, INV_PREP_FAILED_CHECK):
+    """The finished check behind the unit's live prep status, when it counts as checked."""
+    row = live_prep_row(unit, event_cycle)
+    if row is None or row.status not in (INV_PREP_CHECKED, INV_PREP_FAILED_CHECK):
         return None
-    check = (db.session.query(InvCheck)
-             .filter(InvCheck.unit_id == unit.id, InvCheck.event_cycle_id == event_cycle.id,
-                     InvCheck.status.in_((INV_CHECK_PASSED, INV_CHECK_FAILED)))
-             .order_by(InvCheck.id.desc()).first())
-    if check is None:
+    check = db.session.get(InvCheck, row.check_id) if row.check_id else None
+    if check is None or check.status not in (INV_CHECK_PASSED, INV_CHECK_FAILED):
         return None
     return {"result": "Passed" if check.status == INV_CHECK_PASSED else "Failed",
             "when": local_stamp(check.finished_at)}

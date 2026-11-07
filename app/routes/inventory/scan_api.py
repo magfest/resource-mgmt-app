@@ -756,15 +756,17 @@ def scan_check_finish():
             raise InventoryError("Answer every line.") from None
         condition = _optional_text(data, "failed_condition")
         line_ids = data.get("line_ids")
+        # Retiring the unit retires its numbers, so name it before finishing.
+        code = display_number(check.unit)
         finish_check(check, answers, actor, failed_condition=condition,
                      note=_optional_text(data, "note"),
                      line_ids=line_ids if isinstance(line_ids, list) else None)
         unit = check.unit
         out = {"status": check.status, "condition": unit.condition,
-               "code": display_number(unit)}
-        code = _optional_text(data, "put_away_code")
-        if code and code.strip() and unit.condition != INV_CONDITION_RETIRED:
-            error = put_away(unit, code, actor)
+               "code": code}
+        put_code = _optional_text(data, "put_away_code")
+        if put_code and put_code.strip() and unit.condition != INV_CONDITION_RETIRED:
+            error = put_away(unit, put_code, actor)
             if error:
                 out["put_away_error"] = error
         return out

@@ -14,10 +14,11 @@ from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 
 from app import db
-from app.inventory.checks import FAILED_CONDITIONS, display_number
+from app.inventory.checks import display_number
 from app.inventory.counts import not_undone
 from app.inventory.ledger import (
-    NUMBER_KINDS, Actor, InventoryError, _active_numbers, _is_taken, reverse_movement,
+    NUMBER_KINDS, Actor, InventoryError, _active_numbers, _is_taken, _locked_stock,
+    reverse_movement,
     set_condition,
 )
 from app.models import (
@@ -28,7 +29,7 @@ from app.models.constants import (
     INV_ACTION_ADD, INV_ACTION_MOVE, INV_CHECK_FAILED, INV_CHECK_PASSED, INV_CHECK_VOIDED,
     INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR, INV_CONDITION_RETIRED,
     INV_COUNT_LINE_APPLIED, INV_COUNT_LINE_UNCHANGED, INV_COUNT_LINE_UNDONE,
-    INV_IDENT_FESTOPS_LABEL, INV_IDENT_UNIQUE_KINDS, INV_IDENT_VENDOR_TAG, INV_OWNERSHIP_OWNED,
+    INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_SERIAL, INV_IDENT_UNIQUE_KINDS, INV_IDENT_VENDOR_TAG, INV_OWNERSHIP_OWNED,
     INV_PREP_CHECKED, INV_PREP_FAILED_CHECK, INV_PREP_VOIDED,
 )
 
@@ -125,10 +126,16 @@ def _require_window(now: datetime, finished: datetime, other_write: bool) -> Non
 
 # ---- checks ----
 
-def _expected_condition(check: InvCheck, unit: InvUnit) -> bool:
-    """True when the unit still has the condition this check left it in."""
+def _expected_condition(check: InvCheck, unit: InvUnit, retired: list) -> bool:
+    """True when the unit still has the condition this check left it in.
+
+    A failed check stores no failed condition. RETIRED shows as identifiers this
+    check retired; REPAIR is the only other failed condition.
+    """
     if check.status == INV_CHECK_FAILED:
-        return unit.condition in FAILED_CONDITIONS
+        if retired:
+            return unit.condition == INV_CONDITION_RETIRED
+        return unit.condition == INV_CONDITION_REPAIR
     previous = check.previous_condition
     if previous in (INV_CONDITION_REPAIR, INV_CONDITION_LOST):
         return unit.condition == INV_CONDITION_IN_SERVICE
@@ -152,15 +159,27 @@ def _retired_by(check: InvCheck, unit: InvUnit, prep: InvPrepStatus) -> list[Inv
             .order_by(InvUnitIdentifier.id).all())
 
 
-def _can_reactivate(unit: InvUnit, identifiers: list[InvUnitIdentifier]) -> bool:
+def _reactivation_refusal(unit: InvUnit, identifiers: list[InvUnitIdentifier]) -> str | None:
+    """Return the refusal text when re-activating these identifiers would clash, else None."""
     for identifier in identifiers:
+        if identifier.kind in (INV_IDENT_SERIAL, INV_IDENT_MAC):
+            # Not unique in the schema, so a second holder would go unnoticed.
+            holder = (db.session.query(InvUnit.id)
+                      .join(InvUnitIdentifier, InvUnitIdentifier.unit_id == InvUnit.id)
+                      .filter(InvUnitIdentifier.kind == identifier.kind,
+                              InvUnitIdentifier.normalized_value == identifier.normalized_value,
+                              InvUnitIdentifier.retired_at.is_(None),
+                              InvUnit.condition != INV_CONDITION_RETIRED,
+                              InvUnit.id != unit.id).first())
+            if holder is not None:
+                return f"{identifier.value} is now on another unit; nothing was undone."
         unique = identifier.kind in INV_IDENT_UNIQUE_KINDS or identifier.kind == INV_IDENT_VENDOR_TAG
         if unique and _is_taken(unit, identifier.kind, identifier.normalized_value):
-            return False
+            return CHANGED
         if identifier.kind in NUMBER_KINDS and unit.ownership == INV_OWNERSHIP_OWNED \
                 and _active_numbers(unit):
-            return False
-    return True
+            return CHANGED
+    return None
 
 
 def _stays_text(check: InvCheck, unit: InvUnit, actor: Actor) -> str:
@@ -183,6 +202,11 @@ def _stays_text(check: InvCheck, unit: InvUnit, actor: Actor) -> str:
                  .filter(InvUnitIdentifier.unit_id == unit.id,
                          InvUnitIdentifier.kind == INV_IDENT_FESTOPS_LABEL,
                          InvUnitIdentifier.created_at >= shift.started_at).first())
+        # A bind writes no actor. A unit with an earlier check was bound before this one.
+        earlier = (db.session.query(InvCheck.id)
+                   .filter(InvCheck.unit_id == unit.id, InvCheck.id < check.id).first())
+        if earlier is not None:
+            bound = None
         if created is not None:
             parts.append("The new unit stays.")
         elif bound is not None:
@@ -198,11 +222,14 @@ def _undo_check(check: InvCheck, actor: Actor) -> dict:
             .order_by(InvPrepStatus.id.desc()).first())
     own_prep = prep is not None and prep.check_id == check.id \
         and prep.status in (INV_PREP_CHECKED, INV_PREP_FAILED_CHECK)
-    if not own_prep or check.previous_condition is None or not _expected_condition(check, unit):
+    if not own_prep or check.previous_condition is None:
         raise InventoryError(CHANGED)
     retired = _retired_by(check, unit, prep)
-    if not _can_reactivate(unit, retired):
+    if not _expected_condition(check, unit, retired):
         raise InventoryError(CHANGED)
+    refusal = _reactivation_refusal(unit, retired)
+    if refusal:
+        raise InventoryError(refusal)
     try:
         for identifier in retired:
             identifier.retired_at = None
@@ -229,6 +256,10 @@ def _undo_count(count: InvCount, actor: Actor) -> dict:
              if l.outcome in (INV_COUNT_LINE_APPLIED, INV_COUNT_LINE_UNCHANGED)]
     if not lines:
         raise InventoryError(NOTHING)
+    # Lock the stock rows in item order before reading later movements, so a
+    # concurrent write cannot slip between the check and the reversal.
+    for item_id in sorted({l.item_id for l in lines}):
+        _locked_stock(item_id, count.container_id)
     own = (db.session.query(InvMovement).filter(InvMovement.count_id == count.id)
            .order_by(InvMovement.id).all())
     later = (db.session.query(InvMovement.id)

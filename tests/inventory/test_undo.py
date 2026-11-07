@@ -8,6 +8,7 @@ import pytest
 
 from app import db
 from app.inventory.cards import card_for
+from app.inventory.describe import describe_movement
 from app.inventory.checks import (
     find_balance_mismatches, finish_check, open_check, prep_status,
 )
@@ -74,7 +75,7 @@ def test_undo_a_failed_check_restores_condition_and_voids_prep(inv, tv_checklist
     assert answer["undone"] == "check"
     assert answer["message"].startswith("Check of TECH00412 undone.")
     assert t.tv.condition == "IN_SERVICE"
-    assert prep_status(t.tv, event) == "VOIDED"
+    assert prep_status(t.tv, event) is None
     assert check.status == "VOIDED"
     rows = [r.status for r in InvPrepStatus.query.order_by(InvPrepStatus.id)]
     assert rows == ["FAILED_CHECK", "VOIDED"]
@@ -476,3 +477,129 @@ def test_undo_control_under_node(tmp_path):
         env={**os.environ, "SCAN_JS": os.path.abspath(os.path.join(STATIC, "scan.js"))})
     assert result.returncode == 0, result.stderr + result.stdout
     assert "undo control ok" in result.stdout
+
+
+# ---- review fixes ----
+
+@pytest.mark.parametrize("kind,value", [("SERIAL", "SN4471"), ("MAC", "AA:BB:CC:DD:EE:09")])
+def test_undo_is_refused_when_another_unit_holds_the_serial_or_mac(
+        inv, tv_checklist, event, shift, kind, value):
+    from app.inventory.ledger import add_identifier
+    t, actor = tv_checklist, _actor(shift)
+    if kind == "MAC":
+        add_identifier(t.tv, "MAC", value)
+        db.session.commit()
+    check = _fail_and_retire(t, event, actor)
+    add_identifier(t.tv2, kind, value)
+    db.session.commit()
+    with pytest.raises(InventoryError) as refused:
+        undo_last(shift, now=_later(check, 5))
+    assert str(refused.value) == f"{value} is now on another unit; nothing was undone."
+    db.session.rollback()
+    db.session.refresh(t.tv)
+    assert t.tv.condition == "RETIRED" and InvCheck.query.get(check.id).status == "FAILED"
+    assert not [i for i in InvUnitIdentifier.query.filter_by(unit_id=t.tv.id)
+                if i.retired_at is None]
+
+
+def test_undo_of_a_repair_check_is_refused_after_someone_retires_the_unit(
+        inv, tv_checklist, event, shift):
+    from app.inventory.ledger import set_condition
+    t, actor = tv_checklist, _actor(shift)
+    check = open_check(t.tv, "TV_CHECK", actor, event)
+    finish_check(check, {t.power.id: "NO", t.remote.id: "YES"}, actor, failed_condition="REPAIR")
+    db.session.commit()
+    set_condition(t.tv, "RETIRED")
+    db.session.commit()
+    with pytest.raises(InventoryError) as refused:
+        undo_last(shift, now=_later(check, 5))
+    assert str(refused.value) == CHANGED
+    assert t.tv.condition == "RETIRED"
+
+
+def test_undoing_a_recheck_keeps_the_earlier_pass(inv, tv_checklist, event, shift):
+    t, actor = tv_checklist, _actor(shift)
+    first = open_check(t.tv, "TV_CHECK", actor, event)
+    finish_check(first, {t.power.id: "YES", t.remote.id: "YES"}, actor)
+    db.session.commit()
+    second = open_check(t.tv, "TV_CHECK", actor, event)
+    finish_check(second, {t.power.id: "NO", t.remote.id: "YES"}, actor,
+                 failed_condition="REPAIR")
+    db.session.commit()
+    assert prep_status(t.tv, event) == "FAILED_CHECK"
+    undo_last(shift, now=_later(second, 5))
+    assert prep_status(t.tv, event) == "CHECKED"
+    assert "Checked" in card_for(resolve("TECH00412"), event)["lines"]
+    from app.inventory.checks import last_result
+    assert last_result(t.tv, event)["result"] == "Passed"
+
+
+def test_undoing_the_only_check_leaves_the_unit_unchecked(inv, tv_checklist, event, shift):
+    t, actor = tv_checklist, _actor(shift)
+    check = open_check(t.tv, "TV_CHECK", actor, event)
+    finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
+    db.session.commit()
+    undo_last(shift, now=_later(check, 5))
+    from app.inventory.checks import last_result
+    assert prep_status(t.tv, event) is None and last_result(t.tv, event) is None
+
+
+def test_the_movements_log_names_an_undo(inv, shift):
+    actor = _actor(shift)
+    tote = make_container(inv, "C-0011", kind="BIN")
+    add_stock(inv.pens, tote, 12, ADMIN)
+    db.session.commit()
+    count = start_count(tote, actor)
+    submit_count(count, [CountLineIn(inv.pens.id, kept=20)], actor)
+    db.session.commit()
+    undo_last(shift, now=_later(count, 5))
+    db.session.commit()
+    texts = [describe_movement(m) for m in
+             InvMovement.query.filter_by(note="undo")]
+    assert texts == [f"Undo: count removed 8 {inv.pens.item_name} from C-0011"]
+
+
+def test_the_finish_payload_names_a_retired_unit_by_its_number(client, inv, tv_checklist, event):
+    t = tv_checklist
+    enrolled_client(client, station_code="TV_CHECK")
+    start_shift(db.session.query(__import__("app.models", fromlist=["x"]).InvDevice).one(), "Sam")
+    db.session.commit()
+    opened = client.post("/inv/scan/api/check/open",
+                         json={"client_request_id": _rid(), "code": "TECH00412"}).get_json()
+    out = client.post("/inv/scan/api/check/finish", json={
+        "client_request_id": _rid(), "check_id": opened["check_id"],
+        "answers": {str(t.power.id): "NO", str(t.remote.id): "YES"},
+        "failed_condition": "RETIRED"}).get_json()
+    assert out["condition"] == "RETIRED" and out["code"] == "TECH00412"
+
+
+def _bound_unit(t, serial, label_actor):
+    from app.inventory import labels
+    from app.inventory.checks import bind_label
+    unit = add_unit(t.tv_item, None, ADMIN, [("SERIAL", serial)])
+    code = labels.allocate(labels.PREFIX_UNIT, 1)[0]
+    db.session.commit()
+    bind_label(code, serial, label_actor)
+    db.session.commit()
+    return unit
+
+
+def test_undo_reports_a_label_this_shift_bound(inv, tv_checklist, event, shift):
+    t, actor = tv_checklist, _actor(shift)
+    unit = _bound_unit(t, "NEW1", actor)
+    check = open_check(unit, "TV_CHECK", actor, event)
+    finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
+    db.session.commit()
+    assert "The label stays on it." in undo_last(shift, now=_later(check, 5))["message"]
+
+
+def test_a_label_bound_before_this_check_is_not_reported_as_staying(
+        inv, tv_checklist, event, shift):
+    t, actor = tv_checklist, _actor(shift)
+    unit = _bound_unit(t, "NEW2", ADMIN)
+    open_check(unit, "TV_CHECK", ADMIN, event)
+    db.session.commit()
+    mine = open_check(unit, "TV_CHECK", actor, event)
+    finish_check(mine, {t.power.id: "YES", t.remote.id: "YES"}, actor)
+    db.session.commit()
+    assert "label stays" not in undo_last(shift, now=_later(mine, 5))["message"]

@@ -56,9 +56,10 @@ def describe_movement(m: InvMovement) -> str:
         return f"Discarded {what} from {_where(m.from_container)}: {reason}"
     if m.action == INV_ACTION_ADJUST:
         # A count writes the gain as to-only and the loss as from-only.
+        prefix = "Undo: count" if m.note == "undo" else "Count"
         if m.to_container is not None:
-            return f"Count added {what} in {m.to_container.label_code}"
-        return f"Count removed {what} from {m.from_container.label_code}"
+            return f"{prefix} added {what} in {m.to_container.label_code}"
+        return f"{prefix} removed {what} from {m.from_container.label_code}"
     return f"{what} moved {_where(m.from_container)} to {_where(m.to_container)}"
 
 
