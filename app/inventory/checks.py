@@ -1,6 +1,7 @@
-"""Compare the InvStock cache with the movement log.
+"""Check lines for a model, and the balance report.
 
-Reports only. A mismatch means a write bypassed the ledger, and the fix is a
+The balance report compares the InvStock cache with the movement log. It
+reports only. A mismatch means a write bypassed the ledger, and the fix is a
 count, so nothing here repairs a row.
 """
 from __future__ import annotations
@@ -10,7 +11,15 @@ from collections import defaultdict
 from sqlalchemy import func
 
 from app import db
-from app.models import InvMovement, InvStock
+from app.models import InvCheckItem, InvMovement, InvStock
+
+
+def active_check_items(item) -> list[InvCheckItem]:
+    """Return the model's active check lines in position order."""
+    return (db.session.query(InvCheckItem)
+            .filter_by(item_id=item.id, is_active=True)
+            .order_by(InvCheckItem.position, InvCheckItem.id)
+            .all())
 
 
 def find_balance_mismatches() -> list[dict]:

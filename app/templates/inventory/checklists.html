@@ -1,0 +1,77 @@
+{% extends "layout/base.html" %}
+{% block title %}Checklists - Inventory{% endblock %}
+{% block content %}
+<h1>Checklists</h1>
+<div class="muted mb-16">
+  Each line is a yes/no question a volunteer answers for every unit of the model.
+  Lines turned off stay listed so past checks still read.
+</div>
+<form method="get" action="{{ url_for('inventory.checklists') }}" class="card mb-16">
+  <label>Model
+    <select name="item_id">
+      <option value="">Choose a model</option>
+      {% for i in items %}
+      <option value="{{ i.id }}" {% if item and item.id == i.id %}selected{% endif %}>{{ i.item_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Show</button>
+</form>
+{% if item %}
+<h2>{{ item.item_name }}</h2>
+<ul class="muted mb-16">
+  <li><strong>FAIL:</strong> A no fails the check.</li>
+  <li><strong>NOTE:</strong> A no passes, and the prompt is kept as a note.</li>
+</ul>
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>#</th><th>Prompt</th><th>A missing answer</th><th>Active</th><th></th><th>Order</th></tr></thead>
+  <tbody>
+  {% for line in lines %}
+    <tr {% if not line.is_active %}class="muted" style="opacity: 0.55;"{% endif %}>
+      <td>{{ loop.index }}</td>
+      <td><input type="text" form="line-{{ line.id }}" name="prompt" value="{{ line.prompt }}" maxlength="{{ prompt_max }}" required></td>
+      <td>
+        <select form="line-{{ line.id }}" name="missing_means">
+          <option value="FAIL" {% if line.missing_means == 'FAIL' %}selected{% endif %}>FAIL</option>
+          <option value="NOTE" {% if line.missing_means == 'NOTE' %}selected{% endif %}>NOTE</option>
+        </select>
+      </td>
+      <td><input type="checkbox" form="line-{{ line.id }}" name="is_active" value="1" {% if line.is_active %}checked{% endif %}></td>
+      <td>
+        <form id="line-{{ line.id }}" method="post" action="{{ url_for('inventory.update_check_line', line_id=line.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Save</button>
+        </form>
+      </td>
+      <td>
+        {% for direction, label in (('up', 'Up'), ('down', 'Down')) %}
+        <form method="post" action="{{ url_for('inventory.move_check_line', line_id=line.id) }}" style="display: inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="direction" value="{{ direction }}">
+          <button type="submit" class="btn btn-small">{{ label }}</button>
+        </form>
+        {% endfor %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No lines yet. This model gets the pass-or-fail check.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<form method="post" action="{{ url_for('inventory.add_check_line', item_id=item.id) }}" class="card mt-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row">
+    <label>Prompt <input type="text" name="prompt" required maxlength="{{ prompt_max }}"></label>
+    <label>A missing answer
+      <select name="missing_means">
+        <option value="FAIL">FAIL</option>
+        <option value="NOTE">NOTE</option>
+      </select>
+    </label>
+  </div>
+  <button type="submit" class="btn btn-primary">Add line</button>
+</form>
+{% endif %}
+{% endblock %}
