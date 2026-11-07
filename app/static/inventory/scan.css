@@ -74,3 +74,21 @@ body.not-saved-on { background: #f9c9c9; }
 .lbl-line { font-weight: 600; }
 .lbl-wait { font-size: 1.3rem; font-weight: 700; color: #e65100; }
 .lbl-warn { color: #b71c1c; font-weight: 600; }
+/* Count. The header and Submit stay in view on a 4.7 in screen; the usual items scroll in a box. */
+.cnt-head { position: sticky; top: 0; z-index: 5; padding: 6px 0; background: #fff; border-bottom: 2px solid #1565c0; }
+.cnt-title { font-size: 1.3rem; font-weight: 700; }
+.cnt-sub { color: #455a64; }
+.cnt-usual { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 34vh; overflow-y: auto; margin: 8px 0; }
+.cnt-item { min-height: 56px; padding: 8px; font-size: 1.05rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.cnt-item.done { background: #e3f2fd; border: 2px solid #1565c0; }
+.cnt-search { font-weight: 700; }
+.cnt-section { margin: 10px 0 4px; font-weight: 700; color: #455a64; }
+.cnt-row { padding: 8px 0; border-bottom: 1px solid #cfd8dc; }
+.cnt-name { font-weight: 600; }
+.cnt-note { color: #455a64; }
+.cnt-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cnt-small { flex: 1; min-height: 44px; padding: 6px 8px; font-size: 1rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.cnt-foot { position: sticky; bottom: 0; padding: 8px 0; background: #fff; }
+.cnt-submit { display: block; width: 100%; min-height: 60px; font-size: 1.3rem; font-weight: 700; border: 0; border-radius: 10px; background: #1565c0; color: #fff; }
+.cnt-step { font-size: 1.6rem; font-weight: 700; margin: 12px 0; }
+.cnt-stale { color: #b71c1c; font-weight: 600; margin-bottom: 6px; }

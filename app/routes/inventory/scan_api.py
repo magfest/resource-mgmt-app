@@ -12,6 +12,10 @@ from app import csrf, db
 from app.inventory import labels
 from app.inventory.cards import candidate_card, card_for, default_event
 from app.inventory.codes import normalize_code
+from app.inventory.counts import (
+    SERIALIZED_REFUSAL, CountLineIn, count_payload, item_choice, start_count, submit_count,
+)
+from app.inventory.tree import display_name
 from app.inventory.ledger import InventoryError, create_container
 from app.inventory.receive import (
     check_tag, container_for_code, receive_unit, reprint_unit, undo_message, undo_receive,
@@ -27,7 +31,7 @@ from app.inventory.resolver import (
 )
 from app.inventory.zpl import can_print_code
 from app.inventory.shifts import current_shift, end_shift, start_shift, touch
-from app.models import InvContainerKind, InvUnit, SupplyItem
+from app.models import InvContainerKind, InvCount, InvUnit, SupplyItem
 from app.models.constants import (
     INV_CHECK_STATIONS, INV_SHIFT_END_ENDED, INV_STATION_NAMES,
 )
@@ -375,3 +379,126 @@ def scan_label_new_tag():
                             client_request_id=data.get("client_request_id"))
 
     return jsonify(run_once(data.get("client_request_id"), create))
+
+
+START_A_COUNT = "Scan a container label to start counting."
+FINISH_FIRST = "Submit this count before starting another."
+UNKNOWN_CODE = "Not a MAGFest code: scan the white asset tag"
+
+
+@inventory_bp.post("/scan/api/count/start")
+@api
+def scan_count_start():
+    """Open a count on a scanned container, or offer to create one for an unused C- label.
+
+    The answer never carries expected quantities for a blind count.
+    """
+    data = _json_body()
+
+    def start() -> dict:
+        actor = scan_actor()
+        resolution = resolve(_optional_text(data, "container_code"))
+        if resolution.kind == KIND_UNUSED and resolution.prefix == labels.PREFIX_CONTAINER:
+            principal = g.scan_principal
+            home = principal.device.home_container if principal.is_device else None
+            kinds = (db.session.query(InvContainerKind).filter_by(is_active=True)
+                     .order_by(InvContainerKind.sort_order, InvContainerKind.id).all())
+            return {"unused": True, "code": resolution.code,
+                    "home": display_name(home) if home else None,
+                    "kinds": [{"id": k.id, "name": k.name} for k in kinds]}
+        if resolution.kind == KIND_UNUSED:
+            raise InventoryError(NOTHING_ATTACHED)
+        if resolution.kind == KIND_UNKNOWN:
+            raise InventoryError(UNKNOWN_CODE)
+        if resolution.kind != KIND_CONTAINER:
+            raise InventoryError(START_A_COUNT)
+        container = resolution.container
+        if not container.is_active:
+            raise InventoryError(f"{container.label_code} is inactive.")
+        count = start_count(container, actor)
+        return {**count_payload(count), "code": container.label_code,
+                "name": container.name or container.kind.name}
+
+    return jsonify(run_once(data.get("client_request_id"), start))
+
+
+@inventory_bp.post("/scan/api/count/find")
+@api
+def scan_count_find():
+    """Name the countable item a scan or a search text points at. Reads only."""
+    data = _json_body()
+    text = _optional_text(data, "q")
+    if text is not None:
+        escaped = text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        rows = (db.session.query(SupplyItem)
+                .filter(SupplyItem.is_serialized.is_(False), SupplyItem.is_active.is_(True),
+                        SupplyItem.item_name.ilike(f"%{escaped}%", escape="\\"))
+                .order_by(SupplyItem.item_name, SupplyItem.id).limit(MAX_ITEM_RESULTS).all())
+        return jsonify(ok=True, items=[item_choice(i) for i in rows])
+    resolution = resolve(_optional_text(data, "code"))
+    kind = resolution.kind
+    if kind in (KIND_CONTAINER, KIND_UNUSED) and \
+            (resolution.prefix in (None, labels.PREFIX_CONTAINER)):
+        raise InventoryError(FINISH_FIRST)
+    if kind == KIND_UNUSED:
+        raise InventoryError(NOTHING_ATTACHED)
+    if kind == KIND_UNKNOWN:
+        raise InventoryError(UNKNOWN_CODE)
+    if kind == KIND_UNIT:
+        raise InventoryError(SERIALIZED_REFUSAL)
+    items = [resolution.item] if kind == KIND_ITEM else \
+        [c for c in resolution.candidates if isinstance(c, SupplyItem)]
+    if not items:
+        raise InventoryError(SERIALIZED_REFUSAL)
+    for item in items:
+        if item.is_serialized:
+            raise InventoryError(SERIALIZED_REFUSAL)
+        if not item.is_active:
+            raise InventoryError(f"{item.item_name} is inactive.")
+    return jsonify(ok=True, items=[item_choice(i) for i in items])
+
+
+def _line_in(raw) -> CountLineIn:
+    if not isinstance(raw, dict):
+        raise InventoryError("Send each line as an object.")
+    reason = raw.get("discard_reason")
+    return CountLineIn(
+        item_id=raw.get("item_id"), kept=raw.get("kept"),
+        is_approximate=raw.get("is_approximate") is True,
+        discarded=raw.get("discarded", 0),
+        discard_reason=reason if isinstance(reason, str) else None)
+
+
+def _own_count(count_id) -> InvCount:
+    """The open count, only for the device or user that started it."""
+    count = db.session.get(InvCount, count_id) if type(count_id) is int else None
+    principal = g.scan_principal
+    mine = count is not None and (
+        count.device_id == principal.device.id if principal.is_device
+        else count.user_id == principal.user_id)
+    if not mine:
+        raise InventoryError("That count is not open on this scanner. Start it again.")
+    return count
+
+
+@inventory_bp.post("/scan/api/count/submit")
+@api
+def scan_count_submit():
+    """Apply a count. A held item with no line refuses the whole submit and writes nothing."""
+    data = _json_body()
+    raw_lines = data.get("lines")
+    refused: dict = {}
+
+    def submit() -> dict:
+        actor = scan_actor()
+        if not isinstance(raw_lines, list):
+            raise InventoryError("Send the counted lines.")
+        count = _own_count(data.get("count_id"))
+        result = submit_count(count, [_line_in(r) for r in raw_lines], actor)
+        if result["unresolved"]:
+            refused.update(result)
+            raise InventoryError("Count or mark none: " + ", ".join(result["unresolved"]))
+        return result
+
+    answer = run_once(data.get("client_request_id"), submit)
+    return jsonify({**answer, **refused} if refused else answer)

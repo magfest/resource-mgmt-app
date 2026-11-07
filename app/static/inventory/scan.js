@@ -29,7 +29,8 @@
     notSaved: 'NOT SAVED',
     notEnrolled: 'This scanner is not enrolled.',
     cancelled: 'Not saved.',
-    blockedDone: 'A scan is not saved yet. Try again or cancel it first.'
+    blockedDone: 'A scan is not saved yet. Try again or cancel it first.',
+    leaveUnsent: 'Your work on this screen is not submitted. Leave and lose it?'
   };
 
   function esc(text) {
@@ -252,6 +253,7 @@
   var blocked = false;      // a write failed; scanning waits for Try again or Cancel
   var stopped = null;       // message shown once the server refuses this scanner
   var leaving = false;      // the page is navigating on purpose; skip the unload prompt
+  var leaveHolds = [];      // station callbacks: true while the page holds work not yet sent
   var audio = null;
 
   function newId() {
@@ -494,6 +496,11 @@
     panel.appendChild(pad);
   }
 
+  function holdsWork() { return leaveHolds.some(function (fn) { return fn(); }); }
+
+  // A station registers a function that returns true while it holds unsent work.
+  function holdLeave(fn) { leaveHolds.push(fn); }
+
   function start(config) {
     var scans = createScanQueue({
       onScan: config.onScan, guard: createRepeatGuard(REPEAT_MS), now: Date.now
@@ -537,10 +544,15 @@
       if (answer) { showMessage(answer.message, 'error'); }
     });
     root.addEventListener('beforeunload', function (e) {
-      if (!leaving && writes.pending() > 0) { e.preventDefault(); e.returnValue = ''; }
+      if (!leaving && (writes.pending() > 0 || holdsWork())) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
     });
     if (doneBtn) {
       doneBtn.addEventListener('click', function () {
+        // Done navigates with the unload prompt off, so unsent work needs its own question.
+        if (holdsWork() && !root.confirm(MESSAGES.leaveUnsent)) { return; }
         if (writes.isBlocked()) { showMessage(MESSAGES.blockedDone, 'error'); return; }
         writes.drain().then(function (clear) {
           if (!clear) { showMessage(MESSAGES.blockedDone, 'error'); return null; }
@@ -558,7 +570,7 @@
   root.InvScan = {
     start: start, write: write, read: read, feedback: feedback, showMessage: showMessage,
     showPanel: showPanel, choose: choose, numberPad: numberPad, askText: askText, esc: esc,
-    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId,
+    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave,
     currentMessage: function () { return msg.textContent; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

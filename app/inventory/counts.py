@@ -1,0 +1,173 @@
+"""Counting a container: start, show what to count, submit.
+
+A count sets each item's balance with an ADJUST, then logs thrown-out stock as a
+DISCARD. The first count of a container is blind because no earlier number is
+trustworthy. Nothing here commits.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+
+from sqlalchemy import or_
+
+from app import db
+from app.inventory.ledger import (
+    Actor, InventoryError, discard_stock, set_counted_quantity,
+)
+from app.models import (
+    InvContainer, InvCount, InvCountLine, InvMovement, InvStationItem, InvStock, SupplyItem,
+)
+from app.models.constants import (
+    INV_COUNT_LINE_APPLIED, INV_COUNT_LINE_STALE, INV_COUNT_LINE_UNCHANGED,
+    INV_DISCARD_REASONS, INV_STATION_COUNT,
+)
+
+SERIALIZED_REFUSAL = "Count units at their own station."
+ALREADY_FINISHED = "This count is already finished."
+
+
+@dataclass(frozen=True)
+class CountLineIn:
+    """One item as the volunteer counted it. `kept` stays in the container."""
+    item_id: int
+    kept: int
+    is_approximate: bool = False
+    discarded: int = 0
+    discard_reason: str | None = None
+
+
+def _held_rows(container: InvContainer) -> list[InvStock]:
+    return (db.session.query(InvStock).join(SupplyItem, SupplyItem.id == InvStock.item_id)
+            .filter(InvStock.container_id == container.id, InvStock.quantity > 0,
+                    SupplyItem.is_serialized.is_(False))
+            .order_by(SupplyItem.item_name, SupplyItem.id).all())
+
+
+def start_count(container: InvContainer, actor: Actor) -> InvCount:
+    """Open a count and record what the ledger holds as each held item's expected quantity."""
+    count = InvCount(container_id=container.id, user_id=actor.user_id,
+                     shift_id=actor.shift_id, device_id=actor.device_id,
+                     started_at=datetime.utcnow())
+    db.session.add(count)
+    db.session.flush()
+    for row in _held_rows(container):
+        db.session.add(InvCountLine(count_id=count.id, item_id=row.item_id,
+                                    expected_quantity=row.quantity))
+    db.session.flush()
+    return count
+
+
+def _is_blind(count: InvCount) -> bool:
+    earlier = (db.session.query(InvCount.id)
+               .filter(InvCount.container_id == count.container_id,
+                       InvCount.submitted_at.isnot(None), InvCount.id != count.id).first())
+    return earlier is None
+
+
+def count_payload(count: InvCount) -> dict:
+    """Describe a count for the scanner. A blind count carries no quantities at all."""
+    rows = _held_rows(count.container)
+    blind = _is_blind(count)
+    lines = []
+    if not blind:
+        lines = [{"item_id": r.item_id, "name": r.item.item_name, "expected": r.quantity,
+                  "is_approximate": r.is_approximate} for r in rows]
+    usual = (db.session.query(InvStationItem).join(SupplyItem)
+             .filter(InvStationItem.station_code == INV_STATION_COUNT,
+                     SupplyItem.is_active.is_(True), SupplyItem.is_serialized.is_(False))
+             .order_by(InvStationItem.position, InvStationItem.id).all())
+    return {
+        "count_id": count.id, "blind": blind, "lines": lines,
+        "held": [{"item_id": r.item_id, "name": r.item.item_name} for r in rows],
+        "usual": [{"item_id": u.item_id, "name": u.item.item_name,
+                   "pack_size": u.item.pack_size} for u in usual],
+    }
+
+
+def _whole(value, minimum=0) -> bool:
+    return type(value) is int and value >= minimum
+
+
+def _validated(lines: list[CountLineIn]) -> dict[int, SupplyItem]:
+    items = {}
+    for line in lines:
+        if line.item_id in items:
+            raise InventoryError("Each item can be counted once.")
+        item = db.session.get(SupplyItem, line.item_id) if type(line.item_id) is int else None
+        if item is None:
+            raise InventoryError("Pick an item to count.")
+        if item.is_serialized:
+            raise InventoryError(SERIALIZED_REFUSAL)
+        if not _whole(line.kept) or not _whole(line.discarded):
+            raise InventoryError("A count must be a whole number, zero or more.")
+        if line.discarded and line.discard_reason not in INV_DISCARD_REASONS:
+            raise InventoryError(
+                "A discard needs a reason: " + ", ".join(INV_DISCARD_REASONS) + ".")
+        items[line.item_id] = item
+    return items
+
+
+def _is_stale(count: InvCount, item_id: int) -> bool:
+    """True when this item moved in the container after the count started, by another write."""
+    cid = count.container_id
+    return (db.session.query(InvMovement.id)
+            .filter(InvMovement.item_id == item_id,
+                    InvMovement.created_at > count.started_at,
+                    or_(InvMovement.count_id.is_(None), InvMovement.count_id != count.id),
+                    or_(InvMovement.from_container_id == cid, InvMovement.to_container_id == cid))
+            .first() is not None)
+
+
+def submit_count(count: InvCount, lines: list[CountLineIn], actor: Actor) -> dict:
+    """Apply a count. Returns `applied`, `stale` and `unresolved` item names.
+
+    Nothing is written while `unresolved` is non-empty: a held item with no line.
+    A kept of 0 resolves an item as none. A stale line is skipped and recorded;
+    the other lines still apply. Raises InventoryError on invalid input.
+    """
+    if count.submitted_at is not None:
+        raise InventoryError(ALREADY_FINISHED)
+    container = count.container
+    if not container.is_active:
+        raise InventoryError(f"{container.label_code} is inactive.")
+    items = _validated(lines)
+    unresolved = [r.item.item_name for r in _held_rows(container) if r.item_id not in items]
+    if unresolved:
+        return {"applied": 0, "stale": [], "unresolved": unresolved,
+                "unresolved_items": [{"item_id": r.item_id, "name": r.item.item_name}
+                                     for r in _held_rows(container)
+                                     if r.item_id not in items]}
+    stored = {line.item_id: line for line in count.lines}
+    live, stale = [], []
+    for line in lines:
+        row = stored.get(line.item_id)
+        if row is None:
+            row = InvCountLine(count_id=count.id, item_id=line.item_id, expected_quantity=0)
+            db.session.add(row)
+        row.is_approximate = line.is_approximate
+        row.counted_quantity = line.kept + line.discarded
+        row.discarded_quantity = line.discarded or None
+        row.discard_reason = line.discard_reason if line.discarded else None
+        if _is_stale(count, line.item_id):
+            row.outcome = INV_COUNT_LINE_STALE
+            stale.append(items[line.item_id].item_name)
+        else:
+            live.append((line, row))
+    for line, row in live:
+        moved = set_counted_quantity(items[line.item_id], container, line.kept + line.discarded,
+                                     actor, count_id=count.id,
+                                     is_approximate=line.is_approximate)
+        row.outcome = INV_COUNT_LINE_APPLIED if moved or line.discarded \
+            else INV_COUNT_LINE_UNCHANGED
+    for line, _ in live:
+        if line.discarded:
+            discard_stock(items[line.item_id], container, line.discarded, line.discard_reason,
+                          actor, count_id=count.id)
+    count.submitted_at = datetime.utcnow()
+    db.session.flush()
+    return {"applied": len(live), "stale": stale, "unresolved": [], "unresolved_items": []}
+
+
+def item_choice(item: SupplyItem) -> dict:
+    return {"id": item.id, "name": item.item_name, "pack_size": item.pack_size}

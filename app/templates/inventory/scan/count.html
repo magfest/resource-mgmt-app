@@ -1,0 +1,9 @@
+{% extends "inventory/scan/layout.html" %}
+{% block content %}{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/station_count.js') }}"
+        data-start-url="{{ url_for('inventory.scan_count_start') }}"
+        data-find-url="{{ url_for('inventory.scan_count_find') }}"
+        data-submit-url="{{ url_for('inventory.scan_count_submit') }}"
+        data-container-url="{{ url_for('inventory.scan_container_create') }}"></script>
+{% endblock %}

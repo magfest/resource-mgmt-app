@@ -49,7 +49,7 @@ def test_picking_a_name_starts_a_shift_and_ending_it_asks_again(client, inv):
     enrolled_client(client, station_code="COUNT")
     assert client.get("/inv/scan/").headers["Location"].endswith("/inv/scan/who")
     assert client.post("/inv/scan/api/shift", json={"person_name": "Sam"}).get_json()["ok"]
-    assert client.get("/inv/scan/").status_code == 200
+    assert client.get("/inv/scan/").headers["Location"].endswith("/inv/scan/count")
     assert client.post("/inv/scan/api/shift/end", json={}).get_json()["ok"]
     assert client.get("/inv/scan/").status_code == 302
 
