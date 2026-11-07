@@ -1,7 +1,8 @@
 """Scanner HTML pages and device enrollment by one-time code."""
 from flask import current_app, g, redirect, render_template, request, url_for
+from flask_wtf.csrf import CSRFError
 
-from app import db
+from app import csrf, db
 from app.inventory.codes import normalize_code
 from app.inventory.devices import COOKIE_MAX_AGE, COOKIE_NAME, redeem_enroll_code
 from app.inventory.ledger import InventoryError
@@ -9,6 +10,9 @@ from app.models import InvContainer
 
 from . import inventory_bp
 from .scan_auth import require_scanner
+
+
+STALE_FORM = "This page timed out. Type the code again."
 
 
 def home_container_from_form() -> InvContainer | None:
@@ -30,12 +34,20 @@ def scan_home():
 
 @inventory_bp.get("/scan/enroll")
 def scan_enroll():
-    """Public on purpose: the device holds no login, and the code is the credential."""
+    """Show the code form. Public: the device holds no login, and the code is the credential."""
     return render_template("inventory/scan/enroll.html", error=None)
 
 
 @inventory_bp.post("/scan/enroll")
+@csrf.exempt
 def scan_enroll_post():
+    # The app's error page sends a stale form to the login page, and no admin may
+    # sign in on a shared device. This view checks the token itself and asks again.
+    if current_app.config.get("WTF_CSRF_ENABLED", True):
+        try:
+            csrf.protect()
+        except CSRFError:
+            return render_template("inventory/scan/enroll.html", error=STALE_FORM), 400
     try:
         _, raw = redeem_enroll_code(request.form.get("code"))
     except InventoryError as exc:

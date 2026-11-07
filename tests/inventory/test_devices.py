@@ -81,8 +81,36 @@ def test_only_an_admin_creates_a_code(app, inv):
     operator = app.test_client()
     login(operator, "test:operator")
     response = operator.post("/inv/admin/devices/codes", data={"name": "S", "station_code": "COUNT"})
-    assert response.status_code in (302, 403)
+    assert response.status_code == 403
     assert InvEnrollCode.query.count() == 0
+
+
+def test_a_timed_out_enroll_page_asks_for_the_code_again(app, client, inv):
+    raw = create_enroll_code("Scanner 1", "test:invadmin")
+    db.session.commit()
+    app.config["WTF_CSRF_ENABLED"] = True
+    try:
+        response = client.post("/inv/scan/enroll", data={"code": raw})
+    finally:
+        app.config["WTF_CSRF_ENABLED"] = False
+    assert response.status_code == 400
+    assert "Type the code again" in response.get_data(as_text=True)
+    assert InvDevice.query.count() == 0
+    assert InvEnrollCode.query.one().used_at is None
+
+
+def test_a_fresh_enroll_page_redeems_with_its_form_token(app, client, inv):
+    raw = create_enroll_code("Scanner 1", "test:invadmin")
+    db.session.commit()
+    app.config["WTF_CSRF_ENABLED"] = True
+    try:
+        html = client.get("/inv/scan/enroll").get_data(as_text=True)
+        token = html.split('name="csrf_token" value="')[1].split('"')[0]
+        response = client.post("/inv/scan/enroll", data={"code": raw, "csrf_token": token})
+    finally:
+        app.config["WTF_CSRF_ENABLED"] = False
+    assert response.status_code == 302
+    assert InvDevice.query.count() == 1
 
 
 def test_enrolling_needs_no_login_and_leaves_a_signed_in_session_alone(client, inv):
