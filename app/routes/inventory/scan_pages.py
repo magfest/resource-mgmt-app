@@ -8,7 +8,9 @@ from app.inventory.devices import COOKIE_MAX_AGE, COOKIE_NAME, redeem_enroll_cod
 from app.inventory.ledger import InventoryError
 from app.inventory.shifts import current_shift, recent_names
 from app.models import InvContainer
-from app.models.constants import INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_PRINT
+from app.models.constants import (
+    INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_PRINT, INV_STATION_RECEIVE,
+)
 
 from . import inventory_bp
 from .scan_auth import require_scanner, require_scanner_or_print, who_text
@@ -39,6 +41,8 @@ def scan_home():
         db.session.commit()  # keeps an IDLE close
         if shift is None:
             return redirect(url_for("inventory.scan_who"))
+        if principal.device.station_code == INV_STATION_RECEIVE:
+            return redirect(url_for("inventory.scan_receive_page"))
     if not principal.is_device or principal.device.station_code == INV_STATION_LOOKUP:
         # Look up needs no name, so a device with no open shift shows none.
         has_name = not principal.is_device or current_shift(principal.device) is not None
@@ -51,6 +55,26 @@ def scan_home():
     who = who_text()
     db.session.commit()  # keeps an IDLE close
     return render_template("inventory/scan/index.html", principal=principal, who=who)
+
+
+@inventory_bp.get("/scan/receive")
+@require_scanner
+def scan_receive_page():
+    """Owned receive. A device needs the RECEIVE station and an open shift."""
+    principal = g.scan_principal
+    if principal.is_device:
+        if principal.device.station_code != INV_STATION_RECEIVE:
+            return redirect(url_for("inventory.scan_home"))
+        shift = current_shift(principal.device)
+        db.session.commit()  # keeps an IDLE close
+        if shift is None:
+            return redirect(url_for("inventory.scan_who"))
+    who = who_text()
+    db.session.commit()  # keeps an IDLE close
+    return render_template(
+        "inventory/scan/receive.html", station=INV_STATION_RECEIVE,
+        station_name=INV_STATION_NAMES[INV_STATION_RECEIVE], is_device=principal.is_device,
+        who=who)
 
 
 @inventory_bp.get("/scan/who")

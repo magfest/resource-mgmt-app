@@ -13,12 +13,15 @@ from app.inventory import labels
 from app.inventory.cards import candidate_card, card_for, default_event
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import InventoryError, create_container
+from app.inventory.receive import (
+    container_for_code, receive_unit, reprint_unit, undo_message, undo_receive,
+)
 from app.inventory.receipts import refusal, run_once
 from app.inventory.resolver import (
     KIND_AMBIGUOUS, KIND_CONTAINER, KIND_ITEM, KIND_UNIT, KIND_UNUSED, resolve,
 )
 from app.inventory.shifts import current_shift, end_shift, start_shift, touch
-from app.models import InvContainerKind
+from app.models import InvContainerKind, SupplyItem
 from app.models.constants import (
     INV_CHECK_STATIONS, INV_SHIFT_END_ENDED, INV_STATION_NAMES,
 )
@@ -163,3 +166,85 @@ def scan_container_create():
         return {"code": container.label_code, "container_id": container.id}
 
     return jsonify(run_once(data.get("client_request_id"), create))
+
+
+MAX_ITEM_RESULTS = 20
+
+
+def _optional_text(data: dict, key: str) -> str | None:
+    value = data.get(key)
+    if value is not None and not isinstance(value, str):
+        raise InventoryError("Scan a code.")
+    return value
+
+
+@inventory_bp.post("/scan/api/receive/items")
+@api
+def scan_receive_items():
+    """List active serialized items whose name contains the text. Reads only."""
+    text = _optional_text(_json_body(), "q") or ""
+    escaped = text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    query = db.session.query(SupplyItem).filter(
+        SupplyItem.is_serialized.is_(True), SupplyItem.is_active.is_(True),
+        SupplyItem.item_name.ilike(f"%{escaped}%", escape="\\"))
+    rows = query.order_by(SupplyItem.item_name, SupplyItem.id).limit(MAX_ITEM_RESULTS).all()
+    return jsonify(ok=True, items=[{"id": i.id, "name": i.item_name} for i in rows])
+
+
+@inventory_bp.post("/scan/api/receive/location")
+@api
+def scan_receive_location():
+    """Check a scanned container for setup. Reads only."""
+    container = container_for_code(_optional_text(_json_body(), "code"))
+    return jsonify(ok=True, code=container.label_code, name=container.name,
+                   kind=container.kind.name)
+
+
+@inventory_bp.post("/scan/api/receive")
+@api
+def scan_receive():
+    """Receive one owned unit and queue its label."""
+    data = _json_body()
+
+    def receive() -> dict:
+        actor = scan_actor()
+        item_id = data.get("item_id")
+        item = db.session.get(SupplyItem, item_id) if type(item_id) is int else None
+        if item is None:
+            raise InventoryError("Pick an item type.")
+        code = _optional_text(data, "container_code")
+        container = container_for_code(code) if code else None
+        return receive_unit(item, actor, tag=_optional_text(data, "tag"),
+                            serial=_optional_text(data, "serial"), container=container,
+                            client_request_id=data.get("client_request_id"))
+
+    return jsonify(run_once(data.get("client_request_id"), receive))
+
+
+@inventory_bp.post("/scan/api/receive/undo")
+@api
+def scan_receive_undo():
+    """Undo the unit this scanner received last."""
+    data = _json_body()
+
+    def undo() -> dict:
+        actor = scan_actor()
+        unit_id = data.get("unit_id")
+        undo_receive(unit_id if type(unit_id) is int else -1, actor)
+        return {"unit_id": unit_id, "message": undo_message(unit_id)}
+
+    return jsonify(run_once(data.get("client_request_id"), undo))
+
+
+@inventory_bp.post("/scan/api/receive/reprint")
+@api
+def scan_receive_reprint():
+    """Queue another label for a unit already received."""
+    data = _json_body()
+
+    def reprint() -> dict:
+        actor = scan_actor()
+        return reprint_unit(data.get("unit_id"), actor,
+                            client_request_id=data.get("client_request_id"))
+
+    return jsonify(run_once(data.get("client_request_id"), reprint))
