@@ -9,8 +9,13 @@
 <div class="card mb-16"><strong>Not printed, a barcode cannot hold these codes:</strong> {{ unprintable|join(', ') }}</div>
 {% endif %}
 {% if specs %}
+<form method="post" action="{{ url_for('inventory.queue_labels') }}" class="mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="codes" value="{{ specs|map(attribute='code')|join('\n') }}">
+  <button type="submit" class="btn btn-primary">Send to print queue</button>
+</form>
 <div class="mb-16">
-  <button type="button" class="btn btn-primary" id="send-zpl">Send to printer</button>
+  <button type="button" class="btn" id="send-zpl">Send to printer</button>
   <button type="button" class="btn" id="download-zpl">Download .zpl</button>
   <span id="print-status" class="muted"></span>
 </div>

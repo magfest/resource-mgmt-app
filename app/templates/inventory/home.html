@@ -12,9 +12,11 @@
   <li><a href="{{ url_for('inventory.movements') }}">Movements</a></li>
   <li><a href="{{ url_for('inventory.labels') }}">Labels</a></li>
   <li><a href="{{ url_for('inventory.devices') }}">Shared scanners</a></li>
+  <li><a href="{{ url_for('inventory.printers') }}">Printers</a></li>
   {% else %}
   <li class="muted">An inventory admin manages these pages. The Operator role has no pages here yet.</li>
   {% endif %}
+  <li><a href="{{ url_for('inventory.print_queue') }}">Print queue</a></li>
   <li><a href="{{ url_for('inventory.scan_home') }}">Open the scanner</a></li>
 </ul>
 {% endblock %}

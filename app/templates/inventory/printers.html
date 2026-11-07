@@ -1,0 +1,78 @@
+{% extends "layout/base.html" %}
+{% block title %}Printers - Inventory{% endblock %}
+{% block content %}
+<h1>Printers</h1>
+<div class="muted mb-16">
+  Each printer is served by one print station. Pick the size and dpi the printer is loaded with;
+  a label that does not match fails at the station. Printers are deactivated, never deleted.
+</div>
+
+{% macro printer_fields(p) %}
+  <label>Name <input type="text" name="name" required maxlength="64" value="{{ p.name if p else '' }}"></label>
+  <label>dpi
+    <select name="dpi">
+      {% for d in dpis %}<option value="{{ d }}" {{ 'selected' if p and p.dpi == d }}>{{ d }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Size
+    <select name="size">
+      {% for value, label in sizes %}<option value="{{ value }}" {{ 'selected' if p and size_value((p.width_in|float, p.height_in|float)) == value }}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Stock <input type="text" name="stock" maxlength="64" placeholder="Permanent" value="{{ (p.stock or '') if p else '' }}"></label>
+  <label>Station
+    <select name="device_id">
+      <option value="">No station</option>
+      {% for d in stations %}<option value="{{ d.id }}" {{ 'selected' if p and p.device_id == d.id }}>{{ d.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Device name <input type="text" name="device_name" maxlength="128" value="{{ (p.device_name or '') if p else '' }}"></label>
+  <div class="muted small">Copy this from the print station page.</div>
+{% endmacro %}
+
+<h2>Label routes</h2>
+<form method="post" action="{{ url_for('inventory.save_routes') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% for job_type, label in route_types %}
+  <label>{{ label }}
+    <select name="job_type_{{ job_type }}">
+      <option value="">No printer</option>
+      {% for p in printers %}
+      <option value="{{ p.id }}" {{ 'selected' if routes.get(job_type) == p.id }}>{{ p.name }}{{ ' (inactive)' if not p.is_active }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if routes.get(job_type) and printers|selectattr('id', 'equalto', routes.get(job_type))|rejectattr('is_active')|list %}
+  <div class="muted small">The printer for {{ label|lower }} labels is unavailable. Jobs are refused until you choose another.</div>
+  {% endif %}
+  {% endfor %}
+  <button type="submit" class="btn btn-primary">Save routes</button>
+</form>
+
+<h2>Add a printer</h2>
+<form method="post" action="{{ url_for('inventory.save_printer') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {{ printer_fields(none) }}
+  <button type="submit" class="btn btn-primary">Add printer</button>
+</form>
+
+<h2>Printers</h2>
+{% for p in printers %}
+<div class="card mb-16">
+  <strong>{{ p.name }}</strong>{% if not p.is_active %} <span class="muted">Unavailable (inactive)</span>{% endif %}
+  <form method="post" action="{{ url_for('inventory.save_printer') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="printer_id" value="{{ p.id }}">
+    {{ printer_fields(p) }}
+    <button type="submit" class="btn btn-small">Save</button>
+  </form>
+  <form method="post" action="{{ url_for('inventory.printer_active', printer_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="active" value="{{ '0' if p.is_active else '1' }}">
+    <button type="submit" class="btn btn-small">{{ 'Deactivate' if p.is_active else 'Reactivate' }}</button>
+  </form>
+</div>
+{% else %}
+<p class="muted">No printers yet.</p>
+{% endfor %}
+{% endblock %}

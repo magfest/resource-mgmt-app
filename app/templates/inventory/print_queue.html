@@ -1,0 +1,54 @@
+{% extends "layout/base.html" %}
+{% block title %}Print queue - Inventory{% endblock %}
+{% block content %}
+<h1>Print queue</h1>
+<div class="mb-16">
+  {% for p, st in statuses %}
+  <div class="card mb-16">
+    <strong>{{ p.name }}</strong>
+    <span class="muted">{{ st.waiting }} waiting</span>
+    {% if not st.station_seen %}<div class="muted">Print station not seen recently</div>{% endif %}
+  </div>
+  {% else %}
+  <p class="muted">No active printers.</p>
+  {% endfor %}
+</div>
+{% if jobs %}
+<table>
+  <thead><tr><th>Printer</th><th>Code</th><th>Status</th><th>Error</th><th>Asked by</th><th>Queued (UTC)</th><th></th></tr></thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr>
+      <td>{{ j.printer.name }}{{ ' (inactive)' if not j.printer.is_active }}</td>
+      <td><code>{{ j.code }}</code></td>
+      <td>{{ j.status|capitalize }}</td>
+      <td>{{ j.error or '' }}</td>
+      <td class="muted">{{ users.get(j.performed_by_user_id) or ('Scanner' if j.device_id else '') }}</td>
+      <td class="muted">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>
+        {% if j.status == failed %}
+        <form method="post" action="{{ url_for('inventory.reprint_job', job_id=j.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Reprint</button>
+        </form>
+        {% elif j.status == queued and is_inv_admin %}
+        <form method="post" action="{{ url_for('inventory.cancel_print_job', job_id=j.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Cancel</button>
+        </form>
+        {% if j.batch_id %}
+        <form method="post" action="{{ url_for('inventory.cancel_print_batch', batch_id=j.batch_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Cancel batch</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No labels are waiting or failed.</p>
+{% endif %}
+{% endblock %}
