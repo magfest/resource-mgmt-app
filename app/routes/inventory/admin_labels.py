@@ -13,7 +13,7 @@ from app.inventory.labels import MAX_BATCH, PREFIX_CONTAINER, PREFIX_ITEM, PREFI
 from app.inventory.printing import (
     fields_for_container, fields_for_item, fields_for_unit, local_today, unit_number,
 )
-from app.inventory.zpl import SUPPORTED_DPI, LabelSpec, render_batch
+from app.inventory.zpl import SUPPORTED_DPI, LabelSpec, can_print_code, render_batch
 from app.models import InvContainer, InvUnitIdentifier, SupplyItem
 from app.models.constants import INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG
 
@@ -53,24 +53,31 @@ def _spec_for(code: str) -> LabelSpec | None:
     return None
 
 
-def _specs_from_codes(raw: str) -> tuple[list[LabelSpec], list[str]]:
-    specs, unknown = [], []
+def _specs_from_codes(raw: str) -> tuple[list[LabelSpec], list[str], list[str]]:
+    """Sort typed codes into labels, codes with no record, and codes no barcode can hold.
+
+    Tags have no fixed format, so one long tag must not stop the rest of a batch.
+    """
+    specs, unknown, unprintable = [], [], []
     for line in (raw or "").splitlines():
         code = normalize_code(line)
         if not code:
             continue
         spec = _spec_for(code)
-        if spec:
+        if spec is None:
+            unknown.append(code)
+        elif can_print_code(spec.code):
             specs.append(spec)
         else:
-            unknown.append(code)
-    return specs[:MAX_BATCH], unknown
+            unprintable.append(spec.code)
+    return specs[:MAX_BATCH], unknown, unprintable
 
 
-def _batch_page(specs, dpi, unknown=()):
+def _batch_page(specs, dpi, unknown=(), unprintable=()):
     g.csp_connect_src_extra = BROWSER_PRINT_ORIGINS
     return render_inventory_page("inventory/label_batch.html", specs=specs, dpi=dpi,
-                                 zpl=render_batch(specs, dpi), unknown=unknown)
+                                 zpl=render_batch(specs, dpi), unknown=unknown,
+                                 unprintable=unprintable)
 
 
 @inventory_bp.get("/admin/labels")
@@ -97,5 +104,5 @@ def new_labels():
 @inventory_bp.post("/admin/labels/reprint")
 @require_inventory_admin
 def reprint_labels():
-    specs, unknown = _specs_from_codes(request.form.get("codes"))
-    return _batch_page(specs, _dpi(), unknown)
+    specs, unknown, unprintable = _specs_from_codes(request.form.get("codes"))
+    return _batch_page(specs, _dpi(), unknown, unprintable)

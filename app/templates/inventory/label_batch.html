@@ -5,6 +5,9 @@
 {% if unknown %}
 <div class="card mb-16"><strong>Not printed, no record holds these codes:</strong> {{ unknown|join(', ') }}</div>
 {% endif %}
+{% if unprintable %}
+<div class="card mb-16"><strong>Not printed, a barcode cannot hold these codes:</strong> {{ unprintable|join(', ') }}</div>
+{% endif %}
 {% if specs %}
 <div class="mb-16">
   <button type="button" class="btn btn-primary" id="send-zpl">Send to printer</button>

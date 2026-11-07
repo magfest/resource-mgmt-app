@@ -89,3 +89,18 @@ def test_reprint_finds_a_unit_by_its_magfest_tag(client, inv):
         html = client.post("/inv/admin/labels/reprint", data={"codes": code}).get_data(as_text=True)
         assert "^FDFEST00001^FS" in html and "^FDSN-1^FS" in html
         assert "Return to MAGFest FestOps" in html and "^FDPrinted^FS" in html
+
+
+def test_a_tag_no_barcode_can_hold_does_not_stop_the_batch(client, inv):
+    actor = Actor(user_id="test:invadmin")
+    for tag in ("A" * 21, "BAD>TAG", "GOOD1"):
+        add_unit(inv.laptop, None, actor, [("MAGFEST_TAG", tag)])
+    db.session.commit()
+    login(client, "test:invadmin")
+    response = client.post("/inv/admin/labels/reprint", data={
+        "codes": f"{'A' * 21}\nBAD>TAG\nGOOD1", "dpi": "300"})
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "^FDGOOD1^FS" in html
+    assert "a barcode cannot hold these codes" in html
+    assert "A" * 21 in html and f"^FD{'A' * 21}" not in html

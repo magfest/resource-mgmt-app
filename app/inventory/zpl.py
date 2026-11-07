@@ -74,6 +74,15 @@ def _barcode_data(code: str) -> str:
     return code
 
 
+def can_print_code(code: str) -> bool:
+    """Return whether the barcode can encode this code exactly."""
+    try:
+        _barcode_data(code)
+    except ValueError:
+        return False
+    return True
+
+
 def _fitted(height: int, text: str, full_chars: int) -> int:
     """Return the font height that keeps `text` as wide as `full_chars` characters."""
     if len(text) <= full_chars:
