@@ -10,9 +10,10 @@ from functools import wraps
 
 from flask import g, jsonify, render_template, request
 
-from app import db
+from app import csrf, db
 from app.inventory.devices import COOKIE_NAME, device_for_token
 from app.models import InvDevice
+from app.models.constants import INV_STATION_PRINT
 from app.routes import get_user_ctx
 
 from .helpers import is_inventory_operator
@@ -53,6 +54,43 @@ def require_scanner(f):
                 has_cookie=bool(request.cookies.get(COOKIE_NAME))), 403
         if principal.is_device:
             db.session.commit()  # persists the throttled last_seen_at
+        g.scan_principal = principal
+        return f(*args, **kwargs)
+    return decorated
+
+
+def device_api(f):
+    """Mark a JSON endpoint for enrolled devices.
+
+    The endpoint skips the form token, which dies with a user session that a
+    device never has. Requiring application/json replaces it: the device cookie
+    is SameSite=Lax, and a cross-site page cannot send that type without a
+    preflight this app never approves.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.mimetype != "application/json":
+            return jsonify(ok=False, message="Send JSON."), 415
+        return f(*args, **kwargs)
+    return csrf.exempt(decorated)
+
+
+def require_print_station(f):
+    """Allow only an enrolled PRINT device; refuse everything else in place.
+
+    The app's 403 handler redirects to login. A print station never reaches a
+    login page, so this guard answers 403 itself.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        principal = current_principal()
+        if (principal is None or not principal.is_device
+                or principal.device.station_code != INV_STATION_PRINT):
+            if request.path.startswith("/inv/scan/print/api/"):
+                return jsonify(ok=False, message="This computer is not an enrolled print station."), 403
+            return render_template(
+                "inventory/scan/not_enrolled.html",
+                has_cookie=bool(request.cookies.get(COOKIE_NAME))), 403
         g.scan_principal = principal
         return f(*args, **kwargs)
     return decorated

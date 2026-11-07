@@ -7,6 +7,7 @@ from app.inventory.codes import normalize_code
 from app.inventory.devices import COOKIE_MAX_AGE, COOKIE_NAME, redeem_enroll_code
 from app.inventory.ledger import InventoryError
 from app.models import InvContainer
+from app.models.constants import INV_STATION_PRINT
 
 from . import inventory_bp
 from .scan_auth import require_scanner
@@ -29,6 +30,8 @@ def home_container_from_form() -> InvContainer | None:
 @inventory_bp.get("/scan/")
 @require_scanner
 def scan_home():
+    if g.scan_principal.is_device and g.scan_principal.device.station_code == INV_STATION_PRINT:
+        return redirect(url_for("inventory.print_station"))
     return render_template("inventory/scan/index.html", principal=g.scan_principal)
 
 

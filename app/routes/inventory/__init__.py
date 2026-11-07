@@ -13,5 +13,5 @@ inventory_bp = Blueprint("inventory", __name__, url_prefix="/inv")
 
 from . import (  # noqa: E402,F401  (registers routes)
     admin_containers, admin_devices, admin_home, admin_items, admin_kinds,
-    admin_labels, admin_movements, admin_operators, scan_pages,
+    admin_labels, admin_movements, admin_operators, print_station, scan_pages,
 )

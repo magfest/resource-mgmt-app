@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Print station</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 16px; font-size: 28px; }
+  h1 { font-size: 36px; margin: 0 0 12px; }
+  .notice { padding: 12px; margin-bottom: 16px; border: 3px solid #444; }
+  .notice.bad { border-color: #b00020; color: #b00020; font-weight: 600; }
+  .printer { border: 3px solid #444; padding: 12px; margin-bottom: 16px; }
+  .printer.has-failure { border-color: #b00020; }
+  .printer h2 { margin: 0 0 8px; font-size: 32px; }
+  .printer p { margin: 4px 0; }
+  .fail { color: #b00020; font-weight: 600; }
+  .names { font-size: 22px; }
+</style></head>
+<body id="station"
+      data-collect-url="{{ url_for('inventory.print_collect') }}"
+      data-report-url="{{ url_for('inventory.print_report') }}">
+  <h1>Print station</h1>
+  <div id="app-status" class="notice">Starting.</div>
+  <div id="agent-status" class="notice bad" hidden></div>
+  <div id="printers"></div>
+  <p class="names">Browser Print printers: <span id="agent-names">not read yet</span></p>
+  <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/print_station.js') }}"></script>
+</body></html>
