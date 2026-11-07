@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import or_
+from sqlalchemy.orm import contains_eager
 
 from app import db
 from app.inventory.ledger import (
@@ -25,6 +26,14 @@ from app.models.constants import (
 
 SERIALIZED_REFUSAL = "Count units at their own station."
 ALREADY_FINISHED = "This count is already finished."
+TOO_LARGE = "That number is too large."
+MAX_QUANTITY = 100000
+
+
+class CountFinished(InventoryError):
+    """The count was saved already. The scanner clears its copy when `finished` is set."""
+
+    finished = True
 
 
 @dataclass(frozen=True)
@@ -38,7 +47,8 @@ class CountLineIn:
 
 
 def _held_rows(container: InvContainer) -> list[InvStock]:
-    return (db.session.query(InvStock).join(SupplyItem, SupplyItem.id == InvStock.item_id)
+    return (db.session.query(InvStock).join(InvStock.item)
+            .options(contains_eager(InvStock.item))
             .filter(InvStock.container_id == container.id, InvStock.quantity > 0,
                     SupplyItem.is_serialized.is_(False))
             .order_by(SupplyItem.item_name, SupplyItem.id).all())
@@ -73,13 +83,15 @@ def count_payload(count: InvCount) -> dict:
     if not blind:
         lines = [{"item_id": r.item_id, "name": r.item.item_name, "expected": r.quantity,
                   "is_approximate": r.is_approximate} for r in rows]
-    usual = (db.session.query(InvStationItem).join(SupplyItem)
+    usual = (db.session.query(InvStationItem).join(InvStationItem.item)
+             .options(contains_eager(InvStationItem.item))
              .filter(InvStationItem.station_code == INV_STATION_COUNT,
                      SupplyItem.is_active.is_(True), SupplyItem.is_serialized.is_(False))
              .order_by(InvStationItem.position, InvStationItem.id).all())
     return {
         "count_id": count.id, "blind": blind, "lines": lines,
-        "held": [{"item_id": r.item_id, "name": r.item.item_name} for r in rows],
+        "held": [{"item_id": r.item_id, "name": r.item.item_name,
+                  "pack_size": r.item.pack_size} for r in rows],
         "usual": [{"item_id": u.item_id, "name": u.item.item_name,
                    "pack_size": u.item.pack_size} for u in usual],
     }
@@ -101,6 +113,8 @@ def _validated(lines: list[CountLineIn]) -> dict[int, SupplyItem]:
             raise InventoryError(SERIALIZED_REFUSAL)
         if not _whole(line.kept) or not _whole(line.discarded):
             raise InventoryError("A count must be a whole number, zero or more.")
+        if line.kept > MAX_QUANTITY or line.discarded > MAX_QUANTITY:
+            raise InventoryError(TOO_LARGE)
         if line.discarded and line.discard_reason not in INV_DISCARD_REASONS:
             raise InventoryError(
                 "A discard needs a reason: " + ", ".join(INV_DISCARD_REASONS) + ".")
@@ -127,7 +141,7 @@ def submit_count(count: InvCount, lines: list[CountLineIn], actor: Actor) -> dic
     the other lines still apply. Raises InventoryError on invalid input.
     """
     if count.submitted_at is not None:
-        raise InventoryError(ALREADY_FINISHED)
+        raise CountFinished(ALREADY_FINISHED)
     container = count.container
     if not container.is_active:
         raise InventoryError(f"{container.label_code} is inactive.")

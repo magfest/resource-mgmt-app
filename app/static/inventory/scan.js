@@ -552,8 +552,8 @@
     if (doneBtn) {
       doneBtn.addEventListener('click', function () {
         // Done navigates with the unload prompt off, so unsent work needs its own question.
-        if (holdsWork() && !root.confirm(MESSAGES.leaveUnsent)) { return; }
         if (writes.isBlocked()) { showMessage(MESSAGES.blockedDone, 'error'); return; }
+        if (holdsWork() && !root.confirm(MESSAGES.leaveUnsent)) { return; }
         writes.drain().then(function (clear) {
           if (!clear) { showMessage(MESSAGES.blockedDone, 'error'); return null; }
           return read(body.dataset.endUrl, {});

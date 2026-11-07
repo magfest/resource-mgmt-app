@@ -13,8 +13,11 @@
     finishFirst: 'Submit this count before starting another.',
     submitting: 'Submitting. Wait for it to finish.',
     nothingCounted: 'Count at least one item first.',
-    noItems: 'No item matches that.'
+    noItems: 'No item matches that.',
+    alreadySaved: 'This count was already saved. Scan a container to count again.',
+    cancelAsk: 'Discard this count? Nothing in it has been sent.'
   };
+  var KEEPALIVE_MS = 5 * 60 * 1000;
   var CONTAINER_CODE = /^\s*C-?\d+\s*$/i;
 
   function reasonLabel(value) {
@@ -126,8 +129,27 @@
     };
   }
 
-  var pure = {createCount: createCount, createGate: createGate, staleText: staleText,
-              staleLine: staleLine, lineText: lineText, REASONS: REASONS, MESSAGES: MESSAGES};
+  // Touches the server shift during a count whose taps never reach it. A touch needs a tap
+  // since the last one, so an abandoned screen still lets the shift expire.
+  function createKeepAlive(options) {
+    var tapped = false;
+    var last = options.now();
+    return {
+      tap: function () { tapped = true; },
+      reset: function () { tapped = false; last = options.now(); },
+      check: function () {
+        if (!tapped || options.now() - last < options.everyMs) { return false; }
+        tapped = false;
+        last = options.now();
+        options.send();
+        return true;
+      }
+    };
+  }
+
+  var pure = {createKeepAlive: createKeepAlive, createCount: createCount, createGate: createGate, staleText: staleText,
+              staleLine: staleLine, lineText: lineText, REASONS: REASONS, MESSAGES: MESSAGES,
+              KEEPALIVE_MS: KEEPALIVE_MS};
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
 
@@ -141,6 +163,9 @@
   var submitting = false;  // a submit is in flight; edits and a second Submit wait
   var submitId = null;     // {id, version}: reused for a repeat tap of an unchanged Submit
   var gate = createGate(); // scans and Submit run through it, one at a time
+  var keepAlive = createKeepAlive({now: Date.now, everyMs: KEEPALIVE_MS, send: function () {
+    S.read(cfg.keepAliveUrl, {});
+  }});
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -205,8 +230,14 @@
     var foot = el('div', 'cnt-foot');
     foot.appendChild(button('Submit count (' + plural(count.lineCount(), 'line') + ')',
                             'cnt-submit', submit));
+    foot.appendChild(button('Cancel count', 'cnt-small cnt-cancel', cancelCount));
     box.appendChild(foot);
     panel.appendChild(box);
+  }
+
+  function packSizeOf(id) {
+    var hit = count.held().filter(function (h) { return h.item_id === id; })[0];
+    return hit && hit.pack_size ? hit.pack_size : null;
   }
 
   function openRow(h) {
@@ -216,7 +247,7 @@
     if (expected !== null) { row.appendChild(el('div', 'cnt-note', 'expected ' + expected)); }
     var actions = el('div', 'cnt-actions');
     actions.appendChild(button('Count', 'cnt-small', function () {
-      pickItem({id: h.item_id, name: h.name, pack_size: null});
+      pickItem({id: h.item_id, name: h.name, pack_size: packSizeOf(h.item_id)});
     }));
     if (expected !== null) {
       actions.appendChild(button('Matches', 'cnt-small', function () {
@@ -236,7 +267,7 @@
     row.appendChild(el('div', 'cnt-note', lineText(l)));
     var actions = el('div', 'cnt-actions');
     actions.appendChild(button('Recount', 'cnt-small', function () {
-      pickItem({id: l.item_id, name: l.name, pack_size: null});
+      pickItem({id: l.item_id, name: l.name, pack_size: packSizeOf(l.item_id)});
     }));
     actions.appendChild(button('None', 'cnt-small', function () {
       edit(function () { count.markNone(l.item_id); });
@@ -320,8 +351,22 @@
     refocus();
   }
 
+  // Discards the unsent count on this screen. The server keeps an unsubmitted count
+  // harmlessly: it neither changes stock nor ends blindness, and a new start opens another.
+  function cancelCount() {
+    if (!count) { return; }
+    if (submitting) { fail(MESSAGES.submitting); return; }
+    if (!root.confirm(MESSAGES.cancelAsk)) { return; }
+    count = null;
+    submitId = null;
+    S.showMessage('', 'info');
+    render();
+    refocus();
+  }
+
   function startedCount(answer) {
     count = createCount(answer);
+    keepAlive.reset();
     result = null;
     submitId = null;
     S.showMessage('', 'info');
@@ -420,6 +465,15 @@
       render();
       return;
     }
+    if (!answer.ok && answer.finished) {
+      count = null;
+      result = null;
+      S.feedback('error');
+      S.showMessage(MESSAGES.alreadySaved, 'info');
+      render();
+      refocus();
+      return;
+    }
     if (!answer.ok) { fail(answer.message); return; }
     count = null;
     result = {applied: answer.applied, stale: answer.stale || []};
@@ -431,6 +485,8 @@
     refocus();
   }
 
+  panel.addEventListener('click', function () { if (count) { keepAlive.tap(); } });
+  setInterval(function () { if (count) { keepAlive.check(); } }, 60 * 1000);
   S.holdLeave(function () { return !!count && count.unsent(); });
   S.start({station: 'COUNT', onScan: onScan});
   render();

@@ -23,6 +23,7 @@ ACTOR = Actor(user_id="test:invadmin")
 START = "/inv/scan/api/count/start"
 SUBMIT = "/inv/scan/api/count/submit"
 FIND = "/inv/scan/api/count/find"
+KEEPALIVE = "/inv/scan/api/count/keepalive"
 _n = [0]
 
 
@@ -179,7 +180,8 @@ def test_start_answers_blind_with_no_expected_numbers_anywhere(client, ct):
     db.session.commit()
     answer = _start(client, "C-0001")
     assert answer["ok"] is True and answer["blind"] is True and answer["lines"] == []
-    assert answer["held"] == [{"item_id": ct.pens.id, "name": "Blue Pen"}]
+    assert answer["held"] == [{"item_id": ct.pens.id, "name": "Blue Pen",
+                               "pack_size": ct.pens.pack_size}]
     assert "37" not in json.dumps(answer) and "expected" not in json.dumps(answer)
     page = client.get("/inv/scan/count")
     assert b"37" not in page.data
@@ -337,6 +339,73 @@ def test_a_signed_in_operator_may_use_the_station(client, inv):
     assert _start(client, "C-0001")["ok"] is True
 
 
+def test_a_second_submit_of_a_finished_count_is_refused_marked_and_writes_nothing(client, ct):
+    tote = make_container(ct, "C-0001", kind="BIN")
+    db.session.commit()
+    count_id = _start(client, "C-0001")["count_id"]
+    assert _submit(client, count_id, [{"item_id": ct.pens.id, "kept": 5}])["ok"] is True
+    moves = InvMovement.query.count()
+    again = _submit(client, count_id, [{"item_id": ct.pens.id, "kept": 9}])
+    assert again["ok"] is False and again["finished"] is True
+    assert InvMovement.query.count() == moves and stock_quantity(ct.pens, tote) == 5
+
+
+def test_other_refusals_are_not_marked_finished(client, ct):
+    make_container(ct, "C-0001", kind="BIN")
+    db.session.commit()
+    count_id = _start(client, "C-0001")["count_id"]
+    answer = _submit(client, count_id, [{"item_id": ct.pens.id, "kept": -1}])
+    assert answer["ok"] is False and "finished" not in answer
+
+
+def test_a_quantity_above_the_limit_is_refused(inv):
+    tote = make_container(inv, "C-0001", kind="BIN")
+    c = start_count(tote, ACTOR)
+    with pytest.raises(InventoryError, match="too large"):
+        submit_count(c, [CountLineIn(inv.pens.id, kept=100001)], ACTOR)
+    with pytest.raises(InventoryError, match="too large"):
+        submit_count(c, [CountLineIn(inv.pens.id, kept=1, discarded=100001,
+                                     discard_reason="BROKEN")], ACTOR)
+    submit_count(c, [CountLineIn(inv.pens.id, kept=100000)], ACTOR)
+    assert stock_quantity(inv.pens, tote) == 100000
+
+
+def test_the_count_start_answer_carries_each_held_items_pack_size(client, ct):
+    tote = make_container(ct, "C-0001", kind="BIN")
+    ct.pens.pack_size = 12
+    add_stock(ct.pens, tote, 24, ACTOR)
+    db.session.commit()
+    answer = _start(client, "C-0001")
+    assert answer["held"][0]["pack_size"] == 12
+
+
+def test_count_routes_refuse_a_device_on_another_station(client, ct):
+    make_container(ct, "C-0001", kind="BIN")
+    device = InvDevice.query.one()
+    device.station_code = "TV_CHECK"
+    db.session.commit()
+    assert _start(client, "C-0001")["ok"] is False
+    assert client.post(FIND, json={"q": "pen"}).get_json()["ok"] is False
+    assert client.post(SUBMIT, json={"client_request_id": _rid(), "count_id": 1,
+                                     "lines": []}).get_json()["ok"] is False
+    assert client.post(KEEPALIVE, json={}).get_json()["ok"] is False
+    assert InvCount.query.count() == 0
+    device.station_code = "LOOKUP"
+    db.session.commit()
+    assert _start(client, "C-0001")["ok"] is True
+
+
+def test_keepalive_extends_the_open_shift(client, ct):
+    from datetime import datetime, timedelta
+    from app.models import InvShift
+    shift = InvShift.query.one()
+    shift.last_activity_at = datetime.utcnow() - timedelta(minutes=10)
+    db.session.commit()
+    before = shift.last_activity_at
+    assert client.post(KEEPALIVE, json={}).get_json()["ok"] is True
+    assert db.session.get(InvShift, shift.id).last_activity_at > before
+
+
 # ---- page logic, run under node; no browser is driven ----
 
 STATIC = os.path.join(os.path.dirname(__file__), "..", "..", "app", "static", "inventory")
@@ -368,7 +437,7 @@ assert.equal(c.lineText({kept: 20, is_approximate: true, discarded: 5, discard_r
 console.log('flow ok');
 """
 
-PAGE_SCRIPT = r"""
+PAGE_PRELUDE = r"""
 const assert = require('assert');
 function Node(tag) {
   this.tag = tag; this.children = []; this.className = ''; this.style = {};
@@ -416,8 +485,15 @@ globalThis.InvScan = {
   },
   write: (path, body, rid) => new Promise((resolve) => writes.push({path, body, rid, resolve}))
 };
+globalThis.confirm = () => globalThis.confirmAnswer;
+globalThis.confirmAnswer = true;
 require(process.env.COUNT_JS);
 const tick = () => new Promise((r) => setTimeout(r, 0));
+const startAnswer = {ok: true, count_id: 5, code: 'C-0001', name: '', blind: true,
+  held: [{item_id: 1, name: 'Pens', pack_size: 12}], lines: [], usual: []};
+"""
+
+PAGE_SCRIPT = PAGE_PRELUDE + r"""
 (async () => {
   const first = onScan('C-0001');
   await tick();
@@ -461,7 +537,84 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   assert.equal(writes[1].path, '/submit');
   assert.ok(rid);
   console.log('page ok');
+  process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+
+FINISHED_SCRIPT = PAGE_PRELUDE + r"""
+(async () => {
+  // A held item's Count button opens the pad with that item's real pack size.
+  let pad = null;
+  globalThis.InvScan.numberPad = (opts, cb) => { pad = opts; };
+  const started = onScan('C-0001');
+  await tick();
+  writes[0].resolve(startAnswer);
+  await started;
+  find(panel, 'Count').handlers.click();
+  assert.equal(pad.packSize, 12);
+  find(panel, 'Cancel count');   // present while a count is open
+
+  // The server says the count is already saved: the screen drops it and scans start again.
+  globalThis.InvScan.numberPad = (opts, cb) => { cb({quantity: 3, about: false}); };
+  find(panel, 'Count').handlers.click();
+  find(panel, 'Submit count (1 line)').handlers.click();
+  await tick();
+  writes[1].resolve({ok: false, message: 'This count is already finished.', finished: true});
+  await tick();
+  assert.equal(messages[messages.length - 1],
+    'This count was already saved. Scan a container to count again.');
+  assert.ok(texts(panel).includes('Scan a container label to start counting.'));
+  assert.equal(leaveHold(), false);
+  const next = onScan('C-0002');
+  await tick();
+  assert.equal(writes[2].path, '/start', 'a container scan starts a new count');
+  writes[2].resolve(startAnswer);
+  await next;
+
+  // Cancel asks first, then clears the unsent count without any server call.
+  globalThis.InvScan.numberPad = (opts, cb) => { cb({quantity: 1, about: false}); };
+  find(panel, 'Count').handlers.click();
+  assert.equal(leaveHold(), true);
+  globalThis.confirmAnswer = false;
+  find(panel, 'Cancel count').handlers.click();
+  assert.equal(leaveHold(), true, 'declining the confirm keeps the count');
+  globalThis.confirmAnswer = true;
+  find(panel, 'Cancel count').handlers.click();
+  assert.equal(leaveHold(), false);
+  assert.equal(writes.length, 3, 'cancel sends nothing');
+  assert.ok(texts(panel).includes('Scan a container label to start counting.'));
+  console.log('finished ok');
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+KEEPALIVE_SCRIPT = r"""
+const assert = require('assert');
+const c = require(process.env.COUNT_JS);
+let t = 0; let sent = 0;
+const k = c.createKeepAlive({now: () => t, everyMs: 300000, send: () => { sent += 1; }});
+t = 100000;
+assert.equal(k.check(), false, 'no tap, no touch: an abandoned screen can expire');
+k.tap();
+t = 200000;
+assert.equal(k.check(), false, 'under five minutes since the start');
+t = 700000;
+assert.equal(k.check(), true);
+assert.equal(sent, 1);
+t = 800000;
+assert.equal(k.check(), false, 'the tap was spent on the last touch');
+k.tap();
+t = 900000;
+assert.equal(k.check(), false, 'under five minutes since the last touch');
+t = 1300000;
+assert.equal(k.check(), true);
+k.tap();
+k.reset();
+t = 9000000;
+assert.equal(k.check(), false, 'a new count starts untapped');
+assert.equal(sent, 2);
+console.log('keepalive ok');
 """
 
 
@@ -487,3 +640,18 @@ def test_a_scan_and_a_second_tap_during_submit_wait_and_double_nothing(tmp_path)
     result = _node(tmp_path, PAGE_SCRIPT, "page_check.js")
     assert result.returncode == 0, result.stderr
     assert "page ok" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_finished_count_clears_and_cancel_discards_under_node(tmp_path):
+    """Runs the page script on a stub DOM under node; it does not drive a browser."""
+    result = _node(tmp_path, FINISHED_SCRIPT, "finished_check.js")
+    assert result.returncode == 0, result.stderr
+    assert "finished ok" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_keepalive_needs_a_tap_and_five_minutes_under_node(tmp_path):
+    result = _node(tmp_path, KEEPALIVE_SCRIPT, "keepalive_check.js")
+    assert result.returncode == 0, result.stderr
+    assert "keepalive ok" in result.stdout

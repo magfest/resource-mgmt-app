@@ -87,6 +87,7 @@ body.not-saved-on { background: #f9c9c9; }
 .cnt-name { font-weight: 600; }
 .cnt-note { color: #455a64; }
 .cnt-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cnt-cancel { display: block; width: 100%; margin-top: 8px; }
 .cnt-small { flex: 1; min-height: 44px; padding: 6px 8px; font-size: 1rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
 .cnt-foot { position: sticky; bottom: 0; padding: 8px 0; background: #fff; }
 .cnt-submit { display: block; width: 100%; min-height: 60px; font-size: 1.3rem; font-weight: 700; border: 0; border-radius: 10px; background: #1565c0; color: #fff; }

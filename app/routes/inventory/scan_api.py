@@ -33,7 +33,8 @@ from app.inventory.zpl import can_print_code
 from app.inventory.shifts import current_shift, end_shift, start_shift, touch
 from app.models import InvContainerKind, InvCount, InvUnit, SupplyItem
 from app.models.constants import (
-    INV_CHECK_STATIONS, INV_SHIFT_END_ENDED, INV_STATION_NAMES,
+    INV_CHECK_STATIONS, INV_SHIFT_END_ENDED, INV_STATION_COUNT, INV_STATION_LOOKUP,
+    INV_STATION_NAMES,
 )
 
 from . import inventory_bp
@@ -386,6 +387,22 @@ FINISH_FIRST = "Submit this count before starting another."
 UNKNOWN_CODE = "Not a MAGFest code: scan the white asset tag"
 
 
+def _count_device() -> None:
+    """Refuse a device enrolled for another station; a signed-in operator passes."""
+    principal = g.scan_principal
+    if principal.is_device and principal.device.station_code not in (
+            INV_STATION_COUNT, INV_STATION_LOOKUP):
+        raise InventoryError("This scanner is not set up for counting.")
+
+
+@inventory_bp.post("/scan/api/count/keepalive")
+@api
+def scan_count_keepalive():
+    """Keep the shift open while a long count has no server traffic. The `api` wrapper touches it."""
+    _count_device()
+    return jsonify(ok=True)
+
+
 @inventory_bp.post("/scan/api/count/start")
 @api
 def scan_count_start():
@@ -393,6 +410,7 @@ def scan_count_start():
 
     The answer never carries expected quantities for a blind count.
     """
+    _count_device()
     data = _json_body()
 
     def start() -> dict:
@@ -426,6 +444,7 @@ def scan_count_start():
 @api
 def scan_count_find():
     """Name the countable item a scan or a search text points at. Reads only."""
+    _count_device()
     data = _json_body()
     text = _optional_text(data, "q")
     if text is not None:
@@ -470,8 +489,12 @@ def _line_in(raw) -> CountLineIn:
 
 
 def _own_count(count_id) -> InvCount:
-    """The open count, only for the device or user that started it."""
-    count = db.session.get(InvCount, count_id) if type(count_id) is int else None
+    """The open count, only for the device or user that started it.
+
+    The row is locked so two submits with different request ids apply one after the other.
+    """
+    count = (db.session.query(InvCount).filter_by(id=count_id).with_for_update()
+             .populate_existing().first()) if type(count_id) is int else None
     principal = g.scan_principal
     mine = count is not None and (
         count.device_id == principal.device.id if principal.is_device
@@ -485,6 +508,7 @@ def _own_count(count_id) -> InvCount:
 @api
 def scan_count_submit():
     """Apply a count. A held item with no line refuses the whole submit and writes nothing."""
+    _count_device()
     data = _json_body()
     raw_lines = data.get("lines")
     refused: dict = {}

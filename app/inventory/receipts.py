@@ -21,10 +21,12 @@ def _stored(client_request_id: str) -> dict | None:
 
 
 def refusal(exc: InventoryError) -> dict:
-    """The JSON answer for a refusal. `need_name` and `already` ride along when the exception carries them."""
+    """The JSON answer for a refusal. `need_name`, `finished` and `already` ride along when the exception carries them."""
     answer = {"ok": False, "message": str(exc)}
     if getattr(exc, "need_name", False):
         answer["need_name"] = True
+    if getattr(exc, "finished", False):
+        answer["finished"] = True
     already = getattr(exc, "already", None)
     if already is not None:
         answer["already"] = already
