@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app import db
+from app.inventory.flags import FLAG_WORDS
 from app.inventory.describe import describe_actor, describe_movement, unit_tag
 from app.inventory.resolver import (
     KIND_CONTAINER, KIND_ITEM, KIND_UNIT, Resolution,
@@ -24,8 +25,6 @@ _CONDITION_WORDS = {
     INV_CONDITION_RETIRED: "Retired", INV_CONDITION_LOST: "Lost",
 }
 _PREP_WORDS = {INV_PREP_CHECKED: "Checked", INV_PREP_FAILED_CHECK: "Failed check"}
-_FLAG_WORDS = {"WRONG_DATA": "Wrong data", "DAMAGED": "Damaged",
-               "UNKNOWN_ITEM": "Unknown item", "OTHER": "Other"}
 
 
 def default_event() -> EventCycle | None:
@@ -46,7 +45,7 @@ def _history(*criteria) -> list[dict]:
 def _flag_lines(*criteria) -> list[str]:
     flags = (db.session.query(InvFlag).filter(InvFlag.resolved_at.is_(None), *criteria)
              .order_by(InvFlag.id).all())
-    return [f"Flag: {_FLAG_WORDS.get(f.reason, f.reason)}" + (f", {f.note}" if f.note else "")
+    return [f"Flag: {FLAG_WORDS.get(f.reason, f.reason)}" + (f", {f.note}" if f.note else "")
             for f in flags]
 
 

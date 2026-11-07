@@ -4,15 +4,18 @@ body { margin: 0; font-family: system-ui, sans-serif; font-size: 18px; backgroun
 body.flash-ok { background: #c8f5d0; }
 body.flash-error { background: #f9c9c9; }
 body.not-saved-on { background: #f9c9c9; }
-.band { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: #fff; background: #455a64; }
+.band { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #fff; background: #455a64; }
 .station-LOOKUP .band { background: #455a64; }
 .station-COUNT .band { background: #1565c0; }
 .station-TV_CHECK .band { background: #6a1b9a; }
 .station-PRINTER_CHECK .band { background: #00796b; }
 .station-RECEIVE .band { background: #e65100; }
-.band-station { font-weight: 700; flex: 1; }
-.band-who { opacity: 0.9; }
-.band-done { font-size: 1rem; padding: 10px 12px; border: 1px solid #fff; background: transparent; color: #fff; border-radius: 6px; }
+/* At 390 px the band holds the station name, the volunteer's name, Flag and Done on one row.
+   The station name keeps its width; a long volunteer name gives way with an ellipsis. */
+.band-station { font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
+.band-who { opacity: 0.9; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.band-flag, .band-done { flex: 0 0 auto; font-size: 1rem; padding: 10px; border: 1px solid #fff; background: transparent; color: #fff; border-radius: 6px; white-space: nowrap; }
+.band-flag { margin-left: auto; }
 /* Fixed so it never moves the page; it ignores taps so a button under it still gets them.
    Any tap refocuses the scan field through the document click handler. */
 .paused { position: fixed; top: 0; left: 0; right: 0; z-index: 20; pointer-events: none; padding: 12px; text-align: center; background: rgba(97, 97, 97, 0.92); color: #fff; font-size: 1.1rem; }

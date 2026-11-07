@@ -26,9 +26,18 @@
     return html + '</section>';
   }
 
+  // Flag offers the card on screen. An item has no row to flag, so it clears the subject.
+  function flaggable(card, target) {
+    var label = [card.title, card.tag].filter(Boolean).join(' ');
+    if (!target || target.item) { S.setFlagSubject(null); return; }
+    S.setFlagSubject(target.unitId != null ? {unitId: target.unitId, label: label}
+                                           : {code: target.code, label: label});
+  }
+
   // `target` names what Print label prints: {code, unitId}. Items that share a barcode have none.
   function showCard(card, target) {
     S.showMessage('', 'info');
+    flaggable(card, target);
     S.showPanel(cardHtml(card));
     if (!target) { return; }
     var print = document.createElement('button');
@@ -42,6 +51,7 @@
   }
 
   function unknownTag(answer) {
+    S.setFlagSubject(null);
     S.showPanel('');
     S.showMessage(S.messages.unknown, 'error');
     if (!answer.can_create_tag) { return; }
@@ -77,10 +87,12 @@
       unknownTag(answer);
     } else if (answer.kind === 'UNUSED') {
       S.feedback('error');
+      S.setFlagSubject(null);
       S.showPanel('');
       S.showMessage(unusedText(answer), 'info');
     } else if (answer.kind === 'AMBIGUOUS') {
       S.feedback('error');
+      S.setFlagSubject(null);
       S.showMessage(S.messages.ambiguous, 'info');
       S.choose(answer.candidates.map(function (c) {
         return {label: candidateLabel(c.card), value: c};
@@ -89,7 +101,7 @@
       }, answer.more ? 'and ' + answer.more + ' more' : null);
     } else {
       S.feedback('ok');
-      showCard(answer.card, {code: answer.code, unitId: null});
+      showCard(answer.card, {code: answer.code, unitId: null, item: answer.kind === 'ITEM'});
     }
   }
 

@@ -436,8 +436,10 @@ globalThis.document = {
 const writes = [];
 const reads = [];
 let onScan;
+const subjects = [];
 globalThis.InvScan = {
   start: (cfg) => { onScan = cfg.onScan; },
+  setFlagSubject: (subject) => subjects.push(subject),
   messages: {offline: 'offline'},
   printerWaiting: () => false,
   feedback() {}, showMessage() {}, numberPad() {},
@@ -467,6 +469,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   writes[0].resolve({ok: true, unit_id: 1, code: 'U-00001', station_seen: true, waiting: 0});
   await during;
   assert.equal(writes.length, 1);
+  assert.deepEqual(subjects[subjects.length - 1], {unitId: 1, label: 'U-00001'}, 'Flag offers the unit just received');
   assert.ok(texts(panel).includes('Asset tag: T2 ✓'), 'the scan is held for the next unit');
   assert.ok(reads.some((x) => x[0] === '/check' && x[1].tag === 'T2'));
   console.log('page ok');

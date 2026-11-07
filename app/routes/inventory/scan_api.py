@@ -20,6 +20,7 @@ from app.inventory.checks import (
 )
 from app.inventory.codes import normalize_code
 from app.inventory.devices import set_station
+from app.inventory.flags import FLAG_WORDS, find_subject, raise_flag
 from app.inventory.counts import (
     SERIALIZED_REFUSAL, CountLineIn, browse_categories, browse_items, count_payload,
     item_choice, start_count, submit_count,
@@ -91,6 +92,27 @@ def touch_shift() -> None:
         shift = current_shift(principal.device)
         if shift is not None:
             touch(shift)
+
+
+@inventory_bp.post("/scan/api/flag")
+@api
+def scan_flag():
+    """Flag a unit or container for a lead. The station is the device's, never the client's."""
+    data = _json_body()
+
+    def flag() -> dict:
+        actor = scan_actor()
+        principal = g.scan_principal
+        station = principal.device.station_code if principal.is_device else INV_STATION_LOOKUP
+        reason = data.get("reason")
+        if not isinstance(reason, str):
+            raise InventoryError("Pick a reason.")
+        unit, container = find_subject(data.get("code"), data.get("unit_id"))
+        saved = raise_flag(actor, station, reason, unit=unit, container=container,
+                           note=data.get("note"))
+        return {"flag_id": saved.id, "reason": FLAG_WORDS[saved.reason]}
+
+    return jsonify(run_once(data.get("client_request_id"), flag))
 
 
 @inventory_bp.post("/scan/api/shift")

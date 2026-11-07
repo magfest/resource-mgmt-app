@@ -30,6 +30,7 @@
     notEnrolled: 'This scanner is not enrolled.',
     cancelled: 'Not saved.',
     blockedDone: 'A scan is not saved yet. Try again or cancel it first.',
+    finishField: 'Finish or cancel the open field first.',
     leaveUnsent: 'Your work on this screen is not submitted. Leave and lose it?'
   };
 
@@ -247,6 +248,9 @@
   var panel = document.getElementById('panel');
   var paused = document.getElementById('paused');
   var doneBtn = document.getElementById('done-btn');
+  var flagBtn = document.getElementById('flag-btn');
+  var flagPanel = document.getElementById('flag-panel');
+  var host = panel;         // where choose, askText and numberPad draw; the flag flow borrows it
   var notSaved = document.getElementById('not-saved');
   var asking = false;       // an askText field owns focus
   var closeAsk = null;      // closes the open askText with no answer
@@ -286,7 +290,7 @@
     }, function (err) { clearTimeout(timer); throw err; });
   }
 
-  function clearPanel() { panel.textContent = ''; }
+  function clearPanel() { host.textContent = ''; }
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -402,9 +406,9 @@
       var button = el('button', 'choice', label);
       button.type = 'button';
       button.addEventListener('click', function () { onPick(value); });
-      panel.appendChild(button);
+      host.appendChild(button);
     });
-    if (note) { panel.appendChild(el('p', 'hint', note)); }
+    if (note) { host.appendChild(el('p', 'hint', note)); }
   }
 
   function focusCapture() { if (!asking) { field.focus(); } }
@@ -426,7 +430,7 @@
     wrap.appendChild(name);
     wrap.appendChild(ok);
     wrap.appendChild(cancel);
-    panel.appendChild(wrap);
+    host.appendChild(wrap);
     function close(value) {
       asking = false;
       closeAsk = null;
@@ -493,7 +497,112 @@
     cancel.addEventListener('click', function () { onDone(null); });
     extras.appendChild(cancel);
     pad.appendChild(extras);
-    panel.appendChild(pad);
+    host.appendChild(pad);
+  }
+
+  // A station reports what Flag should offer: {code, label} or {unitId, label}, or null when
+  // nothing on its screen can be flagged.
+  var flagSubject = null;
+  function setFlagSubject(subject) { flagSubject = subject || null; }
+
+  var flagFlow = null;
+  var flagSaved = null;     // the message line and panel as they were when the flow opened
+
+  function flagLine(text, tone) {
+    if (text) { flagPanel.appendChild(el('p', 'msg ' + (tone || 'info'), text)); }
+  }
+
+  function flagButton(text, className, onClick) {
+    var b = el('button', className, text);
+    b.type = 'button';
+    b.addEventListener('click', onClick);
+    flagPanel.appendChild(b);
+  }
+
+  function drawFlag(view) {
+    flagPanel.textContent = '';
+    var tone = view.message && view.step !== 'scan' ? 'error' : 'info';
+    if (view.step === 'offer') {
+      flagLine(view.message, tone);
+      flagButton('Flag ' + view.label, 'choice primary', function () { flagFlow.useSubject(); });
+      flagButton('Scan something else', 'choice', function () { flagFlow.scanElse(); });
+      flagButton('Cancel', 'choice', function () { flagFlow.cancel(); });
+    } else if (view.step === 'scan') {
+      flagLine(view.message, view.message === root.InvFlagFlow.MESSAGES.scan ? 'info' : 'error');
+      flagButton('Cancel', 'choice', function () { flagFlow.cancel(); });
+    } else if (view.step === 'looking') {
+      flagLine('Checking the scan.', 'info');
+      flagButton('Cancel', 'choice', function () { flagFlow.cancel(); });
+    } else if (view.step === 'choices') {
+      flagLine(root.InvFlagFlow.MESSAGES.pickUnit, 'info');
+      view.choices.forEach(function (c) {
+        flagButton(c.label, 'choice', function () { flagFlow.chooseSubject(c); });
+      });
+      flagButton('Cancel', 'choice', function () { flagFlow.cancel(); });
+    } else if (view.step === 'reason') {
+      flagLine(view.message, 'error');
+      flagLine('Flag ' + view.label, 'info');
+      view.reasons.forEach(function (r) {
+        flagButton(r.label, 'choice', function () { flagFlow.pickReason(r.code); });
+      });
+      flagButton('Cancel', 'choice', function () { flagFlow.cancel(); });
+    } else if (view.step === 'note') {
+      host = flagPanel;
+      askText(view.message || 'What is wrong?', function (text) {
+        if (flagFlow.isOpen()) { flagFlow.submitNote(text); }
+      });
+    } else if (view.step === 'saving') {
+      flagLine('Saving.', 'info');
+    }
+  }
+
+  function closeFlag(result) {
+    host = panel;
+    flagPanel.textContent = '';
+    flagPanel.hidden = true;
+    panel.hidden = false;
+    msg.hidden = false;
+    if (result.saved) {
+      showMessage(result.text, 'ok');
+      feedback('ok');
+    } else if (flagSaved) {
+      msg.textContent = flagSaved.text;
+      msg.className = flagSaved.className;
+    }
+    flagSaved = null;
+    focusCapture();
+  }
+
+  // What a scan means to the flag flow: a container or one unit can be flagged.
+  function lookupFlag(code) {
+    return read(body.dataset.resolveUrl, {code: code}).then(function (answer) {
+      var F = root.InvFlagFlow;
+      function named(card) { return [card.title, card.tag].filter(Boolean).join(' '); }
+      if (!answer.ok) { return {message: answer.message}; }
+      if (answer.kind === 'CONTAINER' || answer.kind === 'UNIT') {
+        return {subject: {code: answer.code, label: named(answer.card)}};
+      }
+      if (answer.kind === 'AMBIGUOUS' && answer.candidates.length &&
+          answer.candidates.every(function (c) { return c.unit_id != null; })) {
+        return {choices: answer.candidates.map(function (c) {
+          return {unitId: c.unit_id, label: named(c.card)};
+        })};
+      }
+      return {message: F.MESSAGES.container};
+    });
+  }
+
+  function openFlag() {
+    if (!flagFlow || flagFlow.isOpen()) { return; }
+    if (blocked) { showMessage(MESSAGES.blockedDone, 'error'); return; }
+    if (asking) { showMessage(MESSAGES.finishField, 'error'); return; }
+    if (stopped) { showMessage(stopped, 'error'); return; }
+    flagSaved = {text: msg.textContent, className: msg.className};
+    panel.hidden = true;
+    msg.hidden = true;
+    flagPanel.hidden = false;
+    host = flagPanel;
+    flagFlow.open(flagSubject);
   }
 
   function holdsWork() { return leaveHolds.some(function (fn) { return fn(); }); }
@@ -517,6 +626,14 @@
       deliver: function (code) {
         if (stopped) { feedback('error'); showMessage(stopped, 'error'); return; }
         if (blocked) { feedback('error'); return; }
+        // While the flag flow is open the station sees no scans, so its promise never starts.
+        if (flagFlow && flagFlow.isOpen()) {
+          flagFlow.scan(code).then(function () {
+            var step = flagFlow.step();
+            feedback(step === 'reason' || step === 'choices' ? 'ok' : 'error');
+          });
+          return;
+        }
         var outcome = scans.submit(code);
         if (outcome.repeat != null) {
           feedback('error');
@@ -527,6 +644,13 @@
       cancel: function (handle) { clearTimeout(handle); },
       clear: function () { field.value = ''; }
     });
+    if (flagBtn && flagPanel && root.InvFlagFlow) {
+      flagFlow = root.InvFlagFlow.createFlagFlow({
+        mint: newId, lookup: lookupFlag, show: drawFlag, done: closeFlag,
+        save: function (payload, id) { return write(body.dataset.flagUrl, payload, id); }
+      });
+      flagBtn.addEventListener('click', openFlag);
+    }
     field.addEventListener('input', function () { capture.input(field.value); });
     field.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); capture.enter(field.value); }
@@ -570,7 +694,7 @@
   root.InvScan = {
     start: start, write: write, read: read, feedback: feedback, showMessage: showMessage,
     showPanel: showPanel, choose: choose, numberPad: numberPad, askText: askText, esc: esc,
-    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave,
+    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave, setFlagSubject: setFlagSubject,
     currentMessage: function () { return msg.textContent; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

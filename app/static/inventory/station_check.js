@@ -36,6 +36,7 @@
     }
     return {
       id: open.check_id,
+      unitId: open.unit_id,
       code: open.code,
       name: open.name,
       lines: lines,
@@ -174,6 +175,8 @@
 
   function render() {
     panel.textContent = '';
+    S.setFlagSubject(check && check.unitId != null
+      ? {unitId: check.unitId, label: check.name + ' ' + check.code} : null);
     if (phase === 'result') { renderResult(); return; }
     if (phase === 'label') { renderLabel(); return; }
     if (!check) { panel.appendChild(el('p', 'chk-idle', idleText(cfg.station))); return; }

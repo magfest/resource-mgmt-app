@@ -159,6 +159,7 @@
   }
 
   function render() {
+    S.setFlagSubject(last ? {unitId: last.unit_id, label: last.code} : null);
     if (running) { renderLoop(); } else { renderSetup(); }
   }
 

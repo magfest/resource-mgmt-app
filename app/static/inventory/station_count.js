@@ -218,6 +218,8 @@
 
   function render() {
     panel.textContent = '';
+    S.setFlagSubject(count ? {code: count.code, label: count.code + (count.name ? ' ' + count.name : '')}
+                           : null);
     if (!count) { renderIdle(); return; }
     var box = el('div', 'cnt');
     box.appendChild(headNode());
