@@ -6,11 +6,12 @@ from app import csrf, db
 from app.inventory.codes import normalize_code
 from app.inventory.devices import COOKIE_MAX_AGE, COOKIE_NAME, redeem_enroll_code
 from app.inventory.ledger import InventoryError
+from app.inventory.shifts import current_shift, recent_names
 from app.models import InvContainer
-from app.models.constants import INV_STATION_PRINT
+from app.models.constants import INV_STATION_LOOKUP, INV_STATION_PRINT
 
 from . import inventory_bp
-from .scan_auth import require_scanner
+from .scan_auth import require_scanner, require_scanner_or_print, who_text
 
 
 STALE_FORM = "This page timed out. Type the code again."
@@ -28,11 +29,29 @@ def home_container_from_form() -> InvContainer | None:
 
 
 @inventory_bp.get("/scan/")
-@require_scanner
+@require_scanner_or_print
 def scan_home():
-    if g.scan_principal.is_device and g.scan_principal.device.station_code == INV_STATION_PRINT:
+    principal = g.scan_principal
+    if principal.is_device and principal.device.station_code == INV_STATION_PRINT:
         return redirect(url_for("inventory.print_station"))
-    return render_template("inventory/scan/index.html", principal=g.scan_principal)
+    if principal.is_device and principal.device.station_code != INV_STATION_LOOKUP:
+        shift = current_shift(principal.device)
+        db.session.commit()  # keeps an IDLE close
+        if shift is None:
+            return redirect(url_for("inventory.scan_who"))
+    return render_template("inventory/scan/index.html", principal=principal,
+                           who=who_text())
+
+
+@inventory_bp.get("/scan/who")
+@require_scanner
+def scan_who():
+    """Ask who is scanning. Never errors; an operator has no name to pick."""
+    principal = g.scan_principal
+    names = recent_names(principal.device) if principal.is_device else []
+    db.session.commit()
+    return render_template("inventory/scan/who.html", names=names,
+                           is_device=principal.is_device, who=who_text())
 
 
 @inventory_bp.get("/scan/enroll")

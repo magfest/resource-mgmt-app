@@ -12,6 +12,8 @@ from flask import g, jsonify, render_template, request
 
 from app import csrf, db
 from app.inventory.devices import COOKIE_NAME, device_for_token
+from app.inventory.ledger import Actor, InventoryError
+from app.inventory.shifts import current_shift
 from app.models import InvDevice
 from app.models.constants import INV_STATION_PRINT
 from app.routes import get_user_ctx
@@ -42,21 +44,62 @@ def current_principal() -> ScanPrincipal | None:
     return None
 
 
-def require_scanner(f):
+def _refuse_scanner():
+    # A device guard answers 403 itself; the app's 403 handler redirects to login.
+    if request.path.startswith("/inv/scan/api/"):
+        return jsonify(ok=False, message="This scanner is not signed in. Reload the page."), 403
+    return render_template(
+        "inventory/scan/not_enrolled.html",
+        has_cookie=bool(request.cookies.get(COOKIE_NAME))), 403
+
+
+def _scanner_guard(f, allow_print):
     @wraps(f)
     def decorated(*args, **kwargs):
         principal = current_principal()
+        # A PRINT device may only collect and report print jobs.
+        if principal is not None and principal.is_device and not allow_print \
+                and principal.device.station_code == INV_STATION_PRINT:
+            return _refuse_scanner()
         if principal is None:
-            if request.path.startswith("/inv/scan/api/"):
-                return jsonify(ok=False, message="This scanner is not signed in. Reload the page."), 403
-            return render_template(
-                "inventory/scan/not_enrolled.html",
-                has_cookie=bool(request.cookies.get(COOKIE_NAME))), 403
+            return _refuse_scanner()
         if principal.is_device:
             db.session.commit()  # persists the throttled last_seen_at
         g.scan_principal = principal
         return f(*args, **kwargs)
     return decorated
+
+
+def require_scanner(f):
+    """Allow a signed-in operator or an enrolled device that is not a PRINT station."""
+    return _scanner_guard(f, allow_print=False)
+
+
+def require_scanner_or_print(f):
+    """Like require_scanner, but admits a PRINT device. Only the scan landing page uses it."""
+    return _scanner_guard(f, allow_print=True)
+
+
+def scan_actor() -> Actor:
+    """The signed-in user, or the open shift on the device. Needs require_scanner."""
+    principal = g.scan_principal
+    if not principal.is_device:
+        return Actor(user_id=principal.user_id)
+    shift = current_shift(principal.device)
+    if shift is None:
+        db.session.commit()  # keep the IDLE close the lookup just made
+        raise InventoryError("Pick your name first.")
+    return Actor(shift_id=shift.id, device_id=principal.device.id)
+
+
+def who_text() -> str:
+    """Short label for the page header: the volunteer's name, or the signed-in user."""
+    principal = g.scan_principal
+    if not principal.is_device:
+        user = get_user_ctx().user
+        return (user.display_name if user else None) or principal.user_id
+    shift = current_shift(principal.device)
+    return shift.person_name if shift else "No name picked"
 
 
 def device_api(f):

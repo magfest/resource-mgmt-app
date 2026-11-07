@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who is scanning</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 16px; }
+  .name { display: block; width: 100%; font-size: 1.5rem; padding: 18px; margin: 0 0 12px; }
+  #other-field { display: none; }
+  #other-field input { font-size: 1.5rem; padding: 12px; width: 100%; box-sizing: border-box; }
+</style></head>
+<body>
+  <h1>Who is scanning?</h1>
+  {% if not is_device %}
+    <p>You are signed in as {{ who }}. Shared scanners ask for a name; you do not need one.</p>
+    <p><a href="{{ url_for('inventory.scan_home') }}">Back to the scanner</a></p>
+  {% else %}
+    <p id="message" role="alert"></p>
+    {% for name in names %}
+      <button type="button" class="name" data-name="{{ name }}">{{ name }}</button>
+    {% endfor %}
+    <button type="button" class="name" id="other-btn">Someone else</button>
+    <form id="other-field">
+      <label for="other-name">Your name</label>
+      <input id="other-name" type="text" maxlength="64" autocomplete="off">
+      <button type="submit" class="name">Start</button>
+    </form>
+    <script nonce="{{ csp_nonce }}">
+      (function () {
+        var message = document.getElementById('message');
+        function start(name) {
+          fetch({{ url_for('inventory.scan_shift_start')|tojson }}, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({person_name: name})
+          }).then(function (r) { return r.json(); }).then(function (d) {
+            if (d.ok) { window.location.href = {{ url_for('inventory.scan_home')|tojson }}; }
+            else { message.textContent = d.message; }
+          }).catch(function () { message.textContent = 'Could not reach the server. Try again.'; });
+        }
+        document.querySelectorAll('button[data-name]').forEach(function (b) {
+          b.addEventListener('click', function () { start(b.dataset.name); });
+        });
+        var field = document.getElementById('other-field');
+        document.getElementById('other-btn').addEventListener('click', function () {
+          field.style.display = 'block';
+          document.getElementById('other-name').focus();
+        });
+        field.addEventListener('submit', function (e) {
+          e.preventDefault();
+          start(document.getElementById('other-name').value);
+        });
+      })();
+    </script>
+  {% endif %}
+</body></html>
