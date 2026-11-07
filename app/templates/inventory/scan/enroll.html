@@ -1,26 +1,17 @@
-{% extends "layout/base.html" %}
-{% block title %}Enroll scanner - Inventory{% endblock %}
-{% block content %}
-<h1>Make this a shared scanner</h1>
-<div class="muted mb-16">
-  Do this on the CT60 itself. Enrolling signs you out of this browser, so the
-  scanner never holds your admin session. Volunteers then pick their name on it.
-</div>
-<form method="post" action="{{ url_for('inventory.scan_enroll_post') }}" class="card">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Scanner name <input type="text" name="name" required maxlength="64" placeholder="Scanner 3"></label>
-  <label>Home container label (optional)
-    <input type="text" name="home_container_code" maxlength="32" autocapitalize="characters">
-  </label>
-  <div class="muted">New containers made at this scanner are placed in the home container.</div>
-  <div class="mb-16">
-    {% for code in stations %}
-    <button type="submit" name="station_code" value="{{ code }}"
-            class="btn {{ 'btn-primary' if code == default_station else '' }}"
-            style="display: block; width: 100%; padding: 16px; margin-top: 8px; font-size: 1.1rem;">
-      Enroll as {{ station_names[code] }}
-    </button>
-    {% endfor %}
-  </div>
-</form>
-{% endblock %}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enroll scanner</title></head>
+<body style="font-family: system-ui, sans-serif; padding: 16px;">
+  <h1>Make this a shared scanner</h1>
+  <p>Ask an inventory admin for an enrollment code.</p>
+  {% if error %}<p role="alert" style="color: #b00020;">{{ error }}</p>{% endif %}
+  <form method="post" action="{{ url_for('inventory.scan_enroll_post') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Enrollment code<br>
+      <input type="text" name="code" required maxlength="16" autocomplete="off"
+             autocapitalize="characters" autocorrect="off" spellcheck="false"
+             style="font-size: 1.6rem; letter-spacing: 0.1em; width: 100%; box-sizing: border-box;">
+    </label>
+    <button type="submit" style="display: block; width: 100%; padding: 16px; margin-top: 12px; font-size: 1.1rem;">Enroll</button>
+  </form>
+</body></html>

@@ -19,11 +19,13 @@ def make_container(inv, label_code, kind="PALLET", parent=None, name=None):
 
 
 def enrolled_client(client, name="Scanner 1", station_code="LOOKUP"):
-    """Enroll a device and leave the client holding only its cookie."""
-    from app.inventory.devices import COOKIE_NAME, enroll_device
-    device, raw = enroll_device(name, "test:invadmin", station_code=station_code)
+    """Enroll a device through the real code form; the client keeps only its cookie."""
+    from app.inventory.devices import create_enroll_code
+    from app.models import InvEnrollCode
+    raw = create_enroll_code(name, "test:invadmin", station_code=station_code)
     db.session.commit()
     with client.session_transaction() as sess:
         sess.clear()
-    client.set_cookie(COOKIE_NAME, raw, path="/inv/scan/")
-    return device
+    response = client.post("/inv/scan/enroll", data={"code": raw})
+    assert response.status_code == 302, response.get_data(as_text=True)
+    return db.session.query(InvEnrollCode).one().device

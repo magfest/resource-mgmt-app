@@ -9,9 +9,8 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit">Forget this scanner</button>
     </form>
-  {% elif can_enroll %}
-    <p><a href="{{ url_for('inventory.scan_enroll') }}">Enroll this device as a shared scanner</a></p>
   {% else %}
-    <p>Ask an inventory lead to enroll it, or <a href="{{ url_for('auth.login_page') }}">sign in</a> if you are an operator.</p>
+    <p><a href="{{ url_for('inventory.scan_enroll') }}">Enroll this device as a shared scanner</a>
+      with a code from an inventory admin, or <a href="{{ url_for('auth.login_page') }}">sign in</a> if you are an operator.</p>
   {% endif %}
 </body></html>

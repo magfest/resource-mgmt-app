@@ -1,8 +1,8 @@
 """Shared scanners: list with last-seen time, change station, revoke."""
-from flask import flash, redirect, request, url_for
+from flask import flash, make_response, redirect, request, url_for
 
 from app import db
-from app.inventory.devices import revoke_device, set_station
+from app.inventory.devices import create_enroll_code, revoke_device, set_station
 from app.inventory.ledger import InventoryError
 from app.models import InvDevice
 from app.models.constants import INV_STATION_NAMES, INV_STATIONS
@@ -17,10 +17,34 @@ from .scan_pages import home_container_from_form
 @inventory_bp.get("/admin/devices")
 @require_inventory_admin
 def devices():
+    return _render_devices()
+
+
+def _render_devices(new_code=None):
     rows = db.session.query(InvDevice).order_by(InvDevice.revoked_at.isnot(None),
                                                 InvDevice.name).all()
     return render_inventory_page("inventory/devices.html", devices=rows,
-                                 stations=INV_STATIONS, station_names=INV_STATION_NAMES)
+                                 stations=INV_STATIONS, station_names=INV_STATION_NAMES,
+                                 new_code=new_code)
+
+
+@inventory_bp.post("/admin/devices/codes")
+@require_inventory_admin
+def device_code():
+    """Create an enrollment code and show it once, on this response only."""
+    try:
+        code = create_enroll_code(
+            request.form.get("name"), get_user_ctx().user_id,
+            station_code=request.form.get("station_code", ""),
+            home_container=home_container_from_form())
+    except InventoryError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("inventory.devices"))
+    db.session.commit()
+    response = make_response(_render_devices(new_code=code))
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @inventory_bp.post("/admin/devices/<int:device_id>/station")

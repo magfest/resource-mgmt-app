@@ -1,7 +1,7 @@
 """Add the inventory print queue and item totals
 
 Creates printers, job-type routes, print jobs (queue and history in one
-table) and typed item totals. No reference rows are seeded; an inventory
+table), typed item totals and device enrollment codes. No reference rows are seeded; an inventory
 admin sets printers and routes. station_code is free text, so the new PRINT
 and RECEIVE stations need no schema change.
 
@@ -95,7 +95,28 @@ def upgrade():
         sa.Column("set_at", sa.DateTime(), nullable=False),
     )
 
+    op.create_table(
+        "inv_enroll_codes",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("code_hash", sa.String(64), nullable=False, unique=True),
+        sa.Column("name", sa.String(64), nullable=False),
+        sa.Column("station_code", sa.String(16), nullable=False),
+        sa.Column("home_container_id", sa.Integer(),
+                  sa.ForeignKey("inv_containers.id",
+                                name="fk_inv_enroll_codes_home_container_id"),
+                  nullable=True),
+        sa.Column("created_by_user_id", sa.String(64),
+                  sa.ForeignKey("users.id", name="fk_inv_enroll_codes_created_by"),
+                  nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("expires_at", sa.DateTime(), nullable=False),
+        sa.Column("used_at", sa.DateTime(), nullable=True),
+        sa.Column("device_id", sa.Integer(),
+                  sa.ForeignKey("inv_devices.id", name="fk_inv_enroll_codes_device_id"),
+                  nullable=True),
+    )
+
 
 def downgrade():
-    for table in ("inv_item_totals", "inv_print_jobs", "inv_print_routes", "inv_printers"):
+    for table in ("inv_enroll_codes", "inv_item_totals", "inv_print_jobs", "inv_print_routes", "inv_printers"):
         op.drop_table(table)

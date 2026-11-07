@@ -207,6 +207,38 @@ class InvDevice(db.Model):
     home_container = db.relationship("InvContainer")
 
 
+class InvEnrollCode(db.Model):
+    """A one-time code an admin creates so a shared device can enroll itself.
+
+    Only the SHA-256 of the code is stored. The device that redeems it is
+    created with the name, station and home container held here.
+    """
+    __tablename__ = "inv_enroll_codes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code_hash = db.Column(db.String(64), unique=True, nullable=False)
+    name = db.Column(db.String(64), nullable=False)
+    station_code = db.Column(db.String(16), nullable=False)
+    home_container_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_containers.id", name="fk_inv_enroll_codes_home_container_id"),
+        nullable=True,
+    )
+    created_by_user_id = db.Column(
+        db.String(64), db.ForeignKey("users.id", name="fk_inv_enroll_codes_created_by"),
+        nullable=False,
+    )
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    device_id = db.Column(
+        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_enroll_codes_device_id"),
+        nullable=True,
+    )
+
+    device = db.relationship("InvDevice", foreign_keys=[device_id])
+
+
 class InvShift(db.Model):
     """One volunteer's shift on one shared device.
 

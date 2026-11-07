@@ -2,11 +2,34 @@
 {% block title %}Scanners - Inventory{% endblock %}
 {% block content %}
 <h1>Shared scanners</h1>
-<div class="muted mb-16">
-  To enroll a CT60, sign in on it as an inventory admin and open
-  <code>{{ url_for('inventory.scan_enroll', _external=True) }}</code>. Revoke a
-  lost scanner here; its next scan is refused.
+{% if new_code %}
+<div class="card mb-16" role="status">
+  <div class="muted">Enrollment code</div>
+  <div style="font-size: 2.5rem; font-weight: 700; letter-spacing: 0.1em; font-family: monospace;">{{ new_code }}</div>
+  <div>Type this on the device within 10 minutes. It works once.</div>
+  <div class="muted">This code is not shown again.</div>
 </div>
+{% endif %}
+<div class="muted mb-16">
+  To enroll a scanner, create a code here, then open
+  <code>{{ url_for('inventory.scan_enroll', _external=True) }}</code> on the
+  device and type it. Revoke a lost scanner here; its next scan is refused.
+</div>
+<form method="post" action="{{ url_for('inventory.device_code') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Scanner name <input type="text" name="name" required maxlength="64" placeholder="Scanner 3"></label>
+  <label>Station
+    <select name="station_code">
+      {% for code in stations %}
+      <option value="{{ code }}" {{ 'selected' if code == 'LOOKUP' }}>{{ station_names[code] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Home container label (optional)
+    <input type="text" name="home_container_code" maxlength="32" autocapitalize="characters">
+  </label>
+  <button type="submit" class="btn btn-primary">Create enrollment code</button>
+</form>
 <table>
   <thead><tr><th>Name</th><th>Station</th><th>Home container</th><th>Enrolled</th><th>Last seen (UTC)</th><th>Status</th><th></th></tr></thead>
   <tbody>

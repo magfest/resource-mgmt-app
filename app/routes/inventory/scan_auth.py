@@ -15,7 +15,7 @@ from app.inventory.devices import COOKIE_NAME, device_for_token
 from app.models import InvDevice
 from app.routes import get_user_ctx
 
-from .helpers import is_inventory_admin, is_inventory_operator
+from .helpers import is_inventory_operator
 
 
 @dataclass
@@ -48,11 +48,9 @@ def require_scanner(f):
         if principal is None:
             if request.path.startswith("/inv/scan/api/"):
                 return jsonify(ok=False, message="This scanner is not signed in. Reload the page."), 403
-            user_ctx = get_user_ctx()
             return render_template(
                 "inventory/scan/not_enrolled.html",
-                has_cookie=bool(request.cookies.get(COOKIE_NAME)),
-                can_enroll=bool(user_ctx.user_id) and is_inventory_admin(user_ctx)), 403
+                has_cookie=bool(request.cookies.get(COOKIE_NAME))), 403
         if principal.is_device:
             db.session.commit()  # persists the throttled last_seen_at
         g.scan_principal = principal
