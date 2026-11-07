@@ -31,6 +31,16 @@ from .helpers import (
 )
 
 BROWSER_PRINT_ORIGINS = ["http://localhost:9100", "https://localhost:9101"]
+# send_token and "-<n>" must fit InvPrintJob.client_request_id, a String(64).
+_TOKEN_MAX = 40
+
+
+def _send_token() -> str:
+    """Return the form's send token, or a fresh one when it is missing or malformed."""
+    token = (request.form.get("send_token") or "").strip()
+    if token and len(token) <= _TOKEN_MAX and token.isalnum() and token.isascii():
+        return token
+    return secrets.token_hex(8)
 
 
 def _dpi() -> int:
@@ -95,8 +105,10 @@ def _spec_for(code: str) -> LabelSpec | None:
     return found.spec() if found else None
 
 
-def _sort_codes(raw: str, find) -> tuple[list[_Found], list[str], list[str]]:
-    """Sort typed codes into labels, codes with no record, and codes no barcode can hold.
+def _sort_codes(raw: str, find) -> tuple[list[_Found], list[str], list[str], list[str]]:
+    """Sort typed codes into labels, codes with no record, codes no barcode can hold, and overflow.
+
+    Labels past MAX_BATCH are returned as overflow codes, not dropped.
 
     Tags have no fixed format, so one long tag must not stop the rest of a batch.
     """
@@ -112,23 +124,24 @@ def _sort_codes(raw: str, find) -> tuple[list[_Found], list[str], list[str]]:
             found.append(hit)
         else:
             unprintable.append(hit.code)
-    return found[:MAX_BATCH], unknown, unprintable
+    return found[:MAX_BATCH], unknown, unprintable, [f.code for f in found[MAX_BATCH:]]
 
 
-def _specs_from_codes(raw: str) -> tuple[list[LabelSpec], list[str], list[str]]:
-    found, unknown, unprintable = _sort_codes(raw, _find)
-    return [f.spec() for f in found], unknown, unprintable
+def _specs_from_codes(raw: str):
+    found, unknown, unprintable, overflow = _sort_codes(raw, _find)
+    return [f.spec() for f in found], unknown, unprintable, overflow
 
 
-def _batch_page(specs, dpi, unknown=(), unprintable=()):
+def _batch_page(specs, dpi, unknown=(), unprintable=(), overflow=()):
     g.csp_connect_src_extra = BROWSER_PRINT_ORIGINS
     return render_inventory_page("inventory/label_batch.html", specs=specs, dpi=dpi,
                                  zpl=render_batch(specs, dpi), unknown=unknown,
-                                 unprintable=unprintable)
+                                 unprintable=unprintable, overflow=overflow,
+                                 max_batch=MAX_BATCH, send_token=secrets.token_hex(8))
 
 
 @inventory_bp.get("/admin/labels")
-@require_inventory_admin
+@require_inventory_operator
 def labels():
     g.csp_connect_src_extra = BROWSER_PRINT_ORIGINS
     return render_inventory_page("inventory/labels.html", max_batch=MAX_BATCH,
@@ -149,39 +162,52 @@ def new_labels():
 
 
 @inventory_bp.post("/admin/labels/reprint")
-@require_inventory_admin
+@require_inventory_operator
 def reprint_labels():
-    specs, unknown, unprintable = _specs_from_codes(request.form.get("codes"))
-    return _batch_page(specs, _dpi(), unknown, unprintable)
+    specs, unknown, unprintable, overflow = _specs_from_codes(request.form.get("codes"))
+    return _batch_page(specs, _dpi(), unknown, unprintable, overflow)
 
 
 @inventory_bp.post("/admin/labels/queue")
 @require_inventory_operator
 def queue_labels():
-    """Queue one print job per code. A missing route queues nothing."""
-    found, unknown, unprintable = _sort_codes(request.form.get("codes"), _find_or_reserved)
-    if unknown:
-        flash(f"Not queued, these codes were never issued or no record holds them: "
-              f"{', '.join(unknown)}", "warning")
-    if unprintable:
-        flash(f"Not queued, a barcode cannot hold these codes: {', '.join(unprintable)}",
-              "warning")
+    """Queue one print job per code. A missing route queues nothing.
+
+    A repeated send_token returns the jobs of the first send.
+    """
+    found, unknown, unprintable, overflow = _sort_codes(request.form.get("codes"),
+                                                        _find_or_reserved)
+
+    def flash_skipped():
+        if unknown:
+            flash(f"Not queued, these codes were never issued or no record holds them: "
+                  f"{', '.join(unknown)}", "warning")
+        if unprintable:
+            flash(f"Not queued, a barcode cannot hold these codes: {', '.join(unprintable)}",
+                  "warning")
+        if overflow:
+            flash(f"Not queued, over the limit of {MAX_BATCH}: {', '.join(overflow)}", "warning")
+
     if not found:
+        flash_skipped()
         flash("Nothing to queue.", "error")
         return redirect(url_for("inventory.print_queue"))
+    token = _send_token()
     batch_id = secrets.token_hex(8)
     actor = admin_actor()
     try:
-        for hit in found:
+        for n, hit in enumerate(found):
             request_label(hit.job_type, hit.code, hit.fields, actor, INV_JOB_SOURCE_BATCH,
                           printed_date=local_today() if hit.unit else None,
-                          unit=hit.unit, container=hit.container, batch_id=batch_id)
+                          unit=hit.unit, container=hit.container, batch_id=batch_id,
+                          client_request_id=f"{token}-{n}")
     except InventoryError as exc:
         db.session.rollback()
         flash(str(exc), "error")
-        # Show the batch again; a reserved code has no record to reprint it from.
-        return _batch_page([f.spec() for f in found], _dpi(), unknown, unprintable)
+        # Show the batch again; its cards already name the codes that were skipped.
+        return _batch_page([f.spec() for f in found], _dpi(), unknown, unprintable, overflow)
     db.session.commit()
+    flash_skipped()
     flash(f"Sent {len(found)} label{'' if len(found) == 1 else 's'} to the print queue.",
           "success")
     return redirect(url_for("inventory.print_queue"))

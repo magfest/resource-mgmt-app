@@ -104,3 +104,21 @@ def test_a_tag_no_barcode_can_hold_does_not_stop_the_batch(client, inv):
     assert "^FDGOOD1^FS" in html
     assert "a barcode cannot hold these codes" in html
     assert "A" * 21 in html and f"^FD{'A' * 21}" not in html
+
+
+def test_an_operator_can_reprint_and_send_but_not_reserve_new_labels(client, inv):
+    make_container(inv, "C-0001", name="Main Warehouse", kind="LOCATION")
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get("/inv/admin/labels")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "Reprint" in html and "Reserve and show" not in html
+    batch = client.post("/inv/admin/labels/reprint", data={"codes": "C-0001"})
+    assert batch.status_code == 200
+    assert "Send to print queue" in batch.get_data(as_text=True)
+    assert client.post("/inv/admin/labels/new", data={"prefix": "U", "count": "1"}).status_code == 403
+    home = client.get("/inv/").get_data(as_text=True)
+    assert "/inv/admin/labels" in home and "/inv/admin/print-queue" in home
+    login(client, "test:invadmin")
+    assert "Reserve and show" in client.get("/inv/admin/labels").get_data(as_text=True)

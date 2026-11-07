@@ -8,10 +8,15 @@
 {% if unprintable %}
 <div class="card mb-16"><strong>Not printed, a barcode cannot hold these codes:</strong> {{ unprintable|join(', ') }}</div>
 {% endif %}
+{% if overflow %}
+<div class="card mb-16"><strong>Not printed, over the limit of {{ max_batch }}:</strong> {{ overflow|join(', ') }}</div>
+{% endif %}
 {% if specs %}
 <form method="post" action="{{ url_for('inventory.queue_labels') }}" class="mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="codes" value="{{ specs|map(attribute='code')|join('\n') }}">
+  <input type="hidden" name="send_token" value="{{ send_token }}">
+  <input type="hidden" name="dpi" value="{{ dpi }}">
   <button type="submit" class="btn btn-primary">Send to print queue</button>
 </form>
 <div class="mb-16">

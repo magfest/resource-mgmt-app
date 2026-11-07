@@ -23,6 +23,9 @@
   <label>Station
     <select name="device_id">
       <option value="">No station</option>
+      {% if p and p.device_id and p.device_id not in stations|map(attribute='id')|list %}
+      <option value="{{ p.device_id }}" selected>{{ p.device.name }} (not an active print station)</option>
+      {% endif %}
       {% for d in stations %}<option value="{{ d.id }}" {{ 'selected' if p and p.device_id == d.id }}>{{ d.name }}</option>{% endfor %}
     </select>
   </label>

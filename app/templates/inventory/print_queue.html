@@ -29,6 +29,7 @@
         {% if j.status == failed %}
         <form method="post" action="{{ url_for('inventory.reprint_job', job_id=j.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="page_token" value="{{ page_token }}">
           <button type="submit" class="btn btn-small">Reprint</button>
         </form>
         {% elif j.status == queued and is_inv_admin %}

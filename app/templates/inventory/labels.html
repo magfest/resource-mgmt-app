@@ -9,7 +9,7 @@
   rental and smooth gear, and permanent stock for containers; removable stock does not hold on recycled cardboard.
   The first print from a laptop makes Browser Print ask to accept this site; accept it once.
 </div>
-{% set new_form %}
+{% set new_form %}{% if is_inv_admin %}
 <form method="post" action="{{ url_for('inventory.new_labels') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <strong>New labels</strong>
@@ -28,7 +28,7 @@
   </div>
   <button type="submit" class="btn btn-primary">Reserve and show</button>
 </form>
-{% endset %}
+{% endif %}{% endset %}
 {% set reprint_form %}
 <form method="post" action="{{ url_for('inventory.reprint_labels') }}" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -1,7 +1,8 @@
 """The print station page and the JSON a station polls.
 
 The station is an enrolled PRINT device, not a user. Nothing here reads or
-creates a user session, so the page keeps working past any login timeout.
+creates a user session, and polling never renews one, so the page keeps working
+past any login timeout.
 """
 from datetime import datetime, timedelta
 
@@ -17,7 +18,21 @@ from .scan_auth import device_api, require_print_station
 
 BROWSER_PRINT_ORIGIN = "http://localhost:9100"
 FAILURE_WINDOW = timedelta(hours=1)
-CANNOT_RENDER = "This code cannot be printed as a barcode."
+RENDER_FAILED = "This label could not be rendered."
+MAX_JOB_ID = 2**63 - 1
+
+
+def _skip_ids(data) -> list[int]:
+    """Return the printer ids a station says are still sending; ignore anything else."""
+    raw = data.get("skip_printer_ids") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+    return [v for v in raw if isinstance(v, int) and not isinstance(v, bool)]
+
+
+def _refuse():
+    # 409, not 404: the app's flood blocker counts 404s per IP.
+    return jsonify(ok=False, message="No such job."), 409
 
 
 @inventory_bp.get("/scan/print/station")
@@ -54,14 +69,18 @@ def _printer_rows(device) -> list[dict]:
 @require_print_station
 def print_collect():
     device = g.scan_principal.device
+    skip = _skip_ids(request.get_json(silent=True))
     try:
-        jobs, out = collect_jobs(device), []
+        jobs, out = collect_jobs(device, skip_printer_ids=skip), []
         for job in jobs:
             try:
-                out.append({"id": job.id, "device_name": job.printer.device_name,
+                out.append({"id": job.id, "printer_id": job.printer_id,
+                            "device_name": job.printer.device_name,
                             "zpl": render_job(job)})
-            except ValueError:
-                report_job(job, False, CANNOT_RENDER)
+            except ValueError as exc:
+                report_job(job, False, str(exc))
+            except Exception:
+                report_job(job, False, RENDER_FAILED)
         printers = _printer_rows(device)
         db.session.commit()
     except Exception:
@@ -74,13 +93,16 @@ def print_collect():
 @device_api
 @require_print_station
 def print_report():
-    data = request.get_json(silent=True) or {}
-    job = db.session.get(InvPrintJob, data.get("job_id")) if isinstance(
-        data.get("job_id"), int) else None
+    data = request.get_json(silent=True)
+    job_id = data.get("job_id") if isinstance(data, dict) else None
+    if (not isinstance(job_id, int) or isinstance(job_id, bool)
+            or not 1 <= job_id <= MAX_JOB_ID):
+        return _refuse()
+    job = db.session.get(InvPrintJob, job_id)
     if job is None or job.printer.device_id != g.scan_principal.device.id:
-        return jsonify(ok=False, message="No such job."), 404
+        return _refuse()
     try:
-        report_job(job, bool(data.get("ok")), str(data.get("error") or "") or None)
+        report_job(job, data.get("ok") is True, str(data.get("error") or "") or None)
         db.session.commit()
     except Exception:
         db.session.rollback()

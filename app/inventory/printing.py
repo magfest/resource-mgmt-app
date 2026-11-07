@@ -134,8 +134,11 @@ def _by_request_id(client_request_id: str) -> InvPrintJob | None:
         client_request_id=client_request_id).first()
 
 
-def collect_jobs(device, now: datetime | None = None) -> list[InvPrintJob]:
+def collect_jobs(device, now: datetime | None = None,
+                 skip_printer_ids=()) -> list[InvPrintJob]:
     """Claim up to COLLECT_LIMIT queued jobs for a station's active printers.
+
+    Printers in skip_printer_ids still have sends in flight and claim nothing.
 
     A claim with no report after CLAIM_TIMEOUT becomes FAILED. It is never
     requeued: the label may have printed, and a duplicate surprises a person.
@@ -157,9 +160,14 @@ def collect_jobs(device, now: datetime | None = None) -> list[InvPrintJob]:
         job.error = NO_REPORT
         job.finished_at = now
     # BATCH sorts before SCAN alphabetically, so the order cannot come from the column.
+    skip = set(skip_printer_ids)
+    claimable = [p.id for p in printers if p.is_active and p.id not in skip]
+    if not claimable:
+        db.session.flush()
+        return []
     scan_first = db.case((InvPrintJob.source == INV_JOB_SOURCE_SCAN, 0), else_=1)
     jobs = (db.session.query(InvPrintJob)
-            .filter(InvPrintJob.printer_id.in_([p.id for p in printers if p.is_active]),
+            .filter(InvPrintJob.printer_id.in_(claimable),
                     InvPrintJob.status == INV_JOB_QUEUED)
             .order_by(scan_first, InvPrintJob.created_at, InvPrintJob.id)
             .limit(COLLECT_LIMIT).with_for_update().populate_existing().all())

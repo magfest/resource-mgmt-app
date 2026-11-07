@@ -91,7 +91,7 @@ def test_report_finishes_only_this_stations_job(client, inv):
     other, _ = enroll_device("Other PC", "test:invadmin", station_code="PRINT")
     mine = _job(_printer(device), status=INV_JOB_CLAIMED)
     theirs = _job(_printer(other, "Zebra B"), "U-00009", INV_JOB_CLAIMED)
-    assert client.post(REPORT, json={"job_id": theirs.id, "ok": True}).status_code == 404
+    assert client.post(REPORT, json={"job_id": theirs.id, "ok": True}).status_code == 409
     assert db.session.get(InvPrintJob, theirs.id).status == INV_JOB_CLAIMED
     body = client.post(REPORT, json={"job_id": mine.id, "ok": True}).get_json()
     assert body["ok"] is True
@@ -107,7 +107,87 @@ def test_a_job_that_cannot_render_fails_and_the_rest_go_out(client, inv):
     assert [j["id"] for j in body["jobs"]] == [good.id]
     bad = db.session.get(InvPrintJob, bad.id)
     assert bad.status == INV_JOB_FAILED
-    assert bad.error == "This code cannot be printed as a barcode."
+    assert bad.error == "Label code 'badéé' cannot be printed as a barcode."
+
+
+def test_a_job_that_fails_to_render_for_another_reason_does_not_stop_the_rest(client, inv):
+    device = enrolled_client(client, station_code="PRINT")
+    printer = _printer(device)
+    broken = _job(printer, "U-00002")
+    broken.fields = {"rows": [None], "footer": None}
+    good = _job(printer, "U-00001")
+    body = client.post(COLLECT, json={}).get_json()
+    assert [j["id"] for j in body["jobs"]] == [good.id]
+    broken = db.session.get(InvPrintJob, broken.id)
+    assert broken.status == INV_JOB_FAILED
+    assert broken.error == "This label could not be rendered."
+
+
+def test_collect_skips_printers_still_sending(client, inv):
+    device = enrolled_client(client, station_code="PRINT")
+    busy, free = _printer(device, "Zebra A"), _printer(device, "Zebra B")
+    held = _job(busy, "U-00001")
+    taken = _job(free, "U-00002")
+    body = client.post(COLLECT, json={"skip_printer_ids": [busy.id]}).get_json()
+    assert [j["id"] for j in body["jobs"]] == [taken.id]
+    assert db.session.get(InvPrintJob, held.id).status == INV_JOB_QUEUED
+
+
+def test_collect_ignores_skip_values_that_are_not_ints(client, inv):
+    device = enrolled_client(client, station_code="PRINT")
+    job = _job(_printer(device))
+    for junk in ("x", {"a": 1}, [True, "1", None, 1.5, [2]], 7):
+        body = client.post(COLLECT, json={"skip_printer_ids": junk}).get_json()
+        assert body["ok"] is True
+        client.post(REPORT, json={"job_id": job.id, "ok": True})
+        db.session.get(InvPrintJob, job.id).status = INV_JOB_QUEUED
+        db.session.commit()
+    assert client.post(COLLECT, json=[1, 2]).get_json()["ok"] is True
+
+
+def test_the_stale_sweep_covers_a_skipped_printer(client, inv):
+    device = enrolled_client(client, station_code="PRINT")
+    printer = _printer(device)
+    stale = _job(printer, "U-00001", INV_JOB_CLAIMED)
+    stale.claimed_at = datetime.utcnow() - timedelta(minutes=5)
+    db.session.commit()
+    client.post(COLLECT, json={"skip_printer_ids": [printer.id]})
+    assert db.session.get(InvPrintJob, stale.id).status == INV_JOB_FAILED
+
+
+def test_report_refuses_bad_input_with_409_and_changes_nothing(client, inv):
+    device = enrolled_client(client, station_code="PRINT")
+    job = _job(_printer(device), status=INV_JOB_CLAIMED)
+    bodies = [[1], "x", {}, {"job_id": True, "ok": True}, {"job_id": 0, "ok": True},
+              {"job_id": 2**63, "ok": True}, {"job_id": str(job.id), "ok": True},
+              {"job_id": job.id + 1000, "ok": True}]
+    for body in bodies:
+        response = client.post(REPORT, json=body)
+        assert response.status_code == 409
+        assert response.get_json()["ok"] is False
+    assert client.post(REPORT, data="null", **JSON).status_code == 409
+    assert db.session.get(InvPrintJob, job.id).status == INV_JOB_CLAIMED
+
+
+def test_report_counts_ok_only_when_it_is_true(client, inv):
+    device = enrolled_client(client, station_code="PRINT")
+    job = _job(_printer(device), status=INV_JOB_CLAIMED)
+    assert client.post(REPORT, json={"job_id": job.id, "ok": "false"}).status_code == 200
+    assert db.session.get(InvPrintJob, job.id).status == INV_JOB_FAILED
+
+
+def test_station_polling_does_not_renew_a_user_session(client, inv):
+    enrolled_client(client, station_code="PRINT")
+    login(client, "test:invadmin")
+    response = client.post(COLLECT, json={})
+    assert response.status_code == 200
+    assert not [c for c in response.headers.getlist("Set-Cookie") if c.startswith("session=")]
+
+
+def test_an_ordinary_page_still_renews_the_session(client, inv):
+    login(client, "test:invadmin")
+    response = client.get("/inv/admin/kinds")
+    assert [c for c in response.headers.getlist("Set-Cookie") if c.startswith("session=")]
 
 
 def test_collect_needs_a_json_content_type(client, inv):

@@ -224,3 +224,116 @@ def test_reprint_goes_ahead_of_a_waiting_batch(client, inv):
     collected = collect_jobs(device)
     assert [j.code for j in collected][0] == "C-0002"
     assert [j.code for j in collected] == ["C-0002", "C-0001"]
+
+
+def test_sending_the_same_form_twice_queues_one_batch(client, inv):
+    printer = _printer()
+    _route(INV_JOB_CONTAINER, printer)
+    for n in (1, 2):
+        make_container(inv, f"C-000{n}", name=f"Bin {n}")
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.post("/inv/admin/labels/reprint", data={"codes": "C-0001\nC-0002"})
+    html = page.get_data(as_text=True)
+    assert 'name="send_token"' in html and 'name="dpi"' in html
+    token = html.split('name="send_token" value="')[1].split('"')[0]
+    form = {"codes": "C-0001\nC-0002", "send_token": token, "dpi": "203"}
+    for _ in range(2):
+        response = client.post(QUEUE_POST, data=form)
+        assert response.status_code == 302
+    jobs = db.session.query(InvPrintJob).all()
+    assert len(jobs) == 2
+    assert {j.client_request_id for j in jobs} == {f"{token}-0", f"{token}-1"}
+    client.post(QUEUE_POST, data={"codes": "C-0001\nC-0002"})
+    assert db.session.query(InvPrintJob).count() == 4
+
+
+def test_a_batch_over_the_limit_names_the_overflow(client, inv, monkeypatch):
+    monkeypatch.setattr("app.routes.inventory.admin_labels.MAX_BATCH", 2)
+    printer = _printer()
+    _route(INV_JOB_CONTAINER, printer)
+    for n in (1, 2, 3):
+        make_container(inv, f"C-000{n}")
+    db.session.commit()
+    login(client, "test:operator")
+    html = client.post("/inv/admin/labels/reprint",
+                       data={"codes": "C-0001\nC-0002\nC-0003"}).get_data(as_text=True)
+    assert "Not printed, over the limit of 2:" in html and "C-0003" in html
+    html = client.post(QUEUE_POST, data={"codes": "C-0001\nC-0002\nC-0003"},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "Sent 2 labels to the print queue." in html
+    assert "over the limit of 2: C-0003" in html
+
+
+def test_a_route_failure_does_not_repeat_the_skipped_codes_in_a_flash(client, inv):
+    make_container(inv, "C-0001")
+    db.session.commit()
+    login(client, "test:invadmin")
+    html = client.post(QUEUE_POST, data={"codes": "C-0001\nC-0999"}).get_data(as_text=True)
+    assert html.count("C-0999") == 1
+
+
+def test_reprinting_from_one_page_twice_makes_one_job(client, inv):
+    printer = _printer()
+    _route(INV_JOB_CONTAINER, printer)
+    old = InvPrintJob(printer_id=printer.id, job_type=INV_JOB_CONTAINER, code="C-0001",
+                      fields={"rows": [], "footer": None}, source=INV_JOB_SOURCE_BATCH,
+                      status=INV_JOB_FAILED, error="Jammed")
+    db.session.add(old)
+    db.session.commit()
+    login(client, "test:operator")
+    html = client.get("/inv/admin/print-queue").get_data(as_text=True)
+    token = html.split('name="page_token" value="')[1].split('"')[0]
+    url = f"/inv/admin/print-queue/{old.id}/reprint"
+    client.post(url, data={"page_token": token})
+    client.post(url, data={"page_token": token})
+    assert db.session.query(InvPrintJob).count() == 2
+    client.post(url, data={"page_token": "another"})
+    assert db.session.query(InvPrintJob).count() == 3
+
+
+def test_reprint_refuses_a_cancelled_job(client, inv):
+    printer = _printer()
+    _route(INV_JOB_CONTAINER, printer)
+    job = InvPrintJob(printer_id=printer.id, job_type=INV_JOB_CONTAINER, code="C-0001",
+                      fields={"rows": [], "footer": None}, source=INV_JOB_SOURCE_BATCH,
+                      status=INV_JOB_CANCELLED)
+    db.session.add(job)
+    db.session.commit()
+    login(client, "test:operator")
+    client.post(f"/inv/admin/print-queue/{job.id}/reprint")
+    assert db.session.query(InvPrintJob).count() == 1
+
+
+def test_a_printer_keeps_a_station_that_is_no_longer_active(client, inv):
+    from datetime import datetime
+    device = _station()
+    printer = _printer(device=device)
+    device.revoked_at = datetime.utcnow()
+    db.session.commit()
+    login(client, "test:invadmin")
+    html = client.get(PRINTERS).get_data(as_text=True)
+    assert f"{device.name} (not an active print station)" in html
+    response = client.post(PRINTERS, data=_form(
+        device, printer_id=str(printer.id), name="Renamed", device_name=printer.device_name))
+    assert response.status_code == 302
+    db.session.expire_all()
+    printer = db.session.get(InvPrinter, printer.id)
+    assert printer.name == "Renamed" and printer.device_id == device.id
+
+
+def test_a_station_needs_a_device_name_and_two_printers_cannot_share_one(client, inv):
+    device = _station()
+    db.session.commit()
+    login(client, "test:invadmin")
+    html = client.post(PRINTERS, data=_form(device, device_name=""),
+                       follow_redirects=True).get_data(as_text=True)
+    assert "Enter the device name" in html
+    assert db.session.query(InvPrinter).count() == 0
+    client.post(PRINTERS, data=_form(device))
+    html = client.post(PRINTERS, data=_form(device, name="Zebra C"),
+                       follow_redirects=True).get_data(as_text=True)
+    assert "already uses that device name" in html
+    assert db.session.query(InvPrinter).count() == 1
+    client.post(PRINTERS, data=_form(device, name="Zebra D", device_name="Other"))
+    assert db.session.query(InvPrinter).count() == 2

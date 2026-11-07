@@ -4,6 +4,8 @@ Heroku cannot reach the warehouse network, so jobs wait here until a print
 station collects them. A printer record names the station and the name Browser
 Print knows the printer by.
 """
+import secrets
+
 from flask import flash, redirect, request, url_for
 
 from app import db
@@ -13,7 +15,7 @@ from app.inventory.zpl import SUPPORTED_DPI, SUPPORTED_SIZES
 from app.models import InvDevice, InvPrinter, InvPrintJob, InvPrintRoute, User
 from app.models.constants import (
     INV_JOB_CLAIMED, INV_JOB_FAILED, INV_JOB_CONTAINER, INV_JOB_ITEM, INV_JOB_OWNED_UNIT,
-    INV_JOB_QUEUED, INV_JOB_RENTED_UNIT, INV_JOB_SOURCE_SCAN, INV_STATION_PRINT,
+    INV_JOB_QUEUED, INV_JOB_RENTED_UNIT, INV_JOB_SENT, INV_JOB_SOURCE_SCAN, INV_STATION_PRINT,
 )
 
 from . import inventory_bp
@@ -26,6 +28,16 @@ ROUTE_TYPES = (
     (INV_JOB_CONTAINER, "Container"), (INV_JOB_ITEM, "Item type"),
 )
 QUEUE_LIMIT = 200
+# "reprint-<job id>-<token>" must fit InvPrintJob.client_request_id, a String(64).
+_TOKEN_MAX = 32
+
+
+def _page_token() -> str:
+    """Return the queue page's token, or a fresh one when it is missing or malformed."""
+    token = (request.form.get("page_token") or "").strip()
+    if token and len(token) <= _TOKEN_MAX and token.isalnum() and token.isascii():
+        return token
+    return secrets.token_hex(8)
 
 
 def _size_value(size) -> str:
@@ -60,8 +72,21 @@ def _fill_printer(printer: InvPrinter) -> None:
     if len(device_name) > 128:
         raise InventoryError("The device name is limited to 128 characters.")
     device_id = request.form.get("device_id", type=int)
-    if device_id is not None and device_id not in {d.id for d in _print_stations()}:
+    # A printer keeps a station that was revoked since; only a change must pick an active one.
+    if (device_id is not None and device_id != printer.device_id
+            and device_id not in {d.id for d in _print_stations()}):
         raise InventoryError("Choose an active print station.")
+    if device_id is not None:
+        if not device_name:
+            raise InventoryError("Enter the device name when a station is set.")
+        twin = db.session.query(InvPrinter).filter(
+            InvPrinter.device_id == device_id, InvPrinter.device_name == device_name)
+        if printer.id is not None:
+            twin = twin.filter(InvPrinter.id != printer.id)
+        other = twin.first()
+        if other is not None:
+            raise InventoryError(
+                f"{other.name} already uses that device name on this station.")
     printer.name, printer.dpi = name, dpi
     printer.width_in, printer.height_in = size
     printer.stock = stock or None
@@ -152,7 +177,7 @@ def print_queue():
     return render_inventory_page(
         "inventory/print_queue.html", jobs=jobs, users=users,
         statuses=[(p, printer_status(p)) for p in printers_ if p.is_active],
-        queued=INV_JOB_QUEUED, failed=INV_JOB_FAILED)
+        queued=INV_JOB_QUEUED, failed=INV_JOB_FAILED, page_token=secrets.token_hex(8))
 
 
 @inventory_bp.post("/admin/print-queue/<int:job_id>/reprint")
@@ -163,12 +188,13 @@ def reprint_job(job_id: int):
     if job is None:
         flash("That label does not exist.", "error")
         return redirect(url_for("inventory.print_queue"))
-    if job.status in (INV_JOB_QUEUED, INV_JOB_CLAIMED):
-        flash("That label is still waiting or printing.", "error")
+    if job.status not in (INV_JOB_FAILED, INV_JOB_SENT):
+        flash("Only a failed or sent label can be printed again.", "error")
         return redirect(url_for("inventory.print_queue"))
     try:
         request_label(job.job_type, job.code, job.fields, admin_actor(), INV_JOB_SOURCE_SCAN,
-                      printed_date=job.printed_date, unit=job.unit, container=job.container)
+                      printed_date=job.printed_date, unit=job.unit, container=job.container,
+                      client_request_id=f"reprint-{job.id}-{_page_token()}")
     except InventoryError as exc:
         db.session.rollback()
         flash(str(exc), "error")

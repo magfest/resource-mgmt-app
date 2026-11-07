@@ -5,7 +5,8 @@ import os
 import secrets as stdlib_secrets  # Avoid conflict with app.secrets
 import threading
 from datetime import timedelta
-from flask import Flask, session, render_template, g
+from flask import Flask, session, render_template, g, request
+from flask.sessions import SecureCookieSessionInterface
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
@@ -19,8 +20,19 @@ csrf = CSRFProtect()
 KNOWN_APP_ENVS = ("production", "development", "testing")
 
 
+class _SessionInterface(SecureCookieSessionInterface):
+    """Session cookies, except that print station polling never renews one."""
+
+    def should_set_cookie(self, app, session):
+        # Station polling runs for days and must not extend a user's login.
+        if request.path.startswith("/inv/scan/print/"):
+            return False
+        return super().should_set_cookie(app, session)
+
+
 def create_app() -> Flask:
     app = Flask(__name__, instance_relative_config=True)
+    app.session_interface = _SessionInterface()
     os.makedirs(app.instance_path, exist_ok=True)
 
     # --- AWS Secrets Manager (optional) ---
@@ -370,8 +382,9 @@ def create_app() -> Flask:
             "base-uri 'self'",
             "object-src 'none'",
         ]
-        # Zebra Browser Print listens on localhost. Only the labels page opts
-        # in; every other page keeps default-src 'self' for fetches.
+        # Zebra Browser Print listens on localhost. The print station, the labels
+        # page, and the label batch page opt in; every other page keeps
+        # default-src 'self' for fetches.
         connect_extra = getattr(g, "csp_connect_src_extra", None)
         if connect_extra:
             csp_directives.append("connect-src 'self' " + " ".join(connect_extra))
