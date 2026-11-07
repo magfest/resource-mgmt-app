@@ -159,7 +159,8 @@
   }
 
   function render() {
-    S.setFlagSubject(last ? {unitId: last.unit_id, label: last.code} : null);
+    // Setup offers nothing to flag; only the scanning loop does.
+    S.setFlagSubject(running && last ? {unitId: last.unit_id, label: last.code} : null);
     if (running) { renderLoop(); } else { renderSetup(); }
   }
 

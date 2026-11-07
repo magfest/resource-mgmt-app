@@ -590,6 +590,7 @@
 
   panel.addEventListener('click', function () { if (check) { keepAlive.tap(); } });
   setInterval(function () { if (check) { keepAlive.check(); } }, 60 * 1000);
+  S.onActivity(function () { if (check) { keepAlive.tap(); } });
   S.holdLeave(function () { return !!check; });
   S.start({station: cfg.station, onScan: onScan});
   render();

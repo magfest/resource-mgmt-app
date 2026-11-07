@@ -31,6 +31,7 @@
     cancelled: 'Not saved.',
     blockedDone: 'A scan is not saved yet. Try again or cancel it first.',
     finishField: 'Finish or cancel the open field first.',
+    lastScan: 'Wait for the last scan to finish.',
     leaveUnsent: 'Your work on this screen is not submitted. Leave and lose it?'
   };
 
@@ -235,7 +236,31 @@
     return answer.station_seen === false || answer.waiting > WAIT_ABOVE;
   }
 
-  var pure = {printerWaiting: printerWaiting, createCapture: createCapture, createRepeatGuard: createRepeatGuard,
+  // While the flag flow owns the screen, a station prompt is held and only the latest one
+  // draws when the flow closes. draw(fn, fromFlow) runs fn now and returns true, or holds it.
+  function createPromptGate() {
+    var open = false;
+    var held = null;
+    return {
+      open: function () { open = true; held = null; },
+      close: function () { var fn = held; open = false; held = null; return fn; },
+      isOpen: function () { return open; },
+      draw: function (fn, fromFlow) {
+        if (open && !fromFlow) { held = fn; return false; }
+        fn();
+        return true;
+      }
+    };
+  }
+
+  // A scan sounds ok only when it moved the flag flow from a scan step to a pick step.
+  function flagScanSound(before, after) {
+    var waiting = before === 'offer' || before === 'scan';
+    return waiting && (after === 'reason' || after === 'choices') ? 'ok' : 'error';
+  }
+
+  var pure = {printerWaiting: printerWaiting, createPromptGate: createPromptGate,
+              flagScanSound: flagScanSound, createCapture: createCapture, createRepeatGuard: createRepeatGuard,
               createScanQueue: createScanQueue, createWriteQueue: createWriteQueue,
               createPauseWatch: createPauseWatch, interpretResponse: interpretResponse,
               MESSAGES: MESSAGES, esc: esc, IDLE_MS: IDLE_MS, REPEAT_MS: REPEAT_MS};
@@ -259,6 +284,9 @@
   var leaving = false;      // the page is navigating on purpose; skip the unload prompt
   var leaveHolds = [];      // station callbacks: true while the page holds work not yet sent
   var audio = null;
+  var gate = createPromptGate();   // holds station prompts while the flag flow is open
+  var scansBusy = function () { return false; };   // start() replaces it with the scan queue size
+  var activityHooks = [];  // station callbacks run on a tap in the flag flow
 
   function newId() {
     if (root.crypto && root.crypto.randomUUID) { return root.crypto.randomUUID(); }
@@ -339,8 +367,8 @@
     showMessage(text, 'error');
   }
 
-  // An idle shift answers need_name. The server refused whatever was in progress, so
-  // leaving loses nothing.
+  // An idle shift answers need_name and the server refused the request in progress.
+  // Station-local work is lost on leaving: unsent Count lines and an open check.
   function goToWho() {
     leaving = true;
     root.location.href = body.dataset.whoUrl;
@@ -398,7 +426,7 @@
     });
   }
 
-  function choose(options, onPick, note) {
+  function drawChoose(options, onPick, note) {
     clearPanel();
     options.forEach(function (option) {
       var label = typeof option === 'string' ? option : option.label;
@@ -413,7 +441,7 @@
 
   function focusCapture() { if (!asking) { field.focus(); } }
 
-  function askText(label, onDone) {
+  function drawAskText(label, onDone) {
     asking = true;
     paused.hidden = true;
     clearPanel();
@@ -446,7 +474,7 @@
 
   // Calls onDone({quantity, entered, packs, about}) or onDone(null) on Cancel.
   // quantity is in base units: entered times packSize when Packs is on.
-  function numberPad(opts, onDone) {
+  function drawNumberPad(opts, onDone) {
     var digits = '';
     var packs = false;
     var about = false;
@@ -500,6 +528,17 @@
     host.appendChild(pad);
   }
 
+  // Station prompts go through the gate; the flag flow draws with the draw* functions directly.
+  function choose(options, onPick, note) {
+    gate.draw(function () { drawChoose(options, onPick, note); });
+  }
+  function askText(label, onDone) {
+    gate.draw(function () { drawAskText(label, onDone); });
+  }
+  function numberPad(opts, onDone) {
+    gate.draw(function () { drawNumberPad(opts, onDone); });
+  }
+
   // A station reports what Flag should offer: {code, label} or {unitId, label}, or null when
   // nothing on its screen can be flagged.
   var flagSubject = null;
@@ -548,7 +587,7 @@
       flagButton('Cancel', 'choice', function () { flagFlow.cancel(); });
     } else if (view.step === 'note') {
       host = flagPanel;
-      askText(view.message || 'What is wrong?', function (text) {
+      drawAskText(view.message || 'What is wrong?', function (text) {
         if (flagFlow.isOpen()) { flagFlow.submitNote(text); }
       });
     } else if (view.step === 'saving') {
@@ -565,11 +604,16 @@
     if (result.saved) {
       showMessage(result.text, 'ok');
       feedback('ok');
+    } else if (stopped) {
+      showMessage(stopped, 'error');
     } else if (flagSaved) {
       msg.textContent = flagSaved.text;
       msg.className = flagSaved.className;
     }
     flagSaved = null;
+    // The latest prompt a station tried to draw during the flow draws now.
+    var held = gate.close();
+    if (held) { held(); }
     focusCapture();
   }
 
@@ -597,6 +641,8 @@
     if (blocked) { showMessage(MESSAGES.blockedDone, 'error'); return; }
     if (asking) { showMessage(MESSAGES.finishField, 'error'); return; }
     if (stopped) { showMessage(stopped, 'error'); return; }
+    if (scansBusy() || writes.pending() > 0) { showMessage(MESSAGES.lastScan, 'error'); return; }
+    gate.open();
     flagSaved = {text: msg.textContent, className: msg.className};
     panel.hidden = true;
     msg.hidden = true;
@@ -604,6 +650,12 @@
     host = flagPanel;
     flagFlow.open(flagSubject);
   }
+
+  function tapActivity() { activityHooks.forEach(function (fn) { fn(); }); }
+
+  // A station registers a function that runs on a tap in the flag flow, which its own
+  // panel never sees. Count and Check use it to keep the shift alive.
+  function onActivity(fn) { activityHooks.push(fn); }
 
   function holdsWork() { return leaveHolds.some(function (fn) { return fn(); }); }
 
@@ -614,6 +666,7 @@
     var scans = createScanQueue({
       onScan: config.onScan, guard: createRepeatGuard(REPEAT_MS), now: Date.now
     });
+    scansBusy = function () { return scans.size() > 0; };
     var pauseWatch = createPauseWatch({
       delayMs: PAUSE_SHOW_MS,
       schedule: function (fn, ms) { return setTimeout(fn, ms); },
@@ -628,9 +681,9 @@
         if (blocked) { feedback('error'); return; }
         // While the flag flow is open the station sees no scans, so its promise never starts.
         if (flagFlow && flagFlow.isOpen()) {
+          var before = flagFlow.step();
           flagFlow.scan(code).then(function () {
-            var step = flagFlow.step();
-            feedback(step === 'reason' || step === 'choices' ? 'ok' : 'error');
+            feedback(flagScanSound(before, flagFlow.step()));
           });
           return;
         }
@@ -649,7 +702,8 @@
         mint: newId, lookup: lookupFlag, show: drawFlag, done: closeFlag,
         save: function (payload, id) { return write(body.dataset.flagUrl, payload, id); }
       });
-      flagBtn.addEventListener('click', openFlag);
+      flagBtn.addEventListener('click', function () { tapActivity(); openFlag(); });
+      flagPanel.addEventListener('click', tapActivity);
     }
     field.addEventListener('input', function () { capture.input(field.value); });
     field.addEventListener('keydown', function (e) {
@@ -694,7 +748,7 @@
   root.InvScan = {
     start: start, write: write, read: read, feedback: feedback, showMessage: showMessage,
     showPanel: showPanel, choose: choose, numberPad: numberPad, askText: askText, esc: esc,
-    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave, setFlagSubject: setFlagSubject,
+    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave, onActivity: onActivity, setFlagSubject: setFlagSubject,
     currentMessage: function () { return msg.textContent; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

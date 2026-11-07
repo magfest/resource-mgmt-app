@@ -331,7 +331,7 @@ CAPTURE_SCRIPT = r"""
 const assert = require('assert');
 const S = require(process.env.SCAN_JS);
 const {createCapture, createRepeatGuard, createScanQueue, createWriteQueue,
-       createPauseWatch, interpretResponse} = S;
+       createPauseWatch, interpretResponse, createPromptGate, flagScanSound} = S;
 function rig() {
   let now = 0, timers = [], got = [], cleared = 0, id = 0;
   const cap = createCapture({
@@ -425,6 +425,28 @@ const deferred = () => { let res; const p = new Promise(r => { res = r; }); retu
   pw.lost(); timers.shift().fn(); assert.ok(shown);
   pw.regained(); assert.ok(!shown);
   suspended = true; pw.lost(); timers.shift().fn(); assert.ok(!shown);
+
+  // Prompt gate: a station prompt arriving while the flag flow is open does not draw;
+  // the latest one is handed back on close. The flow itself draws at once.
+  const drawn = [];
+  const gate = createPromptGate();
+  gate.open();
+  assert.strictEqual(gate.draw(() => drawn.push('count prompt')), false);
+  assert.strictEqual(gate.draw(() => drawn.push('later prompt')), false);
+  assert.strictEqual(gate.draw(() => drawn.push('flag note'), true), true);
+  assert.deepStrictEqual(drawn, ['flag note']);
+  gate.close()();
+  assert.deepStrictEqual(drawn, ['flag note', 'later prompt']);
+  assert.strictEqual(gate.close(), null);
+  assert.strictEqual(gate.draw(() => drawn.push('after')), true);
+  assert.strictEqual(drawn[drawn.length - 1], 'after');
+
+  // A scan sounds ok only when it moved the flow from a scan step to a pick step.
+  assert.strictEqual(flagScanSound('scan', 'reason'), 'ok');
+  assert.strictEqual(flagScanSound('offer', 'choices'), 'ok');
+  assert.strictEqual(flagScanSound('scan', 'scan'), 'error');
+  assert.strictEqual(flagScanSound('reason', 'reason'), 'error');
+  assert.strictEqual(flagScanSound('choices', 'choices'), 'error');
 
   // Response handling.
   assert.deepStrictEqual(interpretResponse(200, false, {ok: true}), {type: 'answer', data: {ok: true}});
