@@ -24,8 +24,12 @@ from app.models.constants import (
     INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_DISCARD, INV_ACTION_MOVE,
     INV_CONDITION_IN_SERVICE,
     INV_CONDITION_LOST, INV_CONDITION_REPAIR, INV_CONDITION_RETIRED,
-    INV_DISCARD_REASONS, INV_IDENT_UNIQUE_KINDS, INV_IDENT_VENDOR_TAG,
+    INV_DISCARD_REASONS, INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG,
+    INV_IDENT_UNIQUE_KINDS, INV_IDENT_VENDOR_TAG, INV_OWNERSHIP_OWNED,
 )
+
+# The kinds that serve as a unit's number and its barcode.
+NUMBER_KINDS = (INV_IDENT_MAGFEST_TAG, INV_IDENT_FESTOPS_LABEL)
 
 INV_CONDITIONS = (INV_CONDITION_IN_SERVICE, INV_CONDITION_REPAIR,
                   INV_CONDITION_RETIRED, INV_CONDITION_LOST)
@@ -200,7 +204,25 @@ def _is_taken(unit: InvUnit, kind: str, normalized: str) -> bool:
     return query.first() is not None
 
 
+def _active_numbers(unit: InvUnit, kinds=NUMBER_KINDS) -> list[InvUnitIdentifier]:
+    # Queried, not read from unit.identifiers, which may be loaded and stale.
+    return (db.session.query(InvUnitIdentifier)
+            .filter(InvUnitIdentifier.unit_id == unit.id,
+                    InvUnitIdentifier.kind.in_(kinds),
+                    InvUnitIdentifier.retired_at.is_(None))
+            .order_by(InvUnitIdentifier.id).all())
+
+
 def add_identifier(unit: InvUnit, kind: str, value: str) -> InvUnitIdentifier:
+    """Attach an identifier. An owned unit keeps one number, a tag or a label.
+
+    Rented units are exempt: they carry an R- label and may also hold a tag.
+    """
+    if kind in NUMBER_KINDS and unit.ownership == INV_OWNERSHIP_OWNED:
+        other = [k for k in NUMBER_KINDS if k != kind]
+        if _active_numbers(unit, other):
+            raise InventoryError(
+                "This unit already has a number. Replace it on the Units page.")
     try:
         normalized = normalize_identifier(kind, value or "")
     except ValueError as error:
@@ -233,6 +255,34 @@ def retire_identifier(identifier: InvUnitIdentifier) -> None:
         db.session.flush()
 
 
+def replace_number(unit: InvUnit, kind: str, value: str, actor: Actor) -> InvUnitIdentifier:
+    """Give a unit a new number and retire the old one.
+
+    Replacing a number with itself returns the existing row. A code held by
+    another active unit is refused before anything is retired.
+    """
+    if kind not in NUMBER_KINDS:
+        raise InventoryError(f"{kind} is not a unit number.")
+    try:
+        normalized = normalize_identifier(kind, value or "")
+    except ValueError as error:
+        raise InventoryError(str(error)) from error
+    # An owned unit has one number of either kind; a rented unit replaces its own kind.
+    kinds = NUMBER_KINDS if unit.ownership == INV_OWNERSHIP_OWNED else (kind,)
+    current = _active_numbers(unit, kinds)
+    for identifier in current:
+        if identifier.kind == kind and identifier.normalized_value == normalized:
+            return identifier
+    if normalized and _is_taken(unit, kind, normalized):
+        raise _already_taken(normalized)
+    # The savepoint undoes the retirements if a lost race fails the add on PostgreSQL;
+    # on SQLite the caller rolls back.
+    with savepoint():
+        for identifier in current:
+            retire_identifier(identifier)
+        return add_identifier(unit, kind, value)
+
+
 def set_condition(unit: InvUnit, condition: str) -> None:
     """Set a unit's lasting condition; retiring a unit retires its identifiers."""
     if condition not in INV_CONDITIONS:
@@ -242,6 +292,11 @@ def set_condition(unit: InvUnit, condition: str) -> None:
         for identifier in unit.identifiers:
             retire_identifier(identifier)
     db.session.flush()
+
+
+def retire_received_unit(unit: InvUnit, actor: Actor) -> None:
+    """Undo a receipt: retire the unit and every identifier so it stops resolving."""
+    set_condition(unit, INV_CONDITION_RETIRED)
 
 
 def add_unit(item, container, actor, identifiers: list[tuple[str, str]]) -> InvUnit:

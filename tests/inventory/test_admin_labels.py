@@ -66,11 +66,10 @@ def test_a_bad_count_is_refused_and_reserves_nothing(client, inv):
 
 def test_reprint_finds_a_unit_by_its_magfest_tag(client, inv):
     add_unit(inv.laptop, None, Actor(user_id="test:invadmin"),
-             [("FESTOPS_LABEL", "U-00001"), ("MAGFEST_TAG", "FEST00001"),
-              ("SERIAL", "SN-1")])
+             [("MAGFEST_TAG", "FEST00001"), ("SERIAL", "SN-1")])
     db.session.commit()
     login(client, "test:invadmin")
-    for code in ("fest00001", "u-00001"):
+    for code in ("fest00001",):
         html = client.post("/inv/admin/labels/reprint", data={"codes": code}).get_data(as_text=True)
         assert "^FDFEST00001^FS" in html and "^FDSN-1^FS" in html
         assert "Return to MAGFest FestOps" in html and "^FDPrinted^FS" in html

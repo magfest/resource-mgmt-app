@@ -187,7 +187,10 @@ def _unit(inv, idents, **kw):
 
 def test_unit_number_prefers_the_active_tag_and_skips_a_retired_one(inv):
     from app.inventory.printing import unit_number
-    unit = _unit(inv, [("FESTOPS_LABEL", "U-00001"), ("MAGFEST_TAG", "FEST00001")])
+    # Only a rented unit can hold both kinds; an owned unit is limited to one number.
+    from app.inventory.ledger import add_identifier
+    unit = _unit(inv, [("FESTOPS_LABEL", "U-00001")], ownership="RENTED")
+    add_identifier(unit, "MAGFEST_TAG", "FEST00001")
     assert unit_number(unit) == "FEST00001"
     for ident in unit.identifiers:
         if ident.kind == "MAGFEST_TAG":

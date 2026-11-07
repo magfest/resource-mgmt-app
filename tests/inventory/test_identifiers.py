@@ -5,11 +5,13 @@ from app import db
 from app.inventory.codes import normalize_identifier, normalize_mac
 from app.inventory.describe import describe_movement, unit_tag
 from app.inventory.ledger import (
-    Actor, InventoryError, add_identifier, add_unit, retire_identifier,
-    set_condition,
+    Actor, InventoryError, add_identifier, add_unit, replace_number,
+    retire_identifier, retire_received_unit, set_condition,
 )
 from app.inventory import ledger
+from app.inventory.resolver import KIND_UNIT, KIND_UNKNOWN, resolve
 from app.models import InvMovement, InvUnit
+from app.models.constants import INV_OWNERSHIP_RENTED
 from tests.inventory.helpers import make_container
 
 ACTOR = Actor(user_id="test:invadmin")
@@ -68,6 +70,7 @@ def test_unit_tag_prefers_tag_then_label_then_serial(inv):
     unit = add_unit(inv.laptop, None, ACTOR, [
         ("SERIAL", "sn-1"), ("FESTOPS_LABEL", "U-00001")])
     assert unit_tag(unit) == "U-00001"
+    unit.ownership = INV_OWNERSHIP_RENTED
     add_identifier(unit, "MAGFEST_TAG", "net7")
     assert unit_tag(unit) == "NET7"
     for identifier in list(unit.identifiers):
@@ -148,3 +151,81 @@ def test_rollback_after_the_first_write_removes_the_unit(inv):
     add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net9")])
     db.session.rollback()
     assert InvUnit.query.count() == 0
+
+
+NUMBER_REFUSAL = "This unit already has a number. Replace it on the Units page."
+
+
+def _active(unit):
+    return sorted((i.kind, i.normalized_value) for i in unit.identifiers
+                  if i.retired_at is None)
+
+
+def test_an_owned_unit_never_has_both_a_tag_and_a_label(inv):
+    labelled = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "U-00001")])
+    with pytest.raises(InventoryError, match="already has a number"):
+        add_identifier(labelled, "MAGFEST_TAG", "FEST00001")
+    tagged = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "FEST00002")])
+    with pytest.raises(InventoryError) as raised:
+        add_identifier(tagged, "FESTOPS_LABEL", "U-00002")
+    assert str(raised.value) == NUMBER_REFUSAL
+    assert _active(labelled) == [("FESTOPS_LABEL", "U-00001")]
+
+
+def test_add_unit_refuses_to_start_with_both_numbers(inv):
+    with pytest.raises(InventoryError, match="already has a number"):
+        add_unit(inv.laptop, None, ACTOR, [
+            ("FESTOPS_LABEL", "U-00003"), ("MAGFEST_TAG", "FEST00003")])
+    db.session.rollback()
+    assert InvUnit.query.count() == 0
+
+
+def test_replacing_a_u_label_with_a_tag_retires_the_old_number(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [
+        ("FESTOPS_LABEL", "U-00001"), ("SERIAL", "sn-1")])
+    number = replace_number(unit, "MAGFEST_TAG", "fest00001", ACTOR)
+    assert number.kind == "MAGFEST_TAG" and number.retired_at is None
+    assert _active(unit) == [("MAGFEST_TAG", "FEST00001"), ("SERIAL", "SN-1")]
+    assert resolve("U-00001").kind == KIND_UNKNOWN
+    found = resolve("FEST00001")
+    assert found.kind == KIND_UNIT and found.unit.id == unit.id
+
+
+def test_replacing_a_number_with_itself_changes_nothing(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "FEST00001")])
+    original = unit.identifiers[0]
+    assert replace_number(unit, "MAGFEST_TAG", " fest00001 ", ACTOR) is original
+    assert len(unit.identifiers) == 1 and original.retired_at is None
+
+
+def test_a_number_held_elsewhere_is_refused_and_the_unit_keeps_its_own(inv):
+    add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "FEST00001")])
+    unit = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "U-00002")])
+    with pytest.raises(InventoryError, match="FEST00001 is already on another unit"):
+        replace_number(unit, "MAGFEST_TAG", "FEST00001", ACTOR)
+    assert _active(unit) == [("FESTOPS_LABEL", "U-00002")]
+
+
+def test_replace_number_refuses_a_kind_that_is_not_a_number(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "FEST00001")])
+    with pytest.raises(InventoryError, match="not a unit number"):
+        replace_number(unit, "SERIAL", "sn-9", ACTOR)
+    assert _active(unit) == [("MAGFEST_TAG", "FEST00001")]
+
+
+def test_a_rented_unit_is_not_limited_by_this_rule(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "R-00001")])
+    unit.ownership = INV_OWNERSHIP_RENTED
+    db.session.flush()
+    add_identifier(unit, "MAGFEST_TAG", "FEST00009")
+    assert _active(unit) == [("FESTOPS_LABEL", "R-00001"), ("MAGFEST_TAG", "FEST00009")]
+
+
+def test_retire_received_unit_retires_every_identifier_and_stops_resolving(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [
+        ("MAGFEST_TAG", "FEST00001"), ("SERIAL", "sn-1")])
+    assert retire_received_unit(unit, ACTOR) is None
+    assert unit.condition == "RETIRED"
+    assert _active(unit) == []
+    assert resolve("FEST00001").kind == KIND_UNKNOWN
+    assert resolve("sn-1").kind == KIND_UNKNOWN
