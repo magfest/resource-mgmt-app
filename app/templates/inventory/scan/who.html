@@ -26,15 +26,26 @@
     <script nonce="{{ csp_nonce }}">
       (function () {
         var message = document.getElementById('message');
+        var buttons = document.querySelectorAll('button');
+        var busy = false;
+        function setBusy(on) {
+          busy = on;
+          buttons.forEach(function (b) { b.disabled = on; });
+        }
         function start(name) {
+          if (busy) { return; }
+          setBusy(true);
           fetch({{ url_for('inventory.scan_shift_start')|tojson }}, {
             method: 'POST', credentials: 'same-origin',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({person_name: name})
           }).then(function (r) { return r.json(); }).then(function (d) {
             if (d.ok) { window.location.href = {{ url_for('inventory.scan_home')|tojson }}; }
-            else { message.textContent = d.message; }
-          }).catch(function () { message.textContent = 'Could not reach the server. Try again.'; });
+            else { message.textContent = d.message; setBusy(false); }
+          }).catch(function () {
+            message.textContent = 'Could not reach the server. Try again.';
+            setBusy(false);
+          });
         }
         document.querySelectorAll('button[data-name]').forEach(function (b) {
           b.addEventListener('click', function () { start(b.dataset.name); });

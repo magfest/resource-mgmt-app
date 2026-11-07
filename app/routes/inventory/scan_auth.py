@@ -8,12 +8,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import wraps
 
-from flask import g, jsonify, render_template, request
+from flask import g, jsonify, redirect, render_template, request, url_for
 
 from app import csrf, db
 from app.inventory.devices import COOKIE_NAME, device_for_token
-from app.inventory.ledger import Actor, InventoryError
-from app.inventory.shifts import current_shift
+from app.inventory.ledger import Actor
+from app.inventory.shifts import NameNeeded, current_shift
 from app.models import InvDevice
 from app.models.constants import INV_STATION_PRINT
 from app.routes import get_user_ctx
@@ -47,7 +47,8 @@ def current_principal() -> ScanPrincipal | None:
 def _refuse_scanner():
     # A device guard answers 403 itself; the app's 403 handler redirects to login.
     if request.path.startswith("/inv/scan/api/"):
-        return jsonify(ok=False, message="This scanner is not signed in. Reload the page."), 403
+        return jsonify(ok=False, enrolled=False,
+                       message="This scanner is not signed in. Reload the page."), 403
     return render_template(
         "inventory/scan/not_enrolled.html",
         has_cookie=bool(request.cookies.get(COOKIE_NAME))), 403
@@ -60,7 +61,10 @@ def _scanner_guard(f, allow_print):
         # A PRINT device may only collect and report print jobs.
         if principal is not None and principal.is_device and not allow_print \
                 and principal.device.station_code == INV_STATION_PRINT:
-            return _refuse_scanner()
+            if request.path.startswith("/inv/scan/api/"):
+                return jsonify(ok=False, enrolled=True,
+                               message="This computer only prints labels."), 403
+            return redirect(url_for("inventory.print_station"))
         if principal is None:
             return _refuse_scanner()
         if principal.is_device:
@@ -81,14 +85,18 @@ def require_scanner_or_print(f):
 
 
 def scan_actor() -> Actor:
-    """The signed-in user, or the open shift on the device. Needs require_scanner."""
+    """The signed-in user, or the open shift on the device. Needs require_scanner.
+
+    Call it before any write: with no open shift it commits the idle close that
+    the lookup made, then raises NameNeeded.
+    """
     principal = g.scan_principal
     if not principal.is_device:
         return Actor(user_id=principal.user_id)
     shift = current_shift(principal.device)
     if shift is None:
         db.session.commit()  # keep the IDLE close the lookup just made
-        raise InventoryError("Pick your name first.")
+        raise NameNeeded("Pick your name first.")
     return Actor(shift_id=shift.id, device_id=principal.device.id)
 
 

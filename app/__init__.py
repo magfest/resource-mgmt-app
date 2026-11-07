@@ -21,11 +21,14 @@ KNOWN_APP_ENVS = ("production", "development", "testing")
 
 
 class _SessionInterface(SecureCookieSessionInterface):
-    """Session cookies, except that print station polling never renews one."""
+    """Session cookies, except that scanner and print station calls never renew one."""
 
     def should_set_cookie(self, app, session):
         # Station polling runs for days and must not extend a user's login.
         if request.path.startswith("/inv/scan/print/"):
+            return False
+        # Scanner calls must not extend a user's login.
+        if request.path.startswith("/inv/scan/api/"):
             return False
         return super().should_set_cookie(app, session)
 

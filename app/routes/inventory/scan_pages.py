@@ -42,13 +42,15 @@ def scan_home():
     if not principal.is_device or principal.device.station_code == INV_STATION_LOOKUP:
         # Look up needs no name, so a device with no open shift shows none.
         has_name = not principal.is_device or current_shift(principal.device) is not None
+        who = who_text() if has_name else None
         db.session.commit()  # keeps an IDLE close
         return render_template(
             "inventory/scan/station.html", station=INV_STATION_LOOKUP,
             station_name=INV_STATION_NAMES[INV_STATION_LOOKUP], is_device=principal.is_device,
-            who=who_text() if has_name else None)
-    return render_template("inventory/scan/index.html", principal=principal,
-                           who=who_text())
+            who=who)
+    who = who_text()
+    db.session.commit()  # keeps an IDLE close
+    return render_template("inventory/scan/index.html", principal=principal, who=who)
 
 
 @inventory_bp.get("/scan/who")
@@ -57,9 +59,10 @@ def scan_who():
     """Ask who is scanning. Never errors; an operator has no name to pick."""
     principal = g.scan_principal
     names = recent_names(principal.device) if principal.is_device else []
-    db.session.commit()
+    who = who_text()
+    db.session.commit()  # keeps an IDLE close that who_text made
     return render_template("inventory/scan/who.html", names=names,
-                           is_device=principal.is_device, who=who_text())
+                           is_device=principal.is_device, who=who)
 
 
 @inventory_bp.get("/scan/enroll")

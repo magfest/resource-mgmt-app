@@ -5,14 +5,15 @@ scanner never lands on a login page.
 """
 from functools import wraps
 
-from flask import g, jsonify, request
+from flask import current_app, g, jsonify, request
+from sqlalchemy.exc import SQLAlchemyError
 
 from app import csrf, db
 from app.inventory import labels
 from app.inventory.cards import candidate_card, card_for, default_event
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import InventoryError, create_container
-from app.inventory.receipts import run_once
+from app.inventory.receipts import refusal, run_once
 from app.inventory.resolver import (
     KIND_AMBIGUOUS, KIND_CONTAINER, KIND_ITEM, KIND_UNIT, KIND_UNUSED, resolve,
 )
@@ -26,11 +27,14 @@ from . import inventory_bp
 from .scan_auth import device_api, require_scanner, scan_actor
 
 
+MAX_CANDIDATES = 10
+
+
 def api(f):
     """JSON in and out for a scanner principal; an InventoryError becomes ok=false.
 
-    The caller commits on success. Use `touch_shift` after a write to keep the
-    volunteer's shift alive.
+    An ok answer keeps the volunteer's shift alive, reads included. The touch is
+    best effort: a failure to save it never turns a good answer into an error.
     """
     @wraps(f)
     def inner(*args, **kwargs):
@@ -38,15 +42,26 @@ def api(f):
             result = f(*args, **kwargs)
         except InventoryError as exc:
             db.session.rollback()
-            return jsonify(ok=False, message=str(exc))
-        db.session.commit()
+            return jsonify(refusal(exc))
+        try:
+            if _is_ok(result):
+                touch_shift()
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            current_app.logger.exception("Could not record scanner activity")
         return result
     guarded = require_scanner(device_api(inner))
     return csrf.exempt(guarded)
 
 
+def _is_ok(result) -> bool:
+    answer = result.get_json(silent=True) if hasattr(result, "get_json") else None
+    return isinstance(answer, dict) and answer.get("ok") is True
+
+
 def touch_shift() -> None:
-    """Mark the device's open shift active; no-op for a signed-in user."""
+    """Mark the device's open shift active. Never opens a shift; no-op for a signed-in user."""
     principal = g.scan_principal
     if principal.is_device:
         shift = current_shift(principal.device)
@@ -113,7 +128,10 @@ def scan_resolve():
             out["wrong_station"] = owner
             out["wrong_station_name"] = INV_STATION_NAMES.get(owner, owner)
     elif resolution.kind == KIND_AMBIGUOUS:
-        out["candidates"] = [{"card": candidate_card(c, event)} for c in resolution.candidates]
+        shown = resolution.candidates[:MAX_CANDIDATES]
+        out["candidates"] = [{"card": candidate_card(c, event)} for c in shown]
+        if len(resolution.candidates) > MAX_CANDIDATES:
+            out["more"] = len(resolution.candidates) - MAX_CANDIDATES
     return jsonify(out)
 
 
@@ -125,7 +143,10 @@ def scan_container_create():
 
     def create() -> dict:
         actor = scan_actor()
-        code = normalize_code(data.get("label_code"))
+        raw_code = data.get("label_code")
+        if not isinstance(raw_code, str):
+            raise InventoryError("Scan a C- label for a container.")
+        code = normalize_code(raw_code)
         parsed = labels.parse(code)
         if parsed is None or parsed[0] != labels.PREFIX_CONTAINER:
             raise InventoryError("Scan a C- label for a container.")
@@ -139,7 +160,6 @@ def scan_container_create():
         principal = g.scan_principal
         parent = principal.device.home_container if principal.is_device else None
         container = create_container(code, kind, actor, parent=parent)
-        touch_shift()
         return {"code": container.label_code, "container_id": container.id}
 
     return jsonify(run_once(data.get("client_request_id"), create))

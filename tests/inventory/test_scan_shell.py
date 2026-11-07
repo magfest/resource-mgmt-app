@@ -94,6 +94,62 @@ def test_run_once_stores_a_success_and_skips_a_refusal(app, inv):
     assert json.loads(InvScanRequest.query.filter_by(client_request_id="a").one().response_json)["n"] == 1
 
 
+def test_run_once_returns_the_stored_answer_when_the_first_copy_already_saved(app, inv):
+    def first_copy_wins():
+        db.session.add(InvScanRequest(client_request_id="dup",
+                                      response_json=json.dumps({"ok": True, "n": 1})))
+        db.session.commit()
+        raise InventoryError("Already exists")
+
+    assert run_once("dup", first_copy_wins) == {"ok": True, "n": 1}
+
+
+def test_run_once_forces_ok_true_on_a_stored_save(app, inv):
+    answer = run_once("force", lambda: {"ok": False, "n": 2})
+    assert answer == {"ok": True, "n": 2}
+    assert json.loads(InvScanRequest.query.filter_by(client_request_id="force").one()
+                      .response_json)["ok"] is True
+
+
+def test_resolve_caps_candidates_at_ten(client, inv):
+    from app.models import SupplyItem
+    enrolled_client(client)
+    for i in range(12):
+        db.session.add(SupplyItem(category_id=inv.category.id, item_name=f"Cable {i}",
+                                  unit="each", barcode="555"))
+    db.session.commit()
+    r = client.post("/inv/scan/api/resolve", json={"code": "555"}).get_json()
+    assert len(r["candidates"]) == 10 and r["more"] == 2
+    few = client.post("/inv/scan/api/resolve", json={"code": "zzz"}).get_json()
+    assert "more" not in few
+
+
+def test_a_non_string_label_code_is_a_normal_refusal(client, inv):
+    from app.models import InvDevice
+    enrolled_client(client, station_code="COUNT")
+    start_shift(InvDevice.query.one(), "Sam")
+    db.session.commit()
+    for bad in (123, ["C-0001"], {"a": 1}):
+        r = client.post("/inv/scan/api/container", json={
+            "client_request_id": "bad-" + str(type(bad).__name__), "label_code": bad,
+            "kind_id": inv.kinds["BIN"].id})
+        assert r.status_code == 200 and r.get_json()["ok"] is False
+
+
+def _session_cookies(response):
+    return [c for c in response.headers.getlist("Set-Cookie") if c.startswith("session=")]
+
+
+def test_scanner_api_calls_do_not_renew_a_user_session(client, inv):
+    login(client, "test:operator")
+    response = client.post("/inv/scan/api/resolve", json={"code": "zzz"})
+    assert response.status_code == 200 and not _session_cookies(response)
+
+
+def test_the_enroll_page_still_sets_its_session(client, inv):
+    assert _session_cookies(client.get("/inv/scan/enroll"))
+
+
 def test_run_once_refuses_a_missing_request_id(app, inv):
     assert run_once("", lambda: {"ok": True})["ok"] is False
     assert run_once(None, lambda: {"ok": True})["ok"] is False
@@ -273,7 +329,9 @@ def test_an_operator_gets_the_look_up_shell(client, inv):
 
 CAPTURE_SCRIPT = r"""
 const assert = require('assert');
-const {createCapture, createRepeatGuard} = require(process.env.SCAN_JS);
+const S = require(process.env.SCAN_JS);
+const {createCapture, createRepeatGuard, createScanQueue, createWriteQueue,
+       createPauseWatch, interpretResponse} = S;
 function rig() {
   let now = 0, timers = [], got = [], cleared = 0, id = 0;
   const cap = createCapture({
@@ -294,14 +352,98 @@ r = rig(); r.cap.input('XYZ'); r.cap.enter('XYZ'); r.advance(500); assert.deepSt
 r = rig(); r.cap.input('QQ\n'); assert.deepStrictEqual(r.got, ['QQ']);
 r = rig(); r.cap.input('A'); r.advance(80); r.cap.input('B'); r.advance(80); assert.deepStrictEqual(r.got, ['A','B']);
 const g = createRepeatGuard(5000);
-assert.strictEqual(g.check('a', 1000), null); assert.strictEqual(g.check('a', 5000), 4);
+assert.strictEqual(g.check('a', 1000), null);
+g.record('a', 1000);
+assert.strictEqual(g.check('a', 5000), 4);
 assert.strictEqual(g.check('a', 6001), null); assert.strictEqual(g.check('b', 6002), null);
-console.log('capture ok');
+g.record('b', 6002); g.record('a', 6003);
+assert.strictEqual(g.check('b', 6500), 1); assert.strictEqual(g.check('a', 6500), 1);
+
+const tick = () => new Promise(r => setImmediate(r));
+const deferred = () => { let res; const p = new Promise(r => { res = r; }); return {p, res}; };
+
+(async () => {
+  // Scans run one at a time, in order; an older answer cannot land after a newer one.
+  let now = 0, log = [], gates = {};
+  const q = createScanQueue({guard: createRepeatGuard(5000), now: () => now,
+    onScan: code => { log.push('start ' + code); gates[code] = deferred();
+                      return gates[code].p.then(a => { log.push('end ' + code); return a; }); }});
+  assert.deepStrictEqual(q.submit('A'), {queued: true});
+  assert.deepStrictEqual(q.submit('B'), {queued: true});
+  await tick(); assert.deepStrictEqual(log, ['start A']);
+  // A rescan of a code in flight or waiting is dropped silently.
+  assert.deepStrictEqual(q.submit('A'), {dropped: true});
+  assert.deepStrictEqual(q.submit('B'), {dropped: true});
+  gates.A.res({ok: true}); await tick(); await tick();
+  assert.deepStrictEqual(log, ['start A', 'end A', 'start B']);
+  gates.B.res({ok: false}); await tick(); await tick();
+  // A is recorded (ok), B is forgotten (not ok), so only A is a repeat.
+  now = 2000;
+  assert.deepStrictEqual(q.submit('A'), {repeat: 2});
+  assert.deepStrictEqual(q.submit('B'), {queued: true});
+  await tick();
+  gates.B.res(undefined); await tick(); await tick();
+  assert.strictEqual(q.size(), 0);
+  // A rejected scan is forgotten and the queue keeps going.
+  const q2 = createScanQueue({guard: createRepeatGuard(5000), now: () => 0,
+    onScan: code => code === 'X' ? Promise.reject(new Error('x')) : Promise.resolve({ok: true})});
+  q2.submit('X'); q2.submit('Y'); await tick(); await tick(); await tick();
+  assert.deepStrictEqual(q2.submit('X'), {queued: true});
+  assert.deepStrictEqual(q2.submit('Y'), {repeat: 1});
+
+  // Write queue: order, block, retry with the same payload, cancel, drain.
+  let sent = [], fail = true, blocks = 0, unblocks = 0;
+  const w = createWriteQueue({
+    send: (path, payload) => { sent.push(payload.id); return (fail && payload.id === 1)
+      ? Promise.reject(new Error('net')) : Promise.resolve({ok: true, id: payload.id}); },
+    onBlock: () => { blocks++; }, onUnblock: () => { unblocks++; }});
+  const r1 = w.write('/x', {id: 1}); const r2 = w.write('/x', {id: 2});
+  await tick(); await tick();
+  assert.deepStrictEqual(sent, [1]); assert.ok(w.isBlocked()); assert.strictEqual(w.pending(), 2);
+  assert.strictEqual(await w.drain(), false);
+  fail = false; w.retry(); assert.strictEqual(unblocks, 1);
+  assert.deepStrictEqual(await r1, {ok: true, id: 1}); assert.deepStrictEqual(await r2, {ok: true, id: 2});
+  assert.deepStrictEqual(sent, [1, 1, 2]); assert.strictEqual(w.pending(), 0);
+  assert.strictEqual(await w.drain(), true);
+  // Cancel resolves the blocked write as not saved; the next write then runs.
+  fail = true; sent = [];
+  const c1 = w.write('/x', {id: 1}); const c2 = w.write('/x', {id: 2});
+  await tick(); await tick(); assert.ok(w.isBlocked());
+  const cancelled = w.cancel();
+  assert.deepStrictEqual(cancelled, {ok: false, cancelled: true, message: 'Not saved.'});
+  assert.deepStrictEqual(await c1, cancelled);
+  assert.deepStrictEqual(await c2, {ok: true, id: 2}); assert.ok(!w.isBlocked());
+
+  // Pause watch: the banner needs more than 500 ms of lost focus.
+  let shown = false, timers = [], tid = 0, suspended = false;
+  const pw = createPauseWatch({delayMs: 500, suspended: () => suspended,
+    schedule: (fn, ms) => { timers.push({fn, ms, id: ++tid}); return tid; },
+    cancel: h => { timers = timers.filter(t => t.id !== h); },
+    show: () => { shown = true; }, hide: () => { shown = false; }});
+  pw.lost(); assert.strictEqual(timers[0].ms, 500); assert.ok(!shown);
+  pw.regained(); assert.strictEqual(timers.length, 0); assert.ok(!shown);
+  pw.lost(); timers.shift().fn(); assert.ok(shown);
+  pw.regained(); assert.ok(!shown);
+  suspended = true; pw.lost(); timers.shift().fn(); assert.ok(!shown);
+
+  // Response handling.
+  assert.deepStrictEqual(interpretResponse(200, false, {ok: true}), {type: 'answer', data: {ok: true}});
+  assert.deepStrictEqual(interpretResponse(500, false, undefined), {type: 'retry'});
+  assert.deepStrictEqual(interpretResponse(403, false, {enrolled: false, message: 'x'}),
+    {type: 'fatal', message: 'This scanner is not enrolled.'});
+  assert.deepStrictEqual(interpretResponse(403, false, {enrolled: true, message: 'Prints only.'}),
+    {type: 'fatal', message: 'Prints only.'});
+  assert.strictEqual(interpretResponse(200, true, undefined).type, 'fatal');
+  assert.strictEqual(interpretResponse(200, false, undefined).type, 'retry');
+  assert.strictEqual(interpretResponse(200, false, {ok: false, need_name: true}).data.need_name, true);
+  console.log('capture ok');
+})().catch(e => { console.error(e); process.exit(1); });
+
 """
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_capture_handles_one_event_and_per_character_delivery(tmp_path):
+def test_pure_scan_logic_under_node(tmp_path):
     """Runs the pure capture and repeat logic under node; it does not drive a browser."""
     script = tmp_path / "capture_check.js"
     script.write_text(CAPTURE_SCRIPT)

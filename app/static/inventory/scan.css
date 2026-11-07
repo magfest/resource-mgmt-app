@@ -3,6 +3,7 @@
 body { margin: 0; font-family: system-ui, sans-serif; font-size: 18px; background: #fff; color: #111; }
 body.flash-ok { background: #c8f5d0; }
 body.flash-error { background: #f9c9c9; }
+body.not-saved-on { background: #f9c9c9; }
 .band { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: #fff; background: #455a64; }
 .station-LOOKUP .band { background: #455a64; }
 .station-COUNT .band { background: #1565c0; }
@@ -12,7 +13,9 @@ body.flash-error { background: #f9c9c9; }
 .band-station { font-weight: 700; flex: 1; }
 .band-who { opacity: 0.9; }
 .band-done { font-size: 1rem; padding: 10px 12px; border: 1px solid #fff; background: transparent; color: #fff; border-radius: 6px; }
-.paused { display: block; width: 100%; padding: 12px; border: 0; background: #9e9e9e; color: #fff; font-size: 1.1rem; }
+/* Fixed so it never moves the page; it ignores taps so a button under it still gets them.
+   Any tap refocuses the scan field through the document click handler. */
+.paused { position: fixed; top: 0; left: 0; right: 0; z-index: 20; pointer-events: none; padding: 12px; text-align: center; background: rgba(97, 97, 97, 0.92); color: #fff; font-size: 1.1rem; }
 .paused[hidden] { display: none; }
 .msg { margin: 0; padding: 10px 14px; min-height: 0; font-weight: 600; }
 .msg:empty { padding: 0; }
@@ -35,5 +38,6 @@ body.flash-error { background: #f9c9c9; }
 .pad .keys button { text-align: center; margin: 0; }
 .pad .readout { font-size: 2rem; text-align: right; padding: 8px; min-height: 3rem; }
 .text-ask input { width: 100%; font-size: 1.3rem; padding: 12px; }
-.not-saved { border: 3px solid #b71c1c; padding: 12px; border-radius: 8px; }
+.not-saved { margin: 12px 14px; border: 3px solid #b71c1c; padding: 12px; border-radius: 8px; background: #fff; }
+.not-saved[hidden] { display: none; }
 .not-saved h2 { margin: 0 0 8px; color: #b71c1c; }

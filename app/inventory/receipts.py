@@ -20,11 +20,20 @@ def _stored(client_request_id: str) -> dict | None:
     return json.loads(row.response_json) if row else None
 
 
+def refusal(exc: InventoryError) -> dict:
+    """The JSON answer for a refusal. `need_name` rides along when the exception carries it."""
+    answer = {"ok": False, "message": str(exc)}
+    if getattr(exc, "need_name", False):
+        answer["need_name"] = True
+    return answer
+
+
 def run_once(client_request_id: str, action: Callable[[], dict]) -> dict:
     """Run `action` once per request id and commit its answer with its writes.
 
     A refusal rolls back and returns `{ok: False, message}` without storing, so a
-    corrected retry runs again. A repeat of a stored id returns the first answer.
+    corrected retry runs again. A repeat of a stored id returns the first answer,
+    including when this copy was refused because the first copy already saved.
     """
     if not isinstance(client_request_id, str) or not client_request_id \
             or len(client_request_id) > MAX_REQUEST_ID:
@@ -36,8 +45,10 @@ def run_once(client_request_id: str, action: Callable[[], dict]) -> dict:
         answer = action()
     except InventoryError as exc:
         db.session.rollback()
-        return {"ok": False, "message": str(exc)}
-    answer = {"ok": True, **answer}
+        previous = _stored(client_request_id)
+        return previous if previous is not None else refusal(exc)
+    # Applied last so an action cannot report ok=False and still be stored as a save.
+    answer = {**answer, "ok": True}
     db.session.add(InvScanRequest(client_request_id=client_request_id,
                                   response_json=json.dumps(answer)))
     try:

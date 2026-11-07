@@ -7,14 +7,21 @@
 <body class="station-{{ station }}" id="scan-body"
       data-station="{{ station }}"
       data-end-url="{{ url_for('inventory.scan_shift_end') }}"
-      data-home-url="{{ url_for('inventory.scan_home') }}">
+      data-home-url="{{ url_for('inventory.scan_home') }}"
+      data-who-url="{{ url_for('inventory.scan_who') }}">
   <header class="band">
     <span class="band-station">{{ station_name }}</span>
     {% if who %}<span class="band-who" id="band-who">{{ who }}</span>{% endif %}
     {% if is_device %}<button type="button" class="band-done" id="done-btn">Done for now</button>{% endif %}
   </header>
-  <button type="button" id="paused" class="paused" hidden>Scanner paused: tap here</button>
+  <div id="paused" class="paused" role="status" hidden>Scanner paused: tap here</div>
   <p id="msg" class="msg" role="alert"></p>
+  <section id="not-saved" class="not-saved" role="alert" hidden>
+    <h2>NOT SAVED</h2>
+    <p>Could not reach the server. This was not saved. Try again before scanning more.</p>
+    <button type="button" id="not-saved-again" class="choice">Try again</button>
+    <button type="button" id="not-saved-cancel" class="choice">Cancel</button>
+  </section>
   <main id="panel" class="panel">{% block content %}{% endblock %}</main>
   <input id="scan-input" class="capture" type="text" inputmode="none" autocomplete="off"
          autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Scan a code">

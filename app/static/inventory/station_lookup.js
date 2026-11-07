@@ -37,9 +37,10 @@
     return answer.code + ' is a label with nothing attached to it yet.';
   }
 
-  function handle(answer, code) {
+  // The shell records the code in its repeat guard only when this answer holds ok: true.
+  function handle(answer) {
+    if (answer.need_name) { return; }
     if (!answer.ok) {
-      S.forget(code);
       S.feedback('error');
       S.showMessage(answer.message, 'error');
       return;
@@ -57,7 +58,7 @@
       S.showMessage(S.messages.ambiguous, 'info');
       S.choose(answer.candidates.map(function (c) {
         return {label: candidateLabel(c.card), value: c.card};
-      }), showCard);
+      }), showCard, answer.more ? 'and ' + answer.more + ' more' : null);
     } else {
       S.feedback('ok');
       showCard(answer.card);
@@ -67,7 +68,10 @@
   S.start({
     station: 'LOOKUP',
     onScan: function (code) {
-      S.read(resolveUrl, {code: code}).then(function (answer) { handle(answer, code); });
+      return S.read(resolveUrl, {code: code}).then(function (answer) {
+        handle(answer);
+        return answer;
+      });
     }
   });
 })();
