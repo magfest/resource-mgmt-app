@@ -66,3 +66,8 @@ body.not-saved-on { background: #f9c9c9; }
 .rcv-foot { display: flex; gap: 10px; margin-top: 16px; }
 .rcv-small { flex: 1; min-height: 52px; font-size: 1.1rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
 .rcv-small:disabled { opacity: 0.4; }
+.choice.primary { background: #e65100; border-color: #e65100; color: #fff; font-weight: 700; }
+.choice.on { border: 3px solid #e65100; background: #fff3e0; font-weight: 700; }
+.lbl-line { font-weight: 600; }
+.lbl-wait { font-size: 1.3rem; font-weight: 700; color: #e65100; }
+.lbl-warn { color: #b71c1c; font-weight: 600; }

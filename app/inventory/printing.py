@@ -13,11 +13,13 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.inventory.ledger import Actor, InventoryError, savepoint
-from app.inventory.zpl import LabelSpec, render_label
+from app.inventory.zpl import LabelSpec, can_print_code, render_label
 from app.models import InvPrinter, InvPrintJob, InvPrintRoute
 from app.models.constants import (
-    INV_JOB_CANCELLED, INV_JOB_CLAIMED, INV_JOB_FAILED, INV_JOB_QUEUED,
-    INV_JOB_SENT, INV_JOB_SOURCE_SCAN, INV_JOB_TYPES, INV_IDENT_FESTOPS_LABEL,
+    INV_CONDITION_RETIRED, INV_JOB_CANCELLED, INV_JOB_CLAIMED, INV_JOB_CONTAINER,
+    INV_JOB_FAILED, INV_JOB_ITEM, INV_JOB_OWNED_UNIT, INV_JOB_QUEUED,
+    INV_JOB_RENTED_UNIT, INV_JOB_SENT, INV_JOB_SOURCE_SCAN, INV_JOB_TYPES,
+    INV_IDENT_FESTOPS_LABEL,
     INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL, INV_IDENT_VENDOR_TAG,
     INV_OWNERSHIP_RENTED,
 )
@@ -219,3 +221,104 @@ def printer_status(printer: InvPrinter, now: datetime | None = None) -> dict:
         printer_id=printer.id, status=INV_JOB_QUEUED).count()
     return {"station_seen": seen_at is not None and now - seen_at <= STATION_SEEN_WITHIN,
             "waiting": waiting}
+
+
+REPRINT_ORIGINAL_DATE = "ORIGINAL_DATE"
+REPRINT_TODAY = "TODAY"
+REPRINT_CURRENT_DETAILS = "CURRENT_DETAILS"
+REPRINT_MODES = (REPRINT_ORIGINAL_DATE, REPRINT_TODAY, REPRINT_CURRENT_DETAILS)
+NUMBER_CHANGED = "The number on this unit changed. Print its current details."
+NO_HISTORY = "This unit has no earlier label. Print its current details."
+
+
+def last_job_for(unit=None, container=None) -> InvPrintJob | None:
+    """Return the newest job for a unit or container that is not cancelled.
+
+    A job with no rows is a blank reserved label; it is not history, so it returns None.
+    """
+    if unit is not None:
+        query = db.session.query(InvPrintJob).filter_by(unit_id=unit.id)
+    elif container is not None:
+        query = db.session.query(InvPrintJob).filter_by(container_id=container.id)
+    else:
+        return None
+    job = (query.filter(InvPrintJob.status != INV_JOB_CANCELLED)
+           .order_by(InvPrintJob.id.desc()).first())
+    if job is None or not (job.fields or {}).get("rows"):
+        return None
+    return job
+
+
+def reprint_options(unit) -> dict:
+    """Say what a unit's label screen offers.
+
+    `quick_reprint` is false when the last job's code is no longer the unit's number,
+    because that barcode is retired. `details_changed` compares the last job with the unit now.
+    """
+    job = last_job_for(unit=unit)
+    if job is None:
+        return {"has_history": False, "details_changed": False, "original_date": None,
+                "quick_reprint": False}
+    same_code = job.code == unit_number(unit)
+    return {"has_history": True,
+            "details_changed": not same_code or job.fields != fields_for_unit(unit),
+            "original_date": job.printed_date.isoformat() if job.printed_date else None,
+            "quick_reprint": same_code}
+
+
+def _unit_job_type(unit) -> str:
+    return INV_JOB_RENTED_UNIT if unit.ownership == INV_OWNERSHIP_RENTED else INV_JOB_OWNED_UNIT
+
+
+def reprint(unit, mode, actor: Actor, client_request_id=None) -> InvPrintJob:
+    """Queue a unit's label again.
+
+    ORIGINAL_DATE and TODAY copy the last job's text and code; they refuse when the
+    unit has no history or its number changed. CURRENT_DETAILS prints the unit as it is today.
+    """
+    if mode not in REPRINT_MODES:
+        raise InventoryError("Pick how to print the label.")
+    if unit is None or unit.condition == INV_CONDITION_RETIRED:
+        raise InventoryError("That unit is not in use, so it has no label to print.")
+    number = unit_number(unit)
+    if number is None:
+        raise InventoryError("This unit has no number to print.")
+    if mode == REPRINT_CURRENT_DETAILS:
+        fields, code, printed = fields_for_unit(unit), number, local_today()
+    else:
+        job = last_job_for(unit=unit)
+        if job is None:
+            raise InventoryError(NO_HISTORY)
+        if job.code != number:
+            raise InventoryError(NUMBER_CHANGED)
+        fields, code = dict(job.fields), job.code
+        printed = (job.printed_date or local_today()) if mode == REPRINT_ORIGINAL_DATE \
+            else local_today()
+    return request_label(_unit_job_type(unit), code, fields, actor, INV_JOB_SOURCE_SCAN,
+                         printed_date=printed, unit=unit, client_request_id=client_request_id)
+
+
+def print_container(container, actor: Actor, client_request_id=None) -> InvPrintJob:
+    """Queue a container label from its current name and kind. It carries no date."""
+    if not can_print_code(container.label_code):
+        raise InventoryError("This code cannot be printed as a barcode.")
+    return request_label(INV_JOB_CONTAINER, container.label_code, fields_for_container(container),
+                         actor, INV_JOB_SOURCE_SCAN, container=container,
+                         client_request_id=client_request_id)
+
+
+def print_item(item, actor: Actor, client_request_id=None) -> InvPrintJob:
+    """Queue an item-type label for the item's barcode. It carries no date."""
+    if not item.barcode:
+        raise InventoryError("This item has no barcode to print.")
+    if not can_print_code(item.barcode):
+        raise InventoryError("This code cannot be printed as a barcode.")
+    return request_label(INV_JOB_ITEM, item.barcode, fields_for_item(item), actor,
+                         INV_JOB_SOURCE_SCAN, client_request_id=client_request_id)
+
+
+def job_answer(job: InvPrintJob) -> dict:
+    """The scanner's view of a queued label: its code and whether the printer is keeping up."""
+    status = printer_status(job.printer)
+    return {"code": job.code, "unit_id": job.unit_id, "job_id": job.id,
+            "station_seen": status["station_seen"], "waiting": status["waiting"]}

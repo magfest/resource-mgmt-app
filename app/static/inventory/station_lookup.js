@@ -3,6 +3,7 @@
 (function () {
   'use strict';
   var S = window.InvScan;
+  var L = window.InvLabel;
   var resolveUrl = document.currentScript.dataset.resolveUrl;
   var FOUND = ['CONTAINER', 'UNIT', 'ITEM'];
 
@@ -25,9 +26,33 @@
     return html + '</section>';
   }
 
-  function showCard(card) {
+  // `target` names what Print label prints: {code, unitId}. Items that share a barcode have none.
+  function showCard(card, target) {
     S.showMessage('', 'info');
     S.showPanel(cardHtml(card));
+    if (!target) { return; }
+    var print = document.createElement('button');
+    print.type = 'button';
+    print.className = 'choice';
+    print.textContent = 'Print label';
+    print.addEventListener('click', function () {
+      L.show(target, function () { showCard(card, target); });
+    });
+    document.getElementById('panel').appendChild(print);
+  }
+
+  function unknownTag(answer) {
+    S.showPanel('');
+    S.showMessage(S.messages.unknown, 'error');
+    if (!answer.can_create_tag) { return; }
+    var add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'choice';
+    add.textContent = 'Add ' + answer.code + ' as a new asset tag';
+    add.addEventListener('click', function () {
+      L.newTag(answer.code, function () { unknownTag(answer); });
+    });
+    document.getElementById('panel').appendChild(add);
   }
 
   function candidateLabel(card) {
@@ -40,6 +65,7 @@
 
   // The shell records the code in its repeat guard only when this answer holds ok: true.
   function handle(answer) {
+    L.reset();
     if (answer.need_name) { return; }
     if (!answer.ok) {
       S.feedback('error');
@@ -48,8 +74,7 @@
     }
     if (answer.kind === 'UNKNOWN') {
       S.feedback('error');
-      S.showPanel('');
-      S.showMessage(S.messages.unknown, 'error');
+      unknownTag(answer);
     } else if (answer.kind === 'UNUSED') {
       S.feedback('error');
       S.showPanel('');
@@ -58,11 +83,13 @@
       S.feedback('error');
       S.showMessage(S.messages.ambiguous, 'info');
       S.choose(answer.candidates.map(function (c) {
-        return {label: candidateLabel(c.card), value: c.card};
-      }), showCard, answer.more ? 'and ' + answer.more + ' more' : null);
+        return {label: candidateLabel(c.card), value: c};
+      }), function (c) {
+        showCard(c.card, c.unit_id == null ? null : {code: answer.code, unitId: c.unit_id});
+      }, answer.more ? 'and ' + answer.more + ' more' : null);
     } else {
       S.feedback('ok');
-      showCard(answer.card);
+      showCard(answer.card, {code: answer.code, unitId: null});
     }
   }
 

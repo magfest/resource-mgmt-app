@@ -16,12 +16,18 @@ from app.inventory.ledger import InventoryError, create_container
 from app.inventory.receive import (
     container_for_code, receive_unit, reprint_unit, undo_message, undo_receive,
 )
+from app.inventory.printing import (
+    REPRINT_MODES, job_answer, last_job_for, print_container, print_item, reprint,
+    reprint_options, unit_number,
+)
 from app.inventory.receipts import refusal, run_once
 from app.inventory.resolver import (
-    KIND_AMBIGUOUS, KIND_CONTAINER, KIND_ITEM, KIND_UNIT, KIND_UNUSED, resolve,
+    KIND_AMBIGUOUS, KIND_CONTAINER, KIND_ITEM, KIND_UNIT, KIND_UNKNOWN, KIND_UNUSED,
+    Resolution, resolve,
 )
+from app.inventory.zpl import can_print_code
 from app.inventory.shifts import current_shift, end_shift, start_shift, touch
-from app.models import InvContainerKind, SupplyItem
+from app.models import InvContainerKind, InvUnit, SupplyItem
 from app.models.constants import (
     INV_CHECK_STATIONS, INV_SHIFT_END_ENDED, INV_STATION_NAMES,
 )
@@ -115,6 +121,11 @@ def _wrong_station(resolution) -> str | None:
     return None
 
 
+def _can_create_tag(code: str) -> bool:
+    """Only a printable code that is not a FestOps label can become an owned unit's tag."""
+    return bool(code) and labels.parse(code) is None and can_print_code(code)
+
+
 @inventory_bp.post("/scan/api/resolve")
 @api
 def scan_resolve():
@@ -132,9 +143,13 @@ def scan_resolve():
             out["wrong_station_name"] = INV_STATION_NAMES.get(owner, owner)
     elif resolution.kind == KIND_AMBIGUOUS:
         shown = resolution.candidates[:MAX_CANDIDATES]
-        out["candidates"] = [{"card": candidate_card(c, event)} for c in shown]
+        out["candidates"] = [{"card": candidate_card(c, event),
+                              "unit_id": c.id if isinstance(c, InvUnit) else None}
+                             for c in shown]
         if len(resolution.candidates) > MAX_CANDIDATES:
             out["more"] = len(resolution.candidates) - MAX_CANDIDATES
+    elif resolution.kind == KIND_UNKNOWN:
+        out["can_create_tag"] = _can_create_tag(resolution.code)
     return jsonify(out)
 
 
@@ -248,3 +263,104 @@ def scan_receive_reprint():
                             client_request_id=data.get("client_request_id"))
 
     return jsonify(run_once(data.get("client_request_id"), reprint))
+
+
+NOTHING_ATTACHED = "This label has nothing attached to it yet."
+NO_MATCH = "Nothing matches that code."
+PICK_ONE = "Choose which one to print."
+
+
+def _label_target(data: dict) -> Resolution:
+    """Resolve the code a label screen names. Two units sharing a code need `unit_id`."""
+    raw = _optional_text(data, "code")
+    unit_id = data.get("unit_id")
+    if unit_id is not None and type(unit_id) is not int:
+        raise InventoryError(PICK_ONE)
+    resolution = resolve(raw)
+    kind = resolution.kind
+    if kind == KIND_UNIT:
+        if unit_id is not None and unit_id != resolution.unit.id:
+            raise InventoryError(PICK_ONE)
+        return resolution
+    if kind == KIND_AMBIGUOUS:
+        match = next((c for c in resolution.candidates
+                      if isinstance(c, InvUnit) and c.id == unit_id), None)
+        if match is None:
+            raise InventoryError(PICK_ONE)
+        return Resolution(KIND_UNIT, resolution.code, unit=match)
+    if kind == KIND_UNUSED:
+        raise InventoryError(NOTHING_ATTACHED)
+    if kind == KIND_UNKNOWN and not _can_create_tag(resolution.code):
+        raise InventoryError(NO_MATCH)
+    return resolution
+
+
+@inventory_bp.post("/scan/api/label/options")
+@api
+def scan_label_options():
+    """Say what printing this code offers. Reads only."""
+    resolution = _label_target(_json_body())
+    if resolution.kind == KIND_UNKNOWN:
+        return jsonify(ok=True, kind=KIND_UNKNOWN, code=resolution.code, can_create_tag=True)
+    if resolution.kind == KIND_UNIT:
+        unit = resolution.unit
+        out = reprint_options(unit)
+        return jsonify(ok=True, kind=KIND_UNIT, unit_id=unit.id, title=unit.item.item_name,
+                       code=unit_number(unit), **out)
+    if resolution.kind == KIND_CONTAINER:
+        container = resolution.container
+        return jsonify(ok=True, kind=KIND_CONTAINER, code=container.label_code,
+                       title=container.name or container.kind.name,
+                       inactive=not container.is_active,
+                       has_history=last_job_for(container=container) is not None)
+    item = resolution.item
+    return jsonify(ok=True, kind=KIND_ITEM, code=item.barcode or resolution.code,
+                   title=item.item_name, inactive=not item.is_active)
+
+
+@inventory_bp.post("/scan/api/label/print")
+@api
+def scan_label_print():
+    """Queue a label for a unit, container or item."""
+    data = _json_body()
+
+    def queue() -> dict:
+        actor = scan_actor()
+        resolution = _label_target(data)
+        crid = data.get("client_request_id")
+        if resolution.kind == KIND_UNIT:
+            mode = data.get("mode")
+            if mode not in REPRINT_MODES:
+                raise InventoryError("Pick how to print the label.")
+            job = reprint(resolution.unit, mode, actor, client_request_id=crid)
+        elif resolution.kind == KIND_CONTAINER:
+            job = print_container(resolution.container, actor, client_request_id=crid)
+        elif resolution.kind == KIND_ITEM:
+            job = print_item(resolution.item, actor, client_request_id=crid)
+        else:
+            raise InventoryError(NO_MATCH)
+        return job_answer(job)
+
+    return jsonify(run_once(data.get("client_request_id"), queue))
+
+
+@inventory_bp.post("/scan/api/label/new-tag")
+@api
+def scan_label_new_tag():
+    """Create an owned unit for an asset tag no unit holds, and queue its label."""
+    data = _json_body()
+
+    def create() -> dict:
+        actor = scan_actor()
+        tag = _optional_text(data, "tag")
+        resolution = resolve(tag)
+        if resolution.kind != KIND_UNKNOWN or not _can_create_tag(resolution.code):
+            raise InventoryError("That code already belongs to something. Look it up instead.")
+        item_id = data.get("item_id")
+        item = db.session.get(SupplyItem, item_id) if type(item_id) is int else None
+        if item is None:
+            raise InventoryError("Pick an item type.")
+        return receive_unit(item, actor, tag=tag, serial=_optional_text(data, "serial"),
+                            client_request_id=data.get("client_request_id"))
+
+    return jsonify(run_once(data.get("client_request_id"), create))
