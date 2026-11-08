@@ -13,6 +13,7 @@
   <li><a href="{{ url_for('inventory.movements') }}">Movements</a></li>
   <li><a href="{{ url_for('inventory.devices') }}">Shared scanners</a></li>
   <li><a href="{{ url_for('inventory.printers') }}">Printers</a></li>
+  <li><a href="{{ url_for('inventory.legacy_import_page') }}">Import old tech lists</a></li>
   {% else %}
   <li class="muted">An inventory admin manages the other pages here.</li>
   {% endif %}

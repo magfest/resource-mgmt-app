@@ -1,0 +1,99 @@
+{% extends "layout/base.html" %}
+{% block title %}Import old tech lists - Inventory{% endblock %}
+{% block content %}
+<h1>Import old tech lists</h1>
+<div class="muted mb-16">
+  Upload a CSV export of TVs, monitors, printers, label printers or laminators.
+  Each row becomes a named unit. Rows that need a person are listed for review
+  and are not imported. Names already on a unit are skipped.
+</div>
+{% if error %}<p class="card mb-16"><strong>{{ error }}</strong></p>{% endif %}
+<form method="post" enctype="multipart/form-data" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Export file <input type="file" name="file" accept=".csv,text/csv"></label>
+  <button type="submit" name="action" value="preview" class="btn btn-small">Preview</button>
+</form>
+
+{% if result and result.not_tech %}
+<p>{{ not_tech_message }}</p>
+{% elif result %}
+<p>
+  {% if applied %}Imported{% else %}Ready{% endif %}: {{ result.ready|length }}.
+  Skipped: {{ result.skipped }}.
+  Review: {{ result.review|length }}.
+</p>
+{% if result.models %}
+<form method="post" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <textarea name="file_text" hidden aria-hidden="true">{{ file_text }}</textarea>
+  <div style="overflow-x: auto;">
+  <table>
+    <thead><tr><th>Gear kind</th><th>Model text</th><th>Rows</th><th>Type</th></tr></thead>
+    <tbody>
+    {% for m in result.models %}
+      {% set kind = kinds.get(m.gear_kind_code) %}
+      {% set chosen = mapping.get(m.key, '') %}
+      {% set is_new = chosen.startswith(new_prefix) %}
+      <tr>
+        <td>{{ kind.name }}</td>
+        <td>{% if m.gear_kind_code == 'TV' %}<span class="muted">Every TV; the column holds brands</span>{% elif m.text %}{{ m.text }}{% else %}<span class="muted">Blank</span>{% endif %}</td>
+        <td>{{ m.count }}</td>
+        <td>
+          <input type="hidden" name="key-{{ loop.index0 }}" value="{{ m.key }}">
+          <select name="type-{{ loop.index0 }}" class="type-select" aria-label="Type for {{ kind.name }} {{ m.text }}">
+            <option value="">Choose a type</option>
+            {% for item in types_by_kind.get(kind.id, []) %}
+            <option value="{{ item.id }}"{% if chosen == item.id|string %} selected{% endif %}>{{ item.item_name }}</option>
+            {% endfor %}
+            <option value="new"{% if is_new %} selected{% endif %}>Create new type</option>
+          </select>
+          <input type="text" name="new-{{ loop.index0 }}" class="new-name" maxlength="256"
+                 placeholder="New type name" aria-label="New type name"
+                 value="{{ chosen[new_prefix|length:] if is_new else '' }}"{% if not is_new %} hidden{% endif %}>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <label id="category-row"{% if not any_new %} hidden{% endif %}>Category for new types
+    <select name="category_id">
+      <option value="">Choose a category</option>
+      {% for c in categories %}<option value="{{ c.id }}"{% if category_id == c.id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="row">
+    <button type="submit" name="action" value="preview" class="btn btn-small">Preview again</button>
+    {% if result.ready and not applied %}
+    <button type="submit" name="action" value="apply" class="btn btn-primary">Import {{ result.ready|length }} units</button>
+    {% endif %}
+  </div>
+</form>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    var selects = document.querySelectorAll('.type-select');
+    var category = document.getElementById('category-row');
+    function refresh() {
+      var anyNew = false;
+      selects.forEach(function (select) {
+        var input = select.parentNode.querySelector('.new-name');
+        input.hidden = select.value !== 'new';
+        if (select.value === 'new') { anyNew = true; }
+      });
+      category.hidden = !anyNew;
+    }
+    selects.forEach(function (select) { select.addEventListener('change', refresh); });
+    refresh();
+  })();
+</script>
+{% endif %}
+{% if result.review %}
+<h2>Review</h2>
+<ul>{% for line in result.review %}<li>{{ line }}</li>{% endfor %}</ul>
+{% endif %}
+{% if result.warnings %}
+<h2>Warnings</h2>
+<ul>{% for line in result.warnings %}<li>{{ line }}</li>{% endfor %}</ul>
+{% endif %}
+{% endif %}
+{% endblock %}
