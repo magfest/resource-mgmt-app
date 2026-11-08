@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.inventory.ledger import Actor, InventoryError, savepoint
-from app.inventory.unit_fields import details_line
+from app.inventory.unit_fields import details_line, model_number, spec_line
 from app.inventory.zpl import LabelSpec, can_print_code, render_label
 from app.models import InvPrinter, InvPrintJob, InvPrintRoute
 from app.models.constants import (
@@ -66,15 +66,17 @@ def unit_number(unit) -> str | None:
 def fields_for_unit(unit) -> dict:
     """Return the label title, rows and footer for a unit. Blank rows are left out.
 
-    An unnamed unit has no `title` key, so its stored jobs match fields built before names existed.
+    An unnamed unit has no `title` or `spec` key, so its stored jobs match fields built
+    before names existed. A named unit prints its type and specs in `spec`, not a row.
     """
-    details = details_line(unit)
+    rows = []
     if unit.name:
-        # A titled label has room for three rows, so model and details share one.
-        model = f"{unit.item.item_name} \u00b7 {details}" if details else unit.item.item_name
-        rows = [["Type", model]]
+        model = model_number(unit)
+        if model:
+            rows.append(["Model", model])
     else:
-        rows = [["Type", unit.item.item_name]]
+        rows.append(["Type", unit.item.item_name])
+        details = details_line(unit)
         if details:
             rows.append(["Details", details])
     rented = unit.ownership == INV_OWNERSHIP_RENTED
@@ -87,6 +89,7 @@ def fields_for_unit(unit) -> dict:
     fields = {"rows": rows, "footer": FOOTER_RENTED if rented else FOOTER_OWNED}
     if unit.name:
         fields["title"] = unit.name
+        fields["spec"] = spec_line(unit)
     return fields
 
 
@@ -101,13 +104,23 @@ def fields_for_item(item) -> dict:
     return {"rows": [["Type", item.item_name]], "footer": None}
 
 
+def label_spec(code: str, fields: dict, printed_date: date | None) -> LabelSpec:
+    """Build the label for stored fields. A job without `spec` prints a Printed row."""
+    rows = [tuple(row) for row in fields.get("rows", [])]
+    spec_text = fields.get("spec")
+    last_line = None
+    if spec_text is not None:
+        # The date joins the spec line; a separate Printed row would not fit.
+        last_line = f"{spec_text} | {printed_date:%Y/%m/%d}" if printed_date else spec_text
+    elif printed_date:
+        rows.append(("Printed", printed_date.isoformat()))
+    return LabelSpec(code, tuple(rows), fields.get("footer"), fields.get("title"), last_line)
+
+
 def render_job(job: InvPrintJob) -> str:
     """Render a queued job as ZPL for its printer."""
-    rows = [tuple(row) for row in job.fields.get("rows", [])]
-    if job.printed_date:
-        rows.append(("Printed", job.printed_date.isoformat()))
     printer = job.printer
-    spec = LabelSpec(job.code, tuple(rows), job.fields.get("footer"), job.fields.get("title"))
+    spec = label_spec(job.code, job.fields, job.printed_date)
     return render_label(spec, printer.dpi, float(printer.width_in), float(printer.height_in))
 
 
@@ -266,15 +279,16 @@ def _unit_jobs(unit=None, container=None):
 def last_job_for(unit=None, container=None) -> InvPrintJob | None:
     """Return the newest job for a unit or container that is not cancelled.
 
-    A job with no rows is a blank reserved label; it is not history and is skipped,
-    so an older job with rows still counts. The rows test runs in Python because
-    JSON containment is not portable between SQLite and PostgreSQL.
+    A job with no rows and no title is a blank reserved label; it is not history and
+    is skipped. A named unit with no model or serial has a title and no rows. The test
+    runs in Python because JSON containment is not portable between SQLite and PostgreSQL.
     """
     query = _unit_jobs(unit, container)
     if query is None:
         return None
     for job in query.order_by(InvPrintJob.id.desc()):
-        if (job.fields or {}).get("rows"):
+        fields = job.fields or {}
+        if fields.get("rows") or fields.get("title"):
             return job
     return None
 

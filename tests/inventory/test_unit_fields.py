@@ -147,7 +147,73 @@ def test_details_line_uses_first_three_set_fields(inv):
     set_unit_value(unit, resolution, "4k")
     set_unit_value(unit, hdmi, "yes")
     db.session.flush()
-    assert details_line(unit) == "Roku · 50 in · 4k"
+    assert details_line(unit) == "Roku, 50 in, 4k"
+
+
+ON = {"on_label": True}
+
+
+def _printer_kind(inv):
+    kind = seed_gear_kind("PRINTER", "Printer", [
+        ("MODEL", "Model", INV_FIELD_TEXT, None),
+        ("PRINT", "Print", INV_FIELD_CHOICE, [("Black and white", "BW"), ("Color", "C")], ON),
+        ("USB", "USB", INV_FIELD_BOOL, None, {"on_label": True, "label_text": "USB"}),
+        ("DUPLEX", "Duplex", INV_FIELD_BOOL, None,
+         {"on_label": True, "label_text": "DUPLEX"}),
+        ("TONER", "Toner cartridge", INV_FIELD_TEXT, None),
+    ])
+    inv.laptop.item_name = "Laser Printer"
+    inv.laptop.gear_kind_id = kind.id
+    db.session.flush()
+    return kind
+
+
+def test_label_specs_follow_position_and_skip_no_and_blank(inv):
+    from app.inventory.unit_fields import label_specs, model_number, spec_line
+    kind = _printer_kind(inv)
+    unit = _unit(inv)
+    model, prints, usb, duplex, toner = kind.fields
+    set_unit_value(unit, duplex, "no")
+    set_unit_value(unit, usb, "yes")
+    set_unit_value(unit, prints, "black and white")
+    set_unit_value(unit, toner, "TN820")
+    set_unit_value(unit, model, "MFC-L2820DW")
+    assert label_specs(unit) == ["BW", "USB"]
+    assert spec_line(unit) == "Laser Printer (BW, USB)"
+    assert model_number(unit) == "MFC-L2820DW"
+
+
+def test_spec_line_without_specs_is_the_bare_type(inv):
+    from app.inventory.unit_fields import label_specs, model_number, spec_line
+    _printer_kind(inv)
+    unit = _unit(inv)
+    assert label_specs(unit) == []
+    assert spec_line(unit) == "Laser Printer"
+    assert model_number(unit) is None
+
+
+def test_tv_spec_line(inv):
+    from app.inventory.unit_fields import spec_line
+    kind = seed_gear_kind("TV", "TV", [
+        ("MODEL", "Model", INV_FIELD_TEXT, None),
+        ("BRAND", "Brand", INV_FIELD_TEXT, None),
+        ("SIZE", "Size", INV_FIELD_NUMBER, "in", ON),
+        ("RESOLUTION", "Resolution", INV_FIELD_CHOICE, ["720p", "1080p", "4k"], ON),
+        ("HDMI", "HDMI", INV_FIELD_BOOL, None, {"on_label": True, "label_text": "HDMI"}),
+        ("DISPLAYPORT", "DisplayPort", INV_FIELD_BOOL, None,
+         {"on_label": True, "label_text": "DP"}),
+    ])
+    inv.laptop.item_name = "TV"
+    inv.laptop.gear_kind_id = kind.id
+    db.session.flush()
+    unit = _unit(inv)
+    _, brand, size, resolution, hdmi, dp = kind.fields
+    set_unit_value(unit, brand, "Roku")
+    set_unit_value(unit, size, "50")
+    set_unit_value(unit, resolution, "4k")
+    set_unit_value(unit, hdmi, "yes")
+    set_unit_value(unit, dp, "no")
+    assert spec_line(unit) == "TV (50in, 4k, HDMI)"
 
 
 def test_retired_field_with_value_still_shows(inv):

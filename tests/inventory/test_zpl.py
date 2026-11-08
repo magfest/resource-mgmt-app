@@ -161,3 +161,42 @@ def test_titled_label_keeps_serial_and_printed_and_drops_type_then_vendor_tag():
     five = rows + (("Extra", "x"),)
     z = render_label(LabelSpec("R-00038", five, "Return", "MAG-TV-009"), 300)
     assert "^FDVendor tag^FS" not in z and "^FDSerial^FS" in z and "^FDPrinted^FS" in z
+
+
+LAST = "Laser Printer (BW, USB, DUPLEX) | 2026/11/07"
+
+
+def _last(z, text):
+    return re.search(rf"\^FO(\d+),(\d+)\^A0R,(\d+),\d+\^FB(\d+),1,0,L\^FD{re.escape(text)}\^FS", z)
+
+
+@pytest.mark.parametrize("dpi", [203, 300])
+def test_last_line_prints_headerless_full_width_after_the_rows(dpi):
+    rows = (("Model", "MFC-L2820DW"), ("Serial", "PF04CKVR"))
+    z = render_label(LabelSpec("U-00001", rows, "Return", "MAG-PNTR-007", LAST), dpi)
+    last = _last(z, LAST)
+    serial = re.search(r"\^FO(\d+),\d+\^A0R,\d+,\d+\^FDSerial\^FS", z)
+    assert last and serial and int(last.group(1)) < int(serial.group(1))
+    assert int(last.group(4)) == round(3.0 * dpi) - 2 * round(0.1 * dpi)
+    assert int(last.group(3)) < round(zpl._ROW_H * dpi)
+    assert "^FDModel^FS" in z and "^FDSerial^FS" in z
+    rule = re.search(r"\^FO(\d+),\d+\^GB", z)
+    assert int(last.group(1)) > int(rule.group(1))
+
+
+def test_a_short_last_line_prints_at_row_height_and_a_long_one_is_cut_only_past_64():
+    z = render_label(LabelSpec("U-00001", (), None, "T", "Laminator"), 300)
+    assert int(_last(z, "Laminator").group(3)) == 45
+    long = "X" * 70
+    z = render_label(LabelSpec("U-00001", (), None, "T", long), 300)
+    assert _last(z, "X" * 64)
+
+
+def test_titled_label_with_a_last_line_drops_model_then_vendor_tag():
+    rows = (("Model", "MFC-L2820DW"), ("Vendor tag", "Vendor A: A0038"), ("Serial", "SN1"))
+    z = render_label(LabelSpec("R-00038", rows, "Return", "MAG-PNTR-007", LAST), 300)
+    assert "^FDModel^FS" not in z and "^FDVendor tag^FS" in z
+    assert "^FDSerial^FS" in z and _last(z, LAST)
+    more = (("Extra", "x"),) + rows
+    z = render_label(LabelSpec("R-00038", more, "Return", "MAG-PNTR-007", LAST), 300)
+    assert "^FDVendor tag^FS" not in z and "^FDSerial^FS" in z and _last(z, LAST)

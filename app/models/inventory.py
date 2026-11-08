@@ -739,6 +739,10 @@ class InvField(db.Model):
     position = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
     is_active = db.Column(db.Boolean, nullable=False, default=True,
                           server_default=db.true())
+    # on_label puts the value in the label's spec line; a BOOL prints label_text on Yes.
+    on_label = db.Column(db.Boolean, nullable=False, default=False,
+                         server_default=db.false())
+    label_text = db.Column(db.String(16), nullable=True)
 
     choices = db.relationship("InvFieldChoice", backref="field",
                               order_by="InvFieldChoice.position")
@@ -758,6 +762,8 @@ class InvFieldChoice(db.Model):
         nullable=False, index=True,
     )
     label = db.Column(db.String(32), nullable=False)
+    # The short form printed on labels; the label prints `label` when this is null.
+    label_text = db.Column(db.String(16), nullable=True)
     position = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
     is_active = db.Column(db.Boolean, nullable=False, default=True,
                           server_default=db.true())

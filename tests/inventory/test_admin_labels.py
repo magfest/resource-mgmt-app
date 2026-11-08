@@ -83,6 +83,17 @@ def test_reprint_finds_a_unit_by_its_u_label(client, inv):
     assert "^FDU-00001^FS" in html and "^FDSN-1^FS" in html
 
 
+def test_reprint_of_a_named_unit_prints_its_title_and_spec_line(client, inv):
+    from app.inventory.printing import local_today
+    add_unit(inv.laptop, None, Actor(user_id="test:invadmin"),
+             [("FESTOPS_LABEL", "U-00001"), ("SERIAL", "SN-1")], name="Loaner 3")
+    db.session.commit()
+    login(client, "test:invadmin")
+    html = client.post("/inv/admin/labels/reprint", data={"codes": "u-00001"}).get_data(as_text=True)
+    assert "^FDLoaner 3^FS" in html and "^FDSN-1^FS" in html
+    assert f"^FDLaptop | {local_today():%Y/%m/%d}^FS" in html and "^FDPrinted^FS" not in html
+
+
 def test_a_tag_no_barcode_can_hold_does_not_stop_the_batch(client, inv):
     actor = Actor(user_id="test:invadmin")
     for tag in ("A" * 21, "BAD>TAG", "GOOD1"):

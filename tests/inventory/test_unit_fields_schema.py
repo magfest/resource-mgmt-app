@@ -46,18 +46,49 @@ def migrated(tmp_path_factory):
     return path
 
 
+MODEL = ("MODEL", "TEXT", None, [])
 EXPECTED = {
-    "TV": [("BRAND", "TEXT", None, []), ("SIZE", "NUMBER", "in", []),
+    "TV": [MODEL, ("BRAND", "TEXT", None, []), ("SIZE", "NUMBER", "in", []),
            ("RESOLUTION", "CHOICE", None, ["720p", "1080p", "4k"]),
            ("HDMI", "BOOL", None, []), ("DISPLAYPORT", "BOOL", None, [])],
-    "MONITOR": [("SIZE", "NUMBER", "in", []),
+    "MONITOR": [MODEL, ("SIZE", "NUMBER", "in", []),
                 ("RESOLUTION", "CHOICE", None,
                  ["1920x1080", "1920x1200", "2560x1440", "4k"]),
                 ("HDMI", "BOOL", None, []), ("DISPLAYPORT", "BOOL", None, [])],
-    "PRINTER": [("TONER", "TEXT", None, []), ("COLOR", "BOOL", None, [])],
-    "LABEL_PRINTER": [("MEDIA", "TEXT", None, [])],
-    "LAMINATOR": [],
+    "PRINTER": [MODEL, ("PRINT", "CHOICE", None, ["Black and white", "Color"]),
+                ("USB", "BOOL", None, []), ("DUPLEX", "BOOL", None, []),
+                ("TONER", "TEXT", None, []), ("COLOR", "BOOL", None, [])],
+    "LABEL_PRINTER": [MODEL, ("MEDIA", "TEXT", None, [])],
+    "LAMINATOR": [MODEL],
 }
+
+# (kind, field) -> (position, is_active, on_label, label_text)
+LABELS = {
+    ("TV", "MODEL"): (0, 1, 0, None), ("TV", "BRAND"): (1, 1, 0, None),
+    ("TV", "SIZE"): (2, 1, 1, None), ("TV", "RESOLUTION"): (3, 1, 1, None),
+    ("TV", "HDMI"): (4, 1, 1, "HDMI"), ("TV", "DISPLAYPORT"): (5, 1, 1, "DP"),
+    ("MONITOR", "MODEL"): (0, 1, 0, None), ("MONITOR", "SIZE"): (1, 1, 1, None),
+    ("MONITOR", "RESOLUTION"): (2, 1, 1, None), ("MONITOR", "HDMI"): (3, 1, 1, "HDMI"),
+    ("MONITOR", "DISPLAYPORT"): (4, 1, 1, "DP"),
+    ("PRINTER", "MODEL"): (0, 1, 0, None), ("PRINTER", "PRINT"): (1, 1, 1, None),
+    ("PRINTER", "USB"): (2, 1, 1, "USB"), ("PRINTER", "DUPLEX"): (3, 1, 1, "DUPLEX"),
+    ("PRINTER", "TONER"): (4, 1, 0, None), ("PRINTER", "COLOR"): (5, 0, 0, None),
+    ("LABEL_PRINTER", "MODEL"): (0, 1, 0, None), ("LABEL_PRINTER", "MEDIA"): (1, 1, 0, None),
+    ("LAMINATOR", "MODEL"): (0, 1, 0, None),
+}
+
+
+def _labels(db_path):
+    return {(k, f): (p, a, o, t) for k, f, p, a, o, t in _rows(
+        db_path, "SELECT k.code, f.code, f.position, f.is_active, f.on_label, f.label_text "
+                 "FROM inv_fields f JOIN inv_gear_kinds k ON k.id = f.gear_kind_id")}
+
+
+def _choice_texts(db_path, kind, field):
+    return _rows(db_path, "SELECT c.label, c.label_text FROM inv_field_choices c "
+                          "JOIN inv_fields f ON f.id = c.field_id "
+                          "JOIN inv_gear_kinds k ON k.id = f.gear_kind_id "
+                          f"WHERE k.code = '{kind}' AND f.code = '{field}' ORDER BY c.position")
 
 
 def _seeded(db_path):
@@ -77,6 +108,7 @@ def _seeded(db_path):
 
 def test_migration_seeds_gear_kinds_and_fields(migrated):
     assert _seeded(migrated) == EXPECTED
+    assert _labels(migrated) == LABELS
     assert _kind_codes(migrated) == list(EXPECTED)
 
 
@@ -88,6 +120,24 @@ def test_upgrade_is_safe_on_a_database_that_already_has_the_seed(tmp_path):
     codes = _kind_codes(path)
     assert len(codes) == len(set(codes)) == 5
     assert _seeded(path) == EXPECTED
+    assert _labels(path) == LABELS
+
+
+def test_revised_seed_on_a_database_that_ran_the_first_seed(tmp_path):
+    path = tmp_path / "m.db"
+    _flask(path, "db", "upgrade", "iv9f2m6x4d8b")
+    _flask(path, "db", "upgrade")
+    assert _seeded(path) == EXPECTED
+    assert _labels(path) == LABELS
+    assert _choice_texts(path, "PRINTER", "PRINT") == [("Black and white", "BW"),
+                                                       ("Color", "C")]
+    assert _choice_texts(path, "TV", "RESOLUTION") == [("720p", None), ("1080p", None),
+                                                       ("4k", None)]
+    _flask(path, "db", "downgrade", "iv9f2m6x4d8b")
+    columns = [r[1] for r in _rows(path, "PRAGMA table_info(inv_fields)")]
+    assert "on_label" not in columns and "label_text" not in columns
+    _flask(path, "db", "upgrade")
+    assert _labels(path) == LABELS
 
 
 def _unit(inv, key, condition="IN_SERVICE"):

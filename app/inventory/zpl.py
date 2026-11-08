@@ -47,6 +47,8 @@ class LabelSpec:
     rows: tuple[tuple[str, str], ...]
     footer: str | None
     title: str | None = None
+    # Printed headerless across the full width after the rows, and never dropped.
+    last_line: str | None = None
 
 
 def _dots(inches: float, dpi: int) -> int:
@@ -94,12 +96,13 @@ def _fitted(height: int, text: str, full_chars: int) -> int:
 
 
 def _fit_rows(rows, keep: int):
-    """Trim rows to `keep`. Serial and Printed stay; Type goes first, then Vendor tag.
+    """Trim rows to `keep`. Serial and Printed stay; Model and Type go first, then Vendor tag.
 
     Other rows go from the end. A scanned serial and the print date identify the unit.
+    Type and Printed appear only on jobs stored before labels carried a spec line.
     """
     rows = list(rows)
-    for label in ("Type", "Vendor tag"):
+    for label in ("Model", "Type", "Vendor tag"):
         if len(rows) <= keep:
             break
         for row in rows:
@@ -163,6 +166,8 @@ def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
         if spec.footer:
             limit -= _FOOTER_H + _GAP + _RULE_H + _GAP
         fits = int((limit - row_top - _ROW_H) / _ROW_PITCH + 1e-9) + 1
+        if spec.last_line:
+            fits -= 1
         rows = _fit_rows(rows, max(0, fits))
     for index, (label, value) in enumerate(rows):
         x = x_for(row_top + index * _ROW_PITCH, _ROW_H)
@@ -171,6 +176,12 @@ def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
         lines.append(f"^FO{x},{margin}^A0R,{row_h},{row_h}^FD{_field(label)}^FS")
         lines.append(f"^FO{x},{margin}^A0R,{value_h},{value_h}"
                      f"^FB{span},1,0,R^FD{value}^FS")
+    if spec.last_line:
+        # Shrinks like the title so a long line stays on the label; _field cuts past 64.
+        last = _field(spec.last_line)
+        last_h = _fitted(row_h, last, ROW_FULL_CHARS)
+        x = x_for(row_top + len(rows) * _ROW_PITCH, _ROW_H)
+        lines.append(f"^FO{x},{margin}^A0R,{last_h},{last_h}^FB{span},1,0,L^FD{last}^FS")
 
     if spec.footer:
         footer_top = float(width_in) - _MARGIN - _FOOTER_H

@@ -259,11 +259,12 @@ def _gear_unit(inv, name=None):
     return unit
 
 
-def test_unit_fields_carry_the_name_and_details(inv):
+def test_unit_fields_carry_the_name_and_spec_line(inv):
     from app.inventory.printing import fields_for_unit
     fields = fields_for_unit(_gear_unit(inv, "MAG-TV-001"))
     assert fields["title"] == "MAG-TV-001"
-    assert fields["rows"] == [["Type", "Laptop \u00b7 Sony"]]
+    assert fields["rows"] == []
+    assert fields["spec"] == "Laptop"
 
 
 def test_unit_fields_for_an_unnamed_unit_have_no_title_key(inv):
@@ -271,6 +272,7 @@ def test_unit_fields_for_an_unnamed_unit_have_no_title_key(inv):
     fields = fields_for_unit(_gear_unit(inv))
     assert "title" not in fields
     assert fields["rows"] == [["Type", "Laptop"], ["Details", "Sony"]]
+    assert "spec" not in fields
 
 
 def test_renaming_a_unit_counts_as_changed_details(inv):
@@ -307,39 +309,122 @@ def _printed_rows(job):
     return z, set(re.findall(r"\^FD([^^]+)\^FS", z))
 
 
-def _inside(z):
+ON = {"on_label": True}
+
+
+@pytest.fixture
+def printer(inv):
+    """A routed 300 dpi 2 x 3 in printer, the GX430t the labels are laid out for."""
+    printer = _printer("GX430t", _station(), INV_JOB_OWNED_UNIT)
+    printer.dpi, printer.width_in, printer.height_in = 300, 2, 3
+    db.session.add(InvPrintRoute(job_type=INV_JOB_RENTED_UNIT, printer_id=printer.id))
+    db.session.flush()
+    return printer
+
+
+def _named_printer(inv, ident_rows, model="MFC-L2820DW", **kw):
+    from app.inventory.names import set_unit_name
+    from app.inventory.unit_fields import set_unit_value
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("PRINTER", "Printer", [
+        ("MODEL", "Model", "TEXT", None),
+        ("PRINT", "Print", "CHOICE", [("Black and white", "BW"), ("Color", "C")], ON),
+        ("USB", "USB", "BOOL", None, {"on_label": True, "label_text": "USB"}),
+        ("DUPLEX", "Duplex", "BOOL", None, {"on_label": True, "label_text": "DUPLEX"}),
+    ])
+    inv.laptop.item_name = "Laser Printer"
+    inv.laptop.gear_kind_id = kind.id
+    db.session.flush()
+    db.session.refresh(inv.laptop)
+    unit = _unit(inv, ident_rows, **kw)
+    model_f, prints, usb, duplex = kind.fields
+    set_unit_value(unit, model_f, model)
+    set_unit_value(unit, prints, "Black and white")
+    set_unit_value(unit, usb, "yes")
+    set_unit_value(unit, duplex, "yes")
+    set_unit_name(unit, "MAG-PNTR-007")
+    db.session.flush()
+    return unit
+
+
+def _inside_at(z, printer):
     import re
+    pw, ll = round(float(printer.width_in) * printer.dpi), round(float(printer.height_in) * printer.dpi)
     for line in z.splitlines():
         m = re.match(r"\^FO(-?\d+),(-?\d+)", line)
         if m:
-            assert 0 <= int(m.group(1)) < 406 and 0 <= int(m.group(2)) < 609, line
+            assert 0 <= int(m.group(1)) < pw and 0 <= int(m.group(2)) < ll, line
 
 
-def test_a_named_owned_tv_prints_title_type_serial_and_date(inv):
+SPEC_LINE = "Laser Printer (BW, USB, DUPLEX) | 2026/11/07"
+
+
+def test_named_printer_label_matches_the_approved_layout(inv, printer):
     from datetime import date
     from app.inventory.printing import fields_for_unit
-    unit = _gear_unit(inv, "MAG-TV-001")
-    from app.inventory.ledger import add_identifier
-    add_identifier(unit, "SERIAL", "PF3XK9R2MJ0K8LQ3N7Y2AB")
-    _printer("Zebra", _station(), INV_JOB_OWNED_UNIT).height_in = 3
-    job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields_for_unit(unit), NO_ONE,
+    unit = _named_printer(inv, [("FESTOPS_LABEL", "U-00001"), ("SERIAL", "PF04CKVR")])
+    fields = fields_for_unit(unit)
+    assert fields["rows"] == [["Model", "MFC-L2820DW"], ["Serial", "PF04CKVR"]]
+    assert fields["spec"] == "Laser Printer (BW, USB, DUPLEX)"
+    job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields, NO_ONE,
                         INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
     z, texts = _printed_rows(job)
-    assert {"MAG-TV-001", "Laptop \u00b7 Sony", "PF3XK9R2MJ0K8LQ3N7Y2AB",
-            "2026-11-07"} <= texts
-    _inside(z)
+    assert {"MAG-PNTR-007", "Model", "MFC-L2820DW", "Serial", "PF04CKVR", SPEC_LINE} <= texts
+    assert "Printed" not in texts and "Type" not in texts
+    order = [z.index("^FDMAG-PNTR-007^FS"), z.index("^FDModel^FS"),
+             z.index("^FDSerial^FS"), z.index(f"^FD{SPEC_LINE}^FS")]
+    assert order == sorted(order)
+    _inside_at(z, printer)
 
 
-def test_a_named_rented_unit_keeps_serial_and_date_and_drops_type(inv):
+def test_named_rented_unit_keeps_serial_and_last_line(inv, printer):
     from datetime import date
     from app.inventory.printing import fields_for_unit
-    unit = _unit(inv, [("FESTOPS_LABEL", "R-00038"), ("VENDOR_TAG", "A0038"),
-                       ("SERIAL", "SN1")], ownership="RENTED", vendor_name="Vendor A",
-                 name="MAG-TV-009")
-    _printer("Zebra", _station(), INV_JOB_RENTED_UNIT).height_in = 3
-    job = request_label(INV_JOB_RENTED_UNIT, "R-00038", fields_for_unit(unit), NO_ONE,
+    unit = _named_printer(inv, [("FESTOPS_LABEL", "R-00038"), ("VENDOR_TAG", "A0038"),
+                                ("SERIAL", "SN1")], ownership="RENTED", vendor_name="Vendor A")
+    fields = fields_for_unit(unit)
+    assert [row[0] for row in fields["rows"]] == ["Model", "Vendor tag", "Serial"]
+    job = request_label(INV_JOB_RENTED_UNIT, "R-00038", fields, NO_ONE,
                         INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
     z, texts = _printed_rows(job)
-    assert {"SN1", "2026-11-07", "Serial", "Printed"} <= texts
-    assert "Type" not in texts
-    _inside(z)
+    assert {"Vendor tag", "Serial", "SN1", SPEC_LINE} <= texts
+    assert "Model" not in texts and "Printed" not in texts
+    _inside_at(z, printer)
+
+
+def test_unnamed_label_is_unchanged(inv, printer):
+    from datetime import date
+    from app.inventory.printing import fields_for_unit
+    unit = _unit(inv, [("FESTOPS_LABEL", "U-00001"), ("SERIAL", "SN1")])
+    fields = fields_for_unit(unit)
+    assert fields == {"rows": [["Type", "Laptop"], ["Serial", "SN1"]],
+                      "footer": "Return to MAGFest FestOps"}
+    job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields, NO_ONE,
+                        INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
+    _, texts = _printed_rows(job)
+    assert {"Type", "Laptop", "Serial", "SN1", "Printed", "2026-11-07"} <= texts
+
+
+def test_label_has_no_middle_dot(inv, printer):
+    from datetime import date
+    from app.inventory.printing import fields_for_unit, render_job
+    named = _named_printer(inv, [("FESTOPS_LABEL", "U-00001"), ("SERIAL", "PF04CKVR")])
+    job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields_for_unit(named), NO_ONE,
+                        INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
+    assert "\u00b7" not in render_job(job)
+    named.name = None
+    plain = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields_for_unit(named), NO_ONE,
+                          INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
+    z = render_job(plain)
+    assert "\u00b7" not in z and "^FDMFC-L2820DW, Black and white, Yes^FS" in z
+
+
+def test_a_job_stored_before_spec_lines_prints_as_before(inv, printer):
+    from datetime import date
+    from app.inventory.printing import render_job
+    fields = {"rows": [["Type", "Laptop"], ["Serial", "SN1"]], "footer": None,
+              "title": "MAG-TV-001"}
+    job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields, NO_ONE,
+                        INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
+    z = render_job(job)
+    assert "^FDPrinted^FS" in z and "^FD2026-11-07^FS" in z and " | " not in z

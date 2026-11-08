@@ -21,6 +21,8 @@ _MAX_NUMBER = 1000
 _MAX_TEXT = 128
 _NUMBER_SUFFIXES = ('"', "inch", "in")
 _MAX_SHOWN = 3
+# Seeded on every gear kind; the label prints it as the Model row.
+MODEL_FIELD_CODE = "MODEL"
 
 
 def active_fields(gear_kind: InvGearKind | None) -> list[InvField]:
@@ -136,6 +138,13 @@ def apply_model_defaults(unit: InvUnit) -> None:
     db.session.expire(unit, ["values"])
 
 
+def _number_text(number: Decimal) -> str:
+    text = format(number, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
 def display_value(field: InvField, value) -> str:
     """Display text for a value row: "50 in", "Yes" or "No", a choice label, or text."""
     if value is None:
@@ -143,9 +152,7 @@ def display_value(field: InvField, value) -> str:
     if field.field_type == INV_FIELD_NUMBER:
         if value.number_value is None:
             return ""
-        number = format(value.number_value, "f")
-        if "." in number:
-            number = number.rstrip("0").rstrip(".")
+        number = _number_text(value.number_value)
         return f"{number} {field.unit_label}" if field.unit_label else number
     if field.field_type == INV_FIELD_BOOL:
         if value.bool_value is None:
@@ -173,6 +180,54 @@ def unit_field_rows(unit: InvUnit) -> list[tuple[InvField, str]]:
 
 
 def details_line(unit: InvUnit) -> str:
-    """The first three active fields that have a value, joined with a middle dot."""
+    """The first three active fields that have a value, joined with commas.
+
+    Commas, not a middle dot: the Zebra printer font has no middle dot and prints a gap.
+    """
     texts = [text for field, text in unit_field_rows(unit) if field.is_active and text]
-    return " \u00b7 ".join(texts[:_MAX_SHOWN])
+    return ", ".join(texts[:_MAX_SHOWN])
+
+
+def _label_text(field: InvField, value) -> str:
+    if field.field_type == INV_FIELD_BOOL:
+        return (field.label_text or field.name) if value.bool_value else ""
+    if field.field_type == INV_FIELD_CHOICE:
+        choice = value.choice
+        return (choice.label_text or choice.label) if choice is not None else ""
+    if field.field_type == INV_FIELD_NUMBER:
+        if value.number_value is None:
+            return ""
+        return _number_text(value.number_value) + (field.unit_label or "")
+    return value.text_value or ""
+
+
+def label_specs(unit: InvUnit) -> list[str]:
+    """Short label texts of the active on_label fields that have a value, in position order.
+
+    A BOOL prints its label_text on Yes and nothing on No.
+    """
+    by_field = {v.field_id: v for v in unit.values}
+    kind = unit.item.gear_kind if unit.item is not None else None
+    specs = []
+    for field in kind.fields if kind is not None else []:
+        value = by_field.get(field.id)
+        if field.is_active and field.on_label and value is not None:
+            text = _label_text(field, value)
+            if text:
+                specs.append(text)
+    return specs
+
+
+def spec_line(unit: InvUnit) -> str:
+    """The item name with its label specs, such as `Laser Printer (BW, USB)`."""
+    specs = label_specs(unit)
+    name = unit.item.item_name
+    return f"{name} ({', '.join(specs)})" if specs else name
+
+
+def model_number(unit: InvUnit) -> str | None:
+    """The vendor model number from the MODEL field, or None when blank."""
+    for value in unit.values:
+        if value.field.code == MODEL_FIELD_CODE and value.text_value:
+            return value.text_value
+    return None

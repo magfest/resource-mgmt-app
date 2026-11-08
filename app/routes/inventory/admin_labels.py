@@ -14,8 +14,8 @@ from app import db
 from app.inventory.codes import normalize_code
 from app.inventory.labels import MAX_BATCH, PREFIX_CONTAINER, PREFIX_ITEM, PREFIX_UNIT, allocate, parse, was_issued
 from app.inventory.printing import (
-    fields_for_container, fields_for_item, fields_for_unit, local_today, request_label,
-    unit_number,
+    fields_for_container, fields_for_item, fields_for_unit, label_spec, local_today,
+    request_label, unit_number,
 )
 from app.inventory.zpl import SUPPORTED_DPI, LabelSpec, can_print_code, render_batch
 from app.models import InvContainer, InvUnitIdentifier, SupplyItem
@@ -58,10 +58,7 @@ class _Found:
     container: object = None
 
     def spec(self) -> LabelSpec:
-        rows = [tuple(row) for row in self.fields["rows"]]
-        if self.printed:
-            rows.append(("Printed", local_today().isoformat()))
-        return LabelSpec(self.code, tuple(rows), self.fields["footer"])
+        return label_spec(self.code, self.fields, local_today() if self.printed else None)
 
 
 def _find(code: str) -> _Found | None:
