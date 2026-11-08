@@ -254,3 +254,85 @@ def test_units_search_shows_name_before_number(client, unit):
     db.session.commit()
     login(client, "test:operator")
     assert "MAG-TV-107" in _search(client, "U-0001")
+
+
+def _tvs(inv):
+    """Three TVs: 50in 4k HDMI, 50in 1080p no HDMI, 70in 4k with no HDMI value."""
+    from app.inventory.unit_fields import set_unit_value
+    kind = _tv_kind(inv)
+    size, res, hdmi = kind.fields
+    units = []
+    for i, (s, r, h) in enumerate([("50", "4k", "yes"), ("50", "1080p", "no"),
+                                   ("70", "4k", None)]):
+        u = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", f"TV-{i}")])
+        set_unit_value(u, size, s)
+        set_unit_value(u, res, r)
+        if h:
+            set_unit_value(u, hdmi, h)
+        units.append(u)
+    db.session.commit()
+    return kind, units
+
+
+def _ids_in(page, units):
+    return [u.id for u in units if f"/inv/admin/units/{u.id}\"" in page]
+
+
+def test_search_finds_a_unit_by_part_of_its_name(client, unit):
+    unit.name = "PNTR-007"
+    unit.name_key = "pntr-007"
+    db.session.commit()
+    login(client, "test:operator")
+    for q in ("pntr-007", "NTR-00", "  Pntr "):
+        assert f"/inv/admin/units/{unit.id}" in _search(client, q), q
+
+
+def test_kind_and_choice_filter_lists_matching_units(client, inv):
+    kind, units = _tvs(inv)
+    res = kind.fields[1]
+    four_k = next(c for c in res.choices if c.label == "4k")
+    login(client, "test:operator")
+    page = client.get("/inv/admin/units", query_string={
+        "kind": "TV", f"f_{res.id}": four_k.id}).get_data(as_text=True)
+    assert _ids_in(page, units) == [units[0].id, units[2].id]
+
+
+def test_kind_alone_lists_the_kinds_units(client, inv):
+    kind, units = _tvs(inv)
+    login(client, "test:operator")
+    page = client.get("/inv/admin/units", query_string={"kind": "TV"}).get_data(as_text=True)
+    assert _ids_in(page, units) == [u.id for u in units]
+
+
+def test_bool_filters_split_yes_from_no_and_ignore_unset(client, inv):
+    kind, units = _tvs(inv)
+    hdmi = kind.fields[2]
+    login(client, "test:operator")
+    for answer, expected in (("yes", [units[0]]), ("no", [units[1]])):
+        page = client.get("/inv/admin/units", query_string={
+            "kind": "TV", f"f_{hdmi.id}": answer}).get_data(as_text=True)
+        assert _ids_in(page, units) == [u.id for u in expected], answer
+
+
+def test_filters_combine_and_bad_ones_are_ignored(client, inv):
+    kind, units = _tvs(inv)
+    res, hdmi = kind.fields[1], kind.fields[2]
+    four_k = next(c for c in res.choices if c.label == "4k")
+    login(client, "test:operator")
+    page = client.get("/inv/admin/units", query_string={
+        "kind": "TV", f"f_{res.id}": four_k.id, f"f_{hdmi.id}": "yes",
+        "f_99999": "yes", f"f_{kind.fields[0].id}": "50"}).get_data(as_text=True)
+    assert _ids_in(page, units) == [units[0].id]
+    page = client.get("/inv/admin/units", query_string={
+        "kind": "TV", f"f_{hdmi.id}": "maybe", f"f_{res.id}": 99999}).get_data(as_text=True)
+    assert _ids_in(page, units) == [u.id for u in units]
+    assert client.get("/inv/admin/units", query_string={"kind": "NOPE"}).status_code == 200
+
+
+def test_filter_selects_appear_once_a_kind_is_chosen(client, inv):
+    kind, _ = _tvs(inv)
+    login(client, "test:operator")
+    page = client.get("/inv/admin/units", query_string={"kind": "TV"}).get_data(as_text=True)
+    assert f'name="f_{kind.fields[1].id}"' in page
+    assert f'name="f_{kind.fields[2].id}"' in page
+    assert f'name="f_{kind.fields[0].id}"' not in page

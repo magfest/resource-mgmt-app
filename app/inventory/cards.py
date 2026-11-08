@@ -9,6 +9,7 @@ from app.inventory.describe import describe_actor, describe_movement, unit_tag
 from app.inventory.resolver import (
     KIND_CONTAINER, KIND_ITEM, KIND_UNIT, Resolution,
 )
+from app.inventory.unit_fields import unit_field_rows
 from app.inventory.tree import display_name, path_text
 from app.models import (
     EventCycle, InvCheck, InvContainer, InvFlag, InvMovement, InvPrepStatus, InvStock, InvUnit,
@@ -102,7 +103,9 @@ def _unit_card(unit: InvUnit, event: EventCycle | None) -> dict:
         lines.append("Inactive")
     lines += _flag_lines(InvFlag.unit_id == unit.id)
     container = unit.current_container
+    fields = [[field.name, text] for field, text in unit_field_rows(unit) if text]
     return {"title": unit.item.item_name, "tag": unit_tag(unit),
+            "name": unit.name, "fields": fields, "notes": unit.notes or None,
             "path": path_text(container) if container else "Not placed yet",
             "lines": lines, "history": _history(InvMovement.unit_id == unit.id)}
 
@@ -130,6 +133,7 @@ def card_for(resolution: Resolution, event_cycle: EventCycle | None) -> dict:
     """Build the card for a resolved container, unit, or item.
 
     Keys: `title`, `tag`, `path`, `lines` (strings), `history` (newest first, at most 10).
+    A unit card adds `name`, `fields` ([name, text] pairs, set values only) and `notes`.
     """
     if resolution.kind == KIND_CONTAINER:
         return _container_card(resolution.container)

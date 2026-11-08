@@ -8,7 +8,8 @@
   var FOUND = ['CONTAINER', 'UNIT', 'ITEM'];
 
   function cardHtml(card) {
-    var html = '<section class="card"><h2>' + S.esc(card.title) + '</h2>';
+    var html = '<section class="card"><h2>' + S.esc(card.name || card.title) + '</h2>';
+    if (card.name) { html += '<div class="item">' + S.esc(card.title) + '</div>'; }
     if (card.tag) { html += '<div class="tag">' + S.esc(card.tag) + '</div>'; }
     if (card.path) { html += '<div class="path">' + S.esc(card.path) + '</div>'; }
     if (card.lines.length) {
@@ -16,6 +17,12 @@
         return '<li>' + S.esc(line) + '</li>';
       }).join('') + '</ul>';
     }
+    if (card.fields && card.fields.length) {
+      html += '<ul class="fields">' + card.fields.map(function (f) {
+        return '<li>' + S.esc(f[0]) + ': ' + S.esc(f[1]) + '</li>';
+      }).join('') + '</ul>';
+    }
+    if (card.notes) { html += '<p class="notes">' + S.esc(card.notes) + '</p>'; }
     if (card.history.length) {
       html += '<h3>Last ' + card.history.length + ' movements</h3><ul class="history">' +
         card.history.map(function (h) {

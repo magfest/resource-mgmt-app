@@ -481,3 +481,29 @@ def test_pure_scan_logic_under_node(tmp_path):
                             env={**os.environ, "SCAN_JS": os.path.abspath(path)})
     assert result.returncode == 0, result.stderr
     assert "capture ok" in result.stdout
+
+
+def test_look_up_card_shows_name_fields_and_notes(app, inv):
+    from app.inventory.unit_fields import set_unit_value
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("TV", "TV", [
+        ("SIZE", "Size", "NUMBER", "in"),
+        ("RESOLUTION", "Resolution", "CHOICE", ["720p", "4k"]),
+        ("HDMI", "HDMI", "BOOL", None)])
+    inv.laptop.gear_kind_id = kind.id
+    unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "S1")])
+    unit.name, unit.name_key = "MAG-TV-107", "mag-tv-107"
+    unit.notes = "no power cable"
+    unit.imported_notes = "old system text"
+    set_unit_value(unit, kind.fields[0], "50")
+    set_unit_value(unit, kind.fields[1], "4k")
+    db.session.commit()
+    card = card_for(resolve("S1"), None)
+    assert card["name"] == "MAG-TV-107"
+    assert card["fields"] == [["Size", "50 in"], ["Resolution", "4k"]]
+    assert card["notes"] == "no power cable"
+    assert "old system text" not in str(card)
+    plain = add_unit(inv.wap, None, ACTOR, [("SERIAL", "S2")])
+    db.session.commit()
+    card = card_for(resolve("S2"), None)
+    assert card["name"] is None and card["fields"] == [] and card["notes"] is None

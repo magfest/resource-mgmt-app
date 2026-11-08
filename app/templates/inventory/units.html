@@ -6,9 +6,33 @@
   <label>Find a unit by name, tag, label, serial or MAC
     <input type="text" name="q" value="{{ q }}" maxlength="128" autofocus>
   </label>
+  <label>Gear kind
+    <select name="kind" id="kind-select">
+      <option value="">Any</option>
+      {% for k in kinds %}<option value="{{ k.code }}"{% if kind and kind.id == k.id %} selected{% endif %}>{{ k.name }}</option>{% endfor %}
+    </select>
+  </label>
+  {% for f in filter_fields %}
+  <label>{{ f.name }}
+    <select name="f_{{ f.id }}">
+      <option value="">Any</option>
+      {% if f.field_type == 'BOOL' %}
+        <option value="yes"{% if chosen.get(f.id) == 'yes' %} selected{% endif %}>Yes</option>
+        <option value="no"{% if chosen.get(f.id) == 'no' %} selected{% endif %}>No</option>
+      {% else %}
+        {% for c in f.choices %}<option value="{{ c.id }}"{% if chosen.get(f.id) == c.id|string %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
+      {% endif %}
+    </select>
+  </label>
+  {% endfor %}
   <button type="submit" class="btn btn-small">Search</button>
 </form>
-{% if q %}
+<script nonce="{{ csp_nonce }}">
+  document.getElementById('kind-select').addEventListener('change', function () {
+    this.form.submit();
+  });
+</script>
+{% if searched %}
 <div style="overflow-x: auto;">
 <table>
   <thead><tr><th>Number</th><th>Item</th><th>Condition</th><th>Container</th><th>Flags</th></tr></thead>
@@ -22,7 +46,7 @@
       <td>{% if r.open_flags %}{{ r.open_flags }} open{% else %}<span class="muted">None</span>{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="5" class="muted">No unit matches {{ q }}.</td></tr>
+    <tr><td colspan="5" class="muted">No unit matches.</td></tr>
   {% endfor %}
   </tbody>
 </table>
