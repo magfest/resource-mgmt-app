@@ -1,0 +1,74 @@
+{% extends "layout/base.html" %}
+{% block title %}Where things are - Inventory{% endblock %}
+{% block content %}
+<h1>Where things are</h1>
+<style nonce="{{ csp_nonce }}">
+  .where-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+  .where-controls input { flex: 1 1 220px; min-width: 0; }
+  #where-tree details { margin: 4px 0; max-width: 100%; }
+  #where-tree details details { margin-left: 12px; }
+  #where-tree summary { overflow-wrap: anywhere; cursor: pointer; }
+  #where-tree ul { margin: 4px 0 4px 8px; padding-left: 16px; }
+  #where-tree li { overflow-wrap: anywhere; }
+  #where-tree .works { color: #1a7f37; font-weight: 600; }
+  #where-tree .broken { color: #c62828; font-weight: 600; }
+  #where-tree .where-hit { background: #fff3b0; }
+</style>
+
+{% macro unit_rows(rows) %}
+<ul>
+  {% for u in rows %}
+  <li data-search="{{ u.search }}"><a href="{{ url_for('inventory.unit_page', unit_id=u.unit_id) }}">{{ u.label }}</a> · {{ u.item_name }}{% if u.details %} · {{ u.details }}{% endif %}{% if u.word %} · {% if u.word == 'Works' %}<span class="works">Works</span>{% elif u.word == 'Broken' %}<span class="broken">Broken</span>{% else %}<span class="muted">{{ u.word }}</span>{% endif %}{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
+{% macro node(n, top) %}
+<details class="where-node" data-search="{{ n.search }}"{% if top %} data-top open{% endif %}>
+  <summary><strong>{{ n.name }}</strong> <span class="muted">{{ n.code }}{% if n.unit_total %} · {{ n.unit_total }} units{% endif %}{% if n.supply_total %} · {{ n.supply_total }} supplies{% endif %}</span></summary>
+  {% for child in n.children %}{{ node(child, false) }}{% endfor %}
+  {% if top and n.unplaced_units %}
+  <details><summary>{{ n.unplaced_text }} ({{ n.unplaced_units|length }})</summary>{{ unit_rows(n.unplaced_units) }}</details>
+  {% endif %}
+  {% if n.units %}
+  <details><summary>Units here ({{ n.units|length }})</summary>{{ unit_rows(n.units) }}</details>
+  {% endif %}
+  {% if n.supplies %}
+  <details><summary>Supplies here ({{ n.supplies|length }})</summary>
+    <ul>
+      {% for s in n.supplies %}
+      <li data-search="{{ s.item_name|lower }}">{{ s.item_name }}: {% if s.approximate %}about {% endif %}{{ s.quantity }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</details>
+{% endmacro %}
+
+<div class="where-controls">
+  <input type="search" id="where-search" placeholder="Find a container, unit or item">
+  <button type="button" class="btn btn-small" id="where-open">Open all</button>
+  <button type="button" class="btn btn-small" id="where-close">Close all</button>
+</div>
+{% if tree.roots or tree.not_placed or tree.lost %}
+<div id="where-tree">
+  {% for r in tree.roots %}{{ node(r, true) }}{% endfor %}
+  {% if tree.not_placed %}
+  <details data-top open>
+    <summary><strong>Not placed yet ({{ tree.not_placed|length }})</strong></summary>
+    <p class="muted">Nobody has scanned these yet, so we do not know where they are.</p>
+    {{ unit_rows(tree.not_placed) }}
+  </details>
+  {% endif %}
+  {% if tree.lost %}
+  <details data-top>
+    <summary><strong>Marked lost ({{ tree.lost|length }})</strong></summary>
+    {{ unit_rows(tree.lost) }}
+  </details>
+  {% endif %}
+</div>
+<script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/where.js') }}"></script>
+{% else %}
+<p class="muted">No containers yet.</p>
+{% endif %}
+{% endblock %}
