@@ -570,3 +570,35 @@ def test_kind_list_puts_unnamed_units_last(client, inv):
     page = client.get("/inv/admin/units", query_string={"kind": "TV"}).get_data(as_text=True)
     order = sorted((page.index(f"/inv/admin/units/{u.id}\""), u.id) for u in (plain, named, first))
     assert [uid for _, uid in order] == [first.id, named.id, plain.id]
+
+
+@pytest.fixture
+def nameless_number(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [], name="Lobby Laptop")
+    db.session.commit()
+    return unit
+
+
+def test_unit_without_a_number_says_so_and_never_shows_its_database_id(client, nameless_number):
+    login(client, "test:operator")
+    page = _search(client, "Lobby")
+    assert "Lobby Laptop" in page
+    assert '<span class="muted">No number yet</span>' in page
+    assert f"unit {nameless_number.id}" not in page
+
+
+def test_unit_page_shows_the_internal_id_as_a_muted_line(client, nameless_number):
+    login(client, "test:operator")
+    page = client.get(f"/inv/admin/units/{nameless_number.id}").get_data(as_text=True)
+    assert (f'<div class="muted">Internal database ID: {nameless_number.id}. '
+            "For troubleshooting only; it is never printed or scanned.</div>") in page
+    assert f"unit {nameless_number.id}" not in page
+
+
+def test_flag_on_a_unit_with_no_number_reads_in_words(client, nameless_number):
+    raise_flag(ACTOR, "COUNT", "DAMAGED", unit=nameless_number)
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get("/inv/admin/flags").get_data(as_text=True)
+    assert "Lobby Laptop (Laptop)" in page
+    assert f"unit {nameless_number.id}" not in page

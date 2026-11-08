@@ -9,7 +9,7 @@ from app.inventory.audit import (
     ACTION_RETIRE_CODE,
     record_unit_change, unit_changes,
 )
-from app.inventory.checks import checked_serial, display_number
+from app.inventory.checks import checked_serial, unit_code
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
 from app.inventory.labels import PREFIX_UNIT, allocate
 from app.inventory.ledger import (
@@ -198,7 +198,7 @@ def units():
         counts = dict(db.session.query(InvFlag.unit_id, func.count(InvFlag.id))
                       .filter(InvFlag.unit_id.in_(ids), InvFlag.resolved_at.is_(None))
                       .group_by(InvFlag.unit_id).all())
-        rows = [{"unit": u, "number": display_number(u), "open_flags": counts.get(u.id, 0)}
+        rows = [{"unit": u, "number": unit_code(u), "open_flags": counts.get(u.id, 0)}
                 for u in found]
     kinds = db.session.query(InvGearKind).order_by(InvGearKind.name).all()
     return render_inventory_page("inventory/units.html", q=q, rows=rows, searched=searched,
@@ -244,7 +244,7 @@ def unit_page(unit_id: int):
                  .order_by(InvMovement.id.desc()).limit(20).all())
     options = reprint_options(unit)
     return render_inventory_page(
-        "inventory/unit.html", unit=unit, number=display_number(unit),
+        "inventory/unit.html", unit=unit, number=unit_code(unit),
         open_rows=[r for r in rows if r["flag"].resolved_at is None],
         resolved_rows=[r for r in rows if r["flag"].resolved_at is not None],
         movements=[(local_stamp(m.created_at), describe_movement(m), describe_actor(m))

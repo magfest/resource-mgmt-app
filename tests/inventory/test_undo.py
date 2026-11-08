@@ -625,3 +625,24 @@ def test_a_label_bound_before_this_check_is_not_reported_as_staying(
     finish_check(mine, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
     assert "label stays" not in undo_last(shift, now=_later(mine, 5))["message"]
+
+
+def test_undo_names_a_unit_with_no_number_by_its_name(inv, tv_checklist, event, shift):
+    from app.inventory.ledger import add_unit
+    t, actor = tv_checklist, _actor(shift)
+    bare = add_unit(t.tv_item, t.where, ADMIN, [], name="Lobby TV")
+    db.session.commit()
+    check = open_check(bare, "TV_CHECK", actor, event)
+    finish_check(check, {t.power.id: "NO", t.remote.id: "YES"}, actor, failed_condition="REPAIR")
+    db.session.commit()
+    message = undo_last(shift, now=_later(check, 5))["message"]
+    assert message.startswith("Check of Lobby TV undone.")
+    assert f"unit {bare.id}" not in message
+
+
+def test_movement_text_for_a_unit_with_no_number_never_uses_the_id(inv):
+    from app.inventory.ledger import add_unit
+    unit = add_unit(inv.laptop, None, ADMIN, [], name="Lobby Laptop")
+    db.session.commit()
+    text = describe_movement(InvMovement.query.filter_by(unit_id=unit.id).one())
+    assert text == "Added Laptop Lobby Laptop, not placed yet"

@@ -95,9 +95,9 @@ class CheckBlocked(InventoryError):
     """Another unit's check is open on this shift. `extra` rides in the answer."""
 
     def __init__(self, check: InvCheck):
-        number = display_number(check.unit)
-        super().__init__(f"{number} is not finished. Finish it, or set it aside?")
-        self.extra = {"open_check": {"check_id": check.id, "code": number,
+        who = unit_phrase(check.unit)
+        super().__init__(f"{who[0].upper()}{who[1:]} is not finished. Finish it, or set it aside?")
+        self.extra = {"open_check": {"check_id": check.id, "code": unit_code(check.unit),
                                      "name": check.unit.item.item_name}}
 
 
@@ -133,9 +133,14 @@ def _default_event():
     return event
 
 
-def display_number(unit: InvUnit) -> str:
-    """The unit's number, or its serial when it has no number yet."""
+def unit_code(unit: InvUnit) -> str | None:
+    """The unit's number, or its best other identifier; None when it has neither."""
     return unit_number(unit) or unit_tag(unit)
+
+
+def unit_phrase(unit: InvUnit) -> str:
+    """Name a unit inside a sentence: its code, else its name, else a plain phrase."""
+    return unit_code(unit) or unit.name or "a unit with no number yet"
 
 
 def check_station_error(raw) -> str | None:
@@ -298,7 +303,7 @@ def checked_serial(unit: InvUnit, raw) -> str:
     _require_serial_shape(text, normalized)
     holders = _units_with_serial(normalized, exclude=unit)
     if holders:
-        raise InventoryError(f"{text} belongs to {display_number(holders[0])}. Nothing was changed.")
+        raise InventoryError(f"{text} belongs to {unit_phrase(holders[0])}. Nothing was changed.")
     return text
 
 
@@ -328,7 +333,7 @@ def check_serial(unit: InvUnit, scanned: str, check: InvCheck | None = None) -> 
         return {"result": "matches", "old": None}
     holders = _units_with_serial(normalized, exclude=unit)
     if holders:
-        raise InventoryError(f"{raw} belongs to {display_number(holders[0])}. Nothing was changed.")
+        raise InventoryError(f"{raw} belongs to {unit_phrase(holders[0])}. Nothing was changed.")
     old = current[0].value if current else None
     for identifier in current:
         retire_identifier(identifier)
@@ -364,7 +369,7 @@ def unused_unit_label(label_code) -> str:
 
 
 def _already_numbered(raw: str, unit: InvUnit) -> InventoryError:
-    return InventoryError(f"{raw} already has number {display_number(unit)}. Use that label.")
+    return InventoryError(f"{raw} already has number {unit_phrase(unit)}. Use that label.")
 
 
 def bind_label(label_code: str, serial: str, actor: Actor) -> InvUnit:
@@ -383,7 +388,7 @@ def bind_label(label_code: str, serial: str, actor: Actor) -> InvUnit:
     if not matches:
         raise NoUnitForSerial(f"No unit has serial {raw}.")
     if len(matches) > 1:
-        numbers = " and ".join(display_number(u) for u in matches)
+        numbers = " and ".join(unit_phrase(u) for u in matches)
         raise InventoryError(f"Serial {raw} is on {len(matches)} units: {numbers}. "
                              "An inventory admin must fix one.")
     unit = matches[0]

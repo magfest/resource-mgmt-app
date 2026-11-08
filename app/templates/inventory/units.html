@@ -41,7 +41,7 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td><a href="{{ url_for('inventory.unit_page', unit_id=r.unit.id) }}">{% if r.unit.name %}{{ r.unit.name }} <span class="muted">{{ r.number }}</span>{% else %}{{ r.number }}{% endif %}</a></td>
+      <td><a href="{{ url_for('inventory.unit_page', unit_id=r.unit.id) }}">{% if r.unit.name %}{{ r.unit.name }} {% endif %}{% if r.number %}{% if r.unit.name %}<span class="muted">{{ r.number }}</span>{% else %}{{ r.number }}{% endif %}{% else %}<span class="muted">No number yet</span>{% endif %}</a></td>
       <td>{{ r.unit.item.item_name }}</td>
       <td>{{ condition_words.get(r.unit.condition, r.unit.condition) }}</td>
       <td>{{ r.unit.current_container.label_code if r.unit.current_container else 'Not placed' }}</td>

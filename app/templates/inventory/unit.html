@@ -1,14 +1,15 @@
 {% extends "layout/base.html" %}
 {% from "inventory/_flag_rows.html" import resolve_form %}
-{% block title %}{{ unit.name or number }} - Units - Inventory{% endblock %}
+{% block title %}{{ unit.name or number or "No number yet" }} - Units - Inventory{% endblock %}
 {% block content %}
-<h1>{{ unit.name or number }}</h1>
-{% if unit.name %}<div class="muted">{{ number }}</div>{% endif %}
+<h1>{% if unit.name or number %}{{ unit.name or number }}{% else %}<span class="muted">No number yet</span>{% endif %}</h1>
+{% if unit.name %}<div class="muted">{{ number or "No number yet" }}</div>{% endif %}
 <div class="muted mb-16"><a href="{{ url_for('inventory.units') }}">Units</a></div>
 <div class="card mb-16">
   <div><strong>Item</strong> {{ unit.item.item_name }}</div>
   <div><strong>Condition</strong> {{ condition_words.get(unit.condition, unit.condition) }}</div>
   <div><strong>Container</strong> {{ unit.current_container.label_code if unit.current_container else 'Not placed' }}</div>
+  <div class="muted">Internal database ID: {{ unit.id }}. For troubleshooting only; it is never printed or scanned.</div>
 </div>
 
 <h2>Details</h2>

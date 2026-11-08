@@ -21,8 +21,11 @@ def _where(container) -> str:
     return container.label_code if container else "top level"
 
 
-def unit_tag(unit) -> str:
-    """Return the best active identifier for naming a unit on screen."""
+def unit_tag(unit) -> str | None:
+    """Return the best active identifier for naming a unit, or None when it has none.
+
+    The database id is never a fallback: it looks like a scannable number and is not one.
+    """
     active = [i for i in unit.identifiers if i.retired_at is None]
     for kind in _TAG_ORDER:
         for identifier in active:
@@ -31,7 +34,7 @@ def unit_tag(unit) -> str:
                 if kind == INV_IDENT_MAGFEST_TAG:
                     return identifier.normalized_value
                 return identifier.value
-    return f"unit {unit.id}"
+    return None
 
 
 def describe_movement(m: InvMovement) -> str:
@@ -41,7 +44,8 @@ def describe_movement(m: InvMovement) -> str:
             return f"Created {label} in {_where(m.to_container)}"
         return f"{label} moved {_where(m.from_container)} to {_where(m.to_container)}"
     if m.unit is not None:
-        name = f"{m.item.item_name} {unit_tag(m.unit)}"
+        tag = unit_tag(m.unit) or m.unit.name or "(no number yet)"
+        name = f"{m.item.item_name} {tag}"
         if m.action == INV_ACTION_ADD:
             if m.to_container is None:
                 return f"Added {name}, not placed yet"

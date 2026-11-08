@@ -10,7 +10,7 @@ import pytest
 from app import db
 from app.inventory import labels
 from app.inventory.checks import (
-    active_check_items, bind_label, check_serial, create_checked_unit, display_number,
+    active_check_items, bind_label, check_serial, create_checked_unit, unit_code,
     finish_check, last_result, open_check, prep_status, set_aside, station_models,
 )
 from app.inventory.ledger import Actor, InventoryError, add_unit
@@ -1028,4 +1028,4 @@ def test_already_checked_shows_the_local_time_not_utc(inv, event, tv_checklist):
 def test_a_unit_with_only_a_serial_is_named_by_its_serial(inv, event, tv_checklist):
     bare = add_unit(tv_checklist.tv_item, tv_checklist.where, ACTOR, [("SERIAL", "SN7777")])
     db.session.commit()
-    assert display_number(bare) == "SN7777"
+    assert unit_code(bare) == "SN7777"

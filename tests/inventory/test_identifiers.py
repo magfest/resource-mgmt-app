@@ -75,7 +75,7 @@ def test_unit_tag_prefers_tag_then_label_then_serial(inv):
     assert unit_tag(unit) == "NET7"
     for identifier in list(unit.identifiers):
         retire_identifier(identifier)
-    assert unit_tag(unit) == f"unit {unit.id}"
+    assert unit_tag(unit) is None
 
 
 def test_retired_tag_can_be_reused(inv):

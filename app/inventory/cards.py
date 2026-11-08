@@ -104,8 +104,8 @@ def _unit_card(unit: InvUnit, event: EventCycle | None) -> dict:
     lines += _flag_lines(InvFlag.unit_id == unit.id)
     container = unit.current_container
     fields = [[field.name, text] for field, text in unit_field_rows(unit) if text]
-    return {"title": unit.item.item_name, "tag": unit_tag(unit),
-            "name": unit.name, "fields": fields, "notes": unit.notes or None,
+    return {"title": unit.item.item_name, "tag": unit_tag(unit) or "",
+            "numberless": unit_tag(unit) is None, "name": unit.name, "fields": fields, "notes": unit.notes or None,
             "path": path_text(container) if container else "Not placed yet",
             "lines": lines, "history": _history(InvMovement.unit_id == unit.id)}
 

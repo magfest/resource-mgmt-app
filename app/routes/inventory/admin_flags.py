@@ -3,7 +3,7 @@ from flask import abort, flash, redirect, request, url_for
 from sqlalchemy.orm import selectinload
 
 from app import db
-from app.inventory.checks import display_number
+from app.inventory.checks import unit_phrase
 from app.inventory.flags import FLAG_WORDS, resolve_flag
 from app.inventory.ledger import InventoryError
 from app.inventory.printing import local_stamp
@@ -36,7 +36,7 @@ def _row(flag: InvFlag, names: dict, units: dict) -> dict:
         "station": INV_STATION_NAMES.get(flag.station_code, flag.station_code),
         "reason": FLAG_WORDS.get(flag.reason, flag.reason),
         "unit": unit,
-        "unit_text": f"{display_number(unit)} ({unit.item.item_name})" if unit else None,
+        "unit_text": f"{unit_phrase(unit)} ({unit.item.item_name})" if unit else None,
         "container": db.session.get(InvContainer, flag.container_id) if flag.container_id else None,
         "raised_by": names.get(flag.performed_by_user_id) or "Scanner volunteer",
         "resolved_when": local_stamp(flag.resolved_at) if flag.resolved_at else None,

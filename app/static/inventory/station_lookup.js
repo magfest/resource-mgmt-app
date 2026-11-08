@@ -11,6 +11,7 @@
     var html = '<section class="card"><h2>' + S.esc(card.name || card.title) + '</h2>';
     if (card.name) { html += '<div class="item">' + S.esc(card.title) + '</div>'; }
     if (card.tag) { html += '<div class="tag">' + S.esc(card.tag) + '</div>'; }
+    else if (card.numberless) { html += '<div class="muted">No number yet</div>'; }
     if (card.path) { html += '<div class="path">' + S.esc(card.path) + '</div>'; }
     if (card.lines.length) {
       html += '<ul>' + card.lines.map(function (line) {

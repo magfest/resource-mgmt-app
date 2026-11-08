@@ -27,6 +27,7 @@ body.not-saved-on { background: #f9c9c9; }
 .msg.info { color: #263238; }
 .panel { padding: 12px 14px; }
 .hint { color: #607d8b; }
+.muted { color: #78909c; }
 /* At the top: a keyboard left open by Chrome's address bar pans the page to reveal this
    field, which moves the card off screen if the field sits at the bottom. CT60 XP, 2026-11-07. */
 .capture { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }

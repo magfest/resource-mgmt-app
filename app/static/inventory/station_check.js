@@ -146,6 +146,13 @@
     return node;
   }
 
+  // The server sends no code for a unit with no number. A sentence then names the model alone.
+  function codeNode(code) {
+    return code ? el('div', 'chk-code', code) : el('div', 'chk-code muted', 'No number yet');
+  }
+
+  function named(name, code) { return code ? name + ' ' + code : name; }
+
   function button(text, className, onClick) {
     var b = el('button', className, text);
     b.type = 'button';
@@ -165,7 +172,7 @@
   function headNode() {
     var head = el('div', 'chk-head');
     head.appendChild(el('div', 'chk-name', check.name));
-    head.appendChild(el('div', 'chk-code', check.code));
+    head.appendChild(codeNode(check.code));
     if (phase === 'lines' && check.hasLines()) {
       head.appendChild(el('div', 'chk-sub',
         check.answeredCount() + ' of ' + check.lines.length + ' answered'));
@@ -176,7 +183,7 @@
   function render() {
     panel.textContent = '';
     S.setFlagSubject(check && check.unitId != null
-      ? {unitId: check.unitId, label: check.name + ' ' + check.code} : null);
+      ? {unitId: check.unitId, label: named(check.name, check.code)} : null);
     if (phase === 'result') { renderResult(); return; }
     if (phase === 'label') { renderLabel(); return; }
     if (!check) { panel.appendChild(el('p', 'chk-idle', idleText(cfg.station))); return; }
@@ -277,7 +284,7 @@
   function renderResult() {
     var box = el('div', 'chk');
     box.appendChild(el('div', 'chk-name', result.name));
-    box.appendChild(el('div', 'chk-code', result.code));
+    box.appendChild(codeNode(result.code));
     box.appendChild(el('div', 'chk-result ' + (result.status === 'PASSED' ? 'pass' : 'fail'),
       resultText(result)));
     if (result.put_away_error) {
@@ -393,7 +400,7 @@
             return openWrite(code);
           });
         });
-      }, open.code + ' is not finished. ' + MESSAGES.asideAsk);
+      }, (open.code || open.name) + ' is not finished. ' + MESSAGES.asideAsk);
   }
 
   function askAgain(code, answer, extra) {
@@ -402,12 +409,12 @@
       function (pick) {
         if (pick !== 'again') { backToScreen(); return; }
         gate.run(function () { return openWrite(code, Object.assign({}, extra, {again: true})); });
-      }, answer.name + ' ' + answer.code + ' was checked: ' + when.result + ' on ' + when.when +
+      }, named(answer.name, answer.code) + ' was checked: ' + when.result + ' on ' + when.when +
          '. Check it again?');
   }
 
   function chooseUnit(code, candidates) {
-    S.choose(candidates.map(function (c) { return {label: c.name + ' ' + c.code, value: c.unit_id}; })
+    S.choose(candidates.map(function (c) { return {label: named(c.name, c.code), value: c.unit_id}; })
       .concat([{label: 'Cancel', value: null}]), function (unitId) {
         if (unitId === null) { backToScreen(); return; }
         gate.run(function () { return openWrite(code, {unit_id: unitId}); });
@@ -524,7 +531,7 @@
         if (value === null) { askCondition(); return; }
         check.setCondition('RETIRED');
         next();
-      }, 'Retire ' + check.code + '? Its tag stops working.');
+      }, 'Retire ' + (check.code || check.name) + '? Its tag stops working.');
   }
 
   // A tap queues the save behind any scan in flight. `sending` is set at once, so a second

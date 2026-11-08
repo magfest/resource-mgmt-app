@@ -14,7 +14,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 
 from app import db
-from app.inventory.checks import display_number
+from app.inventory.checks import unit_phrase
 from app.inventory.counts import not_undone
 from app.inventory.ledger import (
     NUMBER_KINDS, Actor, InventoryError, _active_numbers, _is_taken, _locked_stock,
@@ -244,7 +244,7 @@ def _undo_check(check: InvCheck, actor: Actor) -> dict:
         device_id=actor.device_id))
     db.session.flush()
     db.session.expire(unit, ["identifiers"])
-    text = " ".join(p for p in (f"Check of {display_number(unit)} undone.",
+    text = " ".join(p for p in (f"Check of {unit_phrase(unit)} undone.",
                                 _stays_text(check, unit, actor)) if p)
     return {"undone": "check", "message": text}
 

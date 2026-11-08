@@ -633,3 +633,14 @@ def test_look_up_name_hit_prints_and_flags_by_unit_id_under_node(tmp_path):
              "LOOKUP_JS": os.path.abspath(os.path.join(static, "station_lookup.js"))})
     assert result.returncode == 0, result.stderr
     assert "lookup ok" in result.stdout
+
+
+def test_look_up_card_for_a_unit_with_no_number_says_so(inv):
+    from app.inventory.ledger import Actor, add_unit
+    unit = add_unit(inv.laptop, None, Actor(user_id="test:invadmin"), [], name="Lobby Laptop")
+    db.session.commit()
+    from app.inventory.resolver import KIND_UNIT, Resolution
+    card = card_for(Resolution(kind=KIND_UNIT, code="", unit=unit), None)
+    assert card["name"] == "Lobby Laptop"
+    assert not card["tag"] and card["numberless"] is True
+    assert f"unit {unit.id}" not in str(card)

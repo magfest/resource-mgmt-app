@@ -13,7 +13,7 @@ from app.inventory import labels
 from app.inventory.cards import candidate_card, card_for, default_event
 from app.inventory.checks import (
     NO_EVENT, STATION_WORDS, CheckBlocked, CheckFinished, NoUnitForSerial, bind_label, blocking_check,
-    display_number,
+    unit_code,
     active_check_items, check_serial, create_checked_unit, finish_check, last_result, open_check,
     open_check_for, put_away, require_station, serial_message, set_aside, station_models,
     unused_unit_label,
@@ -651,7 +651,7 @@ def _own_check(check_id) -> InvCheck:
 def _check_answer(check: InvCheck, serial_checked: bool) -> dict:
     lines = [{"id": line.id, "prompt": line.prompt, "fails": line.missing_means == "FAIL"}
              for line in active_check_items(check.unit.item)]
-    return {"check_id": check.id, "unit_id": check.unit_id, "code": display_number(check.unit),
+    return {"check_id": check.id, "unit_id": check.unit_id, "code": unit_code(check.unit),
             "name": check.unit.item.item_name, "lines": lines, "serial_checked": serial_checked}
 
 
@@ -667,7 +667,7 @@ def _begin_check(unit: InvUnit, station: str, actor, event, again=False,
     if resumed is None and not again:
         prior = last_result(unit, event)
         if prior is not None:
-            return {"already_checked": prior, "code": display_number(unit),
+            return {"already_checked": prior, "code": unit_code(unit),
                     "name": unit.item.item_name}
     check = open_check(unit, station, actor, event)
     return _check_answer(check, serial_checked)
@@ -686,7 +686,7 @@ def _unit_for_scan(resolution: Resolution, data: dict, station: str) -> dict | I
             match = next((u for u in units if u.id == chosen), None)
             if match is not None:
                 return match
-            return {"candidates": [{"unit_id": u.id, "code": display_number(u),
+            return {"candidates": [{"unit_id": u.id, "code": unit_code(u),
                                     "name": u.item.item_name} for u in units[:MAX_CANDIDATES]]}
     if kind == KIND_UNUSED and resolution.prefix == labels.PREFIX_UNIT:
         return {"unused": True, "code": resolution.code}
@@ -777,7 +777,7 @@ def scan_check_finish():
         condition = _optional_text(data, "failed_condition")
         line_ids = data.get("line_ids")
         # Retiring the unit retires its numbers, so name it before finishing.
-        code = display_number(check.unit)
+        code = unit_code(check.unit)
         finish_check(check, answers, actor, failed_condition=condition,
                      note=_optional_text(data, "note"),
                      line_ids=line_ids if isinstance(line_ids, list) else None)
@@ -834,7 +834,7 @@ def scan_check_bind_label():
                     "serial": serial.strip(),
                     "models": [{"id": m.id, "name": m.item_name} for m in models]}
         answer = _begin_check(unit, station, actor, event, again=True, serial_checked=True)
-        return {**answer, "code": display_number(unit)}
+        return {**answer, "code": unit_code(unit)}
 
     return jsonify(run_once(data.get("client_request_id"), bind))
 
