@@ -20,11 +20,11 @@ from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
     local_stamp, reprint, reprint_options,
 )
-from app.inventory.unit_station import give_unit_number, number_refusal
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
 from app.inventory.unit_fields import (
     active_fields, parse_value, set_unit_value, unit_field_rows,
 )
+from app.inventory.unit_station import give_unit_number, number_refusal
 from app.models import (
     InvField, InvFlag, InvGearKind, InvMovement, InvShift, InvUnit, InvUnitIdentifier,
     InvUnitValue, SupplyItem, User,
@@ -33,7 +33,7 @@ from app.inventory.describe import describe_actor, describe_movement
 from app.models.constants import (
     INV_CONDITION_RETIRED, INV_FIELD_BOOL, INV_FIELD_CHOICE, INV_FIELD_NUMBER,
     INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
-    INV_IDENT_VENDOR_TAG, INV_OWNERSHIP_OWNED,
+    INV_IDENT_VENDOR_TAG,
 )
 from . import inventory_bp
 from .admin_flags import flag_rows

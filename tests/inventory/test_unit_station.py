@@ -171,6 +171,14 @@ def test_broken_needs_no_note(inv, event, printer, warehouse):
     assert out["status"] == INV_CHECK_FAILED and out["condition"] == INV_CONDITION_REPAIR
 
 
+def test_repair_is_placed_home_and_labelled(inv, event, printer, warehouse):
+    unit = _numbered(inv)
+    out = finish_unit(_check(unit, event), {}, ACTOR, home=warehouse,
+                      failed_condition=INV_CONDITION_REPAIR)
+    assert out["placed"] == "Warehouse" and out["label"] == "queued"
+    assert unit.current_container_id == warehouse.id
+
+
 def test_no_printer_route_keeps_the_check_and_reports_the_error(inv, event, warehouse):
     unit = _numbered(inv)
     check = _check(unit, event)
@@ -208,6 +216,24 @@ def test_place_last_refuses_a_unit_that_is_not_the_last_one(inv, event):
     make_container(inv, "C-0002")
     with pytest.raises(InventoryError, match="Scan the unit again"):
         place_last(ACTOR, "C-0002", first.id)
+
+
+def test_place_last_refuses_once_the_next_unit_is_open(inv, event):
+    first = _finished(inv, event, "TV-X-066", "FEST91066")
+    second = _units(inv, "TV-X-067")[0]
+    _check(second, event)
+    make_container(inv, "C-0002")
+    with pytest.raises(InventoryError, match="Scan the unit again"):
+        place_last(ACTOR, "C-0002", first.id)
+    assert first.current_container_id is None
+
+
+def test_place_last_refuses_a_unit_another_scanner_finished(inv, event):
+    unit = _finished(inv, event, "TV-X-068", "FEST91068")
+    make_container(inv, "C-0002")
+    with pytest.raises(InventoryError, match="Scan the unit again"):
+        place_last(Actor(user_id="test:invadmin"), "C-0002", unit.id)
+    assert unit.current_container_id is None
 
 
 def test_place_last_ignores_a_voided_check(inv, event):

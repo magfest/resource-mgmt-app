@@ -11,7 +11,7 @@ import re
 from sqlalchemy.orm import selectinload
 
 from app import db
-from app.inventory.checks import finish_check, put_away, unit_code
+from app.inventory.checks import finish_check, open_check_for, put_away, unit_code
 from app.inventory.labels import PREFIX_UNIT, allocate
 from app.inventory.ledger import (
     NUMBER_KINDS, Actor, InventoryError, add_identifier, move_unit, savepoint,
@@ -146,7 +146,10 @@ def place_last(actor: Actor, container_code: str, unit_id: int) -> str:
         query = query.filter(InvCheck.performed_by_user_id == actor.user_id,
                              InvCheck.shift_id.is_(None))
     newest = query.order_by(InvCheck.id.desc()).first()
-    if newest is None or newest.unit_id != unit_id:
+    # A started check means the volunteer has moved on; the pallet is for the next unit.
+    open_one = open_check_for(actor)
+    if newest is None or newest.unit_id != unit_id or (
+            open_one is not None and open_one.unit_id != unit_id):
         raise InventoryError(NOT_THE_LAST)
     unit = newest.unit
     if unit.condition == INV_CONDITION_RETIRED:
