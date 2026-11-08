@@ -137,3 +137,46 @@ def test_a_new_tag_replaces_the_units_number(client, unit):
     active = {i.kind for i in db.session.query(InvUnitIdentifier)
               .filter_by(unit_id=unit.id, retired_at=None)}
     assert active == {"MAGFEST_TAG", "SERIAL", "MAC"}
+
+
+def _audit(unit):
+    import json
+    from app.models import ConfigAuditEvent
+    return [(e.action, e.created_by_user_id, json.loads(e.changes_json))
+            for e in db.session.query(ConfigAuditEvent)
+            .filter_by(entity_type="inv_unit", entity_id=str(unit.id)).order_by(ConfigAuditEvent.id)]
+
+
+def test_each_correction_records_who_and_what_changed(client, inv, unit):
+    login(client, "test:invadmin")
+    base = f"/inv/admin/units/{unit.id}"
+    client.post(f"{base}/identifiers", data={"kind": "MAGFEST_TAG", "value": "TECH412"})
+    client.post(f"{base}/item", data={"item_id": str(inv.wap.id)})
+    client.post(f"{base}/condition", data={"condition": "REPAIR"})
+    events = _audit(unit)
+    assert [(a, who) for a, who, _ in events] == [
+        ("ADD_CODE", "test:invadmin"), ("ITEM", "test:invadmin"), ("CONDITION", "test:invadmin")]
+    codes = events[0][2]["codes"]
+    assert "FestOps label U-0001" in codes["old"] and "FestOps label U-0001" not in codes["new"]
+    assert "MAGFest tag TECH412" in codes["new"]
+    assert events[1][2] == {"item": {"old": "Laptop", "new": "Wireless Access Point"}}
+    assert events[2][2] == {"condition": {"old": "IN_SERVICE", "new": "REPAIR"}}
+    page = client.get(base).get_data(as_text=True)
+    assert "Condition: In service to In repair" in page
+
+
+def test_retiring_a_unit_records_the_codes_it_retired(client, unit):
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/units/{unit.id}/condition", data={"condition": "RETIRED"})
+    (action, _, changes), = _audit(unit)
+    assert action == "CONDITION" and changes["codes"]["new"] == []
+    assert len(changes["codes"]["old"]) == 3
+
+
+def test_refused_or_unchanged_corrections_record_nothing(client, unit, printer):
+    login(client, "test:invadmin")
+    base = f"/inv/admin/units/{unit.id}"
+    client.post(f"{base}/identifiers", data={"kind": "SERIAL", "value": "U-0099"})
+    client.post(f"{base}/condition", data={"condition": "IN_SERVICE"})
+    client.post(f"{base}/print", data={"mode": "CURRENT_DETAILS"})
+    assert _audit(unit) == []

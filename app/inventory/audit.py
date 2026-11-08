@@ -1,0 +1,35 @@
+"""Who changed a unit's codes, condition or item type at a laptop, and when.
+
+Stock changes are already recorded as movements; these corrections move nothing,
+so they are written to config_audit_events with entity type "inv_unit". The
+changes JSON uses the {"field": {"old": ..., "new": ...}} shape the admin pages use.
+"""
+from __future__ import annotations
+
+import json
+
+from app import db
+from app.models import ConfigAuditEvent
+
+ENTITY_UNIT = "inv_unit"
+ACTION_ADD_CODE = "ADD_CODE"
+ACTION_RETIRE_CODE = "RETIRE_CODE"
+ACTION_CONDITION = "CONDITION"
+ACTION_ITEM = "ITEM"
+
+
+def record_unit_change(unit_id: int, action: str, changes: dict, user_id: str) -> None:
+    """Add one audit row in the caller's transaction; the caller commits."""
+    db.session.add(ConfigAuditEvent(
+        entity_type=ENTITY_UNIT, entity_id=str(unit_id), action=action,
+        changes_json=json.dumps(changes), created_by_user_id=user_id))
+
+
+def unit_changes(unit_id: int, limit: int = 50) -> list[tuple[ConfigAuditEvent, dict]]:
+    """Newest first, each with its decoded changes."""
+    rows = (db.session.query(ConfigAuditEvent)
+            .filter(ConfigAuditEvent.entity_type == ENTITY_UNIT,
+                    ConfigAuditEvent.entity_id == str(unit_id))
+            .order_by(ConfigAuditEvent.created_at.desc(), ConfigAuditEvent.id.desc())
+            .limit(limit).all())
+    return [(row, json.loads(row.changes_json or "{}")) for row in rows]

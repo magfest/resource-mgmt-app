@@ -4,6 +4,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
 from app import db
+from app.inventory.audit import (
+    ACTION_ADD_CODE, ACTION_CONDITION, ACTION_ITEM, ACTION_RETIRE_CODE, record_unit_change,
+    unit_changes,
+)
 from app.inventory.checks import checked_serial, display_number
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
 from app.inventory.ledger import (
@@ -15,7 +19,7 @@ from app.inventory.printing import (
     local_stamp, reprint, reprint_options,
 )
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
-from app.models import InvFlag, InvMovement, InvUnit, InvUnitIdentifier, SupplyItem
+from app.models import InvFlag, InvMovement, InvUnit, InvUnitIdentifier, SupplyItem, User
 from app.inventory.describe import describe_actor, describe_movement
 from app.models.constants import (
     INV_CONDITION_RETIRED, INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG,
@@ -137,11 +141,59 @@ def unit_page(unit_id: int):
         kind_words=KIND_WORDS, kinds=IDENTIFIER_KINDS, conditions=INV_CONDITIONS,
         condition_words=CONDITION_WORDS, items=_selectable_items(unit),
         print_modes=[(m, REPRINT_WORDS[m]) for m in _print_modes(options)],
-        print_options=options, retired_condition=INV_CONDITION_RETIRED)
+        print_options=options, retired_condition=INV_CONDITION_RETIRED,
+        changes=_change_rows(unit))
+
+
+CHANGE_FIELDS = {"codes": "Codes", "condition": "Condition", "item": "Item type"}
+
+
+def _change_rows(unit: InvUnit) -> list[dict]:
+    events = unit_changes(unit.id)
+    ids = {row.created_by_user_id for row, _ in events}
+    names = {u.id: u.display_name or u.id
+             for u in db.session.query(User).filter(User.id.in_(ids))} if ids else {}
+
+    def words(field, value):
+        if field == "codes":
+            return ", ".join(value) or "none"
+        if field == "condition":
+            return CONDITION_WORDS.get(value, value)
+        return value
+
+    return [{"when": local_stamp(row.created_at),
+             "who": names.get(row.created_by_user_id, row.created_by_user_id),
+             "what": [f"{CHANGE_FIELDS.get(f, f)}: {words(f, c['old'])} to {words(f, c['new'])}"
+                      for f, c in changes.items()]}
+            for row, changes in events]
 
 
 def _back(unit: InvUnit):
     return redirect(url_for("inventory.unit_page", unit_id=unit.id))
+
+
+def _active_codes(unit: InvUnit) -> list[str]:
+    # Queried, not read from unit.identifiers, which may be loaded and stale.
+    rows = (db.session.query(InvUnitIdentifier)
+            .filter(InvUnitIdentifier.unit_id == unit.id, InvUnitIdentifier.retired_at.is_(None))
+            .order_by(InvUnitIdentifier.id).all())
+    return [f"{KIND_WORDS.get(i.kind, i.kind)} {i.value}" for i in rows]
+
+
+def _audited(action, unit: InvUnit, audit_action: str):
+    """Run a correction and record what it changed; nothing is recorded if nothing changed."""
+    def run():
+        before = {"codes": _active_codes(unit), "condition": unit.condition,
+                  "item": unit.item.item_name}
+        action()
+        db.session.expire(unit, ["item"])
+        after = {"codes": _active_codes(unit), "condition": unit.condition,
+                 "item": unit.item.item_name}
+        changes = {key: {"old": before[key], "new": after[key]}
+                   for key in before if before[key] != after[key]}
+        if changes:
+            record_unit_change(unit.id, audit_action, changes, admin_actor().user_id)
+    return run
 
 
 def _commit_or_flash(action, success: str, unit: InvUnit):
@@ -174,7 +226,7 @@ def unit_add_identifier(unit_id: int):
         else:
             add_identifier(unit, kind, value.strip())
 
-    return _commit_or_flash(add, "Code saved.", unit)
+    return _commit_or_flash(_audited(add, unit, ACTION_ADD_CODE), "Code saved.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/identifiers/<int:identifier_id>/retire")
@@ -184,14 +236,16 @@ def unit_retire_identifier(unit_id: int, identifier_id: int):
     identifier = db.session.get(InvUnitIdentifier, identifier_id)
     if identifier is None or identifier.unit_id != unit.id:
         abort(404)
-    return _commit_or_flash(lambda: retire_identifier(identifier), "Code retired.", unit)
+    return _commit_or_flash(_audited(lambda: retire_identifier(identifier), unit, ACTION_RETIRE_CODE),
+                            "Code retired.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/condition")
 @require_inventory_admin
 def unit_set_condition(unit_id: int):
     unit = _unit_or_404(unit_id)
-    return _commit_or_flash(lambda: set_condition(unit, request.form.get("condition", "")),
+    condition = request.form.get("condition", "")
+    return _commit_or_flash(_audited(lambda: set_condition(unit, condition), unit, ACTION_CONDITION),
                             "Condition saved.", unit)
 
 
@@ -206,9 +260,8 @@ def unit_set_item(unit_id: int):
             raise InventoryError("Pick an active serialized item.")
         unit.item_id = item.id
         db.session.flush()
-        db.session.expire(unit, ["item"])
 
-    return _commit_or_flash(change, "Item type changed.", unit)
+    return _commit_or_flash(_audited(change, unit, ACTION_ITEM), "Item type changed.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/print")

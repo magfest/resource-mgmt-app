@@ -107,6 +107,20 @@
 </div>
 {% endif %}
 
+<h2>Changes</h2>
+<div style="overflow-x: auto;">
+<table class="mb-16">
+  <thead><tr><th>When</th><th>What changed</th><th>Who</th></tr></thead>
+  <tbody>
+  {% for c in changes %}
+    <tr><td class="muted">{{ c.when }}</td><td>{% for line in c.what %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td><td>{{ c.who }}</td></tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">No corrections.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
 <h2>Recent movements</h2>
 <div style="overflow-x: auto;">
 <table>
