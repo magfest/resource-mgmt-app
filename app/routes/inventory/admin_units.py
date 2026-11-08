@@ -24,8 +24,8 @@ from app.inventory.unit_fields import (
     active_fields, parse_value, set_unit_value, unit_field_rows,
 )
 from app.models import (
-    InvField, InvFlag, InvGearKind, InvMovement, InvUnit, InvUnitIdentifier, InvUnitValue,
-    SupplyItem, User,
+    InvField, InvFlag, InvGearKind, InvMovement, InvShift, InvUnit, InvUnitIdentifier,
+    InvUnitValue, SupplyItem, User,
 )
 from app.inventory.describe import describe_actor, describe_movement
 from app.models.constants import (
@@ -266,6 +266,16 @@ def _change_rows(unit: InvUnit) -> list[dict]:
     names = {u.id: u.display_name or u.id
              for u in db.session.query(User).filter(User.id.in_(ids))} if ids else {}
 
+    shifts = {}
+    for raw in ids:
+        if isinstance(raw, str) and raw.startswith("shift:") and raw[6:].isdigit():
+            shift = db.session.get(InvShift, int(raw[6:]))
+            if shift is not None:
+                shifts[raw] = f"{shift.person_name} (scanner)"
+
+    def who(user_id):
+        return names.get(user_id) or shifts.get(user_id) or user_id
+
     def words(field, value):
         if field == "codes":
             return ", ".join(value) or "none"
@@ -274,7 +284,7 @@ def _change_rows(unit: InvUnit) -> list[dict]:
         return value or "none"
 
     return [{"when": local_stamp(row.created_at),
-             "who": names.get(row.created_by_user_id, row.created_by_user_id),
+             "who": who(row.created_by_user_id),
              "what": [f"{CHANGE_FIELDS.get(f, f)}: {words(f, c['old'])} to {words(f, c['new'])}"
                       for f, c in changes.items()]}
             for row, changes in events]

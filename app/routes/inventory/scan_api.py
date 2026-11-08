@@ -25,7 +25,9 @@ from app.inventory.counts import (
     SERIALIZED_REFUSAL, CountLineIn, browse_categories, browse_items, count_payload,
     item_choice, start_count, submit_count,
 )
+from app.inventory.tagging import link_tag, tag_candidates, undo_tag_link
 from app.inventory.tree import display_name
+from app.inventory.unit_fields import model_number, spec_line
 from app.inventory.undo import undo_last
 from app.inventory.ledger import InventoryError, create_container
 from app.inventory.receive import (
@@ -46,7 +48,7 @@ from app.models import InvCheck, InvContainerKind, InvCount, InvUnit, SupplyItem
 from app.models.constants import (
     INV_CHECK_STATIONS, INV_CONDITION_RETIRED, INV_IDENT_SERIAL, INV_SHIFT_END_ENDED,
     INV_STATION_COUNT,
-    INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_TV_CHECK,
+    INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_TAG, INV_STATION_TV_CHECK,
 )
 
 from . import inventory_bp
@@ -857,3 +859,66 @@ def scan_station_switch():
         return {"station_code": code}
 
     return jsonify(run_once(data.get("client_request_id"), switch))
+
+
+def _tag_device() -> None:
+    """Refuse a device enrolled for another station; a signed-in operator passes."""
+    principal = g.scan_principal
+    if principal.is_device and principal.device.station_code != INV_STATION_TAG:
+        raise InventoryError("This scanner is not set up for tagging.")
+
+
+@inventory_bp.post("/scan/api/tag/check")
+@api
+def scan_tag_check():
+    """Check a scanned FEST tag before the unit step. Reads only."""
+    _tag_device()
+    tag = _optional_text(_json_body(), "tag")
+    if not tag or not tag.strip():
+        raise InventoryError("Scan a tag.")
+    check_tag(tag.strip())
+    return jsonify(ok=True)
+
+
+@inventory_bp.post("/scan/api/tag/candidates")
+@api
+def scan_tag_candidates():
+    """List named units with no number whose name contains the text. Reads only."""
+    _tag_device()
+    text = _optional_text(_json_body(), "q") or ""
+    return jsonify(ok=True, units=[
+        {"id": u.id, "name": u.name, "model": model_number(u) or u.item.item_name,
+         "details": spec_line(u)} for u in tag_candidates(text)])
+
+
+@inventory_bp.post("/scan/api/tag/link")
+@api
+def scan_tag_link():
+    """Attach a tag to a named unit and queue the combined label."""
+    _tag_device()
+    data = _json_body()
+
+    def link() -> dict:
+        actor = scan_actor()
+        unit_id = data.get("unit_id")
+        return link_tag(unit_id if type(unit_id) is int else -1,
+                        _optional_text(data, "tag"), actor,
+                        client_request_id=data.get("client_request_id"))
+
+    return jsonify(run_once(data.get("client_request_id"), link))
+
+
+@inventory_bp.post("/scan/api/tag/undo")
+@api
+def scan_tag_undo():
+    """Undo the tag this scanner linked last."""
+    _tag_device()
+    data = _json_body()
+
+    def undo() -> dict:
+        actor = scan_actor()
+        unit_id = data.get("unit_id")
+        message = undo_tag_link(unit_id if type(unit_id) is int else -1, actor)
+        return {"unit_id": unit_id, "message": message}
+
+    return jsonify(run_once(data.get("client_request_id"), undo))

@@ -76,7 +76,7 @@ def _clean(value) -> str | None:
     return text or None
 
 
-def _label_job(unit: InvUnit, actor: Actor, client_request_id, printed_date=None,
+def label_job(unit: InvUnit, actor: Actor, client_request_id, printed_date=None,
                fields=None) -> InvPrintJob:
     number = unit_number(unit)
     return request_label(
@@ -85,7 +85,7 @@ def _label_job(unit: InvUnit, actor: Actor, client_request_id, printed_date=None
         client_request_id=client_request_id)
 
 
-def _answer(unit: InvUnit, job: InvPrintJob) -> dict:
+def label_answer(unit: InvUnit, job: InvPrintJob) -> dict:
     status = printer_status(job.printer)
     return {"code": unit_number(unit), "unit_id": unit.id, "job_id": job.id,
             "station_seen": status["station_seen"], "waiting": status["waiting"]}
@@ -149,7 +149,7 @@ def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
         if held:
             raise AlreadyReceived(held) from None
         raise
-    return _answer(unit, _label_job(unit, actor, client_request_id))
+    return label_answer(unit, label_job(unit, actor, client_request_id))
 
 
 def _last_received(actor: Actor) -> InvMovement | None:
@@ -208,8 +208,8 @@ def reprint_unit(unit_id, actor: Actor, client_request_id=None) -> dict:
         raise InventoryError("Only owned gear prints from this station.")
     previous = (db.session.query(InvPrintJob).filter_by(unit_id=unit.id)
                 .order_by(InvPrintJob.id.desc()).first())
-    job = _label_job(
+    job = label_job(
         unit, actor, client_request_id,
         printed_date=previous.printed_date if previous else None,
         fields=dict(previous.fields) if previous else None)
-    return _answer(unit, job)
+    return label_answer(unit, job)
