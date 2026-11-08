@@ -5,6 +5,7 @@ from sqlalchemy import or_
 
 from app import db
 from app.inventory.flags import FLAG_WORDS
+from app.inventory.notes import latest_note
 from app.inventory.describe import describe_actor, describe_movement, unit_tag
 from app.inventory.resolver import (
     KIND_CONTAINER, KIND_ITEM, KIND_UNIT, Resolution,
@@ -105,7 +106,7 @@ def _unit_card(unit: InvUnit, event: EventCycle | None) -> dict:
     container = unit.current_container
     fields = [[field.name, text] for field, text in unit_field_rows(unit) if text]
     return {"title": unit.item.item_name, "tag": unit_tag(unit) or "",
-            "numberless": unit_tag(unit) is None, "name": unit.name, "fields": fields, "notes": unit.notes or None,
+            "numberless": unit_tag(unit) is None, "name": unit.name, "fields": fields, "notes": note.body if (note := latest_note(unit.id)) else None,
             "path": path_text(container) if container else "Not placed yet",
             "lines": lines, "history": _history(InvMovement.unit_id == unit.id)}
 

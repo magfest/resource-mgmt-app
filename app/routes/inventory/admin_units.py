@@ -4,8 +4,9 @@ from sqlalchemy import false, func, or_
 from sqlalchemy.orm import selectinload
 
 from app import db
+from app.routes import get_user_ctx
 from app.inventory.audit import (
-    ACTION_ADD_CODE, ACTION_CONDITION, ACTION_FIELDS, ACTION_ITEM, ACTION_NOTES,
+    ACTION_ADD_CODE, ACTION_CONDITION, ACTION_FIELDS, ACTION_ITEM,
     ACTION_RETIRE_CODE,
     record_unit_change, unit_changes,
 )
@@ -17,6 +18,7 @@ from app.inventory.ledger import (
 )
 from app.inventory.cards import default_event
 from app.inventory.csv_export import csv_response
+from app.inventory.notes import NOTE_TYPE_WORDS, add_note
 from app.inventory.names import name_key, set_unit_name
 from app.inventory.tree import display_name
 from app.inventory.printing import (
@@ -44,11 +46,10 @@ from app.models.constants import (
 from . import inventory_bp
 from .admin_flags import flag_rows
 from .helpers import (
-    admin_actor, render_inventory_page, require_inventory_admin, require_inventory_operator,
+    admin_actor, note_types_for, render_inventory_page, require_inventory_admin, require_inventory_operator,
 )
 
 SEARCH_LIMIT = 50
-MAX_NOTES_LENGTH = 2000
 IDENTIFIER_KINDS = ((INV_IDENT_MAGFEST_TAG, "MAGFest tag"), (INV_IDENT_FESTOPS_LABEL, "FestOps label"),
                     (INV_IDENT_VENDOR_TAG, "Vendor tag"), (INV_IDENT_SERIAL, "Serial"),
                     (INV_IDENT_MAC, "MAC address"))
@@ -284,7 +285,8 @@ def unit_page(unit_id: int):
         print_modes=[(m, REPRINT_WORDS[m]) for m in _print_modes(options)],
         print_options=options, retired_condition=INV_CONDITION_RETIRED,
         changes=_change_rows(unit), field_inputs=_field_inputs(unit),
-        has_gear_kind=unit.item.gear_kind is not None, can_give_number=_can_give_number(unit))
+        has_gear_kind=unit.item.gear_kind is not None, can_give_number=_can_give_number(unit),
+        note_types=note_types_for(get_user_ctx()), note_type_words=NOTE_TYPE_WORDS)
 
 
 def _can_give_number(unit: InvUnit) -> bool:
@@ -357,7 +359,7 @@ def _active_codes(unit: InvUnit) -> list[str]:
 def _snapshot(unit: InvUnit) -> dict:
     """What the Changes table compares. Field values are keyed by the field's name."""
     snap = {"codes": _active_codes(unit), "condition": unit.condition,
-            "item": unit.item.item_name, "name": unit.name or "", "notes": unit.notes or ""}
+            "item": unit.item.item_name, "name": unit.name or ""}
     for field, text in unit_field_rows(unit):
         snap[field.name] = text
     return snap
@@ -450,19 +452,15 @@ def unit_set_item(unit_id: int):
 def unit_set_details(unit_id: int):
     unit = _unit_or_404(unit_id)
     rows = unit_field_rows(unit)
-    notes = (request.form.get("notes") or "").replace("\r\n", "\n").strip() or None
     raws = {field.id: request.form.get(f"field_{field.id}") for field, _ in rows
             if f"field_{field.id}" in request.form}
 
     def change():
-        if notes is not None and len(notes) > MAX_NOTES_LENGTH:
-            raise InventoryError(f"Notes can be at most {MAX_NOTES_LENGTH} characters.")
         # Parse every field before writing any, so one bad value saves nothing.
         for field, _ in rows:
             if field.id in raws:
                 parse_value(field, raws[field.id])
         set_unit_name(unit, request.form.get("name"))
-        unit.notes = notes
         for field, _ in rows:
             if field.id in raws:
                 set_unit_value(unit, field, raws[field.id])
@@ -471,22 +469,19 @@ def unit_set_details(unit_id: int):
     return _commit_or_flash(_audited(change, unit, ACTION_FIELDS), "Details saved.", unit)
 
 
-@inventory_bp.post("/admin/units/<int:unit_id>/imported-notes/clear")
-@require_inventory_admin
-def unit_clear_imported_notes(unit_id: int):
+@inventory_bp.post("/admin/units/<int:unit_id>/notes")
+@require_inventory_operator
+def unit_add_note(unit_id: int):
     unit = _unit_or_404(unit_id)
+    user_ctx = get_user_ctx()
+    note_type = request.form.get("note_type", "")
 
-    def clear():
-        old = unit.imported_notes
-        if old is None:
-            return
-        unit.imported_notes = None
-        db.session.flush()
-        # The Changes table keeps the cleared text; nothing else does.
-        record_unit_change(unit.id, ACTION_NOTES, {"Old notes": {"old": old, "new": None}},
-                           admin_actor().user_id)
+    def add():
+        if note_type not in note_types_for(user_ctx):
+            raise InventoryError("You cannot add that kind of note.")
+        add_note(unit, note_type, request.form.get("body"), user_ctx.user_id)
 
-    return _commit_or_flash(clear, "Old notes cleared.", unit)
+    return _commit_or_flash(add, "Note added.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/give-number")

@@ -44,9 +44,6 @@
   </label>
   {% endfor %}
   {% if not has_gear_kind %}<div class="muted">Set this model's gear kind on the Items page to add fields.</div>{% endif %}
-  <label style="display: block;">Notes
-    <textarea name="notes" rows="3" maxlength="2000" style="width: 100%; max-width: 480px;">{{ unit.notes or '' }}</textarea>
-  </label>
   <button type="submit" class="btn btn-small">Save details</button>
 </form>
 {% else %}
@@ -54,12 +51,18 @@
   <div><strong>Name</strong> {{ unit.name or 'none' }}</div>
   {% for f in field_inputs %}<div><strong>{{ f.field.name }}</strong> {{ f.text or 'none' }}</div>{% endfor %}
   {% if not has_gear_kind %}<div class="muted">Set this model's gear kind on the Items page to add fields.</div>{% endif %}
-  <div><strong>Notes</strong> {{ unit.notes or 'none' }}</div>
 </div>
 {% endif %}
-{% if unit.imported_notes %}
-<h2>From the old system</h2>
-<div class="card mb-16" style="white-space: pre-wrap; overflow-wrap: anywhere;">{{ unit.imported_notes }}</div>
+{% if note_types %}
+<h2>Add a note</h2>
+<form method="post" action="{{ url_for('inventory.unit_add_note', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <select name="note_type" aria-label="Kind of note">
+    {% for t in note_types %}<option value="{{ t }}"{% if t == 'ADMIN' %} selected{% endif %}>{{ note_type_words[t] }}</option>{% endfor %}
+  </select>
+  <textarea name="body" rows="3" maxlength="2000" required aria-label="Note" style="width: 100%; max-width: 480px;"></textarea>
+  <button type="submit" class="btn btn-small">Add note</button>
+</form>
 {% endif %}
 
 <h2>Print label</h2>
@@ -139,12 +142,6 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <button type="submit" class="btn btn-small">Give this unit a U- number and print</button>
   <div class="muted">This unit has no MAGFest tag or FestOps label to scan.</div>
-</form>
-{% endif %}
-{% if is_inv_admin and unit.imported_notes %}
-<form method="post" action="{{ url_for('inventory.unit_clear_imported_notes', unit_id=unit.id) }}" class="mb-16" data-confirm="Clear the notes from the old system? Typed notes are kept.">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="btn btn-small">Clear old notes</button>
 </form>
 {% endif %}
 </details>

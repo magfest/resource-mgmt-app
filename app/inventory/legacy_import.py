@@ -19,6 +19,7 @@ from app import db
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import Actor, InventoryError, add_unit, set_condition
 from app.inventory.names import MAX_NAME_LENGTH, name_key
+from app.inventory.notes import import_note
 from app.inventory.receive import AlreadyReceived, check_tag
 from app.inventory.unit_fields import (
     MODEL_FIELD_CODE, active_fields, parse_value, set_unit_value,
@@ -407,7 +408,7 @@ def apply(data: bytes, mapping: dict[str, str], category_id: int | None,
             condition = condition_for(row.status)
             if condition != INV_CONDITION_IN_SERVICE:
                 set_condition(unit, condition)
-            unit.imported_notes = row.notes or None
+            import_note(unit, row.notes)
         db.session.commit()
     except Exception as error:
         db.session.rollback()

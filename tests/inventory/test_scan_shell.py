@@ -11,6 +11,7 @@ from app.inventory.cards import card_for, default_event
 from app.inventory.ledger import (
     Actor, InventoryError, add_unit, create_container, set_condition,
 )
+from app.inventory.notes import add_note
 from app.inventory.receipts import run_once
 from app.inventory.resolver import resolve
 from app.inventory.labels import allocate
@@ -485,8 +486,7 @@ def test_look_up_card_shows_name_fields_and_notes(app, inv):
     inv.laptop.gear_kind_id = kind.id
     unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "S1")])
     unit.name, unit.name_key = "MAG-TV-107", "mag-tv-107"
-    unit.notes = "no power cable"
-    unit.imported_notes = "old system text"
+    add_note(unit, "ADMIN", "no power cable", "test:invadmin")
     set_unit_value(unit, kind.fields[0], "50")
     set_unit_value(unit, kind.fields[1], "4k")
     db.session.commit()
@@ -494,7 +494,6 @@ def test_look_up_card_shows_name_fields_and_notes(app, inv):
     assert card["name"] == "MAG-TV-107"
     assert card["fields"] == [["Size", "50 in"], ["Resolution", "4k"]]
     assert card["notes"] == "no power cable"
-    assert "old system text" not in str(card)
     plain = add_unit(inv.wap, None, ACTOR, [("SERIAL", "S2")])
     db.session.commit()
     card = card_for(resolve("S2"), None)

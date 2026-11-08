@@ -6,7 +6,7 @@ from app.inventory.devices import enroll_device
 from app.inventory.flags import raise_flag
 from app.inventory.ledger import Actor, add_unit, retire_identifier
 from app.inventory.resolver import KIND_UNIT, resolve
-from app.models import InvPrinter, InvPrintJob, InvPrintRoute, InvUnit, InvUnitIdentifier
+from app.models import InvPrinter, InvPrintJob, InvPrintRoute, InvUnit, InvUnitIdentifier, InvUnitNote
 from app.models.constants import INV_JOB_OWNED_UNIT, INV_STATION_PRINT
 from tests.inventory.helpers import login
 
@@ -230,19 +230,19 @@ def _tv_kind(inv):
 
 def _details(unit, kind, **extra):
     size, res, hdmi = kind.fields
-    data = {"name": "MAG-TV-107", "notes": "no power cable",
+    data = {"name": "MAG-TV-107",
             f"field_{size.id}": "50", f"field_{res.id}": "4k", f"field_{hdmi.id}": ""}
     data.update(extra)
     return data
 
 
-def test_admin_saves_name_notes_and_fields_in_one_form(client, inv, unit):
+def test_admin_saves_name_and_fields_in_one_form(client, inv, unit):
     kind = _tv_kind(inv)
     login(client, "test:invadmin")
     resp = client.post(f"/inv/admin/units/{unit.id}/details", data=_details(unit, kind))
     assert resp.status_code == 302
     page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
-    for text in ("MAG-TV-107", "no power cable", "50 in", "4k", "Name: none to MAG-TV-107"):
+    for text in ("MAG-TV-107", "50 in", "4k", "Name: none to MAG-TV-107"):
         assert text in page, text
     from app.models import ConfigAuditEvent
     rows = db.session.query(ConfigAuditEvent).filter_by(
@@ -258,14 +258,6 @@ def test_one_bad_field_saves_nothing_and_says_which(client, inv, unit):
     assert "Size must be a number." in resp.get_data(as_text=True)
     db.session.expire_all()
     assert db.session.get(InvUnit, unit.id).name is None
-
-
-def test_imported_notes_show_under_their_own_heading(client, unit):
-    unit.imported_notes = "Invented pickup note"
-    db.session.commit()
-    login(client, "test:operator")
-    page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
-    assert "From the old system" in page and "Invented pickup note" in page
 
 
 def test_operator_sees_fields_but_cannot_save(client, inv, unit):
@@ -449,42 +441,50 @@ def test_un_retiring_into_a_held_name_is_refused(client, inv, unit):
     assert db.session.get(InvUnit, other.id).condition == "IN_SERVICE"
 
 
-def test_admin_clears_old_notes_and_the_change_is_recorded(client, unit):
-    unit.imported_notes = "Invented pickup note"
-    unit.notes = "Typed note stays"
-    db.session.commit()
-    login(client, "test:invadmin")
-    base = f"/inv/admin/units/{unit.id}"
-    page = client.get(base).get_data(as_text=True)
-    assert "Clear old notes" in page
-    assert 'data-confirm="Clear the notes from the old system? Typed notes are kept."' in page
-    resp = client.post(f"{base}/imported-notes/clear")
-    assert resp.status_code == 302
-    db.session.expire_all()
-    cleared = db.session.get(InvUnit, unit.id)
-    assert cleared.imported_notes is None and cleared.notes == "Typed note stays"
-    assert _audit(unit) == [("NOTES", "test:invadmin",
-                             {"Old notes": {"old": "Invented pickup note", "new": None}})]
-    page = client.get(base).get_data(as_text=True)
-    assert "From the old system" not in page
-    assert "Old notes: Invented pickup note to none" in page
-
-
-def test_operator_cannot_clear_old_notes(client, unit):
-    unit.imported_notes = "Invented pickup note"
-    db.session.commit()
+def test_operator_adds_a_note(client, unit):
     login(client, "test:operator")
-    base = f"/inv/admin/units/{unit.id}"
-    assert "Clear old notes" not in client.get(base).get_data(as_text=True)
-    assert client.post(f"{base}/imported-notes/clear").status_code == 403
-    db.session.expire_all()
-    assert db.session.get(InvUnit, unit.id).imported_notes == "Invented pickup note"
+    resp = client.post(f"/inv/admin/units/{unit.id}/notes",
+                       data={"note_type": "PICKER", "body": "Invented note"})
+    assert resp.status_code == 302
+    note = db.session.query(InvUnitNote).one()
+    assert note.note_type == "PICKER" and note.created_by_user_id == "test:operator"
+    assert note.body == "Invented note"
 
 
-def test_clearing_absent_old_notes_records_nothing(client, unit):
+def test_forged_note_type_is_refused(client, unit):
+    login(client, "test:operator")
+    client.post(f"/inv/admin/units/{unit.id}/notes", data={"note_type": "SECRET", "body": "x"})
+    assert db.session.query(InvUnitNote).count() == 0
+
+
+def test_nobody_cannot_add_a_note(client, unit):
+    login(client, "test:nobody")
+    resp = client.post(f"/inv/admin/units/{unit.id}/notes",
+                       data={"note_type": "ADMIN", "body": "x"})
+    assert resp.status_code == 403
+    assert db.session.query(InvUnitNote).count() == 0
+
+
+def test_operator_still_cannot_edit_details(client, unit):
+    login(client, "test:operator")
+    assert client.post(f"/inv/admin/units/{unit.id}/details", data={"name": "X"}).status_code == 403
+
+
+def test_save_details_leaves_notes_alone(client, unit):
+    unit.notes = "Invented earlier"
+    db.session.commit()
     login(client, "test:invadmin")
-    client.post(f"/inv/admin/units/{unit.id}/imported-notes/clear")
-    assert _audit(unit) == []
+    client.post(f"/inv/admin/units/{unit.id}/details", data={"name": "X"})
+    db.session.expire_all()
+    assert db.session.get(InvUnit, unit.id).notes == "Invented earlier"
+    rows = _audit(unit)
+    assert rows and all("notes" not in changes for _, _, changes in rows)
+
+
+def test_clear_old_notes_route_is_gone(client, unit):
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/units/{unit.id}/imported-notes/clear")
+    assert resp.status_code in (404, 405)
 
 
 @pytest.fixture
@@ -976,12 +976,11 @@ def test_fix_this_unit_opens_after_a_refused_identifier_or_number(client, inv, u
 
 def test_every_form_still_posts_where_it_did(client, inv):
     bare_unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-FORMS1")], name="Forms unit")
-    bare_unit.imported_notes = "old"
     db.session.commit()
     login(client, "test:invadmin")
     page = _page(client, bare_unit)
     base = f"/inv/admin/units/{bare_unit.id}"
     serial = next(i for i in bare_unit.identifiers if i.value == "SN-FORMS1")
-    for suffix in ("/details", "/imported-notes/clear", "/print", "/give-number",
+    for suffix in ("/details", "/notes", "/print", "/give-number",
                    "/identifiers", "/condition", "/item", f"/identifiers/{serial.id}/retire"):
         assert f'action="/inv{base[4:]}{suffix}"' in page, suffix

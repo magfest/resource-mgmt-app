@@ -6,6 +6,7 @@ import pytest
 from app import db
 from app.inventory.ledger import Actor, add_unit
 from app.inventory.legacy_import import apply, model_key, preview, read_export
+from app.inventory.notes import import_note, unit_notes
 from app.models import InvUnit, InvUnitIdentifier, SupplyItem
 from app.models.constants import (
     INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
@@ -102,7 +103,7 @@ def test_apply_creates_named_units_with_fields_tag_condition_and_notes(kinds, in
     assert values["RESOLUTION"].choice.label == "4k"
     assert "MODEL" not in values
     assert unit.condition == INV_CONDITION_IN_SERVICE
-    assert unit.imported_notes == "Invented remote note"
+    assert _note_bodies(unit) == [("IMPORT", "Invented remote note")]
     assert _values(_unit("MAG-MON-003"))["MODEL"].text_value == "Dell U2713HMT"
 
 
@@ -209,6 +210,14 @@ def test_a_second_run_skips_every_name_already_imported(kinds, inv):
     again = apply(TV_FILE, mapping, inv.category.id, ACTOR)
     assert again.skipped == 5 and again.ready == [] and again.review == []
     assert db.session.query(InvUnit).count() == 5
+
+
+def test_reimport_adds_no_duplicate_note(kinds, inv):
+    mapping = {"TV|": "new:TV", "MONITOR|Dell U2412M": "new:Monitor",
+               "MONITOR|Dell U2713HMT": "new:Monitor"}
+    apply(TV_FILE, mapping, inv.category.id, ACTOR)
+    apply(TV_FILE, mapping, inv.category.id, ACTOR)
+    assert _note_bodies(_unit("MAG-TV-107")) == [("IMPORT", "Invented remote note")]
 
 
 def test_new_types_are_not_orderable(kinds, inv):
@@ -354,7 +363,7 @@ def test_a_crlf_note_from_the_page_is_stored_with_lf(client, kinds, inv):
         "action": "apply", "file_text": text.replace("\n", "\r\n"),
         "category_id": str(inv.category.id), "key-0": "TV|", "type-0": "new", "new-0": "TV"})
     assert response.status_code == 200
-    assert _unit("MAG-TV-060").imported_notes == "Invented first line\nsecond line"
+    assert _note_bodies(_unit("MAG-TV-060")) == [("IMPORT", "Invented first line\nsecond line")]
 
 
 def test_an_odd_digit_mapping_id_goes_to_review(client, kinds, inv):
@@ -374,3 +383,16 @@ def test_an_oversize_cell_is_refused_as_not_csv(kinds):
     with pytest.raises(InventoryError) as error:
         preview(data, {})
     assert str(error.value) == "This file could not be read as a CSV."
+
+
+def _note_bodies(unit):
+    return [(n.source, n.body) for n in unit_notes(unit.id)]
+
+
+def test_import_note_adds_changed_text(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-IMP1")])
+    assert import_note(unit, "a") is not None
+    assert import_note(unit, "a") is None
+    assert import_note(unit, "  ") is None
+    assert import_note(unit, "b") is not None
+    assert [n.body for n in unit_notes(unit.id)] == ["b", "a"]
