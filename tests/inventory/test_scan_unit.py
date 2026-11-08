@@ -235,13 +235,13 @@ def test_candidates_by_digits_and_by_name(unit_client, two_named_units):
     assert post(unit_client, "candidates", {}).json["ok"] is False
 
 
-def test_link_attaches_the_tag_queues_the_label_and_opens_the_check(
+def test_link_attaches_the_tag_and_opens_the_check_without_a_label(
         unit_client, two_named_units):
     a, _ = two_named_units
     answer = link(unit_client, a.id, "FEST91001").json
-    assert answer["ok"] and answer["check_id"] and answer["label"] == "queued"
+    assert answer["ok"] and answer["check_id"] and "label" not in answer
     assert answer["card"]["code"] == "FEST91001"
-    assert InvPrintJob.query.count() == 1
+    assert InvPrintJob.query.count() == 0
 
 
 def test_link_refuses_a_tag_held_by_another_unit(unit_client, two_named_units):
@@ -295,7 +295,7 @@ def test_models_lists_active_serialized_items_by_name(unit_client, inv):
 def test_create_with_a_tag_places_the_unit_at_home_and_opens_a_check(unit_client, inv):
     answer = post(unit_client, "create", {"item_id": inv.laptop.id, "tag": "FEST91050"}).json
     assert answer["ok"] and answer["check_id"] and answer["card"]["code"] == "FEST91050"
-    assert answer["label"] == "queued"
+    assert "label" not in answer and InvPrintJob.query.count() == 0
 
 
 def test_create_refuses_a_tag_another_unit_holds_and_names_it(unit_client, inv):
@@ -359,6 +359,42 @@ def test_a_label_for_another_unit_after_the_finish_ends_the_undo_window(
     db.session.commit()
     answer = unit_client.post("/inv/scan/api/undo", json={"client_request_id": "undo-2"}).json
     assert answer["ok"] is False and answer["message"] == "Too late to undo."
+
+
+def _retire(client, opened, line):
+    return post(client, "finish", {"check_id": opened["check_id"],
+                                   "answers": {str(line.id): "NO"},
+                                   "failed_condition": "RETIRED"}).json
+
+
+def test_a_unit_linked_then_retired_gets_no_label(unit_client, two_named_units, laptop_line):
+    a, _ = two_named_units
+    done = _retire(unit_client, link(unit_client, a.id, "FEST91002").json, laptop_line)
+    assert done["ok"] is True and done["condition"] == "RETIRED"
+    assert InvPrintJob.query.filter_by(unit_id=a.id).count() == 0
+
+
+def test_a_unit_created_then_retired_gets_no_label(unit_client, inv, laptop_line):
+    opened = post(unit_client, "create", {"item_id": inv.laptop.id, "tag": "FEST91051"}).json
+    assert _retire(unit_client, opened, laptop_line)["ok"] is True
+    assert InvPrintJob.query.filter_by(unit_id=opened["unit_id"]).count() == 0
+
+
+def test_a_unit_given_a_number_then_retired_gets_no_label(
+        unit_client, two_named_units, laptop_line):
+    a, _ = two_named_units
+    opened = post(unit_client, "give-number", {"unit_id": a.id}).json
+    assert _retire(unit_client, opened, laptop_line)["ok"] is True
+    assert InvPrintJob.query.filter_by(unit_id=a.id).count() == 0
+
+
+def test_a_linked_unit_that_works_gets_one_label(unit_client, two_named_units, laptop_line):
+    a, _ = two_named_units
+    opened = link(unit_client, a.id, "FEST91003").json
+    done = post(unit_client, "finish", {"check_id": opened["check_id"],
+                                        "answers": {str(laptop_line.id): "YES"}}).json
+    assert done["label"] == "queued"
+    assert [j.status for j in InvPrintJob.query.filter_by(unit_id=a.id)] == ["QUEUED"]
 
 
 def test_finish_needs_every_answer(unit_client, inv):

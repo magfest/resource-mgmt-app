@@ -106,11 +106,16 @@ def check_tag(tag: str) -> None:
 
 
 def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
-                 client_request_id=None) -> dict:
+                 client_request_id=None, queue_label: bool = True) -> dict:
     """Create an owned unit from a tag and a serial, either of which may be missing.
 
     With no tag the unit gets a generated U- number. The label is queued in the same
     transaction. The caller rolls back on a refusal.
+
+    Args:
+        queue_label: False skips the label and the print route check. The Unit
+            station passes False because its finish queues the label, and a
+            unit retired by that finish must get none.
     """
     tag, serial = _clean(tag), _clean(serial)
     if not item.is_serialized:
@@ -126,8 +131,9 @@ def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
         check_tag(tag)
     if serial and len(serial) > MAX_SERIAL:
         raise InventoryError(f"That serial is longer than {MAX_SERIAL} characters.")
-    # Checked before anything is created, so a missing route leaves no unit behind.
-    printer_for(INV_JOB_OWNED_UNIT)
+    if queue_label:
+        # Checked before anything is created, so a missing route leaves no unit behind.
+        printer_for(INV_JOB_OWNED_UNIT)
     if serial:
         held = _active_holder(INV_IDENT_SERIAL, normalize_code(serial), item)
         if held is not None:
@@ -149,6 +155,8 @@ def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
         if held:
             raise AlreadyReceived(held) from None
         raise
+    if not queue_label:
+        return {"code": unit_number(unit), "unit_id": unit.id}
     return label_answer(unit, label_job(unit, actor, client_request_id))
 
 

@@ -73,11 +73,16 @@ def _held_number(unit: InvUnit) -> InvUnitIdentifier | None:
 
 
 def link_tag(unit_id: int, tag: str, actor: Actor,
-             client_request_id: str | None = None) -> dict:
+             client_request_id: str | None = None, queue_label: bool = True) -> dict:
     """Attach `tag` to a named unit that has no number, record it and queue the label.
 
     Two scanners can pass the first read together. The row lock serializes them on
     PostgreSQL; the number is read again after the lock, so the second one is refused.
+
+    Args:
+        queue_label: False skips the label and the print route check. The Unit
+            station passes False because its finish queues the label, and a
+            unit retired by that finish must get none.
     """
     tag = (tag or "").strip()
     unit = _locked_unit(unit_id)
@@ -85,8 +90,9 @@ def link_tag(unit_id: int, tag: str, actor: Actor,
     if held is not None:
         raise InventoryError(f"{unit.name or 'This unit'} already has {held.value}.")
     check_tag(tag)
-    # Checked before anything is written, so a missing route leaves no tag behind.
-    printer_for(INV_JOB_OWNED_UNIT)
+    if queue_label:
+        # Checked before anything is written, so a missing route leaves no tag behind.
+        printer_for(INV_JOB_OWNED_UNIT)
     try:
         identifier = add_identifier(unit, INV_IDENT_MAGFEST_TAG, tag)
     except InventoryError:
@@ -101,6 +107,8 @@ def link_tag(unit_id: int, tag: str, actor: Actor,
         device_id=actor.device_id, performed_by_user_id=actor.user_id))
     record_unit_change(unit.id, ACTION_TAG_LINK,
                        {"codes": {"old": [], "new": [identifier.value]}}, audit_who(actor))
+    if not queue_label:
+        return {"code": identifier.value, "unit_id": unit.id, "name": unit.name}
     job = label_job(unit, actor, client_request_id)
     return {**label_answer(unit, job), "name": unit.name}
 

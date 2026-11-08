@@ -160,7 +160,7 @@ def scan_unit_candidates():
 @inventory_bp.post("/scan/api/unit/link")
 @api
 def scan_unit_link():
-    """Attach an asset tag to a unit, queue its label and open its check."""
+    """Attach an asset tag to a unit and open its check; the finish queues the label."""
     _home()
     data = _json_body()
 
@@ -168,12 +168,13 @@ def scan_unit_link():
         actor = scan_actor()
         event = _check_event()
         try:
-            queued = link_tag(_unit_id(data), _optional_text(data, "tag"), actor,
-                              client_request_id=data.get("client_request_id"))
+            linked = link_tag(_unit_id(data), _optional_text(data, "tag"), actor,
+                              client_request_id=data.get("client_request_id"),
+                              queue_label=False)
         except AlreadyReceived as held:
             raise _holder_refusal(held, _optional_text(data, "tag")) from None
-        unit = db.session.get(InvUnit, queued["unit_id"])
-        return {**_begin(unit, actor, event), "label": "queued"}
+        unit = db.session.get(InvUnit, linked["unit_id"])
+        return _begin(unit, actor, event)
 
     return jsonify(run_once(data.get("client_request_id"), link))
 
@@ -246,12 +247,13 @@ def scan_unit_create():
         if tag is None and item.needs_asset_tag:
             raise InventoryError(f"{item.item_name} needs an asset tag. Scan one.")
         try:
-            queued = receive_unit(item, actor, tag=tag, container=home,
-                                  client_request_id=data.get("client_request_id"))
+            created = receive_unit(item, actor, tag=tag, container=home,
+                                   client_request_id=data.get("client_request_id"),
+                                   queue_label=False)
         except AlreadyReceived as held:
             raise _holder_refusal(held, tag) from None
-        unit = db.session.get(InvUnit, queued["unit_id"])
-        return {**_begin(unit, actor, event, again=True), "label": "queued"}
+        unit = db.session.get(InvUnit, created["unit_id"])
+        return _begin(unit, actor, event, again=True)
 
     return jsonify(run_once(data.get("client_request_id"), create))
 

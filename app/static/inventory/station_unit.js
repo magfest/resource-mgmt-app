@@ -39,7 +39,6 @@
       code: open.code,
       name: open.name,
       card: open.card || null,
-      labelQueued: !!open.labelQueued,
       lines: lines,
       stale: false,
       hasLines: function () { return lines.length > 0; },
@@ -117,11 +116,9 @@
   }
 
   // The label line under the done sentence, or null when no label was involved.
-  function labelText(answer, alreadyQueued) {
+  function labelText(answer) {
     if (answer.condition === 'RETIRED') { return null; }
-    if (answer.label === 'queued' || (alreadyQueued && answer.label === 'none')) {
-      return 'Info label sent to the printer.';
-    }
+    if (answer.label === 'queued') { return 'Info label sent to the printer.'; }
     return answer.label && answer.label !== 'none' ? answer.label : null;
   }
 
@@ -286,7 +283,7 @@
     box.appendChild(cardNode(result.card));
     var failedUnit = result.status !== 'PASSED';
     box.appendChild(el('div', 'chk-result ' + (failedUnit ? 'fail' : 'pass'), doneText(result)));
-    var label = labelText(result, result.labelQueued);
+    var label = labelText(result);
     if (label) {
       box.appendChild(el(
         'div', label === 'Info label sent to the printer.' ? 'chk-sub' : 'chk-warn', label));
@@ -350,7 +347,7 @@
       S.showMessage('You are already checking this unit.', 'info');
       return {ok: false};
     }
-    startCheck(answer, {labelQueued: answer.label === 'queued'});
+    startCheck(answer);
     return {ok: false};
   }
 
@@ -629,7 +626,7 @@
       render();
       return {ok: false};
     }
-    result = Object.assign({labelQueued: mine.labelQueued}, answer);
+    result = Object.assign({}, answer);
     if (!result.card) { result.card = mine.card || {name: mine.name, code: mine.code}; }
     lastUnitId = mine.unitId;
     check = null;
