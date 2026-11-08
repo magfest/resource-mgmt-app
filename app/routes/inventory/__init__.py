@@ -15,5 +15,5 @@ from . import (  # noqa: E402,F401  (registers routes)
     admin_checklists, admin_containers, admin_devices, admin_flags, admin_home, admin_items, admin_kinds,
     admin_legacy_import,
     admin_labels, admin_movements, admin_operators, admin_printers, admin_units,
-    print_station, scan_api, scan_pages,
+    print_station, scan_api, scan_pages, scan_unit,
 )
