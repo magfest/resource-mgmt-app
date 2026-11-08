@@ -220,7 +220,8 @@ def scan_unit_models():
     rows = (db.session.query(SupplyItem)
             .filter(SupplyItem.is_serialized.is_(True), SupplyItem.is_active.is_(True))
             .order_by(SupplyItem.item_name, SupplyItem.id).all())
-    return jsonify(ok=True, models=[{"id": i.id, "name": i.item_name} for i in rows])
+    return jsonify(ok=True, models=[{"id": i.id, "name": i.item_name,
+                                       "needs_asset_tag": bool(i.needs_asset_tag)} for i in rows])
 
 
 @inventory_bp.post("/scan/api/unit/create")

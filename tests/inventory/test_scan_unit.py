@@ -262,6 +262,17 @@ def test_give_number_adds_a_u_label_and_records_who(unit_client, two_named_units
     assert again["message"] == "This unit already has a number."
 
 
+def test_give_number_refuses_a_type_that_needs_an_asset_tag(unit_client, two_named_units, inv):
+    a, _ = two_named_units
+    a.item.needs_asset_tag = True
+    db.session.commit()
+    answer = post(unit_client, "give-number", {"unit_id": a.id}).json
+    assert answer["ok"] is False
+    assert answer["message"] == "Put an asset tag on it and scan the tag."
+    assert not ConfigAuditEvent.query.filter_by(action="ADD_CODE", entity_id=str(a.id)).count()
+    assert post(unit_client, "candidates", {"digits": "3"}).json["candidates"][0]["asset_tag_required"]
+
+
 def test_set_aside_closes_the_check(unit_client, inv):
     _tagged(inv, "TV-X-040", "FEST91040")
     check = post(unit_client, "scan", {"code": "FEST91040"}).json
@@ -273,7 +284,12 @@ def test_set_aside_closes_the_check(unit_client, inv):
 def test_models_lists_active_serialized_items_by_name(unit_client, inv):
     models = post(unit_client, "models").json["models"]
     assert [m["name"] for m in models] == ["Laptop", "Wireless Access Point"]
-    assert set(models[0]) == {"id", "name"}
+    assert set(models[0]) == {"id", "name", "needs_asset_tag"}
+    assert models[0]["needs_asset_tag"] is False
+    inv.laptop.needs_asset_tag = True
+    db.session.commit()
+    flags = {m["name"]: m["needs_asset_tag"] for m in post(unit_client, "models").json["models"]}
+    assert flags["Laptop"] is True
 
 
 def test_create_with_a_tag_places_the_unit_at_home_and_opens_a_check(unit_client, inv):

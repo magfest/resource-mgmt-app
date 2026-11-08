@@ -270,4 +270,7 @@ def test_unit_card(inv):
     card = unit_card(unit)
     assert card["unit_id"] == unit.id and card["name"] == "TV-X-050"
     assert card["type"] == "Laptop" and card["code"] == "FEST91050"
-    assert set(card) == {"unit_id", "name", "type", "spec", "code"}
+    assert set(card) == {"unit_id", "name", "type", "spec", "code", "asset_tag_required"}
+    assert card["asset_tag_required"] is False
+    unit.item.needs_asset_tag = True
+    assert unit_card(unit)["asset_tag_required"] is True

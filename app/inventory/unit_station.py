@@ -29,6 +29,7 @@ from app.models.constants import (
 
 NOT_THE_LAST = "Scan the unit again, then its pallet."
 RETIRED_NOT_PLACED = "A retired unit is not placed."
+TAG_REQUIRED = "Put an asset tag on it and scan the tag."
 
 
 def digit_candidates(digits: str, limit: int = 10) -> list[InvUnit]:
@@ -80,6 +81,9 @@ def number_refusal(unit: InvUnit) -> str | None:
                     InvUnitIdentifier.kind.in_(NUMBER_KINDS),
                     InvUnitIdentifier.retired_at.is_(None)).first()):
         return "This unit already has a number."
+    # A U- number stands in for a tag, so a type that needs a tag never gets one.
+    if unit.item.needs_asset_tag:
+        return TAG_REQUIRED
     return None
 
 
@@ -164,4 +168,5 @@ def unit_card(unit: InvUnit) -> dict:
     """The facts the station shows for a unit."""
     code = unit_code(unit)
     return {"unit_id": unit.id, "name": unit.name or code, "type": unit.item.item_name,
-            "spec": spec_line(unit), "code": code}
+            "spec": spec_line(unit), "code": code,
+            "asset_tag_required": bool(unit.item.needs_asset_tag)}

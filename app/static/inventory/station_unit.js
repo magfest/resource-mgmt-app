@@ -462,11 +462,9 @@
     });
   }
 
-  // The candidates list carries no asset-tag rule, so a unit picked with no tag offers the
-  // U- number; the scan route is the one that knows a model needs a tag.
   function picked(tag, card) {
     if (tag) { gate.run(function () { return linkWrite(card, tag); }); return; }
-    held = {card: card, tagRequired: false};
+    held = {card: card, tagRequired: !!card.asset_tag_required};
     phase = 'number';
     S.showMessage('', 'info');
     render();
@@ -507,13 +505,20 @@
       S.choose(answer.models.map(function (m) { return {label: m.name, value: m}; })
         .concat([{label: 'Cancel', value: null}]), function (model) {
           if (model === null) { cancelHeld(); return; }
+          if (model.needs_asset_tag && !tag) {
+            offered = model;
+            phase = 'createTag';
+            S.showMessage('', 'info');
+            render();
+            refocus();
+            return;
+          }
           gate.run(function () { return createWrite(model, tag); });
         });
       refocus();
     });
   }
 
-  // A refusal with no tag may mean the model needs one, so the screen then asks for the tag.
   function createWrite(model, tag) {
     var rid = tapId('create|' + model.id + '|' + (tag || ''));
     var body = {item_id: model.id};
@@ -522,11 +527,7 @@
       if (stopped(answer)) { return {ok: false}; }
       if (!answer.ok) {
         fail(answer.message);
-        if (!tag) {
-          offered = model;
-          phase = 'createTag';
-          render();
-        } else { showMatches(tag, []); }
+        if (phase === 'createTag') { render(); } else { showMatches(tag, []); }
         return {ok: false};
       }
       return openAnswer(answer, tag, null);
