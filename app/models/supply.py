@@ -88,6 +88,12 @@ class SupplyItem(db.Model):
     pack_size = db.Column(db.Integer, nullable=True)
     # TV_CHECK or PRINTER_CHECK; NULL for models no station checks.
     check_station = db.Column(db.String(16), nullable=True)
+    # The kind whose typed fields describe this model's units; NULL for none.
+    gear_kind_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_gear_kinds.id", name="fk_supply_items_gear_kind_id"),
+        nullable=True,
+    )
 
     unit_cost_cents = db.Column(db.Integer, nullable=True)
     qty_on_hand = db.Column(db.Integer, nullable=True)
@@ -102,6 +108,7 @@ class SupplyItem(db.Model):
     updated_by_user_id = db.Column(db.String(64), nullable=True)
 
     category = db.relationship("SupplyCategory", backref="items")
+    gear_kind = db.relationship("InvGearKind")
 
 
 class SupplyOrderLineDetail(db.Model):

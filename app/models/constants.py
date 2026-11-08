@@ -117,9 +117,11 @@ INV_STATION_PRINTER_CHECK = "PRINTER_CHECK"
 # the dock station that books incoming stock.
 INV_STATION_PRINT = "PRINT"
 INV_STATION_RECEIVE = "RECEIVE"
+INV_STATION_TAG = "TAG"
 INV_STATIONS = (
     INV_STATION_LOOKUP, INV_STATION_COUNT, INV_STATION_TV_CHECK,
     INV_STATION_PRINTER_CHECK, INV_STATION_PRINT, INV_STATION_RECEIVE,
+    INV_STATION_TAG,
 )
 INV_CHECK_STATIONS = (INV_STATION_TV_CHECK, INV_STATION_PRINTER_CHECK)
 INV_STATION_NAMES = {
@@ -129,7 +131,16 @@ INV_STATION_NAMES = {
     INV_STATION_PRINTER_CHECK: "Printer check",
     INV_STATION_PRINT: "Print station",
     INV_STATION_RECEIVE: "Receive",
+    INV_STATION_TAG: "Tag",
 }
+
+# Typed fields a gear kind defines for its units. CHOICE values come from
+# InvFieldChoice rows; the other types store one value column.
+INV_FIELD_CHOICE = "CHOICE"
+INV_FIELD_NUMBER = "NUMBER"
+INV_FIELD_BOOL = "BOOL"
+INV_FIELD_TEXT = "TEXT"
+INV_FIELD_TYPES = (INV_FIELD_CHOICE, INV_FIELD_NUMBER, INV_FIELD_BOOL, INV_FIELD_TEXT)
 
 # Label print jobs. The job type picks the printer; a SCAN job is collected
 # ahead of a BATCH job so a person at a printer never waits behind a batch.

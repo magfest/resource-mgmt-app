@@ -21,6 +21,9 @@ from app.models.constants import (
 _ACTIVE_UNIQUE_KIND = "retired_at IS NULL AND kind IN ({})".format(
     ", ".join(f"'{kind}'" for kind in INV_IDENT_UNIQUE_KINDS))
 
+# A retired unit gives its name back, so only live units hold a name_key.
+_LIVE_NAME_KEY = "name_key IS NOT NULL AND condition != 'RETIRED'"
+
 
 def _bigint_pk():
     return db.Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
@@ -109,11 +112,27 @@ class InvUnit(db.Model):
     )
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by_user_id = db.Column(db.String(64), nullable=True)
+    name = db.Column(db.String(64), nullable=True)
+    # Lowercased name with spaces collapsed; the unique index runs on this.
+    name_key = db.Column(db.String(64), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    # Free text carried over from the old tech exports. Kept apart from notes
+    # so an import never overwrites what a person typed.
+    imported_notes = db.Column(db.Text, nullable=True)
 
     item = db.relationship("SupplyItem")
     current_container = db.relationship("InvContainer")
     identifiers = db.relationship("InvUnitIdentifier", backref="unit",
                                   order_by="InvUnitIdentifier.id")
+
+    __table_args__ = (
+        db.Index(
+            "uq_inv_units_name_key", "name_key",
+            unique=True,
+            postgresql_where=db.text(_LIVE_NAME_KEY),
+            sqlite_where=db.text(_LIVE_NAME_KEY),
+        ),
+    )
 
 
 class InvUnitIdentifier(db.Model):
@@ -687,3 +706,152 @@ class InvItemTotal(db.Model):
     set_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     item = db.relationship("SupplyItem")
+
+
+class InvGearKind(db.Model):
+    """A family of gear that shares typed fields, such as TV or printer."""
+    __tablename__ = "inv_gear_kinds"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    name = db.Column(db.String(64), nullable=False)
+    position = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
+    is_active = db.Column(db.Boolean, nullable=False, default=True,
+                          server_default=db.true())
+
+    fields = db.relationship("InvField", backref="gear_kind",
+                             order_by="InvField.position")
+
+
+class InvField(db.Model):
+    """One typed field on a gear kind. field_type is an INV_FIELD_TYPES value."""
+    __tablename__ = "inv_fields"
+
+    id = db.Column(db.Integer, primary_key=True)
+    gear_kind_id = db.Column(
+        db.Integer, db.ForeignKey("inv_gear_kinds.id", name="fk_inv_fields_gear_kind_id"),
+        nullable=False, index=True,
+    )
+    code = db.Column(db.String(32), nullable=False)
+    name = db.Column(db.String(64), nullable=False)
+    field_type = db.Column(db.String(8), nullable=False)
+    unit_label = db.Column(db.String(16), nullable=True)
+    position = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
+    is_active = db.Column(db.Boolean, nullable=False, default=True,
+                          server_default=db.true())
+
+    choices = db.relationship("InvFieldChoice", backref="field",
+                              order_by="InvFieldChoice.position")
+
+    __table_args__ = (
+        db.UniqueConstraint("gear_kind_id", "code", name="uq_inv_fields_kind_code"),
+    )
+
+
+class InvFieldChoice(db.Model):
+    """One allowed value of a CHOICE field."""
+    __tablename__ = "inv_field_choices"
+
+    id = db.Column(db.Integer, primary_key=True)
+    field_id = db.Column(
+        db.Integer, db.ForeignKey("inv_fields.id", name="fk_inv_field_choices_field_id"),
+        nullable=False, index=True,
+    )
+    label = db.Column(db.String(32), nullable=False)
+    position = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
+    is_active = db.Column(db.Boolean, nullable=False, default=True,
+                          server_default=db.true())
+
+    __table_args__ = (
+        db.UniqueConstraint("field_id", "label", name="uq_inv_field_choices_field_label"),
+    )
+
+
+class InvUnitValue(db.Model):
+    """A unit's value for one field. Only the column matching the field type is set."""
+    __tablename__ = "inv_unit_values"
+
+    id = db.Column(db.Integer, primary_key=True)
+    unit_id = db.Column(
+        db.Integer, db.ForeignKey("inv_units.id", name="fk_inv_unit_values_unit_id"),
+        nullable=False, index=True,
+    )
+    field_id = db.Column(
+        db.Integer, db.ForeignKey("inv_fields.id", name="fk_inv_unit_values_field_id"),
+        nullable=False,
+    )
+    choice_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_field_choices.id", name="fk_inv_unit_values_choice_id"),
+        nullable=True,
+    )
+    number_value = db.Column(db.Numeric(8, 2), nullable=True)
+    bool_value = db.Column(db.Boolean, nullable=True)
+    text_value = db.Column(db.String(128), nullable=True)
+
+    unit = db.relationship("InvUnit", backref="values")
+    field = db.relationship("InvField")
+    choice = db.relationship("InvFieldChoice")
+
+    __table_args__ = (
+        db.UniqueConstraint("unit_id", "field_id", name="uq_inv_unit_values_unit_field"),
+    )
+
+
+class InvModelDefault(db.Model):
+    """A default field value for every new unit of one item (model)."""
+    __tablename__ = "inv_model_defaults"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(
+        db.Integer, db.ForeignKey("supply_items.id", name="fk_inv_model_defaults_item_id"),
+        nullable=False, index=True,
+    )
+    field_id = db.Column(
+        db.Integer, db.ForeignKey("inv_fields.id", name="fk_inv_model_defaults_field_id"),
+        nullable=False,
+    )
+    choice_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_field_choices.id", name="fk_inv_model_defaults_choice_id"),
+        nullable=True,
+    )
+    number_value = db.Column(db.Numeric(8, 2), nullable=True)
+    bool_value = db.Column(db.Boolean, nullable=True)
+    text_value = db.Column(db.String(128), nullable=True)
+
+    item = db.relationship("SupplyItem")
+    field = db.relationship("InvField")
+    choice = db.relationship("InvFieldChoice")
+
+    __table_args__ = (
+        db.UniqueConstraint("item_id", "field_id", name="uq_inv_model_defaults_item_field"),
+    )
+
+
+class InvTagLink(db.Model):
+    """The record that a MAGFest tag was attached to a unit; undone_at marks an undo."""
+    __tablename__ = "inv_tag_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    unit_id = db.Column(
+        db.Integer, db.ForeignKey("inv_units.id", name="fk_inv_tag_links_unit_id"),
+        nullable=False, index=True,
+    )
+    identifier_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_unit_identifiers.id", name="fk_inv_tag_links_identifier_id"),
+        nullable=False,
+    )
+    shift_id = db.Column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        db.ForeignKey("inv_shifts.id", name="fk_inv_tag_links_shift_id"),
+        nullable=True,
+    )
+    device_id = db.Column(
+        db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_tag_links_device_id"),
+        nullable=True,
+    )
+    performed_by_user_id = db.Column(db.String(64), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    undone_at = db.Column(db.DateTime, nullable=True)
