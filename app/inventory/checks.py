@@ -34,7 +34,7 @@ from app.models.constants import (
     INV_CHECK_STATIONS, INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
     INV_CONDITION_RETIRED, INV_IDENT_FESTOPS_LABEL,
     INV_IDENT_SERIAL, INV_PREP_CHECKED, INV_PREP_FAILED_CHECK, INV_STATION_NAMES,
-    INV_STATION_PRINTER_CHECK, INV_STATION_TV_CHECK,
+    INV_STATION_PRINTER_CHECK, INV_STATION_TV_CHECK, INV_STATION_UNIT,
 )
 
 NO_EVENT = "No default event is set. Ask an inventory admin."
@@ -201,11 +201,12 @@ def open_check(unit: InvUnit, station_code: str, actor: Actor, event_cycle) -> I
     """
     default = _default_event()
     event = event_cycle or default
-    if station_code not in INV_CHECK_STATIONS:
+    if station_code not in INV_CHECK_STATIONS and station_code != INV_STATION_UNIT:
         raise InventoryError(f"{station_code or 'That'} is not a check station.")
     if unit.condition == INV_CONDITION_RETIRED:
         raise InventoryError("That unit is retired.")
-    if station_for(unit.item) != station_code:
+    # The Unit station checks any model; the TV and printer stations check only their own.
+    if station_code != INV_STATION_UNIT and station_for(unit.item) != station_code:
         raise InventoryError(f"{unit.item.item_name} is not checked at this station.")
     _set_aside_ended_shifts(actor)
     other = blocking_check(actor, unit)
@@ -449,7 +450,7 @@ def finish_check(check: InvCheck, answers: dict, actor: Actor,
 
     Every active line needs YES or NO. A NO on a FAIL line fails the check, which
     then needs a condition; a NO on a NOTE line passes and records the prompt. A
-    model with no lines passes, or fails when `failed_condition` and a note are sent.
+    model with no lines passes, or fails when `failed_condition` is sent.
     A pass returns a REPAIR or LOST unit to IN_SERVICE. `line_ids` lists the lines the
     screen showed; a different active set raises ChecklistChanged.
     """
@@ -476,8 +477,6 @@ def finish_check(check: InvCheck, answers: dict, actor: Actor,
         raise ChecklistChanged()
     if failed and failed_condition not in FAILED_CONDITIONS:
         raise InventoryError("A failed check needs one more answer: repair or retire.")
-    if failed and not lines and clean_note is None:
-        raise InventoryError("Add a note saying what failed.")
     noted = [line.prompt for line in lines
              if line.missing_means == "NOTE" and answers[line.id] == "NO"]
     for line in lines:

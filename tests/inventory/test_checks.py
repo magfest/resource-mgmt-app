@@ -114,7 +114,7 @@ def test_a_failed_check_with_a_condition_on_a_passed_check_is_refused(inv, event
     assert t.tv.condition == "IN_SERVICE"
 
 
-def test_a_model_with_no_lines_takes_a_pass_or_a_fail_with_a_note(inv, event, tv_checklist):
+def test_a_model_with_no_lines_takes_a_pass_or_a_fail_with_a_condition(inv, event, tv_checklist):
     t = tv_checklist
     InvCheckItem.query.filter_by(item_id=t.tv_item.id).delete()
     db.session.commit()
@@ -123,8 +123,6 @@ def test_a_model_with_no_lines_takes_a_pass_or_a_fail_with_a_note(inv, event, tv
     finish_check(check, {}, ACTOR)
     assert check.status == "PASSED"
     second = open_check(t.tv2, "TV_CHECK", ACTOR, event)
-    with pytest.raises(InventoryError, match="note"):
-        finish_check(second, {}, ACTOR, failed_condition="REPAIR")
     finish_check(second, {}, ACTOR, failed_condition="RETIRED", note="Cracked panel")
     assert second.status == "FAILED" and second.note == "Cracked panel"
     assert t.tv2.condition == "RETIRED"

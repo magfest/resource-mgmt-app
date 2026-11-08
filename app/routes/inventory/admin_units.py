@@ -11,7 +11,6 @@ from app.inventory.audit import (
 )
 from app.inventory.checks import checked_serial, unit_code
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
-from app.inventory.labels import PREFIX_UNIT, allocate
 from app.inventory.ledger import (
     INV_CONDITIONS, NUMBER_KINDS, InventoryError, add_identifier, replace_number,
     retire_identifier, set_condition,
@@ -21,6 +20,7 @@ from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
     local_stamp, reprint, reprint_options,
 )
+from app.inventory.unit_station import give_unit_number, number_refusal
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
 from app.inventory.unit_fields import (
     active_fields, parse_value, set_unit_value, unit_field_rows,
@@ -258,23 +258,8 @@ def unit_page(unit_id: int):
         has_gear_kind=unit.item.gear_kind is not None, can_give_number=_can_give_number(unit))
 
 
-def _give_number_refusal(unit: InvUnit) -> str | None:
-    """Why this unit cannot get a new U- number, or None when it can."""
-    if unit.condition == INV_CONDITION_RETIRED:
-        return "A retired unit cannot be given a number."
-    if unit.ownership != INV_OWNERSHIP_OWNED:
-        return "A rented unit cannot be given a U- number."
-    # Queried, not read from unit.identifiers, which may be loaded and stale.
-    if (db.session.query(InvUnitIdentifier.id)
-            .filter(InvUnitIdentifier.unit_id == unit.id,
-                    InvUnitIdentifier.kind.in_(NUMBER_KINDS),
-                    InvUnitIdentifier.retired_at.is_(None)).first()):
-        return "This unit already has a number."
-    return None
-
-
 def _can_give_number(unit: InvUnit) -> bool:
-    return _give_number_refusal(unit) is None
+    return number_refusal(unit) is None
 
 
 def _field_inputs(unit: InvUnit) -> list[dict]:
@@ -483,14 +468,7 @@ def unit_give_number(unit_id: int):
     added = []
 
     def give():
-        refusal = _give_number_refusal(unit)
-        if refusal:
-            raise InventoryError(refusal)
-        code = allocate(PREFIX_UNIT, 1)[0]
-        # allocate holds the sequence lock, so a second click reaches add_identifier after
-        # the first commits and is refused there; replace_number would swap the number.
-        add_identifier(unit, INV_IDENT_FESTOPS_LABEL, code)
-        added.append(code)
+        added.append(give_unit_number(unit))
 
     try:
         _audited(give, unit, ACTION_ADD_CODE)()
