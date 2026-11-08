@@ -48,6 +48,7 @@
         </form>
       </td>
       <td>
+        {% if i.is_serialized %}
         <form method="post" action="{{ url_for('inventory.set_gear_kind', item_id=i.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <select name="gear_kind_id" aria-label="Gear kind for {{ i.item_name }}">
@@ -56,6 +57,7 @@
           </select>
           <button type="submit" class="btn btn-small">Save kind</button>
         </form>
+        {% endif %}
       </td>
     </tr>
     {% if defaults.get(i.id) %}

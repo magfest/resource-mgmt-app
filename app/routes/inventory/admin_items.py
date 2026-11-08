@@ -126,6 +126,9 @@ def set_gear_kind(item_id: int):
     item = db.session.get(SupplyItem, item_id)
     if item is None:
         abort(404)
+    if not item.is_serialized:
+        flash("Only serialized items have a gear kind.", "error")
+        return redirect(url_for("inventory.items"))
     raw = request.form.get("gear_kind_id", type=int)
     kind = db.session.get(InvGearKind, raw) if raw else None
     if raw and kind is None:

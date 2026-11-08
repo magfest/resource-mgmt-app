@@ -98,3 +98,17 @@ def test_admin_sets_gear_kind_and_model_defaults(client, inv):
     assert db.session.query(InvModelDefault).one().number_value is not None
     client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": ""})
     assert db.session.get(SupplyItem, inv.laptop.id).gear_kind_id is None
+
+
+def test_counted_item_has_no_gear_kind(client, inv):
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("TV", "TV", [])
+    db.session.commit()
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/items/{inv.pens.id}/gear-kind",
+                       data={"gear_kind_id": str(kind.id)}, follow_redirects=True)
+    assert "Only serialized items have a gear kind." in resp.get_data(as_text=True)
+    assert db.session.get(SupplyItem, inv.pens.id).gear_kind_id is None
+    page = client.get("/inv/admin/items").get_data(as_text=True)
+    assert f"/inv/admin/items/{inv.pens.id}/gear-kind" not in page
+    assert f"/inv/admin/items/{inv.laptop.id}/gear-kind" in page
