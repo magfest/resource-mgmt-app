@@ -393,3 +393,22 @@ def test_retired_units_are_hidden_with_a_kind_and_the_page_says_so(client, inv):
     assert "Retired units are hidden." in page
     assert units[0].id not in _ids_in(page, units)
     assert "Retired units are hidden." not in _search(client, "TV-1")
+
+
+def test_un_retiring_into_a_held_name_is_refused(client, inv, unit):
+    from app.inventory.names import set_unit_name
+    set_unit_name(unit, "MAG-PNTR-007")
+    db.session.commit()
+    login(client, "test:invadmin")
+    base = f"/inv/admin/units/{unit.id}"
+    client.post(f"{base}/condition", data={"condition": "RETIRED"})
+    other = add_unit(inv.laptop, None, ACTOR, [], name="MAG-PNTR-007")
+    db.session.commit()
+    resp = client.post(f"{base}/condition", data={"condition": "IN_SERVICE"},
+                       follow_redirects=True)
+    assert resp.status_code == 200
+    assert ("MAG-PNTR-007 is already the name of another unit. Rename one first."
+            in resp.get_data(as_text=True))
+    db.session.expire_all()
+    assert db.session.get(InvUnit, unit.id).condition == "RETIRED"
+    assert db.session.get(InvUnit, other.id).condition == "IN_SERVICE"

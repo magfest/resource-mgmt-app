@@ -312,6 +312,15 @@ def set_condition(unit: InvUnit, condition: str) -> None:
     """Set a unit's lasting condition; retiring a unit retires its identifiers."""
     if condition not in INV_CONDITIONS:
         raise InventoryError(f"{condition} is not a condition.")
+    if (unit.condition == INV_CONDITION_RETIRED and condition != INV_CONDITION_RETIRED
+            and unit.name_key is not None):
+        # A retired unit gave its name back; the live-name unique index refuses a second holder.
+        holder = (db.session.query(InvUnit)
+                  .filter(InvUnit.name_key == unit.name_key, InvUnit.id != unit.id,
+                          InvUnit.condition != INV_CONDITION_RETIRED).first())
+        if holder is not None:
+            raise InventoryError(
+                f"{holder.name} is already the name of another unit. Rename one first.")
     unit.condition = condition
     if condition == INV_CONDITION_RETIRED:
         for identifier in unit.identifiers:
