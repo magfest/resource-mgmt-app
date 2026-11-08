@@ -1,0 +1,15 @@
+{% extends "inventory/scan/layout.html" %}
+{% block content %}{% if blocked %}<p class="chk-blocked">{{ blocked }}</p>{% endif %}{% endblock %}
+{% block scripts %}{% if not blocked %}
+<script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/station_unit.js') }}"
+        data-station="{{ station }}"
+        data-scan-url="{{ url_for('inventory.scan_unit_scan') }}"
+        data-candidates-url="{{ url_for('inventory.scan_unit_candidates') }}"
+        data-link-url="{{ url_for('inventory.scan_unit_link') }}"
+        data-give-number-url="{{ url_for('inventory.scan_unit_give_number') }}"
+        data-set-aside-url="{{ url_for('inventory.scan_unit_set_aside') }}"
+        data-models-url="{{ url_for('inventory.scan_unit_models') }}"
+        data-create-url="{{ url_for('inventory.scan_unit_create') }}"
+        data-finish-url="{{ url_for('inventory.scan_unit_finish') }}"
+        data-keep-alive-url="{{ url_for('inventory.scan_unit_keepalive') }}"></script>
+{% endif %}{% endblock %}

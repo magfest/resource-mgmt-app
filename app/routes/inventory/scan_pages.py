@@ -12,10 +12,11 @@ from app.inventory.shifts import current_shift, recent_names
 from app.models import InvContainer
 from app.models.constants import (
     INV_CHECK_STATIONS, INV_STATION_COUNT, INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_PRINT, INV_STATION_RECEIVE,
-    INV_STATION_TAG, INV_STATION_TV_CHECK,
+    INV_STATION_TAG, INV_STATION_TV_CHECK, INV_STATION_UNIT,
 )
 
 from . import inventory_bp
+from .scan_unit import NO_HOME
 from .scan_auth import require_scanner, require_scanner_or_print, who_text
 
 
@@ -52,6 +53,8 @@ def scan_home():
             return redirect(url_for("inventory.scan_tag_page"))
         if principal.device.station_code in INV_CHECK_STATIONS:
             return redirect(url_for("inventory.scan_check_page"))
+        if principal.device.station_code == INV_STATION_UNIT:
+            return redirect(url_for("inventory.scan_unit_page"))
     if not principal.is_device or principal.device.station_code == INV_STATION_LOOKUP:
         # Look up needs no name, so a device with no open shift shows none.
         has_name = not principal.is_device or current_shift(principal.device) is not None
@@ -152,6 +155,33 @@ def scan_check_page():
     return render_template(
         "inventory/scan/check.html", station=station, station_name=INV_STATION_NAMES[station],
         is_device=principal.is_device, who=who, blocked=blocked)
+
+
+@inventory_bp.get("/scan/unit")
+@require_scanner
+def scan_unit_page():
+    """Unit station. A device needs the UNIT station and an open shift; an operator may open it."""
+    principal = g.scan_principal
+    home = None
+    if principal.is_device:
+        if principal.device.station_code != INV_STATION_UNIT:
+            return redirect(url_for("inventory.scan_home"))
+        shift = current_shift(principal.device)
+        db.session.commit()  # keeps an IDLE close
+        if shift is None:
+            return redirect(url_for("inventory.scan_who"))
+        home = principal.device.home_container
+    who = who_text()
+    blocked = None
+    if principal.is_device and home is None:
+        blocked = NO_HOME
+    elif default_event() is None:
+        blocked = NO_EVENT
+    db.session.commit()  # keeps an IDLE close
+    return render_template(
+        "inventory/scan/unit.html", station=INV_STATION_UNIT,
+        station_name=INV_STATION_NAMES[INV_STATION_UNIT], is_device=principal.is_device, who=who,
+        blocked=blocked)
 
 
 @inventory_bp.get("/scan/who")

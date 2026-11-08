@@ -644,3 +644,40 @@ def test_look_up_card_for_a_unit_with_no_number_says_so(inv):
     assert card["name"] == "Lobby Laptop"
     assert not card["tag"] and card["numberless"] is True
     assert f"unit {unit.id}" not in str(card)
+
+
+def test_unit_device_opens_the_unit_station(client, inv):
+    from app.inventory.devices import create_enroll_code
+    from app.models import InvDevice
+    _event()
+    home = make_container(inv, "C-HOME", kind="LOCATION", name="Warehouse")
+    raw = create_enroll_code("Unit 1", "test:invadmin", station_code="UNIT", home_container=home)
+    db.session.commit()
+    with client.session_transaction() as sess:
+        sess.clear()
+    assert client.post("/inv/scan/enroll", data={"code": raw}).status_code == 302
+    assert "/scan/who" in client.get("/inv/scan/").headers["Location"]
+    start_shift(InvDevice.query.filter_by(name="Unit 1").one(), "Sam")
+    db.session.commit()
+    page = client.get("/inv/scan/", follow_redirects=True)
+    assert b"station_unit.js" in page.data and b'data-station="UNIT"' in page.data
+    assert b"station_check.js" not in page.data
+
+
+def test_unit_station_page_stops_when_the_device_has_no_home(client, inv):
+    from app.models import InvDevice
+    from app.inventory.devices import create_enroll_code
+    _event()
+    home = make_container(inv, "C-HOME", kind="LOCATION", name="Warehouse")
+    raw = create_enroll_code("Unit 2", "test:invadmin", station_code="UNIT", home_container=home)
+    db.session.commit()
+    with client.session_transaction() as sess:
+        sess.clear()
+    client.post("/inv/scan/enroll", data={"code": raw})
+    device = InvDevice.query.filter_by(name="Unit 2").one()
+    start_shift(device, "Sam")
+    device.home_container_id = None
+    db.session.commit()
+    page = client.get("/inv/scan/unit")
+    assert b"This scanner has no home container. Ask an inventory admin." in page.data
+    assert b"station_unit.js" not in page.data
