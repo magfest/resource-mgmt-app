@@ -602,3 +602,16 @@ def test_flag_on_a_unit_with_no_number_reads_in_words(client, nameless_number):
     page = client.get("/inv/admin/flags").get_data(as_text=True)
     assert "Lobby Laptop (Laptop)" in page
     assert f"unit {nameless_number.id}" not in page
+
+
+def test_second_give_number_is_refused_when_the_first_won_the_race(
+        client, unit, printer, monkeypatch):
+    from app.models import InvLabelSequence
+    monkeypatch.setattr("app.routes.inventory.admin_units._can_give_number", lambda u: True)
+    login(client, "test:invadmin")
+    before = db.session.query(InvLabelSequence.next_value).filter_by(prefix="U").scalar()
+    resp = client.post(f"/inv/admin/units/{unit.id}/give-number", follow_redirects=True)
+    assert "This unit already has a number." in resp.get_data(as_text=True)
+    assert _numbers(unit) == ["U-0001"]
+    assert db.session.query(InvPrintJob).count() == 0
+    assert db.session.query(InvLabelSequence.next_value).filter_by(prefix="U").scalar() == before

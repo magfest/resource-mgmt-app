@@ -171,12 +171,12 @@
       box.appendChild(el('div', 'rcv-head', summary()));
       box.appendChild(progressNode());
       box.appendChild(el('div', 'rcv-step bad', 'Already received'));
-      box.appendChild(el('div', 'rcv-sub', 'This is ' + already.code +
+      box.appendChild(el('div', 'rcv-sub', 'This is ' + (already.code || 'a unit with no number yet') +
         (already.item_name ? ', ' + already.item_name : '')));
       box.appendChild(el('div', 'rcv-sub', 'Nothing was created'));
       // A scan clears `already` while this screen shows; the button keeps its own copy.
       var shown = already;
-      box.appendChild(button('Reprint ' + shown.code, 'rcv-big', function () {
+      box.appendChild(button(shown.code ? 'Reprint ' + shown.code : 'Reprint label', 'rcv-big', function () {
         reprint(shown.unit_id, shown.code);
       }));
       box.appendChild(button('Keep scanning', 'rcv-big', function () {
@@ -446,7 +446,7 @@
   function reprint(unitId, code) {
     guarded(cfg.reprintUrl, {unit_id: unitId}, function (answer) {
       var waiting = S.printerWaiting(answer);
-      note = {code: answer.code, waiting: waiting, text: 'Reprinting ' + (code || answer.code)};
+      note = {code: answer.code, waiting: waiting, text: 'Reprinting ' + (code || answer.code || 'label')};
       already = null;
       S.feedback('ok');
       S.showMessage('', 'info');

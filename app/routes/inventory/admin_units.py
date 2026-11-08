@@ -258,6 +258,9 @@ def unit_page(unit_id: int):
         has_gear_kind=unit.item.gear_kind is not None, can_give_number=_can_give_number(unit))
 
 
+_HAS_NUMBER = "This unit already has a number."
+
+
 def _can_give_number(unit: InvUnit) -> bool:
     """A live owned unit with no active MAGFest tag or FestOps label."""
     if unit.condition == INV_CONDITION_RETIRED or unit.ownership != INV_OWNERSHIP_OWNED:
@@ -476,9 +479,16 @@ def unit_give_number(unit_id: int):
 
     def give():
         if not _can_give_number(unit):
-            raise InventoryError("This unit already has a number or is retired.")
+            raise InventoryError(_HAS_NUMBER)
         code = allocate(PREFIX_UNIT, 1)[0]
-        replace_number(unit, INV_IDENT_FESTOPS_LABEL, code, admin_actor())
+        # allocate holds the sequence lock, so a second click reaches add_identifier after
+        # the first commits and is refused there; replace_number would swap the number.
+        try:
+            add_identifier(unit, INV_IDENT_FESTOPS_LABEL, code)
+        except InventoryError as error:
+            if not _can_give_number(unit):
+                raise InventoryError(_HAS_NUMBER) from error
+            raise
         added.append(code)
 
     try:
