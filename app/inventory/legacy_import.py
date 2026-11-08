@@ -34,6 +34,10 @@ CONDITION_FOR_STATUS = {"broken (do not use)": INV_CONDITION_REPAIR,
                         "do not deploy": INV_CONDITION_REPAIR,
                         "missing (do not use)": INV_CONDITION_LOST}
 NEW_PREFIX = "new:"
+NOT_CSV = "This file could not be read as a CSV."
+APPLY_FAILED = "Nothing was imported. The error was logged."
+# Wider ids are refused before they reach an integer column.
+MAX_ID_DIGITS = 9
 NOT_TECH = ("No rows in this file look like tech units. "
             "Power bins and other stock import separately.")
 MAX_TYPE_NAME = 256
@@ -102,14 +106,21 @@ def read_export(data: bytes) -> list[LegacyRow]:
     row holding only those is blank.
 
     Raises:
-        InventoryError: The file is not UTF-8 text.
+        InventoryError: The file is not UTF-8 text, or the csv module refuses it.
     """
     try:
         # The exports start with a byte order mark, which utf-8-sig strips.
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
         raise InventoryError("The file is not UTF-8 text. Export it again as CSV.") from None
-    reader = csv.reader(io.StringIO(text))
+    try:
+        return _rows(csv.reader(io.StringIO(text)))
+    except csv.Error:
+        # The csv module refuses a cell over 131072 characters by default.
+        raise InventoryError(NOT_CSV) from None
+
+
+def _rows(reader) -> list[LegacyRow]:
     header = next(reader, None) or []
     columns = {}
     for index, raw in enumerate(header):
@@ -134,6 +145,17 @@ def read_export(data: bytes) -> list[LegacyRow]:
         if any(getattr(row, name) for name in _ROW_TEXT):
             rows.append(row)
     return rows
+
+
+def parse_id(raw: str | None) -> int | None:
+    """Read a form id; None unless it is 1 to 9 ASCII digits.
+
+    str.isdigit alone accepts characters such as "²" that int() refuses.
+    """
+    text = (raw or "").strip()
+    if text.isascii() and text.isdigit() and len(text) <= MAX_ID_DIGITS:
+        return int(text)
+    return None
 
 
 def kind_code_for(name: str) -> str | None:
@@ -217,7 +239,8 @@ class _Resolver:
             return None, f"Choose a type for {_describe(kind, text)}."
         if value.startswith(NEW_PREFIX):
             return self._new(_type_name(value), kind)
-        item = db.session.get(SupplyItem, int(value)) if value.isdigit() else None
+        item_id = parse_id(value)
+        item = db.session.get(SupplyItem, item_id) if item_id is not None else None
         if item is None or not item.is_serialized or item.gear_kind_id != kind.id:
             return None, f"The chosen type is not a {kind.name} type."
         return item, None
@@ -372,5 +395,6 @@ def apply(data: bytes, mapping: dict[str, str], category_id: int | None,
     except Exception as error:
         db.session.rollback()
         current_app.logger.exception("Old tech import failed")
-        raise InventoryError(f"Nothing was imported. {error}") from error
+        # The error text can hold SQL and row values, so it goes to the log only.
+        raise InventoryError(APPLY_FAILED) from error
     return result

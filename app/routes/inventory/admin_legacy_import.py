@@ -11,8 +11,9 @@ from app.models import InvGearKind, SupplyCategory, SupplyItem
 from . import inventory_bp
 from .helpers import admin_actor, render_inventory_page, require_inventory_admin
 
-# The exports run to a few dozen kilobytes; the cap keeps the hidden field small.
-MAX_FILE_BYTES = 1024 * 1024
+# The file text returns in a form field, which Flask's MAX_FORM_MEMORY_SIZE caps at
+# 500,000 bytes. Browsers send that text with CRLF, so the cap counts CRLF line ends.
+MAX_FILE_BYTES = 500_000
 TEMPLATE = "inventory/legacy_import.html"
 
 
@@ -31,8 +32,7 @@ def _mapping_from_form() -> dict[str, str]:
 
 
 def _category_id() -> int | None:
-    raw = (request.form.get("category_id") or "").strip()
-    return int(raw) if raw.isdigit() else None
+    return legacy_import.parse_id(request.form.get("category_id"))
 
 
 def _file_bytes() -> bytes:
@@ -40,8 +40,10 @@ def _file_bytes() -> bytes:
     data = upload.read(MAX_FILE_BYTES + 1) if upload and upload.filename else None
     if data is None:
         data = (request.form.get("file_text") or "").encode("utf-8")
-    if len(data) > MAX_FILE_BYTES:
-        raise InventoryError("The file is larger than 1 MB.")
+    # Browsers submit textarea text with CRLF; notes are stored with LF.
+    data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    if len(data) + data.count(b"\n") > MAX_FILE_BYTES:
+        raise InventoryError("The file is larger than 500 KB.")
     if not data.strip():
         raise InventoryError("Choose an export file to preview.")
     return data

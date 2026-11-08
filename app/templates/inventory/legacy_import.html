@@ -23,7 +23,7 @@
   Review: {{ result.review|length }}.
 </p>
 {% if result.models %}
-<form method="post" class="card mb-16">
+<form method="post" enctype="multipart/form-data" class="card mb-16" id="mapping-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <textarea name="file_text" hidden aria-hidden="true">{{ file_text }}</textarea>
   <div style="overflow-x: auto;">
@@ -65,7 +65,8 @@
   <div class="row">
     <button type="submit" name="action" value="preview" class="btn btn-small">Preview again</button>
     {% if result.ready and not applied %}
-    <button type="submit" name="action" value="apply" class="btn btn-primary">Import {{ result.ready|length }} units</button>
+    <button type="submit" name="action" value="apply" class="btn btn-primary" id="apply-button">Import {{ result.ready|length }} units</button>
+    <span class="muted" id="preview-first" hidden>Preview again to import.</span>
     {% endif %}
   </div>
 </form>
@@ -82,7 +83,21 @@
       });
       category.hidden = !anyNew;
     }
-    selects.forEach(function (select) { select.addEventListener('change', refresh); });
+    var apply = document.getElementById('apply-button');
+    var notice = document.getElementById('preview-first');
+    // Import posts the choices on screen, so a choice that was never previewed hides it.
+    function changed() {
+      if (apply) { apply.hidden = true; notice.hidden = false; }
+    }
+    selects.forEach(function (select) {
+      select.addEventListener('change', refresh);
+      select.addEventListener('change', changed);
+    });
+    document.querySelectorAll('.new-name').forEach(function (input) {
+      input.addEventListener('input', changed);
+    });
+    var categorySelect = category.querySelector('select');
+    categorySelect.addEventListener('change', changed);
     refresh();
   })();
 </script>

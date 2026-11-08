@@ -259,3 +259,70 @@ def test_operator_cannot_open_the_importer(client, inv):
     login(client, "test:operator")
     assert client.get("/inv/admin/import/legacy").status_code == 403
     assert client.post("/inv/admin/import/legacy", data={"action": "preview"}).status_code == 403
+
+
+TV_MAPPING = {"TV|": "new:TV", "MONITOR|Dell U2412M": "new:Monitor",
+              "MONITOR|Dell U2713HMT": "new:Monitor"}
+
+
+def test_a_failure_mid_apply_leaves_nothing_behind(kinds, inv, monkeypatch):
+    from app.inventory import legacy_import
+    from app.inventory.ledger import InventoryError
+    real = legacy_import.add_unit
+    calls = []
+
+    def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("INSERT INTO inv_units secret values")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(legacy_import, "add_unit", flaky)
+    with pytest.raises(InventoryError) as error:
+        apply(TV_FILE, TV_MAPPING, inv.category.id, ACTOR)
+    assert str(error.value) == "Nothing was imported. The error was logged."
+    assert db.session.query(InvUnit).count() == 0
+    assert db.session.query(SupplyItem).filter(
+        SupplyItem.item_name.in_(["TV", "Monitor"])).count() == 0
+
+
+def test_a_name_held_only_by_a_retired_unit_imports(kinds, inv):
+    from app.inventory.ledger import set_condition
+    from app.models.constants import INV_CONDITION_RETIRED
+    old = add_unit(inv.laptop, None, ACTOR, [], name="MAG-TV-107")
+    set_condition(old, INV_CONDITION_RETIRED)
+    db.session.commit()
+    result = apply(TV_FILE, TV_MAPPING, inv.category.id, ACTOR)
+    assert result.skipped == 0 and len(result.ready) == 5
+    live = db.session.query(InvUnit).filter(InvUnit.name == "MAG-TV-107",
+                                            InvUnit.condition != INV_CONDITION_RETIRED)
+    assert live.one().item.item_name == "TV"
+
+
+def test_a_crlf_note_from_the_page_is_stored_with_lf(client, kinds, inv):
+    login(client, "test:invadmin")
+    text = (TV_HEADER + '1,MAG-TV-060,,LG,40,,1080p,,,"Invented first line\nsecond line"\n')
+    response = client.post("/inv/admin/import/legacy", data={
+        "action": "apply", "file_text": text.replace("\n", "\r\n"),
+        "category_id": str(inv.category.id), "key-0": "TV|", "type-0": "new", "new-0": "TV"})
+    assert response.status_code == 200
+    assert _unit("MAG-TV-060").imported_notes == "Invented first line\nsecond line"
+
+
+def test_an_odd_digit_mapping_id_goes_to_review(client, kinds, inv):
+    result = preview(TV_FILE, {"TV|": "²", "MONITOR|Dell U2412M": "9" * 30}, None)
+    assert "Row 2 (MAG-TV-107): The chosen type is not a TV type." in result.review
+    assert "Row 4 (MAG-MON-001): The chosen type is not a Monitor type." in result.review
+    login(client, "test:invadmin")
+    response = client.post("/inv/admin/import/legacy", data={
+        "action": "preview", "file_text": TV_FILE.decode("utf-8-sig"),
+        "category_id": "²", "key-0": "TV|", "type-0": "²"})
+    assert response.status_code == 200
+
+
+def test_an_oversize_cell_is_refused_as_not_csv(kinds):
+    from app.inventory.ledger import InventoryError
+    data = _csv(TV_HEADER, "1,MAG-TV-070,,LG,40,,1080p,,," + "x" * 140000)
+    with pytest.raises(InventoryError) as error:
+        preview(data, {})
+    assert str(error.value) == "This file could not be read as a CSV."
