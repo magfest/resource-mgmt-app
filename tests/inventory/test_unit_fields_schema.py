@@ -45,19 +45,38 @@ def migrated(tmp_path_factory):
     return path
 
 
+EXPECTED = {
+    "TV": [("BRAND", "TEXT", None, []), ("SIZE", "NUMBER", "in", []),
+           ("RESOLUTION", "CHOICE", None, ["720p", "1080p", "4k"]),
+           ("HDMI", "BOOL", None, []), ("DISPLAYPORT", "BOOL", None, [])],
+    "MONITOR": [("SIZE", "NUMBER", "in", []),
+                ("RESOLUTION", "CHOICE", None,
+                 ["1920x1080", "1920x1200", "2560x1440", "4k"]),
+                ("HDMI", "BOOL", None, []), ("DISPLAYPORT", "BOOL", None, [])],
+    "PRINTER": [("TONER", "TEXT", None, []), ("COLOR", "BOOL", None, [])],
+    "LABEL_PRINTER": [("MEDIA", "TEXT", None, [])],
+    "LAMINATOR": [],
+}
+
+
+def _seeded(db_path):
+    seeded = {}
+    for kind_id, code in _rows(db_path, "SELECT id, code FROM inv_gear_kinds ORDER BY position"):
+        fields = []
+        for field_id, fcode, ftype, unit in _rows(
+                db_path, "SELECT id, code, field_type, unit_label FROM inv_fields "
+                         f"WHERE gear_kind_id = {kind_id} ORDER BY position"):
+            labels = [r[0] for r in _rows(
+                db_path, "SELECT label FROM inv_field_choices "
+                         f"WHERE field_id = {field_id} ORDER BY position")]
+            fields.append((fcode, ftype, unit, labels))
+        seeded[code] = fields
+    return seeded
+
+
 def test_migration_seeds_gear_kinds_and_fields(migrated):
-    assert set(_kind_codes(migrated)) == {"TV", "MONITOR", "PRINTER", "LABEL_PRINTER",
-                                          "LAMINATOR"}
-    fields = _rows(migrated, "SELECT f.code FROM inv_fields f JOIN inv_gear_kinds k "
-                             "ON k.id = f.gear_kind_id WHERE k.code = 'TV' "
-                             "ORDER BY f.position")
-    assert [r[0] for r in fields] == ["BRAND", "SIZE", "RESOLUTION", "HDMI", "DISPLAYPORT"]
-    choices = _rows(migrated, "SELECT c.label FROM inv_field_choices c "
-                              "JOIN inv_fields f ON f.id = c.field_id "
-                              "JOIN inv_gear_kinds k ON k.id = f.gear_kind_id "
-                              "WHERE k.code = 'MONITOR' AND f.code = 'RESOLUTION' "
-                              "ORDER BY c.position")
-    assert [r[0] for r in choices] == ["1920x1080", "1920x1200", "2560x1440", "4k"]
+    assert _seeded(migrated) == EXPECTED
+    assert _kind_codes(migrated) == list(EXPECTED)
 
 
 def test_upgrade_is_safe_on_a_database_that_already_has_the_seed(tmp_path):
@@ -67,7 +86,7 @@ def test_upgrade_is_safe_on_a_database_that_already_has_the_seed(tmp_path):
     _flask(path, "db", "upgrade")
     codes = _kind_codes(path)
     assert len(codes) == len(set(codes)) == 5
-    assert _rows(path, "SELECT count(*) FROM inv_fields")[0][0] == 17
+    assert _seeded(path) == EXPECTED
 
 
 def _unit(inv, key, condition="IN_SERVICE"):

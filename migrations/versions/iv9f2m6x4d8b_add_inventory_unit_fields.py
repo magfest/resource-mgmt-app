@@ -21,37 +21,30 @@ depends_on = None
 BIGINT = sa.BigInteger().with_variant(sa.Integer(), "sqlite")
 LIVE_NAME_KEY = "name_key IS NOT NULL AND condition != 'RETIRED'"
 
-RESOLUTIONS = ["1920x1080", "1920x1200", "2560x1440", "4k"]
-
 # (kind code, name, [(field code, name, type, unit label, [choices])])
 KINDS = [
     ("TV", "TV", [
         ("BRAND", "Brand", "TEXT", None, []),
         ("SIZE", "Size", "NUMBER", "in", []),
-        ("RESOLUTION", "Resolution", "CHOICE", None, RESOLUTIONS),
-        ("HDMI", "HDMI ports", "NUMBER", None, []),
-        ("DISPLAYPORT", "DisplayPort ports", "NUMBER", None, []),
+        ("RESOLUTION", "Resolution", "CHOICE", None, ["720p", "1080p", "4k"]),
+        ("HDMI", "HDMI", "BOOL", None, []),
+        ("DISPLAYPORT", "DisplayPort", "BOOL", None, []),
     ]),
     ("MONITOR", "Monitor", [
-        ("BRAND", "Brand", "TEXT", None, []),
         ("SIZE", "Size", "NUMBER", "in", []),
-        ("RESOLUTION", "Resolution", "CHOICE", None, RESOLUTIONS),
-        ("HDMI", "HDMI ports", "NUMBER", None, []),
-        ("DISPLAYPORT", "DisplayPort ports", "NUMBER", None, []),
+        ("RESOLUTION", "Resolution", "CHOICE", None,
+         ["1920x1080", "1920x1200", "2560x1440", "4k"]),
+        ("HDMI", "HDMI", "BOOL", None, []),
+        ("DISPLAYPORT", "DisplayPort", "BOOL", None, []),
     ]),
     ("PRINTER", "Printer", [
-        ("BRAND", "Brand", "TEXT", None, []),
+        ("TONER", "Toner cartridge", "TEXT", None, []),
         ("COLOR", "Color", "BOOL", None, []),
-        ("DUPLEX", "Duplex", "BOOL", None, []),
     ]),
     ("LABEL_PRINTER", "Label printer", [
-        ("BRAND", "Brand", "TEXT", None, []),
-        ("LABEL_WIDTH", "Label width", "NUMBER", "in", []),
+        ("MEDIA", "Tape or media", "TEXT", None, []),
     ]),
-    ("LAMINATOR", "Laminator", [
-        ("BRAND", "Brand", "TEXT", None, []),
-        ("WIDTH", "Width", "NUMBER", "in", []),
-    ]),
+    ("LAMINATOR", "Laminator", []),
 ]
 
 
@@ -181,7 +174,7 @@ def _seed():
             conn.execute(
                 sa.text("INSERT INTO inv_gear_kinds (code, name, position, is_active) "
                         "VALUES (:c, :n, :p, :a)"),
-                {"c": code, "n": name, "p": kind_pos * 10, "a": True})
+                {"c": code, "n": name, "p": kind_pos, "a": True})
             kind_id = _scalar(conn, "SELECT id FROM inv_gear_kinds WHERE code = :c", c=code)
         for pos, (fcode, fname, ftype, unit_label, choices) in enumerate(fields, start=1):
             field_id = _scalar(
@@ -193,7 +186,7 @@ def _seed():
                             "unit_label, position, is_active) "
                             "VALUES (:k, :c, :n, :t, :u, :p, :a)"),
                     {"k": kind_id, "c": fcode, "n": fname, "t": ftype,
-                     "u": unit_label, "p": pos * 10, "a": True})
+                     "u": unit_label, "p": pos, "a": True})
                 field_id = _scalar(
                     conn, "SELECT id FROM inv_fields WHERE gear_kind_id = :k AND code = :c",
                     k=kind_id, c=fcode)
@@ -205,7 +198,7 @@ def _seed():
                         sa.text("INSERT INTO inv_field_choices "
                                 "(field_id, label, position, is_active) "
                                 "VALUES (:f, :l, :p, :a)"),
-                        {"f": field_id, "l": label, "p": cpos * 10, "a": True})
+                        {"f": field_id, "l": label, "p": cpos, "a": True})
 
 
 def downgrade():
