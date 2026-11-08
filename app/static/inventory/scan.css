@@ -8,6 +8,7 @@ body.not-saved-on { background: #f9c9c9; }
 .station-LOOKUP .band { background: #455a64; }
 .station-COUNT .band { background: #1565c0; }
 .station-RECEIVE .band { background: #e65100; }
+.station-UNIT .band { background: #6a1b9a; }
 /* At 390 px the band holds the station name, the volunteer's name, Flag and Done on one row.
    The station name keeps its width; a long volunteer name gives way with an ellipsis. */
 .band-station { font-weight: 700; flex: 0 0 auto; white-space: nowrap; }

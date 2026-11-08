@@ -1,34 +1,25 @@
-"""Tag station: attach a pre-printed FEST tag to a named unit and print its combined label.
+"""Attach a pre-printed asset tag to a named unit that has no number.
 
+The Unit station links tags through here and finds unnumbered units by name.
 Nothing here commits; the caller does, so a refusal rolls the whole link back.
 """
 from __future__ import annotations
 
-from datetime import datetime
-
-from sqlalchemy import and_
 from sqlalchemy.orm import selectinload
 
 from app import db
-from app.inventory.audit import ACTION_TAG_LINK, ACTION_TAG_UNDO, audit_who, record_unit_change
+from app.inventory.audit import ACTION_TAG_LINK, audit_who, record_unit_change
 from app.inventory.codes import normalize_code
-from app.inventory.ledger import (
-    NUMBER_KINDS, Actor, InventoryError, add_identifier, retire_identifier,
-)
+from app.inventory.ledger import NUMBER_KINDS, Actor, InventoryError, add_identifier
 from app.inventory.names import name_key
-from app.inventory.printing import cancel_job, printer_for
+from app.inventory.printing import printer_for
 from app.inventory.receive import (
-    AlreadyReceived, _active_holder, check_tag, label_answer, label_job, undo_message,
+    AlreadyReceived, _active_holder, check_tag, label_answer, label_job,
 )
-from app.inventory.undo import TOO_LATE, UNDO_WINDOW
 from app.models import (
-    InvGearKind, InvPrintJob, InvTagLink, InvUnit, InvUnitIdentifier, InvUnitValue, SupplyItem,
+    InvGearKind, InvTagLink, InvUnit, InvUnitIdentifier, InvUnitValue, SupplyItem,
 )
-from app.models.constants import (
-    INV_CONDITION_RETIRED, INV_IDENT_MAGFEST_TAG, INV_JOB_OWNED_UNIT, INV_JOB_QUEUED,
-)
-
-NOTHING_TO_UNDO = "Only the last unit this scanner tagged can be undone."
+from app.models.constants import INV_CONDITION_RETIRED, INV_IDENT_MAGFEST_TAG, INV_JOB_OWNED_UNIT
 
 
 def tag_candidates(text: str, limit: int = 10) -> list[InvUnit]:
@@ -111,46 +102,3 @@ def link_tag(unit_id: int, tag: str, actor: Actor,
         return {"code": identifier.value, "unit_id": unit.id, "name": unit.name}
     job = label_job(unit, actor, client_request_id)
     return {**label_answer(unit, job), "name": unit.name}
-
-
-def _newest_link(actor: Actor) -> InvTagLink | None:
-    query = db.session.query(InvTagLink).filter(InvTagLink.undone_at.is_(None))
-    if actor.shift_id is not None:
-        query = query.filter(InvTagLink.shift_id == actor.shift_id,
-                             InvTagLink.device_id == actor.device_id)
-    else:
-        query = query.filter(InvTagLink.performed_by_user_id == actor.user_id,
-                             InvTagLink.shift_id.is_(None))
-    return query.order_by(InvTagLink.id.desc()).first()
-
-
-def undo_tag_link(unit_id: int, actor: Actor) -> str:
-    """Retire the tag this actor linked last, cancel its queued label and say what to do.
-
-    Only the actor's newest link can be undone, and only inside the receive undo window.
-    A label already collected cannot be recalled; the message tells the person to discard it.
-    """
-    link = _newest_link(actor)
-    if link is None or link.unit_id != unit_id:
-        raise InventoryError(NOTHING_TO_UNDO)
-    unit = _locked_unit(unit_id)
-    link = (db.session.query(InvTagLink).filter_by(id=link.id)
-            .with_for_update().populate_existing().one())
-    if link.undone_at is not None:
-        raise InventoryError(NOTHING_TO_UNDO)
-    if datetime.utcnow() - link.created_at > UNDO_WINDOW:
-        raise InventoryError(TOO_LATE)
-    identifier = db.session.get(InvUnitIdentifier, link.identifier_id)
-    retire_identifier(identifier)
-    link.undone_at = datetime.utcnow()
-    jobs = (db.session.query(InvPrintJob)
-            .filter(and_(InvPrintJob.unit_id == unit.id,
-                         InvPrintJob.created_at >= link.created_at))
-            .with_for_update().populate_existing().all())
-    for job in jobs:
-        if job.status == INV_JOB_QUEUED:
-            cancel_job(job)
-    record_unit_change(unit.id, ACTION_TAG_UNDO,
-                       {"codes": {"old": [identifier.value], "new": []}}, audit_who(actor))
-    db.session.expire(unit, ["identifiers"])
-    return undo_message(unit.id)

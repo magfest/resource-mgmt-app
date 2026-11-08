@@ -6,7 +6,7 @@ import pytest
 from app import db
 from app.inventory.ledger import Actor, add_unit
 from app.inventory.printing import queue_summary
-from app.models import EventCycle, InvCheck, InvPrepStatus, InvPrinter, InvPrintJob
+from app.models import EventCycle, InvCheck, InvPrepStatus, InvPrintJob
 from app.models.constants import INV_JOB_QUEUED
 from tests.inventory.helpers import login
 from tests.inventory.test_admin_printers import _printer, _station
@@ -96,7 +96,8 @@ def test_home_warns_when_a_station_is_offline(client, week):
     db.session.commit()
     login(client, "test:invadmin")
     page = client.get("/inv/").data.decode()
-    assert "2 waiting" in page and "Print station offline" in page
+    assert "2 waiting" in page
+    assert '<span class="pill pill-warning">Print station offline</span>' in page
 
 
 def test_groups_are_headed_and_admin_sees_set_up_links(client, week):

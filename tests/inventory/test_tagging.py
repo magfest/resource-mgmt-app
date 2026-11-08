@@ -1,16 +1,16 @@
-"""Tag station: link a pre-printed FEST tag to a named unit, and undo it."""
+"""Link a pre-printed FEST tag to a named unit and find unnumbered units by name."""
 from contextlib import contextmanager
 from datetime import datetime
 
 import pytest
 
 from app import db
-from app.inventory.audit import ACTION_TAG_LINK, ACTION_TAG_UNDO
+from app.inventory.audit import ACTION_TAG_LINK
 from app.inventory.devices import enroll_device
 from app.inventory.ledger import Actor, InventoryError, add_unit
 from app.inventory.resolver import resolve
 from app.inventory.shifts import start_shift
-from app.inventory.tagging import link_tag, tag_candidates, undo_tag_link
+from app.inventory.tagging import link_tag, tag_candidates
 from app.models import (
     ConfigAuditEvent, InvPrinter, InvPrintJob, InvPrintRoute, InvTagLink, InvUnit,
 )
@@ -120,46 +120,6 @@ def test_a_label_shaped_or_held_tag_is_refused_with_receive_messages(inv, printe
     db.session.commit()
     with pytest.raises(InventoryError):
         link_tag(b.id, "FEST10001", ACTOR)
-
-
-def test_undo_frees_the_tag_and_cancels_a_queued_label(inv, printer):
-    unit = _named(inv)
-    link_tag(unit.id, "FEST10001", ACTOR)
-    db.session.commit()
-    message = undo_tag_link(unit.id, ACTOR)
-    db.session.commit()
-    assert message == "Label cancelled."
-    assert resolve("FEST10001").unit is None
-    assert InvTagLink.query.one().undone_at is not None
-    assert InvPrintJob.query.one().status == "CANCELLED"
-    assert ConfigAuditEvent.query.filter_by(action=ACTION_TAG_UNDO).count() == 1
-    link_tag(unit.id, "FEST10002", ACTOR)
-    db.session.commit()
-    assert resolve("FEST10002").unit.id == unit.id
-
-
-def test_only_the_newest_link_of_this_shift_can_be_undone(inv, printer):
-    a, b = _named(inv, "A unit"), _named(inv, "B unit")
-    link_tag(a.id, "FEST10001", ACTOR)
-    link_tag(b.id, "FEST10002", ACTOR)
-    db.session.commit()
-    with pytest.raises(InventoryError):
-        undo_tag_link(a.id, ACTOR)
-    with pytest.raises(InventoryError):
-        undo_tag_link(b.id, Actor(user_id="test:invadmin"))
-    undo_tag_link(b.id, ACTOR)
-    db.session.commit()
-    undo_tag_link(a.id, ACTOR)
-
-
-def test_undo_after_the_window_is_refused(inv, printer):
-    unit = _named(inv)
-    link_tag(unit.id, "FEST10001", ACTOR)
-    link = InvTagLink.query.one()
-    link.created_at = datetime(2020, 1, 1)
-    db.session.commit()
-    with pytest.raises(InventoryError, match="Too late"):
-        undo_tag_link(unit.id, ACTOR)
 
 
 def test_unit_page_shows_the_shift_as_a_scanner(client, inv, printer):

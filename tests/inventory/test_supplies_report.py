@@ -87,7 +87,7 @@ def test_operator_can_open_and_nobody_cannot(client, pens):
     page = client.get(URL)
     assert page.status_code == 200 and "about 25 each" in page.get_data(as_text=True)
     login(client, "test:nobody")
-    assert client.get(URL).status_code in (302, 403)
+    assert client.get(URL).status_code == 403
 
 
 def _selects(fn):

@@ -63,7 +63,8 @@ def device_rows(now: datetime | None = None) -> list[dict]:
                    .filter(InvPrintJob.status == INV_JOB_QUEUED)
                    .group_by(InvPrintJob.printer_id).all())
     printers = {}
-    for printer in db.session.query(InvPrinter).options(joinedload(InvPrinter.device)) \
+    # printer.device needs no load option: the device query above put every device in the session.
+    for printer in db.session.query(InvPrinter) \
             .filter(InvPrinter.is_active.is_(True), InvPrinter.device_id.isnot(None)) \
             .order_by(InvPrinter.name):
         seen = printer.device.last_seen_at

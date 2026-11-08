@@ -9,11 +9,10 @@ from app.inventory.devices import (
     redeem_enroll_code, revoke_device, set_station,
 )
 from app.inventory.ledger import InventoryError
-from app.models.constants import INV_STATION_UNIT
 from app.inventory.printing import local_stamp
 from app.inventory.shifts import start_shift
 from app.models import InvDevice, InvEnrollCode, InvPrinter, InvPrintJob, InvShift
-from app.models.constants import INV_STATION_PRINT
+from app.models.constants import INV_STATION_PRINT, INV_STATION_UNIT
 from app.routes.inventory.admin_devices import device_rows
 from sqlalchemy import event
 from tests.inventory.helpers import enrolled_client, login, make_container
@@ -316,6 +315,13 @@ def test_unseen_device_is_stale(scanner):
     assert _row(scanner)["stale"] is True
 
 
+def test_stale_starts_after_fifteen_minutes(scanner):
+    scanner.last_seen_at = NOW - timedelta(minutes=14)
+    assert _row(scanner)["stale"] is False
+    scanner.last_seen_at = NOW - timedelta(minutes=16)
+    assert _row(scanner)["stale"] is True
+
+
 def test_never_seen_is_stale(scanner):
     scanner.last_seen_at = None
     row = _row(scanner)
@@ -328,6 +334,23 @@ def test_seen_text_forms(scanner):
     assert _row(scanner)["seen_text"] == "5 min ago"
     scanner.last_seen_at = NOW - timedelta(hours=2)
     assert _row(scanner)["seen_text"] == local_stamp(NOW - timedelta(hours=2))
+
+
+@pytest.mark.parametrize("age, text", [
+    (timedelta(seconds=59), "just now"),
+    (timedelta(minutes=1), "1 min ago"),
+    (timedelta(minutes=59), "59 min ago"),
+])
+def test_seen_text_edges(age, text):
+    from app.routes.inventory.admin_devices import _seen_text
+    assert _seen_text(NOW - age, NOW) == text
+
+
+def test_page_says_nobody_signed_in(app, scanner):
+    admin = app.test_client()
+    login(admin, "test:invadmin")
+    page = admin.get("/inv/admin/devices").get_data(as_text=True)
+    assert '<span class="muted">Nobody signed in</span>' in page
 
 
 def test_since_time_is_local(scanner):
@@ -366,10 +389,13 @@ def test_print_station_polling_is_online_with_waiting_count(app, inv):
                                    code=f"C{n}", fields={}, status="QUEUED", source="SCAN"))
     db.session.commit()
     assert _row(station)["printers"] == [{"name": "Zebra 1", "online": True, "waiting": 2}]
-    station.last_seen_at = None
-    db.session.commit()
     admin = app.test_client()
     login(admin, "test:invadmin")
+    station.last_seen_at = datetime.utcnow()
+    db.session.commit()
+    assert "Zebra 1: Online, 2 waiting" in admin.get("/inv/admin/devices").get_data(as_text=True)
+    station.last_seen_at = None
+    db.session.commit()
     page = admin.get("/inv/admin/devices").get_data(as_text=True)
     assert "Print station" in page and "Zebra 1: Offline, 2 waiting" in page
 

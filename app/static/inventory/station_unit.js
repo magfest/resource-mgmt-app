@@ -173,6 +173,12 @@
 
   function stopped(answer) { return answer.need_name || answer.fatal || answer.cancelled; }
 
+  // A step that threw tells the volunteer instead of leaving the screen silent.
+  function stepFailed() {
+    fail('That scan failed. Scan it again.');
+    return {ok: false};
+  }
+
   function tapId(key) {
     if (!tapIds[key]) { tapIds[key] = S.requestId(); }
     return tapIds[key];
@@ -401,7 +407,7 @@
             S.showMessage('', 'info');
             return scanWrite(code, unitId != null ? {unit_id: unitId} : null);
           });
-        });
+        }).catch(stepFailed);
       }, (open.code || open.name) + ' is not finished. ' + MESSAGES.asideAsk);
   }
 
@@ -414,7 +420,7 @@
     S.choose([{label: 'Check it again', value: 'again'}, {label: 'Cancel', value: 'cancel'}],
       function (pick) {
         if (pick !== 'again') { backToScreen(); return; }
-        gate.run(function () { return scanWrite(rescan, again); });
+        gate.run(function () { return scanWrite(rescan, again); }).catch(stepFailed);
       }, (answer.card ? answer.card.name : answer.name) + ' was checked: ' + when.result +
          ' on ' + when.when + '. Check it again?');
   }
@@ -424,7 +430,7 @@
       return {label: c.name, lines: cardLines(c), value: c.unit_id};
     }).concat([{label: 'Cancel', value: null}]), function (unitId) {
       if (unitId === null) { backToScreen(); return; }
-      gate.run(function () { return scanWrite(code, {unit_id: unitId}); });
+      gate.run(function () { return scanWrite(code, {unit_id: unitId}); }).catch(stepFailed);
     }, 'Two units match: tap the one in your hand');
   }
 
@@ -490,7 +496,7 @@
   }
 
   function picked(tag, card) {
-    if (tag) { gate.run(function () { return linkWrite(card, tag); }); return; }
+    if (tag) { gate.run(function () { return linkWrite(card, tag); }).catch(stepFailed); return; }
     held = {card: card, tagRequired: !!card.asset_tag_required};
     phase = 'number';
     S.showMessage('', 'info');
@@ -521,7 +527,7 @@
         if (!answer.ok) { fail(answer.message); return; }
         openAnswer(answer, answer.code, mine.card.unit_id);
       });
-    });
+    }).catch(stepFailed);
   }
 
   function listModels(tag) {
@@ -540,7 +546,7 @@
             refocus();
             return;
           }
-          gate.run(function () { return createWrite(model, tag); });
+          gate.run(function () { return createWrite(model, tag); }).catch(stepFailed);
         });
       refocus();
     });
@@ -575,7 +581,7 @@
         render();
         refocus();
       });
-    });
+    }).catch(stepFailed);
   }
 
   function worksTap() {
@@ -682,10 +688,7 @@
       }
       if (phase === 'createTag' && offered) { return createWrite(offered, code); }
       return scanWrite(code);
-    }).catch(function () {
-      fail('That scan failed. Scan it again.');
-      return {ok: false};
-    });
+    }).catch(stepFailed);
   }
 
   panel.addEventListener('click', function () { if (check) { keepAlive.tap(); } });

@@ -19,7 +19,7 @@
   <p class="muted">No default event is set.</p>
   {% endif %}
   <a class="week-tile" href="{{ url_for('inventory.flags') }}">Open flags<strong>{{ open_flags }}</strong></a>
-  <a class="week-tile" href="{{ url_for('inventory.print_queue') }}">Print queue<strong>{{ queue.waiting }} waiting</strong>{% if not queue.station_online %}<span>Print station offline</span>{% endif %}</a>
+  <a class="week-tile" href="{{ url_for('inventory.print_queue') }}">Print queue<strong>{{ queue.waiting }} waiting</strong>{% if not queue.station_online %}<span class="pill pill-warning">Print station offline</span>{% endif %}</a>
 </div>
 
 <h2>During the week</h2>
