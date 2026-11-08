@@ -92,13 +92,14 @@ def _is_blind(count: InvCount) -> bool:
 def _last_counted(count: InvCount) -> dict[int, datetime]:
     """Latest submit time per item over this container's other submitted counts.
 
-    Only answered lines count; a held item the volunteer never touched keeps its old date.
+    Only applied answers count; an untouched or stale item keeps its old date.
     """
     rows = (db.session.query(InvCountLine.item_id, func.max(InvCount.submitted_at))
             .join(InvCount, InvCount.id == InvCountLine.count_id)
             .filter(InvCount.container_id == count.container_id,
                     InvCount.submitted_at.isnot(None), InvCount.id != count.id,
-                    InvCountLine.counted_quantity.isnot(None), not_undone())
+                    InvCountLine.counted_quantity.isnot(None),
+                    InvCountLine.outcome.isnot(INV_COUNT_LINE_STALE), not_undone())
             .group_by(InvCountLine.item_id).all())
     return dict(rows)
 

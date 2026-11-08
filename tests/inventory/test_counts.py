@@ -476,6 +476,23 @@ def test_the_second_count_dates_each_line_in_local_time(inv):
     assert line["expected"] == 20 and line["last_counted"] == "Nov 7, 9:23 PM"
 
 
+def test_a_stale_line_keeps_the_earlier_date(inv):
+    from datetime import datetime
+    tote = make_container(inv, "C-0001", kind="BIN")
+    spare = make_container(inv, "C-0002", kind="BIN")
+    add_stock(inv.pens, spare, 9, ACTOR)
+    old = start_count(tote, ACTOR)
+    submit_count(old, [CountLineIn(inv.pens.id, kept=5)], ACTOR)
+    old.submitted_at = datetime(2026, 11, 1, 15, 5)
+    stale = start_count(tote, ACTOR)
+    move_stock(inv.pens, spare, tote, 2, ACTOR)
+    assert submit_count(stale, [CountLineIn(inv.pens.id, kept=7)], ACTOR)["stale"] == ["Blue Pen"]
+    stale.submitted_at = datetime(2026, 11, 3, 17, 0)
+    db.session.flush()
+    line = count_payload(start_count(tote, ACTOR))["lines"][0]
+    assert line["last_counted"] == "Nov 1, 10:05 AM"
+
+
 def test_the_date_comes_from_the_latest_submitted_count_with_that_item(inv):
     from datetime import datetime
     tote = make_container(inv, "C-0001", kind="BIN")
