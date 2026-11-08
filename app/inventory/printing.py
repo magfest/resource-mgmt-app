@@ -54,6 +54,11 @@ def local_stamp(moment: datetime) -> str:
     return f"{local:%b} {local.day}, {local.hour % 12 or 12}:{local:%M} {local:%p}"
 
 
+def local_when(moment: datetime) -> str:
+    """Format a stored UTC time as `Nov 7 at 5:53 PM` in INV_LOCAL_TZ."""
+    return local_stamp(moment).replace(", ", " at ", 1)
+
+
 def local_iso(moment: datetime) -> str:
     """Format a stored UTC time as sortable `2026-12-07 21:30` in INV_LOCAL_TZ."""
     local = moment.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(INV_LOCAL_TZ))

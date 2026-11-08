@@ -34,9 +34,11 @@ from app.inventory.week import (
 )
 from app.inventory.unit_station import give_unit_number, number_refusal
 from app.models import (
-    InvContainer, InvField, InvFlag, InvGearKind, InvMovement, InvShift, InvUnit, InvUnitIdentifier,
-    InvUnitValue, SupplyItem, User,
+    InvContainer, InvField, InvFlag, InvGearKind, InvMovement, InvUnit, InvUnitIdentifier,
+    InvUnitValue, SupplyItem,
 )
+from app.inventory.history import CONDITION_WORDS
+from app.inventory.people import names_for
 from app.inventory.describe import describe_actor, describe_movement
 from app.models.constants import (
     INV_CONDITION_RETIRED, INV_FIELD_BOOL, INV_FIELD_CHOICE, INV_FIELD_NUMBER,
@@ -54,8 +56,6 @@ IDENTIFIER_KINDS = ((INV_IDENT_MAGFEST_TAG, "MAGFest tag"), (INV_IDENT_FESTOPS_L
                     (INV_IDENT_VENDOR_TAG, "Vendor tag"), (INV_IDENT_SERIAL, "Serial"),
                     (INV_IDENT_MAC, "MAC address"))
 KIND_WORDS = dict(IDENTIFIER_KINDS)
-CONDITION_WORDS = {"IN_SERVICE": "In service", "REPAIR": "In repair", "LOST": "Lost",
-                   "RETIRED": "Retired"}
 REPRINT_WORDS = {REPRINT_CURRENT_DETAILS: "Print the current details",
                  REPRINT_TODAY: "Reprint, dated today",
                  REPRINT_ORIGINAL_DATE: "Reprint, original date"}
@@ -316,19 +316,10 @@ CHANGE_FIELDS = {"codes": "Codes", "condition": "Condition", "item": "Item type"
 
 def _change_rows(unit: InvUnit) -> list[dict]:
     events = unit_changes(unit.id)
-    ids = {row.created_by_user_id for row, _ in events}
-    names = {u.id: u.display_name or u.id
-             for u in db.session.query(User).filter(User.id.in_(ids))} if ids else {}
-
-    shifts = {}
-    for raw in ids:
-        if isinstance(raw, str) and raw.startswith("shift:") and raw[6:].isdigit():
-            shift = db.session.get(InvShift, int(raw[6:]))
-            if shift is not None:
-                shifts[raw] = f"{shift.person_name} (scanner)"
+    names = names_for(row.created_by_user_id for row, _ in events)
 
     def who(user_id):
-        return names.get(user_id) or shifts.get(user_id) or user_id
+        return names.get(user_id) or user_id
 
     def words(field, value):
         if field == "codes":

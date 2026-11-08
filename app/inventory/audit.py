@@ -35,11 +35,11 @@ def record_unit_change(unit_id: int, action: str, changes: dict, user_id: str) -
         changes_json=json.dumps(changes), created_by_user_id=user_id))
 
 
-def unit_changes(unit_id: int, limit: int = 50) -> list[tuple[ConfigAuditEvent, dict]]:
-    """Newest first, each with its decoded changes."""
-    rows = (db.session.query(ConfigAuditEvent)
-            .filter(ConfigAuditEvent.entity_type == ENTITY_UNIT,
-                    ConfigAuditEvent.entity_id == str(unit_id))
-            .order_by(ConfigAuditEvent.created_at.desc(), ConfigAuditEvent.id.desc())
-            .limit(limit).all())
+def unit_changes(unit_id: int, limit: int | None = 50) -> list[tuple[ConfigAuditEvent, dict]]:
+    """Newest first, each with its decoded changes. A limit of None returns every row."""
+    query = (db.session.query(ConfigAuditEvent)
+             .filter(ConfigAuditEvent.entity_type == ENTITY_UNIT,
+                     ConfigAuditEvent.entity_id == str(unit_id))
+             .order_by(ConfigAuditEvent.created_at.desc(), ConfigAuditEvent.id.desc()))
+    rows = (query if limit is None else query.limit(limit)).all()
     return [(row, json.loads(row.changes_json or "{}")) for row in rows]
