@@ -93,6 +93,29 @@ def _fitted(height: int, text: str, full_chars: int) -> int:
     return max(1, height * full_chars // len(text))
 
 
+def _fit_rows(rows, keep: int):
+    """Trim rows to `keep`. Serial and Printed stay; Type goes first, then Vendor tag.
+
+    Other rows go from the end. A scanned serial and the print date identify the unit.
+    """
+    rows = list(rows)
+    for label in ("Type", "Vendor tag"):
+        if len(rows) <= keep:
+            break
+        for row in rows:
+            if row[0] == label:
+                rows.remove(row)
+                break
+    index = len(rows) - 1
+    while len(rows) > keep and index >= 0:
+        if rows[index][0] in ("Serial", "Printed"):
+            index -= 1
+        else:
+            del rows[index]
+            index -= 1
+    return rows
+
+
 def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
                  height_in: float = 3.0) -> str:
     if dpi not in SUPPORTED_DPI:
@@ -133,15 +156,14 @@ def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
         row_top += _TITLE_H + _GAP
 
     # A row must end above the footer rule, or above the bottom margin with no
-    # footer. A titled label drops rows from the end; an untitled one never has
-    # to, so its output is unchanged.
+    # footer. Only a titled label is trimmed; an untitled one keeps its output.
     rows = spec.rows
     if spec.title:
         limit = float(width_in) - _MARGIN
         if spec.footer:
             limit -= _FOOTER_H + _GAP + _RULE_H + _GAP
         fits = int((limit - row_top - _ROW_H) / _ROW_PITCH + 1e-9) + 1
-        rows = rows[:max(0, fits)]
+        rows = _fit_rows(rows, max(0, fits))
     for index, (label, value) in enumerate(rows):
         x = x_for(row_top + index * _ROW_PITCH, _ROW_H)
         value = _field(value)

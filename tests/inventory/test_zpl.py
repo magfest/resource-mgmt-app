@@ -2,6 +2,8 @@ import re
 
 import pytest
 
+from app.inventory import zpl
+
 from app.inventory.zpl import MAX_CODE_LENGTH, LabelSpec, render_batch, render_label
 
 SERIAL_22 = "PF3XK9R2MJ0K8LQ3N7Y2AB"
@@ -133,6 +135,10 @@ def test_a_long_title_is_smaller_and_never_overprints():
     assert min(_heights(z)) < 66
 
 
+# Top of the footer rule in inches, from the layout constants.
+RULE_TOP = 2.0 - zpl._MARGIN - zpl._FOOTER_H - zpl._GAP - zpl._RULE_H
+
+
 def test_rows_that_would_cross_the_footer_rule_are_dropped_from_the_end():
     rows = tuple((f"L{i}", f"V{i}") for i in range(8))
     titled = render_label(LabelSpec("R-00038", rows, "Return", "Name"), 300)
@@ -142,4 +148,16 @@ def test_rows_that_would_cross_the_footer_rule_are_dropped_from_the_end():
     for line in titled.splitlines():
         if line.startswith("^FO") and "^GB" not in line:
             x = int(re.match(r"\^FO(\d+)", line).group(1))
-            assert x >= 600 - round(1.71 * 300) or "Return" in line
+            assert x >= 600 - round(RULE_TOP * 300) or "Return" in line
+
+
+def test_titled_label_keeps_serial_and_printed_and_drops_type_then_vendor_tag():
+    rows = (("Type", "Laptop"), ("Vendor tag", "Vendor A: A0038"),
+            ("Serial", SERIAL_22), ("Printed", "2026-11-07"))
+    z = render_label(LabelSpec("R-00038", rows, "Return", "MAG-TV-009"), 300)
+    assert "^FDType^FS" not in z and "^FDVendor tag^FS" in z
+    assert "^FDSerial^FS" in z and "^FDPrinted^FS" in z
+    assert _value_height(z, SERIAL_22) == 45
+    five = rows + (("Extra", "x"),)
+    z = render_label(LabelSpec("R-00038", five, "Return", "MAG-TV-009"), 300)
+    assert "^FDVendor tag^FS" not in z and "^FDSerial^FS" in z and "^FDPrinted^FS" in z

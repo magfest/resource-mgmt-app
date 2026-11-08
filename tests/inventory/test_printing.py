@@ -263,12 +263,14 @@ def test_unit_fields_carry_the_name_and_details(inv):
     from app.inventory.printing import fields_for_unit
     fields = fields_for_unit(_gear_unit(inv, "MAG-TV-001"))
     assert fields["title"] == "MAG-TV-001"
-    assert fields["rows"] == [["Type", "Laptop"], ["Details", "Sony"]]
+    assert fields["rows"] == [["Type", "Laptop \u00b7 Sony"]]
 
 
 def test_unit_fields_for_an_unnamed_unit_have_no_title_key(inv):
     from app.inventory.printing import fields_for_unit
-    assert "title" not in fields_for_unit(_gear_unit(inv))
+    fields = fields_for_unit(_gear_unit(inv))
+    assert "title" not in fields
+    assert fields["rows"] == [["Type", "Laptop"], ["Details", "Sony"]]
 
 
 def test_renaming_a_unit_counts_as_changed_details(inv):
@@ -291,7 +293,53 @@ def test_renaming_a_unit_counts_as_changed_details(inv):
 def test_render_job_prints_the_title(inv):
     from app.inventory.printing import fields_for_unit, render_job
     unit = _gear_unit(inv, "MAG-TV-001")
+    # The shared helper makes 2 x 1 in printers, which render_label refuses.
     _printer("Zebra", _station(), INV_JOB_OWNED_UNIT).height_in = 3
     job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields_for_unit(unit), NO_ONE,
                         INV_JOB_SOURCE_SCAN)
     assert "^FDMAG-TV-001^FS" in render_job(job)
+
+
+def _printed_rows(job):
+    import re
+    from app.inventory.printing import render_job
+    z = render_job(job)
+    return z, set(re.findall(r"\^FD([^^]+)\^FS", z))
+
+
+def _inside(z):
+    import re
+    for line in z.splitlines():
+        m = re.match(r"\^FO(-?\d+),(-?\d+)", line)
+        if m:
+            assert 0 <= int(m.group(1)) < 406 and 0 <= int(m.group(2)) < 609, line
+
+
+def test_a_named_owned_tv_prints_title_type_serial_and_date(inv):
+    from datetime import date
+    from app.inventory.printing import fields_for_unit
+    unit = _gear_unit(inv, "MAG-TV-001")
+    from app.inventory.ledger import add_identifier
+    add_identifier(unit, "SERIAL", "PF3XK9R2MJ0K8LQ3N7Y2AB")
+    _printer("Zebra", _station(), INV_JOB_OWNED_UNIT).height_in = 3
+    job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields_for_unit(unit), NO_ONE,
+                        INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
+    z, texts = _printed_rows(job)
+    assert {"MAG-TV-001", "Laptop \u00b7 Sony", "PF3XK9R2MJ0K8LQ3N7Y2AB",
+            "2026-11-07"} <= texts
+    _inside(z)
+
+
+def test_a_named_rented_unit_keeps_serial_and_date_and_drops_type(inv):
+    from datetime import date
+    from app.inventory.printing import fields_for_unit
+    unit = _unit(inv, [("FESTOPS_LABEL", "R-00038"), ("VENDOR_TAG", "A0038"),
+                       ("SERIAL", "SN1")], ownership="RENTED", vendor_name="Vendor A",
+                 name="MAG-TV-009")
+    _printer("Zebra", _station(), INV_JOB_RENTED_UNIT).height_in = 3
+    job = request_label(INV_JOB_RENTED_UNIT, "R-00038", fields_for_unit(unit), NO_ONE,
+                        INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
+    z, texts = _printed_rows(job)
+    assert {"SN1", "2026-11-07", "Serial", "Printed"} <= texts
+    assert "Type" not in texts
+    _inside(z)

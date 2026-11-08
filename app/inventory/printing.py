@@ -68,10 +68,15 @@ def fields_for_unit(unit) -> dict:
 
     An unnamed unit has no `title` key, so its stored jobs match fields built before names existed.
     """
-    rows = [["Type", unit.item.item_name]]
     details = details_line(unit)
-    if details:
-        rows.append(["Details", details])
+    if unit.name:
+        # A titled label has room for three rows, so model and details share one.
+        model = f"{unit.item.item_name} \u00b7 {details}" if details else unit.item.item_name
+        rows = [["Type", model]]
+    else:
+        rows = [["Type", unit.item.item_name]]
+        if details:
+            rows.append(["Details", details])
     rented = unit.ownership == INV_OWNERSHIP_RENTED
     tag = _active_value(unit, INV_IDENT_VENDOR_TAG) if rented else None
     if tag:
