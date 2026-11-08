@@ -799,24 +799,44 @@ def test_csv_honours_the_show_filter(client, inv):
 
 
 def test_pager_next_link_keeps_the_filters(client, inv):
-    _week_units(inv, 55)
+    import re
+    from html import unescape
+    _tv_kind(inv)
+    for i in range(55):
+        add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", f"PG-{i:03d}")], name=f"Pager {i:03d}")
+    db.session.commit()
     login(client, "test:operator")
-    page = _list(client, q="week", show="not_seen").get_data(as_text=True)
-    assert "q=week" in page.split("Next")[0].rsplit("<a ", 1)[1]
-    assert "show=not_seen" in page.split("Next")[0].rsplit("<a ", 1)[1]
+    page = _list(client, q="pager", kind="TV", show="not_seen").get_data(as_text=True)
+    href = unescape(re.search(r'<a href="([^"]*)">Next</a>', page).group(1))
+    assert "q=pager" in href and "kind=TV" in href and "show=not_seen" in href
+    assert "page=2" in href
 
 
 def test_csv_does_not_query_per_unit(client, inv):
+    from app.models import EventCycle, InvContainerKind, InvPrepStatus
     from tests.inventory.helpers import make_container
-    _week_units(inv, 3)
     login(client, "test:operator")
-    bin_ = make_container(inv, "C-7100", kind="BIN")
-    db.session.query(InvUnit).update({"current_container_id": bin_.id})
-    db.session.commit()
+    event = EventCycle(code="SMF2027", name="SMF 2027", is_active=True, is_default=True)
+    db.session.add(event)
+    db.session.flush()
+
+    def add_placed(count, start):
+        # Each unit gets its own container and container kind, so a lazy load of
+        # container.kind cannot be satisfied from the session's identity map.
+        for i in range(start, start + count):
+            kind = InvContainerKind(code=f"K{i}", name=f"Kind {i}", sort_order=i, is_active=True)
+            db.session.add(kind)
+            db.session.flush()
+            inv.kinds[f"K{i}"] = kind
+            box = make_container(inv, f"C-72{i:02d}", kind=f"K{i}")
+            unit = add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", f"QC-{i:03d}")])
+            db.session.flush()
+            # Only a seen unit shows its container, so each one needs a prep row.
+            db.session.add(InvPrepStatus(unit_id=unit.id, event_cycle_id=event.id,
+                                         status="CHECKED"))
+        db.session.commit()
+
+    add_placed(2, 0)
     few = _selects(lambda: _list(client, format="csv"))
-    _week_units_more = [add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", f"XX-{i:03d}")],
-                                 name=f"Extra {i}") for i in range(6)]
-    for u in _week_units_more:
-        u.current_container_id = bin_.id
-    db.session.commit()
+    add_placed(4, 2)
     assert _selects(lambda: _list(client, format="csv")) == few
