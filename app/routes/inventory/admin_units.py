@@ -217,6 +217,19 @@ def units():
                       ("no_number", "No number yet")))
 
 
+def _page_where(unit: InvUnit, event, seen: bool) -> str:
+    """Return the unit page's Where line, naming the recorded container even when unseen.
+
+    The Units list column and its CSV keep the shorter `_unit_rows` wording.
+    """
+    place = display_name(unit.current_container) if unit.current_container else None
+    if event is None or seen:
+        return f"Where: {place or 'Not placed'}"
+    if place:
+        return f"Where: Not seen this week. Last recorded in {place}."
+    return "Where: Not seen this week."
+
+
 def _unit_or_404(unit_id: int) -> InvUnit:
     unit = db.session.get(InvUnit, unit_id)
     if unit is None:
@@ -259,6 +272,7 @@ def unit_page(unit_id: int):
     return render_inventory_page(
         "inventory/unit.html", unit=unit, number=unit_code(unit), event=event,
         summary=summary, model=model_number(unit),
+        where_text=_page_where(unit, event, seen=summary["checked_at"] is not None),
         checked_text=local_iso(summary["checked_at"]) if summary["checked_at"] else "",
         open_rows=[r for r in rows if r["flag"].resolved_at is None],
         resolved_rows=[r for r in rows if r["flag"].resolved_at is not None],

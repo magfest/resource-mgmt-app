@@ -875,15 +875,45 @@ def test_unit_page_summary_not_seen_has_no_time(client, inv):
     login(client, "test:operator")
     page = _page(client, u)
     assert "This week: Not seen<" in page
-    assert "Where: Not seen" in page
+    assert "Where: Not seen this week.<" in page
+
+
+def test_unit_page_not_seen_names_the_last_recorded_container(client, inv):
+    from tests.inventory.helpers import make_container
+    _week_units(inv, 0)
+    box = make_container(inv, "C-9002", name="Shelf two")
+    u = add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", "PL-002")])
+    db.session.commit()
+    login(client, "test:operator")
+    assert "Where: Not seen this week. Last recorded in C-9002 Shelf two.<" in _page(client, u)
 
 
 def test_unit_page_summary_omits_this_week_without_a_default_event(client, unit):
     login(client, "test:operator")
     page = _page(client, unit)
     assert "This week:" not in page
-    assert "Where:" not in page
+    assert "Where: Not placed<" in page
     assert "Condition: In service" in page
+
+
+def test_unit_page_without_a_default_event_shows_the_container(client, inv):
+    from tests.inventory.helpers import make_container
+    box = make_container(inv, "C-9003", name="Shelf three")
+    u = add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", "PL-003")])
+    db.session.commit()
+    login(client, "test:operator")
+    assert "Where: C-9003 Shelf three<" in _page(client, u)
+
+
+def test_units_list_still_says_not_seen_for_a_placed_unit(client, inv):
+    from tests.inventory.helpers import make_container
+    _week_units(inv, 0)
+    box = make_container(inv, "C-9004", name="Shelf four")
+    add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", "PL-004")])
+    db.session.commit()
+    login(client, "test:operator")
+    assert "Last recorded" not in _list(client).get_data(as_text=True)
+    assert ",Not seen," in _list(client, format="csv").get_data(as_text=True)
 
 
 def test_unit_page_summary_shows_where_for_a_placed_unit(client, inv):
@@ -894,7 +924,7 @@ def test_unit_page_summary_shows_where_for_a_placed_unit(client, inv):
     db.session.commit()
     _prep(event, u, "CHECKED")
     login(client, "test:operator")
-    assert "Where: C-9001 Shelf nine" in _page(client, u)
+    assert "Where: C-9001 Shelf nine<" in _page(client, u)
 
 
 def test_unit_page_summary_counts_open_flags(client, unit):
