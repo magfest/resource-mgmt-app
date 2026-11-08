@@ -6,6 +6,7 @@ create_all() runs no data migrations.
 import os
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,7 @@ def _flask(db_path, *args):
     env = dict(os.environ, FLASK_SKIP_DOTENV="1", APP_ENV="development", SECRET_KEY="x",
                DATABASE_URL=f"sqlite:///{db_path}", FLASK_APP="app:create_app")
     env.pop("FLASK_DEBUG", None)
-    result = subprocess.run([str(REPO / ".venv/bin/flask"), *args], cwd=REPO, env=env,
+    result = subprocess.run([sys.executable, "-m", "flask", *args], cwd=REPO, env=env,
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr[-2000:]
 
