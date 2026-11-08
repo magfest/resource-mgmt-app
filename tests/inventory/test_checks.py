@@ -136,7 +136,6 @@ def test_only_the_unit_station_can_open_a_check(inv, event, tv_checklist):
     assert open_check(laptop, "UNIT", ACTOR, event).status == "OPEN"
 
 
-
 def test_every_write_refuses_without_a_default_event(inv, event, tv_checklist):
     t = tv_checklist
     check = open_check(t.tv, "UNIT", ACTOR, event)

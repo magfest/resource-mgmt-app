@@ -10,7 +10,7 @@ from app.inventory.printing import unit_number
 from app.inventory.shifts import start_shift
 from app.models import (
     ConfigAuditEvent, EventCycle, InvCheck, InvCheckItem, InvDevice, InvPrintJob, InvPrinter,
-    InvPrintRoute, SupplyItem,
+    InvPrintRoute, InvPrepStatus, SupplyItem,
 )
 from app.models.constants import INV_IDENT_MAGFEST_TAG, INV_JOB_OWNED_UNIT
 from tests.inventory.helpers import enrolled_client, login, make_container
@@ -339,6 +339,61 @@ def test_finish_needs_every_answer(unit_client, inv):
     check = post(unit_client, "scan", {"code": "FEST91061"}).json
     assert post(unit_client, "finish", {"check_id": check["check_id"],
                                         "answers": "no"}).json["message"] == "Answer every line."
+
+
+def test_finish_with_a_stale_checklist_is_refused_and_writes_nothing(unit_client, inv, laptop_line):
+    _tagged(inv, "TV-X-062", "FEST91062")
+    check = post(unit_client, "scan", {"code": "FEST91062"}).json
+    db.session.add(InvCheckItem(item_id=inv.laptop.id, position=1, prompt="Screen intact?",
+                                missing_means="NOTE", is_active=True))
+    db.session.commit()
+    done = post(unit_client, "finish", {"check_id": check["check_id"],
+                                        "answers": {str(laptop_line.id): "YES"},
+                                        "line_ids": [laptop_line.id]}).json
+    assert done["ok"] is False and done["changed"] is True
+    assert done["message"] == "That checklist changed. Scan the unit again."
+    assert InvCheck.query.one().status == "OPEN" and InvPrepStatus.query.count() == 0
+
+
+def test_a_new_shift_sets_aside_the_ended_shifts_open_check(unit_client, inv):
+    _tagged(inv, "TV-X-063", "FEST91063")
+    _tagged(inv, "TV-X-064", "FEST91064")
+    old = post(unit_client, "scan", {"code": "FEST91063"}).json
+    start_shift(InvDevice.query.filter_by(name="Unit 1").one(), "Alex")
+    db.session.commit()
+    new = post(unit_client, "scan", {"code": "FEST91064"}).json
+    assert new["ok"] is True and new["check_id"] != old["check_id"]
+    db.session.expire_all()
+    assert db.session.get(InvCheck, old["check_id"]).status == "SET_ASIDE"
+    assert db.session.get(InvCheck, new["check_id"]).status == "OPEN"
+
+
+def test_another_device_cannot_finish_or_set_aside_this_devices_check(
+        unit_client, inv, home, laptop_line):
+    _tagged(inv, "TV-X-065", "FEST91065")
+    check = post(unit_client, "scan", {"code": "FEST91065"}).json
+    other, _ = enroll_device("Unit 2", "test:invadmin", station_code="UNIT", home_container=home)
+    row = InvCheck.query.one()
+    row.device_id = other.id
+    db.session.commit()
+    refusal = "That check is not open on this scanner. Scan the unit again."
+    done = post(unit_client, "finish", {"check_id": check["check_id"],
+                                        "answers": {str(laptop_line.id): "YES"}}).json
+    aside = post(unit_client, "set-aside", {"check_id": check["check_id"]}).json
+    assert done["ok"] is False and done["message"] == refusal
+    assert aside["ok"] is False and aside["message"] == refusal
+    assert InvCheck.query.one().status == "OPEN"
+
+
+def test_a_repeated_finish_with_the_same_request_id_writes_once(unit_client, inv, laptop_line):
+    _tagged(inv, "TV-X-066", "FEST91066")
+    check = post(unit_client, "scan", {"code": "FEST91066"}).json
+    body = {"check_id": check["check_id"], "answers": {str(laptop_line.id): "YES"}}
+    first = post(unit_client, "finish", body, client_request_id="finish-once").json
+    again = post(unit_client, "finish", body, client_request_id="finish-once").json
+    assert first["ok"] is True and first == again
+    assert InvPrepStatus.query.count() == 1
+    assert InvCheck.query.filter_by(status="PASSED").count() == 1
 
 
 def test_an_operator_has_no_home_and_places_nothing(client, inv, event, printer, laptop_line):

@@ -128,6 +128,41 @@ def test_label_shaped_serial_is_refused_and_saves_nothing(client, unit):
     assert db.session.query(InvUnitIdentifier).count() == before
 
 
+def _add_serial(client, unit, value):
+    before = db.session.query(InvUnitIdentifier).count()
+    resp = client.post(f"/inv/admin/units/{unit.id}/identifiers",
+                       data={"kind": "SERIAL", "value": value}, follow_redirects=True)
+    assert db.session.query(InvUnitIdentifier).count() == before
+    return resp.get_data(as_text=True)
+
+
+def test_a_serial_another_unit_holds_is_refused_naming_that_unit(client, inv, unit):
+    add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "U-0002"), ("SERIAL", "SN-OTHER")])
+    db.session.commit()
+    login(client, "test:invadmin")
+    page = _add_serial(client, unit, "sn-other")
+    assert "sn-other belongs to U-0002. Nothing was changed." in page
+
+
+def test_a_model_barcode_is_refused_as_a_serial(client, inv, unit):
+    inv.laptop.barcode = "012345678905"
+    db.session.commit()
+    login(client, "test:invadmin")
+    assert "That is the model barcode. Scan the serial (S/N)." in _add_serial(
+        client, unit, "012345678905")
+
+
+def test_a_serial_over_the_length_limit_is_refused(client, unit):
+    login(client, "test:invadmin")
+    assert "That serial is longer than 64 characters." in _add_serial(client, unit, "S" * 65)
+
+
+def test_the_units_own_number_is_refused_as_a_serial(client, unit):
+    login(client, "test:invadmin")
+    assert "U-0001 is a unit number, not a serial. Scan the SERIAL." in _add_serial(
+        client, unit, "U-0001")
+
+
 def test_a_new_tag_replaces_the_units_number(client, unit):
     login(client, "test:invadmin")
     client.post(f"/inv/admin/units/{unit.id}/identifiers",
