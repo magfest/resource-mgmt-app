@@ -25,7 +25,7 @@
 
 {% macro node(n, top) %}
 <details class="where-node" data-search="{{ n.search }}"{% if top %} data-top open{% endif %}>
-  <summary><strong>{{ n.name }}</strong> <span class="muted">{{ n.code }}{% if n.unit_total %} · {{ n.unit_total }} units{% endif %}{% if n.supply_total %} · {{ n.supply_total }} supplies{% endif %}</span></summary>
+  <summary><strong>{{ n.name }}</strong> <span class="muted">{{ n.code }}{% if n.unit_total %} · {{ n.unit_total }} {{ 'unit' if n.unit_total == 1 else 'units' }}{% endif %}{% if n.supply_total %} · {{ n.supply_total }} {{ 'supply' if n.supply_total == 1 else 'supplies' }}{% endif %}</span></summary>
   {% for child in n.children %}{{ node(child, false) }}{% endfor %}
   {% if top and n.unplaced_units %}
   <details><summary>{{ n.unplaced_text }} ({{ n.unplaced_units|length }})</summary>{{ unit_rows(n.unplaced_units) }}</details>
@@ -54,14 +54,14 @@
 <div id="where-tree">
   {% for r in tree.roots %}{{ node(r, true) }}{% endfor %}
   {% if tree.not_placed %}
-  <details data-top open>
+  <details>
     <summary><strong>Not placed yet ({{ tree.not_placed|length }})</strong></summary>
     <p class="muted">Nobody has scanned these yet, so we do not know where they are.</p>
     {{ unit_rows(tree.not_placed) }}
   </details>
   {% endif %}
   {% if tree.lost %}
-  <details data-top>
+  <details>
     <summary><strong>Marked lost ({{ tree.lost|length }})</strong></summary>
     {{ unit_rows(tree.lost) }}
   </details>

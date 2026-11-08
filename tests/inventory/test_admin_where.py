@@ -57,3 +57,28 @@ def test_no_inline_handlers(inv, client):
     login(client, "test:operator")
     body = client.get("/inv/admin/where").get_data(as_text=True)
     assert "onclick=" not in body and "onchange=" not in body
+
+
+def test_one_unit_and_one_supply_use_the_singular(inv, client):
+    from app.models import InvStock
+    warehouse = make_container(inv, "C-9001", "LOCATION", name="Warehouse")
+    _unit(inv, "U-0001", warehouse)
+    db.session.add(InvStock(item_id=inv.pens.id, container_id=warehouse.id, quantity=4))
+    db.session.commit()
+    login(client, "test:operator")
+    body = client.get("/inv/admin/where").get_data(as_text=True)
+    assert "1 unit · 1 supply<" in body
+    assert "1 units" not in body and "1 supplies" not in body
+
+
+def test_not_placed_and_lost_start_closed_and_stay_closed(inv, client):
+    from app.models.constants import INV_CONDITION_LOST
+    _unit(inv, "U-0001")
+    lost = _unit(inv, "U-0002")
+    lost.condition = INV_CONDITION_LOST
+    db.session.commit()
+    login(client, "test:operator")
+    body = client.get("/inv/admin/where").get_data(as_text=True)
+    for title in ("Not placed yet (1)", "Marked lost (1)"):
+        opening = body[:body.index(title)].rsplit("<details", 1)[1].split(">", 1)[0]
+        assert "open" not in opening and "data-top" not in opening
