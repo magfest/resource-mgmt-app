@@ -972,12 +972,13 @@ def test_unknown_tab_opens_about(client, unit):
     assert 'id="status"' in page and 'name="condition"' not in page
 
 
-def test_edit_tab_for_operator_has_only_notes(client, unit):
+def test_edit_tab_for_operator_has_notes_and_print_only(client, unit):
     login(client, "test:operator")
     page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
     assert 'name="note_type"' in page and "Internal database ID" in page
     assert 'name="condition"' not in page and "unit_set_details" not in page
     assert f"/units/{unit.id}/details" not in page
+    assert f"/units/{unit.id}/print" in page and 'name="mode"' in page
 
 
 def test_error_returns_to_edit(client, unit):
