@@ -5,8 +5,8 @@ from sqlalchemy.orm import selectinload
 
 from app import db
 from app.inventory.audit import (
-    ACTION_ADD_CODE, ACTION_CONDITION, ACTION_ITEM, ACTION_RETIRE_CODE, record_unit_change,
-    unit_changes,
+    ACTION_ADD_CODE, ACTION_CONDITION, ACTION_FIELDS, ACTION_ITEM, ACTION_RETIRE_CODE,
+    record_unit_change, unit_changes,
 )
 from app.inventory.checks import checked_serial, display_number
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
@@ -14,16 +14,19 @@ from app.inventory.ledger import (
     INV_CONDITIONS, NUMBER_KINDS, InventoryError, add_identifier, replace_number,
     retire_identifier, set_condition,
 )
+from app.inventory.names import find_by_name, set_unit_name
 from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
     local_stamp, reprint, reprint_options,
 )
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
+from app.inventory.unit_fields import parse_value, set_unit_value, unit_field_rows
 from app.models import InvFlag, InvMovement, InvUnit, InvUnitIdentifier, SupplyItem, User
 from app.inventory.describe import describe_actor, describe_movement
 from app.models.constants import (
-    INV_CONDITION_RETIRED, INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG,
-    INV_IDENT_SERIAL, INV_IDENT_VENDOR_TAG,
+    INV_CONDITION_RETIRED, INV_FIELD_BOOL, INV_FIELD_CHOICE, INV_FIELD_NUMBER,
+    INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
+    INV_IDENT_VENDOR_TAG,
 )
 from . import inventory_bp
 from .admin_flags import flag_rows
@@ -32,6 +35,7 @@ from .helpers import (
 )
 
 SEARCH_LIMIT = 50
+MAX_NOTES_LENGTH = 2000
 IDENTIFIER_KINDS = ((INV_IDENT_MAGFEST_TAG, "MAGFest tag"), (INV_IDENT_FESTOPS_LABEL, "FestOps label"),
                     (INV_IDENT_VENDOR_TAG, "Vendor tag"), (INV_IDENT_SERIAL, "Serial"),
                     (INV_IDENT_MAC, "MAC address"))
@@ -58,6 +62,8 @@ def _search(q: str) -> list[InvUnit]:
             if isinstance(candidate, InvUnit):
                 found[candidate.id] = candidate
     # normalize_identifier is per kind; only a MAC differs, so try both forms.
+    for unit in find_by_name(q, SEARCH_LIMIT):
+        found.setdefault(unit.id, unit)
     patterns = {normalize_code(q)}
     mac = normalize_mac(q)
     if mac:
@@ -142,10 +148,29 @@ def unit_page(unit_id: int):
         condition_words=CONDITION_WORDS, items=_selectable_items(unit),
         print_modes=[(m, REPRINT_WORDS[m]) for m in _print_modes(options)],
         print_options=options, retired_condition=INV_CONDITION_RETIRED,
-        changes=_change_rows(unit))
+        changes=_change_rows(unit), field_inputs=_field_inputs(unit),
+        has_gear_kind=unit.item.gear_kind is not None)
 
 
-CHANGE_FIELDS = {"codes": "Codes", "condition": "Condition", "item": "Item type"}
+def _field_inputs(unit: InvUnit) -> list[dict]:
+    """Fields with the text a form control starts on."""
+    inputs = []
+    for field, text in unit_field_rows(unit):
+        number = field.field_type == INV_FIELD_NUMBER
+        value = text
+        if number and field.unit_label and text.endswith(f" {field.unit_label}"):
+            value = text[: -len(field.unit_label) - 1]
+        inputs.append({
+            "field": field, "value": value, "text": text,
+            "choices": ([c.label for c in field.choices if c.is_active]
+                        if field.field_type == INV_FIELD_CHOICE else []),
+            "is_choice": field.field_type == INV_FIELD_CHOICE,
+            "is_bool": field.field_type == INV_FIELD_BOOL, "is_number": number})
+    return inputs
+
+
+CHANGE_FIELDS = {"codes": "Codes", "condition": "Condition", "item": "Item type",
+                 "name": "Name", "notes": "Notes"}
 
 
 def _change_rows(unit: InvUnit) -> list[dict]:
@@ -159,7 +184,7 @@ def _change_rows(unit: InvUnit) -> list[dict]:
             return ", ".join(value) or "none"
         if field == "condition":
             return CONDITION_WORDS.get(value, value)
-        return value
+        return value or "none"
 
     return [{"when": local_stamp(row.created_at),
              "who": names.get(row.created_by_user_id, row.created_by_user_id),
@@ -180,17 +205,24 @@ def _active_codes(unit: InvUnit) -> list[str]:
     return [f"{KIND_WORDS.get(i.kind, i.kind)} {i.value}" for i in rows]
 
 
+def _snapshot(unit: InvUnit) -> dict:
+    """What the Changes table compares. Field values are keyed by the field's name."""
+    snap = {"codes": _active_codes(unit), "condition": unit.condition,
+            "item": unit.item.item_name, "name": unit.name or "", "notes": unit.notes or ""}
+    for field, text in unit_field_rows(unit):
+        snap[field.name] = text
+    return snap
+
+
 def _audited(action, unit: InvUnit, audit_action: str):
     """Run a correction and record what it changed; nothing is recorded if nothing changed."""
     def run():
-        before = {"codes": _active_codes(unit), "condition": unit.condition,
-                  "item": unit.item.item_name}
+        before = _snapshot(unit)
         action()
         db.session.expire(unit, ["item"])
-        after = {"codes": _active_codes(unit), "condition": unit.condition,
-                 "item": unit.item.item_name}
-        changes = {key: {"old": before[key], "new": after[key]}
-                   for key in before if before[key] != after[key]}
+        after = _snapshot(unit)
+        changes = {key: {"old": before.get(key, ""), "new": after.get(key, "")}
+                   for key in {**before, **after} if before.get(key, "") != after.get(key, "")}
         if changes:
             record_unit_change(unit.id, audit_action, changes, admin_actor().user_id)
     return run
@@ -262,6 +294,32 @@ def unit_set_item(unit_id: int):
         db.session.flush()
 
     return _commit_or_flash(_audited(change, unit, ACTION_ITEM), "Item type changed.", unit)
+
+
+@inventory_bp.post("/admin/units/<int:unit_id>/details")
+@require_inventory_admin
+def unit_set_details(unit_id: int):
+    unit = _unit_or_404(unit_id)
+    rows = unit_field_rows(unit)
+    notes = (request.form.get("notes") or "").replace("\r\n", "\n").strip() or None
+    raws = {field.id: request.form.get(f"field_{field.id}") for field, _ in rows
+            if f"field_{field.id}" in request.form}
+
+    def change():
+        if notes is not None and len(notes) > MAX_NOTES_LENGTH:
+            raise InventoryError(f"Notes can be at most {MAX_NOTES_LENGTH} characters.")
+        # Parse every field before writing any, so one bad value saves nothing.
+        for field, _ in rows:
+            if field.id in raws:
+                parse_value(field, raws[field.id])
+        set_unit_name(unit, request.form.get("name"))
+        unit.notes = notes
+        for field, _ in rows:
+            if field.id in raws:
+                set_unit_value(unit, field, raws[field.id])
+        db.session.flush()
+
+    return _commit_or_flash(_audited(change, unit, ACTION_FIELDS), "Details saved.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/print")

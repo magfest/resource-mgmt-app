@@ -76,3 +76,25 @@ def test_items_page_offers_the_check_stations(client, inv):
     assert 'value="TV_CHECK"' in html and "TV check" in html
     assert 'value="PRINTER_CHECK"' in html and "Printer check" in html
     assert 'name="pack_size"' in html
+
+
+def test_admin_sets_gear_kind_and_model_defaults(client, inv):
+    from tests.inventory.helpers import seed_gear_kind
+    from app.models import InvModelDefault
+    kind = seed_gear_kind("TV", "TV", [("SIZE", "Size", "NUMBER", "in")])
+    db.session.commit()
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": str(kind.id)})
+    assert db.session.get(SupplyItem, inv.laptop.id).gear_kind_id == kind.id
+    page = client.get("/inv/admin/items").get_data(as_text=True)
+    assert f"/inv/admin/items/{inv.laptop.id}/defaults" in page
+    assert f"/inv/admin/items/{inv.pens.id}/defaults" not in page
+    client.post(f"/inv/admin/items/{inv.laptop.id}/defaults",
+                data={f"field_{kind.fields[0].id}": "55"})
+    default = db.session.query(InvModelDefault).one()
+    assert default.item_id == inv.laptop.id and float(default.number_value) == 55
+    client.post(f"/inv/admin/items/{inv.laptop.id}/defaults",
+                data={f"field_{kind.fields[0].id}": "big"})
+    assert db.session.query(InvModelDefault).one().number_value is not None
+    client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": ""})
+    assert db.session.get(SupplyItem, inv.laptop.id).gear_kind_id is None

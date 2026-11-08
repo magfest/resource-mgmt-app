@@ -180,3 +180,77 @@ def test_refused_or_unchanged_corrections_record_nothing(client, unit, printer):
     client.post(f"{base}/condition", data={"condition": "IN_SERVICE"})
     client.post(f"{base}/print", data={"mode": "CURRENT_DETAILS"})
     assert _audit(unit) == []
+
+
+def _tv_kind(inv):
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("TV", "TV", [
+        ("SIZE", "Size", "NUMBER", "in"),
+        ("RESOLUTION", "Resolution", "CHOICE", ["720p", "1080p", "4k"]),
+        ("HDMI", "HDMI", "BOOL", None)])
+    inv.laptop.gear_kind_id = kind.id
+    db.session.commit()
+    return kind
+
+
+def _details(unit, kind, **extra):
+    size, res, hdmi = kind.fields
+    data = {"name": "MAG-TV-107", "notes": "no power cable",
+            f"field_{size.id}": "50", f"field_{res.id}": "4k", f"field_{hdmi.id}": ""}
+    data.update(extra)
+    return data
+
+
+def test_admin_saves_name_notes_and_fields_in_one_form(client, inv, unit):
+    kind = _tv_kind(inv)
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/units/{unit.id}/details", data=_details(unit, kind))
+    assert resp.status_code == 302
+    page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
+    for text in ("MAG-TV-107", "no power cable", "50 in", "4k", "Name: none to MAG-TV-107"):
+        assert text in page, text
+    from app.models import ConfigAuditEvent
+    rows = db.session.query(ConfigAuditEvent).filter_by(
+        entity_type="inv_unit", entity_id=str(unit.id), action="FIELDS").all()
+    assert len(rows) == 1
+
+
+def test_one_bad_field_saves_nothing_and_says_which(client, inv, unit):
+    kind = _tv_kind(inv)
+    login(client, "test:invadmin")
+    data = _details(unit, kind, **{f"field_{kind.fields[0].id}": "big"})
+    resp = client.post(f"/inv/admin/units/{unit.id}/details", data=data, follow_redirects=True)
+    assert "Size must be a number." in resp.get_data(as_text=True)
+    db.session.expire_all()
+    assert db.session.get(InvUnit, unit.id).name is None
+
+
+def test_imported_notes_show_under_their_own_heading(client, unit):
+    unit.imported_notes = "Invented pickup note"
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
+    assert "From the old system" in page and "Invented pickup note" in page
+
+
+def test_operator_sees_fields_but_cannot_save(client, inv, unit):
+    kind = _tv_kind(inv)
+    login(client, "test:operator")
+    page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
+    assert "Resolution" in page
+    resp = client.post(f"/inv/admin/units/{unit.id}/details", data=_details(unit, kind))
+    assert resp.status_code == 403
+
+
+def test_unit_without_gear_kind_points_to_items_page(client, unit):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
+    assert "Set this model's gear kind on the Items page to add fields." in page
+
+
+def test_units_search_shows_name_before_number(client, unit):
+    unit.name = "MAG-TV-107"
+    unit.name_key = "mag-tv-107"
+    db.session.commit()
+    login(client, "test:operator")
+    assert "MAG-TV-107" in _search(client, "U-0001")

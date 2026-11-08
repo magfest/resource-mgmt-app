@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Units</h1>
 <form method="get" class="card mb-16">
-  <label>Find a unit by tag, label, serial or MAC
+  <label>Find a unit by name, tag, label, serial or MAC
     <input type="text" name="q" value="{{ q }}" maxlength="128" autofocus>
   </label>
   <button type="submit" class="btn btn-small">Search</button>
@@ -15,7 +15,7 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td><a href="{{ url_for('inventory.unit_page', unit_id=r.unit.id) }}">{{ r.number }}</a></td>
+      <td><a href="{{ url_for('inventory.unit_page', unit_id=r.unit.id) }}">{% if r.unit.name %}{{ r.unit.name }} <span class="muted">{{ r.number }}</span>{% else %}{{ r.number }}{% endif %}</a></td>
       <td>{{ r.unit.item.item_name }}</td>
       <td>{{ condition_words.get(r.unit.condition, r.unit.condition) }}</td>
       <td>{{ r.unit.current_container.label_code if r.unit.current_container else 'Not placed' }}</td>

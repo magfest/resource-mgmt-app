@@ -1,14 +1,61 @@
 {% extends "layout/base.html" %}
 {% from "inventory/_flag_rows.html" import resolve_form %}
-{% block title %}{{ number }} - Units - Inventory{% endblock %}
+{% block title %}{{ unit.name or number }} - Units - Inventory{% endblock %}
 {% block content %}
-<h1>{{ number }}</h1>
+<h1>{{ unit.name or number }}</h1>
+{% if unit.name %}<div class="muted">{{ number }}</div>{% endif %}
 <div class="muted mb-16"><a href="{{ url_for('inventory.units') }}">Units</a></div>
 <div class="card mb-16">
   <div><strong>Item</strong> {{ unit.item.item_name }}</div>
   <div><strong>Condition</strong> {{ condition_words.get(unit.condition, unit.condition) }}</div>
   <div><strong>Container</strong> {{ unit.current_container.label_code if unit.current_container else 'Not placed' }}</div>
 </div>
+
+<h2>Details</h2>
+{% if is_inv_admin %}
+<form method="post" action="{{ url_for('inventory.unit_set_details', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label style="display: block;">Name
+    <input type="text" name="name" value="{{ unit.name or '' }}" maxlength="64" style="width: 100%; max-width: 360px;">
+  </label>
+  {% for f in field_inputs %}
+  <label style="display: block;">{{ f.field.name }}{% if not f.field.is_active %} (retired){% endif %}
+    {% if f.is_choice %}
+    <select name="field_{{ f.field.id }}">
+      <option value=""></option>
+      {% for label in f.choices %}<option value="{{ label }}" {% if f.value == label %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% elif f.is_bool %}
+    <select name="field_{{ f.field.id }}">
+      <option value=""></option>
+      <option value="Yes" {% if f.value == 'Yes' %}selected{% endif %}>Yes</option>
+      <option value="No" {% if f.value == 'No' %}selected{% endif %}>No</option>
+    </select>
+    {% elif f.is_number %}
+    <input type="text" inputmode="decimal" name="field_{{ f.field.id }}" value="{{ f.value }}" maxlength="16" style="width: 8em;">{% if f.field.unit_label %} {{ f.field.unit_label }}{% endif %}
+    {% else %}
+    <input type="text" name="field_{{ f.field.id }}" value="{{ f.value }}" maxlength="128" style="width: 100%; max-width: 360px;">
+    {% endif %}
+  </label>
+  {% endfor %}
+  {% if not has_gear_kind %}<div class="muted">Set this model's gear kind on the Items page to add fields.</div>{% endif %}
+  <label style="display: block;">Notes
+    <textarea name="notes" rows="3" maxlength="2000" style="width: 100%; max-width: 480px;">{{ unit.notes or '' }}</textarea>
+  </label>
+  <button type="submit" class="btn btn-small">Save details</button>
+</form>
+{% else %}
+<div class="card mb-16">
+  <div><strong>Name</strong> {{ unit.name or 'none' }}</div>
+  {% for f in field_inputs %}<div><strong>{{ f.field.name }}</strong> {{ f.text or 'none' }}</div>{% endfor %}
+  {% if not has_gear_kind %}<div class="muted">Set this model's gear kind on the Items page to add fields.</div>{% endif %}
+  <div><strong>Notes</strong> {{ unit.notes or 'none' }}</div>
+</div>
+{% endif %}
+{% if unit.imported_notes %}
+<h2>From the old system</h2>
+<div class="card mb-16" style="white-space: pre-wrap; overflow-wrap: anywhere;">{{ unit.imported_notes }}</div>
+{% endif %}
 
 <h2>Print label</h2>
 <form method="post" action="{{ url_for('inventory.unit_print', unit_id=unit.id) }}" class="card mb-16">

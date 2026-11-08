@@ -23,8 +23,9 @@
   </div>
   <button type="submit" class="btn btn-primary">Add item</button>
 </form>
+<div style="overflow-x: auto;">
 <table>
-  <thead><tr><th>Category</th><th>Item</th><th>Serialized</th><th>Orderable</th><th>Barcode</th><th>Pack size</th><th>Check station</th><th></th></tr></thead>
+  <thead><tr><th>Category</th><th>Item</th><th>Serialized</th><th>Orderable</th><th>Barcode</th><th>Pack size</th><th>Check station</th><th></th><th>Gear kind</th></tr></thead>
   <tbody>
   {% for i in items %}
     <tr>
@@ -46,10 +47,52 @@
           <button type="submit" class="btn btn-small">Save</button>
         </form>
       </td>
+      <td>
+        <form method="post" action="{{ url_for('inventory.set_gear_kind', item_id=i.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="gear_kind_id" aria-label="Gear kind for {{ i.item_name }}">
+            <option value=""></option>
+            {% for k in gear_kinds %}<option value="{{ k.id }}" {% if i.gear_kind_id == k.id %}selected{% endif %}>{{ k.name }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="btn btn-small">Save kind</button>
+        </form>
+      </td>
     </tr>
+    {% if defaults.get(i.id) %}
+    <tr>
+      <td></td>
+      <td colspan="8">
+        <form method="post" action="{{ url_for('inventory.set_model_defaults', item_id=i.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <strong>Defaults for new {{ i.item_name }} units</strong>
+          {% for field, text, choices in defaults[i.id] %}
+          <label style="display: block;">{{ field.name }}
+            {% if field.field_type == 'CHOICE' %}
+            <select name="field_{{ field.id }}"><option value=""></option>
+              {% for label in choices %}<option value="{{ label }}" {% if text == label %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            {% elif field.field_type == 'BOOL' %}
+            <select name="field_{{ field.id }}"><option value=""></option>
+              <option value="Yes" {% if text == 'Yes' %}selected{% endif %}>Yes</option>
+              <option value="No" {% if text == 'No' %}selected{% endif %}>No</option>
+            </select>
+            {% elif field.field_type == 'NUMBER' %}
+            <input type="text" inputmode="decimal" name="field_{{ field.id }}" value="{{ text[:-(field.unit_label|length + 1)] if field.unit_label and text.endswith(' ' ~ field.unit_label) else text }}" maxlength="16" style="width: 8em;">{% if field.unit_label %} {{ field.unit_label }}{% endif %}
+            {% else %}
+            <input type="text" name="field_{{ field.id }}" value="{{ text }}" maxlength="128" style="width: 100%; max-width: 360px;">
+            {% endif %}
+          </label>
+          {% endfor %}
+          <button type="submit" class="btn btn-small">Save defaults</button>
+          <div class="muted">New units copy these once. Changing them later does not change existing units.</div>
+        </form>
+      </td>
+    </tr>
+    {% endif %}
   {% else %}
-    <tr><td colspan="8" class="muted">No items yet.</td></tr>
+    <tr><td colspan="9" class="muted">No items yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

@@ -9,7 +9,11 @@ from flask import abort, flash, redirect, request, url_for
 from app import db
 from app.inventory.checks import check_station_error
 from app.inventory.codes import normalize_code
-from app.models import InvStock, InvUnit, SupplyCategory, SupplyItem
+from app.inventory.ledger import InventoryError
+from app.inventory.unit_fields import active_fields, display_value, set_model_default
+from app.models import (
+    InvGearKind, InvModelDefault, InvStock, InvUnit, SupplyCategory, SupplyItem,
+)
 from app.models.constants import INV_CHECK_STATIONS, INV_STATION_NAMES
 
 from . import inventory_bp
@@ -25,8 +29,17 @@ def items():
     categories = (db.session.query(SupplyCategory).filter_by(is_active=True)
                   .order_by(SupplyCategory.name).all())
     stations = [(code, INV_STATION_NAMES[code]) for code in INV_CHECK_STATIONS]
+    gear_kinds = db.session.query(InvGearKind).order_by(InvGearKind.name).all()
+    defaults = {}
+    for item in rows:
+        if item.is_serialized and item.gear_kind is not None:
+            held = {d.field_id: d for d in db.session.query(InvModelDefault)
+                    .filter_by(item_id=item.id)}
+            defaults[item.id] = [(f, display_value(f, held.get(f.id)),
+                                  [c.label for c in f.choices if c.is_active])
+                                 for f in active_fields(item.gear_kind)]
     return render_inventory_page("inventory/items.html", items=rows, categories=categories,
-                                 stations=stations)
+                                 stations=stations, gear_kinds=gear_kinds, defaults=defaults)
 
 
 def _barcode_error(item_id: int | None, barcode: str | None) -> str | None:
@@ -104,4 +117,43 @@ def create_deploy_item():
     ))
     db.session.commit()
     flash(f"Added {name}. It will not appear in the Supply catalog.", "success")
+    return redirect(url_for("inventory.items"))
+
+
+@inventory_bp.post("/admin/items/<int:item_id>/gear-kind")
+@require_inventory_admin
+def set_gear_kind(item_id: int):
+    item = db.session.get(SupplyItem, item_id)
+    if item is None:
+        abort(404)
+    raw = request.form.get("gear_kind_id", type=int)
+    kind = db.session.get(InvGearKind, raw) if raw else None
+    if raw and kind is None:
+        flash("Pick a gear kind from the list.", "error")
+        return redirect(url_for("inventory.items"))
+    item.gear_kind_id = kind.id if kind else None
+    db.session.commit()
+    flash(f"Saved the gear kind for {item.item_name}.", "success")
+    return redirect(url_for("inventory.items"))
+
+
+@inventory_bp.post("/admin/items/<int:item_id>/defaults")
+@require_inventory_admin
+def set_model_defaults(item_id: int):
+    item = db.session.get(SupplyItem, item_id)
+    if item is None:
+        abort(404)
+    if not item.is_serialized or item.gear_kind is None:
+        flash("Defaults need a serialized item with a gear kind.", "error")
+        return redirect(url_for("inventory.items"))
+    fields = [f for f in active_fields(item.gear_kind) if f"field_{f.id}" in request.form]
+    try:
+        for field in fields:
+            set_model_default(item, field, request.form.get(f"field_{field.id}"))
+    except InventoryError as error:
+        db.session.rollback()
+        flash(str(error), "error")
+    else:
+        db.session.commit()
+        flash(f"Saved the defaults for {item.item_name}. New units start with them.", "success")
     return redirect(url_for("inventory.items"))
