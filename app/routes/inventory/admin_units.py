@@ -11,6 +11,7 @@ from app.inventory.audit import (
 )
 from app.inventory.checks import checked_serial, display_number
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
+from app.inventory.labels import PREFIX_UNIT, allocate
 from app.inventory.ledger import (
     INV_CONDITIONS, NUMBER_KINDS, InventoryError, add_identifier, replace_number,
     retire_identifier, set_condition,
@@ -32,7 +33,7 @@ from app.inventory.describe import describe_actor, describe_movement
 from app.models.constants import (
     INV_CONDITION_RETIRED, INV_FIELD_BOOL, INV_FIELD_CHOICE, INV_FIELD_NUMBER,
     INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
-    INV_IDENT_VENDOR_TAG,
+    INV_IDENT_VENDOR_TAG, INV_OWNERSHIP_OWNED,
 )
 from . import inventory_bp
 from .admin_flags import flag_rows
@@ -237,7 +238,18 @@ def unit_page(unit_id: int):
         print_modes=[(m, REPRINT_WORDS[m]) for m in _print_modes(options)],
         print_options=options, retired_condition=INV_CONDITION_RETIRED,
         changes=_change_rows(unit), field_inputs=_field_inputs(unit),
-        has_gear_kind=unit.item.gear_kind is not None)
+        has_gear_kind=unit.item.gear_kind is not None, can_give_number=_can_give_number(unit))
+
+
+def _can_give_number(unit: InvUnit) -> bool:
+    """A live owned unit with no active MAGFest tag or FestOps label."""
+    if unit.condition == INV_CONDITION_RETIRED or unit.ownership != INV_OWNERSHIP_OWNED:
+        return False
+    # Queried, not read from unit.identifiers, which may be loaded and stale.
+    return not (db.session.query(InvUnitIdentifier.id)
+                .filter(InvUnitIdentifier.unit_id == unit.id,
+                        InvUnitIdentifier.kind.in_(NUMBER_KINDS),
+                        InvUnitIdentifier.retired_at.is_(None)).first())
 
 
 def _field_inputs(unit: InvUnit) -> list[dict]:
@@ -436,6 +448,40 @@ def unit_clear_imported_notes(unit_id: int):
                            admin_actor().user_id)
 
     return _commit_or_flash(clear, "Old notes cleared.", unit)
+
+
+@inventory_bp.post("/admin/units/<int:unit_id>/give-number")
+@require_inventory_admin
+def unit_give_number(unit_id: int):
+    """Add a new U- label to a unit with no number, then queue its label."""
+    unit = _unit_or_404(unit_id)
+    added = []
+
+    def give():
+        if not _can_give_number(unit):
+            raise InventoryError("This unit already has a number or is retired.")
+        code = allocate(PREFIX_UNIT, 1)[0]
+        replace_number(unit, INV_IDENT_FESTOPS_LABEL, code, admin_actor())
+        added.append(code)
+
+    try:
+        _audited(give, unit, ACTION_ADD_CODE)()
+    except InventoryError as error:
+        db.session.rollback()
+        flash(str(error), "error")
+        return _back(unit)
+    # The number is saved first, so a missing printer route does not cost the unit its number.
+    db.session.commit()
+    code = added[0]
+    try:
+        reprint(unit, REPRINT_CURRENT_DETAILS, admin_actor())
+    except InventoryError as error:
+        db.session.rollback()
+        flash(f"{code} added, but the label could not be sent. {error}", "error")
+    else:
+        db.session.commit()
+        flash(f"{code} added and sent to the printer.", "success")
+    return _back(unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/print")

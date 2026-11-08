@@ -450,3 +450,74 @@ def test_clearing_absent_old_notes_records_nothing(client, unit):
     login(client, "test:invadmin")
     client.post(f"/inv/admin/units/{unit.id}/imported-notes/clear")
     assert _audit(unit) == []
+
+
+@pytest.fixture
+def bare(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-BARE01")], name="MAG-LAMP-003")
+    db.session.commit()
+    return unit
+
+
+def _numbers(unit):
+    return [i.value for i in db.session.query(InvUnitIdentifier).filter_by(
+        unit_id=unit.id, retired_at=None, kind="FESTOPS_LABEL")]
+
+
+GIVE = "Give this unit a U- number and print"
+
+
+def test_admin_gives_an_unnumbered_unit_a_u_number_and_prints(client, bare, printer):
+    login(client, "test:invadmin")
+    base = f"/inv/admin/units/{bare.id}"
+    assert GIVE in client.get(base).get_data(as_text=True)
+    resp = client.post(f"{base}/give-number", follow_redirects=True)
+    (code,) = _numbers(bare)
+    assert code.startswith("U-")
+    assert f"{code} added and sent to the printer." in resp.get_data(as_text=True)
+    (job,) = db.session.query(InvPrintJob).all()
+    assert job.unit_id == bare.id and job.code == code
+    (action, who, changes), = _audit(bare)
+    assert action == "ADD_CODE" and who == "test:invadmin"
+    assert f"FestOps label {code}" in changes["codes"]["new"]
+    assert GIVE not in client.get(base).get_data(as_text=True)
+
+
+def test_give_number_is_refused_when_the_unit_has_one(client, unit, printer):
+    login(client, "test:invadmin")
+    base = f"/inv/admin/units/{unit.id}"
+    assert GIVE not in client.get(base).get_data(as_text=True)
+    resp = client.post(f"{base}/give-number", follow_redirects=True)
+    assert "already has a number" in resp.get_data(as_text=True)
+    assert _numbers(unit) == ["U-0001"]
+    assert db.session.query(InvPrintJob).count() == 0 and _audit(unit) == []
+
+
+def test_give_number_is_hidden_and_refused_for_a_retired_unit(client, bare, printer):
+    from app.inventory.ledger import set_condition
+    set_condition(bare, "RETIRED")
+    db.session.commit()
+    login(client, "test:invadmin")
+    base = f"/inv/admin/units/{bare.id}"
+    assert GIVE not in client.get(base).get_data(as_text=True)
+    client.post(f"{base}/give-number")
+    assert _numbers(bare) == [] and db.session.query(InvPrintJob).count() == 0
+
+
+def test_give_number_without_a_printer_still_adds_the_number(client, bare):
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/units/{bare.id}/give-number", follow_redirects=True)
+    (code,) = _numbers(bare)
+    page = resp.get_data(as_text=True)
+    assert f"{code} added, but the label could not be sent." in page
+    assert "No printer is set for this label." in page
+    assert db.session.query(InvPrintJob).count() == 0
+    assert [a for a, _, _ in _audit(bare)] == ["ADD_CODE"]
+
+
+def test_operator_sees_no_give_number_button(client, bare, printer):
+    login(client, "test:operator")
+    base = f"/inv/admin/units/{bare.id}"
+    assert GIVE not in client.get(base).get_data(as_text=True)
+    assert client.post(f"{base}/give-number").status_code == 403
+    assert _numbers(bare) == []

@@ -72,6 +72,13 @@
   <button type="submit" class="btn btn-small">Print label</button>
   {% if print_options.details_changed %}<div class="muted">The details changed since the last label.</div>{% endif %}
 </form>
+{% if is_inv_admin and can_give_number %}
+<form method="post" action="{{ url_for('inventory.unit_give_number', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="btn btn-small">Give this unit a U- number and print</button>
+  <div class="muted">This unit has no MAGFest tag or FestOps label to scan.</div>
+</form>
+{% endif %}
 
 <h2>Identifiers</h2>
 <div style="overflow-x: auto;">
