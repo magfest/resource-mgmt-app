@@ -264,6 +264,21 @@ def printer_status(printer: InvPrinter, now: datetime | None = None) -> dict:
             "waiting": waiting}
 
 
+def queue_summary(now: datetime | None = None) -> dict:
+    """Sum waiting labels over active printers and say whether every station is polling.
+
+    `station_online` is False when any active printer's station is stale, because that
+    printer would leave labels sitting. With no active printers it is True.
+    """
+    printers = db.session.query(InvPrinter).filter(InvPrinter.is_active.is_(True)).all()
+    ids = [p.id for p in printers]
+    waiting = (db.session.query(InvPrintJob)
+               .filter(InvPrintJob.printer_id.in_(ids),
+                       InvPrintJob.status == INV_JOB_QUEUED).count()) if ids else 0
+    online = all(printer_status(p, now)["station_seen"] for p in printers)
+    return {"waiting": waiting, "station_online": online}
+
+
 REPRINT_ORIGINAL_DATE = "ORIGINAL_DATE"
 REPRINT_TODAY = "TODAY"
 REPRINT_CURRENT_DETAILS = "CURRENT_DETAILS"
