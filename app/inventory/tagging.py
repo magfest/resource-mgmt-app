@@ -7,17 +7,23 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import and_
+from sqlalchemy.orm import selectinload
 
 from app import db
 from app.inventory.audit import ACTION_TAG_LINK, ACTION_TAG_UNDO, audit_who, record_unit_change
+from app.inventory.codes import normalize_code
 from app.inventory.ledger import (
     NUMBER_KINDS, Actor, InventoryError, add_identifier, retire_identifier,
 )
 from app.inventory.names import name_key
 from app.inventory.printing import cancel_job, printer_for
-from app.inventory.receive import check_tag, label_answer, label_job, undo_message
+from app.inventory.receive import (
+    AlreadyReceived, _active_holder, check_tag, label_answer, label_job, undo_message,
+)
 from app.inventory.undo import TOO_LATE, UNDO_WINDOW
-from app.models import InvPrintJob, InvTagLink, InvUnit, InvUnitIdentifier
+from app.models import (
+    InvGearKind, InvPrintJob, InvTagLink, InvUnit, InvUnitIdentifier, InvUnitValue, SupplyItem,
+)
 from app.models.constants import (
     INV_CONDITION_RETIRED, INV_IDENT_MAGFEST_TAG, INV_JOB_OWNED_UNIT, INV_JOB_QUEUED,
 )
@@ -38,7 +44,12 @@ def tag_candidates(text: str, limit: int = 10) -> list[InvUnit]:
                 .filter(InvUnitIdentifier.unit_id == InvUnit.id,
                         InvUnitIdentifier.kind.in_(NUMBER_KINDS),
                         InvUnitIdentifier.retired_at.is_(None)).exists())
+    # spec_line and model_number read these for every candidate.
     return (db.session.query(InvUnit)
+            .options(selectinload(InvUnit.item).selectinload(SupplyItem.gear_kind)
+                     .selectinload(InvGearKind.fields),
+                     selectinload(InvUnit.values).selectinload(InvUnitValue.field),
+                     selectinload(InvUnit.values).selectinload(InvUnitValue.choice))
             .filter(InvUnit.name_key.like(f"%{escaped}%", escape="\\"),
                     InvUnit.condition != INV_CONDITION_RETIRED, ~numbered)
             .order_by(InvUnit.name_key, InvUnit.id).limit(limit).all())
@@ -76,7 +87,15 @@ def link_tag(unit_id: int, tag: str, actor: Actor,
     check_tag(tag)
     # Checked before anything is written, so a missing route leaves no tag behind.
     printer_for(INV_JOB_OWNED_UNIT)
-    identifier = add_identifier(unit, INV_IDENT_MAGFEST_TAG, tag)
+    try:
+        identifier = add_identifier(unit, INV_IDENT_MAGFEST_TAG, tag)
+    except InventoryError:
+        # Another scanner can take the tag after check_tag; the unique index picks one.
+        # The loser gets the same screen as a plain repeat.
+        held = _active_holder(INV_IDENT_MAGFEST_TAG, normalize_code(tag))
+        if held is not None:
+            raise AlreadyReceived(held) from None
+        raise
     db.session.add(InvTagLink(
         unit_id=unit.id, identifier_id=identifier.id, shift_id=actor.shift_id,
         device_id=actor.device_id, performed_by_user_id=actor.user_id))

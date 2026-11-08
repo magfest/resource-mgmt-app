@@ -1,4 +1,5 @@
 """Tag station: link a pre-printed FEST tag to a named unit, and undo it."""
+from contextlib import contextmanager
 from datetime import datetime
 
 import pytest
@@ -208,3 +209,71 @@ def test_unit_page_shows_the_shift_as_a_scanner(client, inv, printer):
     page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
     assert "Sam (scanner)" in page and "FEST10001" in page
     assert device.id
+
+
+def test_a_tag_taken_between_check_and_insert_gets_the_receive_refusal(inv, printer, monkeypatch):
+    from app.inventory import ledger, tagging
+    from app.inventory.receive import AlreadyReceived
+    from app.models import InvUnitIdentifier
+    a, b = _named(inv, "A unit"), _named(inv, "B unit")
+
+    def other_scanner_wins(tag):
+        db.session.add(InvUnitIdentifier(unit_id=b.id, kind="MAGFEST_TAG", value=tag,
+                                         normalized_value=tag))
+        db.session.flush()
+
+    @contextmanager
+    def nested():
+        with db.session.begin_nested():
+            yield
+
+    monkeypatch.setattr(tagging, "check_tag", other_scanner_wins)
+    # The unique index decides, as it does when the other insert is in another transaction.
+    monkeypatch.setattr(ledger, "_is_taken", lambda *args: False)
+    # PostgreSQL's savepoint keeps the session usable after the loss; SQLite skips it.
+    monkeypatch.setattr(ledger, "savepoint", nested)
+    with pytest.raises(AlreadyReceived) as caught:
+        link_tag(a.id, "FEST10001", ACTOR)
+    assert caught.value.unit.id == b.id
+
+
+def _count_selects(fn):
+    from sqlalchemy import event
+    seen = [0]
+
+    def count(conn, cursor, statement, *args):
+        if statement.lstrip().upper().startswith("SELECT"):
+            seen[0] += 1
+
+    event.listen(db.engine, "before_cursor_execute", count)
+    try:
+        fn()
+    finally:
+        event.remove(db.engine, "before_cursor_execute", count)
+    return seen[0]
+
+
+def test_tag_candidates_load_fields_up_front(client, inv, printer):
+    from app.inventory.unit_fields import set_unit_value
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("PRINTER", "Printer", [
+        ("TONER", "Toner cartridge", "TEXT", None, {"on_label": True}),
+        ("COLOR", "Color", "BOOL", None, {"on_label": True, "label_text": "Color"})])
+    inv.laptop.gear_kind_id = kind.id
+    db.session.commit()
+
+    def add(start, count):
+        for i in range(start, start + count):
+            unit = _named(inv, f"MAG-PNTR-{i:03d}")
+            set_unit_value(unit, kind.fields[0], f"T{i}")
+            set_unit_value(unit, kind.fields[1], "yes")
+        db.session.commit()
+
+    _tag_client(client)
+    ask = lambda: client.post("/inv/scan/api/tag/candidates", json={"q": "pntr"})
+    add(0, 2)
+    few = _count_selects(ask)
+    add(2, 4)
+    more = _count_selects(ask)
+    assert len(ask().get_json()["units"]) == 6
+    assert more == few

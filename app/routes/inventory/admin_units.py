@@ -54,6 +54,19 @@ REPRINT_WORDS = {REPRINT_CURRENT_DETAILS: "Print the current details",
                  REPRINT_ORIGINAL_DATE: "Reprint, original date"}
 
 
+# The units table reads these on every row.
+_ROW_LOADS = (selectinload(InvUnit.item), selectinload(InvUnit.current_container),
+              selectinload(InvUnit.identifiers))
+
+
+def _with_rows_loaded(units: list[InvUnit]) -> list[InvUnit]:
+    """Load the table's related rows for units found by several queries, keeping their order."""
+    if units:
+        (db.session.query(InvUnit).filter(InvUnit.id.in_([u.id for u in units]))
+         .options(*_ROW_LOADS).all())
+    return units
+
+
 def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
@@ -155,7 +168,11 @@ def _kind_units(kind: InvGearKind, fields: list[InvField], chosen: dict[int, str
         if field.id in chosen:
             query = query.filter(_value_matches(field, chosen[field.id]))
     total = query.count()
-    return query.order_by(InvUnit.name_key, InvUnit.id).limit(SEARCH_LIMIT).all(), total
+    # NULLs sort first on SQLite and last on PostgreSQL; nulls_last() makes both agree.
+    rows = (query.options(*_ROW_LOADS)
+            .order_by(InvUnit.name_key.asc().nulls_last(), InvUnit.id)
+            .limit(SEARCH_LIMIT).all())
+    return rows, total
 
 
 @inventory_bp.get("/admin/units")
@@ -172,7 +189,7 @@ def units():
     if kind is not None:
         found, total = _kind_units(kind, fields, chosen, q)
     elif q:
-        found = _search(q)
+        found = _with_rows_loaded(_search(q))
         total = len(found)
     searched = bool(q) or kind is not None
     rows = []

@@ -521,3 +521,52 @@ def test_operator_sees_no_give_number_button(client, bare, printer):
     assert GIVE not in client.get(base).get_data(as_text=True)
     assert client.post(f"{base}/give-number").status_code == 403
     assert _numbers(bare) == []
+
+
+def _selects(fn):
+    """Count SELECT statements run by fn."""
+    from sqlalchemy import event
+    seen = [0]
+
+    def count(conn, cursor, statement, *args):
+        if statement.lstrip().upper().startswith("SELECT"):
+            seen[0] += 1
+
+    event.listen(db.engine, "before_cursor_execute", count)
+    try:
+        fn()
+    finally:
+        event.remove(db.engine, "before_cursor_execute", count)
+    return seen[0]
+
+
+def _placed_tvs(inv, start, count):
+    from tests.inventory.helpers import make_container
+    for i in range(start, start + count):
+        bin_ = make_container(inv, f"C-{9000 + i}", kind="BIN")
+        add_unit(inv.laptop, bin_, ACTOR, [("FESTOPS_LABEL", f"PL-{i:03d}")],
+                 name=f"Placed TV {i:03d}")
+    db.session.commit()
+
+
+def test_kind_and_search_lists_load_related_rows_up_front(client, inv):
+    _tv_kind(inv)
+    login(client, "test:operator")
+    _placed_tvs(inv, 0, 3)
+    for args in ({"kind": "TV"}, {"q": "placed tv"}):
+        few = _selects(lambda: client.get("/inv/admin/units", query_string=args))
+        _placed_tvs(inv, len(db.session.query(InvUnit).all()), 4)
+        more = _selects(lambda: client.get("/inv/admin/units", query_string=args))
+        assert more == few, args
+
+
+def test_kind_list_puts_unnamed_units_last(client, inv):
+    _tv_kind(inv)
+    plain = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "PL-900")])
+    named = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "PL-901")], name="Zed TV")
+    first = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "PL-902")], name="Alpha TV")
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get("/inv/admin/units", query_string={"kind": "TV"}).get_data(as_text=True)
+    order = sorted((page.index(f"/inv/admin/units/{u.id}\""), u.id) for u in (plain, named, first))
+    assert [uid for _, uid in order] == [first.id, named.id, plain.id]
