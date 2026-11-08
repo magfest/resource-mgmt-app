@@ -44,9 +44,9 @@ def test_search_by_tag_serial_fragment_and_mac(client, unit):
         assert "Laptop" in page
 
 
-def test_empty_search_lists_nothing_and_unknown_finds_nothing(client, unit):
+def test_empty_search_lists_everything_and_unknown_finds_nothing(client, unit):
     login(client, "test:operator")
-    assert f"/inv/admin/units/{unit.id}" not in _search(client, "")
+    assert f"/inv/admin/units/{unit.id}" in _search(client, "")
     assert f"/inv/admin/units/{unit.id}" not in _search(client, "zzzz")
 
 
@@ -398,14 +398,14 @@ def test_q_with_kind_finds_a_match_past_the_first_fifty_name_hits(client, inv):
     assert _ids_in(page, units) == [units[59].id]
     page = client.get("/inv/admin/units", query_string={
         "q": "stage tv", "kind": "TV"}).get_data(as_text=True)
-    assert "Showing the first 50 of 60." in page
+    assert "Page 1 of 2" in page
 
 
 def test_no_cut_notice_when_everything_fits(client, inv):
     _many_tvs(inv, 3)
     login(client, "test:operator")
     page = client.get("/inv/admin/units", query_string={"kind": "TV"}).get_data(as_text=True)
-    assert "Showing the first" not in page
+    assert "Page 1 of" not in page
 
 
 def test_unicode_digit_filter_is_ignored(client, inv):
@@ -418,7 +418,7 @@ def test_unicode_digit_filter_is_ignored(client, inv):
         assert _ids_in(resp.get_data(as_text=True), units) == [u.id for u in units]
 
 
-def test_retired_units_are_hidden_with_a_kind_and_the_page_says_so(client, inv):
+def test_retired_units_are_hidden_until_searched_for_and_the_page_says_so(client, inv):
     from app.inventory.ledger import set_condition
     kind, units = _tvs(inv)
     set_condition(units[0], "RETIRED")
@@ -651,3 +651,102 @@ def test_second_give_number_is_refused_when_the_first_won_the_race(
     assert _numbers(unit) == ["U-0001"]
     assert db.session.query(InvPrintJob).count() == 0
     assert db.session.query(InvLabelSequence.next_value).filter_by(prefix="U").scalar() == before
+
+
+def _list(client, **args):
+    return client.get("/inv/admin/units", query_string=args)
+
+
+def _week_units(inv, count=3, names=None):
+    from app.models import EventCycle
+    event = EventCycle(code="SMF2027", name="SMF 2027", is_active=True, is_default=True)
+    db.session.add(event)
+    units = [add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", f"WK-{i:03d}")],
+                      name=(names[i] if names else f"Week unit {i:03d}")) for i in range(count)]
+    db.session.commit()
+    return event, units
+
+
+def test_units_page_lists_without_a_search(client, inv):
+    _week_units(inv)
+    login(client, "test:operator")
+    assert _list(client).data.count(b'class="unit-row"') == 3
+
+
+def test_retired_units_show_only_when_searched_for(client, inv):
+    _, units = _week_units(inv)
+    units[0].condition = "RETIRED"
+    db.session.commit()
+    login(client, "test:operator")
+    assert _list(client).data.count(b'class="unit-row"') == 2
+    assert _list(client, q="WK-000").data.count(b'class="unit-row"') == 1
+
+
+def test_show_filters_narrow_the_list(client, inv):
+    from app.models import InvPrepStatus
+    event, units = _week_units(inv, 4)
+    nameless = add_unit(inv.laptop, None, ACTOR, [], name="No tag")
+    db.session.add_all([
+        InvPrepStatus(unit_id=units[0].id, event_cycle_id=event.id, status="CHECKED"),
+        InvPrepStatus(unit_id=units[1].id, event_cycle_id=event.id, status="FAILED_CHECK")])
+    db.session.commit()
+    login(client, "test:operator")
+
+    def ids(show):
+        page = _list(client, show=show).get_data(as_text=True)
+        return {u.id for u in units + [nameless] if f"/inv/admin/units/{u.id}\"" in page}
+
+    assert ids("seen") == {units[0].id, units[1].id}
+    assert ids("not_seen") == {units[2].id, units[3].id, nameless.id}
+    assert ids("broken") == {units[1].id}
+    assert ids("no_number") == {nameless.id}
+
+
+def test_page_shows_week_and_where_and_counts(client, inv):
+    from app.models import InvPrepStatus
+    from tests.inventory.helpers import make_container
+    event, units = _week_units(inv, 2)
+    bin_ = make_container(inv, "C-7001", kind="BIN", name="Back shelf")
+    units[0].current_container_id = bin_.id
+    db.session.add(InvPrepStatus(unit_id=units[0].id, event_cycle_id=event.id, status="CHECKED"))
+    db.session.commit()
+    login(client, "test:operator")
+    page = _list(client).get_data(as_text=True)
+    assert "2 units, 1 seen, 0 broken" in page
+    assert "C-7001 Back shelf" in page and "Not seen" in page and "Works" in page
+    assert ">More filters<" in page
+
+
+def test_no_default_event_hides_week_column(client, inv):
+    add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "WK-001")])
+    db.session.commit()
+    login(client, "test:operator")
+    page = _list(client).get_data(as_text=True)
+    assert "No default event is set." in page
+    assert "This week" not in page and "No number yet</button>" not in page
+
+
+def test_list_pages_fifty_at_a_time(client, inv):
+    _week_units(inv, 55)
+    login(client, "test:operator")
+    assert _list(client).data.count(b'class="unit-row"') == 50
+    assert _list(client, page=2).data.count(b'class="unit-row"') == 5
+
+
+def test_csv_holds_every_matching_row(client, inv):
+    event, _ = _week_units(inv, 55)
+    login(client, "test:operator")
+    resp = _list(client, format="csv")
+    assert resp.mimetype == "text/csv"
+    assert resp.headers["Content-Disposition"].startswith(
+        'attachment; filename="units-SMF2027-')
+    lines = resp.get_data(as_text=True).strip().splitlines()
+    assert lines[0] == ("Number,Name,Type,Model,This week,Condition,Where,Open flags,"
+                        "Last checked")
+    assert len(lines) == 56
+
+
+def test_csv_neutralises_formulas(client, inv):
+    _week_units(inv, 1, names=["=SUM(A1)"])
+    login(client, "test:operator")
+    assert "'=SUM(A1)" in _list(client, format="csv").get_data(as_text=True)

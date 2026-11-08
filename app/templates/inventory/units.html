@@ -2,56 +2,84 @@
 {% block title %}Units - Inventory{% endblock %}
 {% block content %}
 <h1>Units</h1>
+{% macro page_link(n) %}{{ url_for('inventory.units', page=n, **keep) }}{% endmacro %}
 <form method="get" class="card mb-16">
-  <label>Find a unit by name, tag, label, serial or MAC
-    <input type="text" name="q" value="{{ q }}" maxlength="128" autofocus>
-  </label>
-  <label>Gear kind
-    <select name="kind" id="kind-select">
-      <option value="">Any</option>
-      {% for k in kinds %}<option value="{{ k.code }}"{% if kind and kind.id == k.id %} selected{% endif %}>{{ k.name }}</option>{% endfor %}
-    </select>
-  </label>
-  {% for f in filter_fields %}
-  <label>{{ f.name }}
-    <select name="f_{{ f.id }}">
-      <option value="">Any</option>
-      {% if f.field_type == 'BOOL' %}
-        <option value="yes"{% if chosen.get(f.id) == 'yes' %} selected{% endif %}>Yes</option>
-        <option value="no"{% if chosen.get(f.id) == 'no' %} selected{% endif %}>No</option>
-      {% else %}
-        {% for c in f.choices %}<option value="{{ c.id }}"{% if chosen.get(f.id) == c.id|string %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
-      {% endif %}
-    </select>
-  </label>
-  {% endfor %}
-  {% if kind %}<p class="muted">Retired units are hidden.</p>{% endif %}
-  <button type="submit" class="btn btn-small">Search</button>
+  <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;">
+    <label style="flex: 2 1 220px;">Find a unit by name, tag, label, serial or MAC
+      <input type="text" name="q" value="{{ q }}" maxlength="128" autofocus>
+    </label>
+    <label style="flex: 1 1 140px;">Type
+      <select name="kind" id="kind-select">
+        <option value="">Any</option>
+        {% for k in kinds %}<option value="{{ k.code }}"{% if kind and kind.id == k.id %} selected{% endif %}>{{ k.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-small">Search</button>
+    {% if event %}
+    {% for value, word in show_buttons %}
+    <button type="submit" name="show" value="{{ value }}" class="btn btn-small"{% if show == value %} aria-pressed="true" style="font-weight: bold;"{% endif %}>{{ word }}</button>
+    {% endfor %}
+    {% elif show %}
+    <input type="hidden" name="show" value="{{ show }}">
+    {% endif %}
+  </div>
+  {% if filter_fields %}
+  <details class="mt-8">
+    <summary>More filters</summary>
+    {% for f in filter_fields %}
+    <label>{{ f.name }}
+      <select name="f_{{ f.id }}">
+        <option value="">Any</option>
+        {% if f.field_type == 'BOOL' %}
+          <option value="yes"{% if chosen.get(f.id) == 'yes' %} selected{% endif %}>Yes</option>
+          <option value="no"{% if chosen.get(f.id) == 'no' %} selected{% endif %}>No</option>
+        {% else %}
+          {% for c in f.choices %}<option value="{{ c.id }}"{% if chosen.get(f.id) == c.id|string %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
+        {% endif %}
+      </select>
+    </label>
+    {% endfor %}
+  </details>
+  {% else %}
+  <details class="mt-8">
+    <summary>More filters</summary>
+    <p class="muted">Pick a type to filter on its fields.</p>
+  </details>
+  {% endif %}
 </form>
 <script nonce="{{ csp_nonce }}">
   document.getElementById('kind-select').addEventListener('change', function () {
     this.form.submit();
   });
 </script>
-{% if searched %}
-{% if kind and total > limit %}<p>Showing the first {{ limit }} of {{ total }}. Narrow the search or filters.</p>{% endif %}
+{% if not event %}<p class="muted">No default event is set.</p>{% endif %}
+{% if not q %}<p class="muted">Retired units are hidden.</p>{% endif %}
+<p>{{ total }} unit{{ '' if total == 1 else 's' }}{% if event %}, {{ seen }} seen, {{ broken }} broken{% endif %}
+  &middot; <a href="{{ url_for('inventory.units', format='csv', **keep) }}">Download CSV</a></p>
 <div style="overflow-x: auto;">
 <table>
-  <thead><tr><th>Number</th><th>Item</th><th>Condition</th><th>Container</th><th>Flags</th></tr></thead>
+  <thead><tr><th>Number and name</th><th>Type</th>{% if event %}<th>This week</th>{% endif %}<th>Condition</th><th>Where</th><th>Flags</th></tr></thead>
   <tbody>
   {% for r in rows %}
-    <tr>
+    <tr class="unit-row">
       <td><a href="{{ url_for('inventory.unit_page', unit_id=r.unit.id) }}">{% if r.unit.name %}{{ r.unit.name }} {% endif %}{% if r.number %}{% if r.unit.name %}<span class="muted">{{ r.number }}</span>{% else %}{{ r.number }}{% endif %}{% else %}<span class="muted">No number yet</span>{% endif %}</a></td>
       <td>{{ r.unit.item.item_name }}</td>
+      {% if event %}<td>{{ r.week_word }}</td>{% endif %}
       <td>{{ condition_words.get(r.unit.condition, r.unit.condition) }}</td>
-      <td>{{ r.unit.current_container.label_code if r.unit.current_container else 'Not placed' }}</td>
+      <td>{{ r.where if event else (r.unit.current_container.label_code if r.unit.current_container else 'Not placed') }}</td>
       <td>{% if r.open_flags %}{{ r.open_flags }} open{% else %}<span class="muted">None</span>{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="5" class="muted">No unit matches.</td></tr>
+    <tr><td colspan="6" class="muted">No unit matches.</td></tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
+{% if pages > 1 %}
+<p>
+  {% if page > 1 %}<a href="{{ page_link(page - 1) }}">Previous</a>{% endif %}
+  Page {{ page }} of {{ pages }}
+  {% if page < pages %}<a href="{{ page_link(page + 1) }}">Next</a>{% endif %}
+</p>
 {% endif %}
 {% endblock %}

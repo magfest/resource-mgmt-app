@@ -1,4 +1,6 @@
 """Units page: find a unit by any identifier, then correct it or print its label."""
+from datetime import datetime
+
 from flask import abort, flash, redirect, request, url_for
 from sqlalchemy import false, func, or_
 from sqlalchemy.orm import selectinload
@@ -15,14 +17,20 @@ from app.inventory.ledger import (
     INV_CONDITIONS, NUMBER_KINDS, InventoryError, add_identifier, replace_number,
     retire_identifier, set_condition,
 )
-from app.inventory.names import find_by_name, name_key, set_unit_name
+from app.inventory.cards import default_event
+from app.inventory.csv_export import csv_response
+from app.inventory.names import name_key, set_unit_name
+from app.inventory.tree import display_name
 from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
     local_stamp, reprint, reprint_options,
 )
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
 from app.inventory.unit_fields import (
-    active_fields, parse_value, set_unit_value, unit_field_rows,
+    active_fields, model_number, parse_value, set_unit_value, unit_field_rows,
+)
+from app.inventory.week import (
+    SHOW_FILTERS, WEEK_WORDS, live_prep_rows, show_condition, week_status,
 )
 from app.inventory.unit_station import give_unit_number, number_refusal
 from app.models import (
@@ -59,50 +67,12 @@ _ROW_LOADS = (selectinload(InvUnit.item), selectinload(InvUnit.current_container
               selectinload(InvUnit.identifiers))
 
 
-def _with_rows_loaded(units: list[InvUnit]) -> list[InvUnit]:
-    """Load the table's related rows for units found by several queries, keeping their order."""
-    if units:
-        (db.session.query(InvUnit).filter(InvUnit.id.in_([u.id for u in units]))
-         .options(*_ROW_LOADS).all())
-    return units
-
-
 def _like_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _search(q: str) -> list[InvUnit]:
-    """Units the resolver finds, then units with an active identifier containing the text."""
-    found: dict[int, InvUnit] = {}
-    resolution = resolve(q)
-    if resolution.kind == KIND_UNIT:
-        found[resolution.unit.id] = resolution.unit
-    elif resolution.kind == KIND_AMBIGUOUS:
-        for candidate in resolution.candidates:
-            if isinstance(candidate, InvUnit):
-                found[candidate.id] = candidate
-    for unit in find_by_name(q, SEARCH_LIMIT):
-        found.setdefault(unit.id, unit)
-    patterns = {normalize_code(q)}
-    mac = normalize_mac(q)
-    # normalize_identifier is per kind; only a MAC differs, so try both forms.
-    if mac:
-        patterns.add(normalize_identifier(INV_IDENT_MAC, q))
-    patterns.discard("")
-    for pattern in patterns:
-        rows = (db.session.query(InvUnit)
-                .join(InvUnitIdentifier, InvUnitIdentifier.unit_id == InvUnit.id)
-                .filter(InvUnitIdentifier.retired_at.is_(None),
-                        InvUnitIdentifier.normalized_value.like(
-                            f"%{_like_escape(pattern)}%", escape="\\"))
-                .order_by(InvUnit.id).limit(SEARCH_LIMIT).all())
-        for unit in rows:
-            found.setdefault(unit.id, unit)
-    return list(found.values())[:SEARCH_LIMIT]
-
-
 def _search_condition(q: str):
-    """SQL condition matching the units `_search` would find, without its 50-row cap."""
+    """SQL condition for units the resolver, the name or an active identifier matches."""
     clauses = []
     resolution = resolve(q)
     if resolution.kind == KIND_UNIT:
@@ -156,23 +126,53 @@ def _value_matches(field: InvField, answer: str):
                     column_test).exists())
 
 
-def _kind_units(kind: InvGearKind, fields: list[InvField], chosen: dict[int, str],
-                q: str) -> tuple[list[InvUnit], int]:
-    """Live units of the kind matching q and every chosen filter: (first 50, total)."""
-    query = (db.session.query(InvUnit).join(SupplyItem, SupplyItem.id == InvUnit.item_id)
-             .filter(SupplyItem.gear_kind_id == kind.id,
-                     InvUnit.condition != INV_CONDITION_RETIRED))
+def _units_query(q: str, kind: InvGearKind | None, fields: list[InvField],
+                 chosen: dict[int, str], show: str, event):
+    """Units matching the search text, kind, field answers and week filter.
+
+    Retired units are listed only when the search text finds them.
+    """
+    query = db.session.query(InvUnit).join(SupplyItem, SupplyItem.id == InvUnit.item_id)
+    if kind is not None:
+        query = query.filter(SupplyItem.gear_kind_id == kind.id)
     if q:
         query = query.filter(_search_condition(q))
+    else:
+        query = query.filter(InvUnit.condition != INV_CONDITION_RETIRED)
     for field in fields:
         if field.id in chosen:
             query = query.filter(_value_matches(field, chosen[field.id]))
-    total = query.count()
-    # NULLs sort first on SQLite and last on PostgreSQL; nulls_last() makes both agree.
-    rows = (query.options(*_ROW_LOADS)
-            .order_by(InvUnit.name_key.asc().nulls_last(), InvUnit.id)
-            .limit(SEARCH_LIMIT).all())
-    return rows, total
+    if show:
+        query = query.filter(show_condition(event, show))
+    return query
+
+
+def _unit_rows(units: list[InvUnit], event) -> list[dict]:
+    ids = [u.id for u in units]
+    counts = (dict(db.session.query(InvFlag.unit_id, func.count(InvFlag.id))
+                   .filter(InvFlag.unit_id.in_(ids), InvFlag.resolved_at.is_(None))
+                   .group_by(InvFlag.unit_id).all()) if ids else {})
+    preps = live_prep_rows(event, ids)
+    rows = []
+    for u in units:
+        prep = preps.get(u.id)
+        status = week_status(prep)
+        if prep is None:
+            where = "Not seen"
+        else:
+            where = display_name(u.current_container) if u.current_container else "Not placed"
+        rows.append({"unit": u, "number": unit_code(u), "open_flags": counts.get(u.id, 0),
+                     "week": status, "week_word": WEEK_WORDS[status], "where": where,
+                     "checked_at": prep.created_at if prep else None})
+    return rows
+
+
+def _csv_rows(rows: list[dict]) -> list[list]:
+    return [[r["number"] or "", r["unit"].name or "", r["unit"].item.item_name,
+             model_number(r["unit"]) or "", r["week_word"],
+             CONDITION_WORDS.get(r["unit"].condition, r["unit"].condition), r["where"],
+             r["open_flags"], f"{r['checked_at']:%Y-%m-%d %H:%M} UTC" if r["checked_at"] else ""]
+            for r in rows]
 
 
 @inventory_bp.get("/admin/units")
@@ -184,26 +184,36 @@ def units():
             if kind_code else None)
     fields = _filter_fields(kind)
     chosen = _selected_filters(fields)
-    found: list[InvUnit] = []
-    total = 0
-    if kind is not None:
-        found, total = _kind_units(kind, fields, chosen, q)
-    elif q:
-        found = _with_rows_loaded(_search(q))
-        total = len(found)
-    searched = bool(q) or kind is not None
-    rows = []
-    if found:
-        ids = [u.id for u in found]
-        counts = dict(db.session.query(InvFlag.unit_id, func.count(InvFlag.id))
-                      .filter(InvFlag.unit_id.in_(ids), InvFlag.resolved_at.is_(None))
-                      .group_by(InvFlag.unit_id).all())
-        rows = [{"unit": u, "number": unit_code(u), "open_flags": counts.get(u.id, 0)}
-                for u in found]
+    event = default_event()
+    show = request.args.get("show", "")
+    if show not in SHOW_FILTERS or event is None and show != "no_number":
+        show = ""
+    query = _units_query(q, kind, fields, chosen, show, event)
+    # NULLs sort first on SQLite and last on PostgreSQL; nulls_last() makes both agree.
+    ordered = query.order_by(InvUnit.name_key.asc().nulls_last(), InvUnit.id)
+    if request.args.get("format") == "csv":
+        found = ordered.options(*_ROW_LOADS, selectinload(InvUnit.values)
+                                .selectinload(InvUnitValue.field)).all()
+        stamp = f"{datetime.utcnow():%Y-%m-%d}"
+        return csv_response(
+            f"units-{event.code if event else 'no-event'}-{stamp}.csv",
+            ["Number", "Name", "Type", "Model", "This week", "Condition", "Where",
+             "Open flags", "Last checked"], _csv_rows(_unit_rows(found, event)))
+    total = query.count()
+    seen = query.filter(show_condition(event, "seen")).count() if event else 0
+    broken = query.filter(show_condition(event, "broken")).count() if event else 0
+    pages = max(1, -(-total // SEARCH_LIMIT))
+    page = min(max(request.args.get("page", 1, type=int), 1), pages)
+    found = (ordered.options(*_ROW_LOADS).limit(SEARCH_LIMIT)
+             .offset((page - 1) * SEARCH_LIMIT).all())
     kinds = db.session.query(InvGearKind).order_by(InvGearKind.name).all()
-    return render_inventory_page("inventory/units.html", q=q, rows=rows, searched=searched,
-                                 kinds=kinds, kind=kind, total=total, limit=SEARCH_LIMIT, filter_fields=fields, chosen=chosen,
-                                 condition_words=CONDITION_WORDS)
+    keep = {k: v for k, v in request.args.items() if k not in ("page", "format") and v}
+    return render_inventory_page(
+        "inventory/units.html", q=q, rows=_unit_rows(found, event), kinds=kinds, kind=kind,
+        total=total, seen=seen, broken=broken, event=event, show=show, page=page, pages=pages,
+        keep=keep, filter_fields=fields, chosen=chosen, condition_words=CONDITION_WORDS,
+        show_buttons=(("seen", "Seen"), ("not_seen", "Not seen"), ("broken", "Broken"),
+                      ("no_number", "No number yet")))
 
 
 def _unit_or_404(unit_id: int) -> InvUnit:
