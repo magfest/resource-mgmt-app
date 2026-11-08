@@ -46,6 +46,9 @@ def kinds(inv):
         "LABEL_PRINTER": seed_gear_kind("LABEL_PRINTER", "Label printer", [
             MODEL, ("MEDIA", "Tape or media", INV_FIELD_TEXT, None)]),
         "LAMINATOR": seed_gear_kind("LAMINATOR", "Laminator", [MODEL]),
+        "PROJECTOR": seed_gear_kind("PROJECTOR", "Projector", [MODEL]),
+        "BARCODE_SCANNER": seed_gear_kind("BARCODE_SCANNER", "Barcode scanner", [MODEL]),
+        "CAMERA": seed_gear_kind("CAMERA", "Camera", [MODEL]),
     }
 
 
@@ -233,6 +236,51 @@ def test_a_file_with_no_tech_rows_says_so(kinds):
                 "1,Power Bin 00,25' 14AWG,20,,,,,False")
     result = preview(data, {})
     assert result.not_tech is True and result.review == []
+
+
+PROJECTOR_HEADER = ("id,ID,Asset Tag,Model Number,Notes,Inventoried,Department,Status\n")
+CAMERA_HEADER = "id,ID,Asset Tag,Type,Notes,Status\n"
+
+
+def test_projector_model_number_column_is_the_model(inv, kinds):
+    data = _csv(PROJECTOR_HEADER, "1,MAG-PROJ-000,MT900011,955WH,Invented lens note,,,")
+    result = preview(data, {"PROJECTOR|955WH": "new:Projector 955WH"}, None)
+    assert result.models[0].key == "PROJECTOR|955WH" and result.models[0].text == "955WH"
+    apply(data, {"PROJECTOR|955WH": "new:Projector 955WH"}, inv.category.id, ACTOR)
+    assert _values(_unit("MAG-PROJ-000"))["MODEL"].text_value == "955WH"
+
+
+def test_barcode_scanner_prefix_without_mag_is_recognised(inv, kinds):
+    data = _csv(CAMERA_HEADER, "1,BRC-001,,Zebra DS2208,,")
+    result = preview(data, {})
+    assert result.not_tech is False
+    assert [m.gear_kind_code for m in result.models] == ["BARCODE_SCANNER"]
+    assert result.review == ["Row 2 (BRC-001): Choose a type for Barcode scanner Zebra DS2208."]
+
+
+def test_doc_cam_and_mag_cam_are_cameras(inv, kinds):
+    data = _csv(CAMERA_HEADER, "1,DOC-CAM-001,,Lumens DC193,,", "2,MAG-CAM-002,,Logitech C920,,")
+    result = preview(data, {})
+    assert {m.gear_kind_code for m in result.models} == {"CAMERA"}
+    assert {m.key for m in result.models} == {"CAMERA|Lumens DC193", "CAMERA|Logitech C920"}
+
+
+def test_longest_prefix_wins():
+    from app.inventory.legacy_import import kind_code_for
+    assert kind_code_for("mag-cam-004") == "CAMERA"
+    assert kind_code_for("MAG-PROJ-004") == "PROJECTOR"
+    assert kind_code_for("MAG-TV-004") == "TV"
+
+
+def test_dead_is_in_repair_and_disposed_is_skipped(inv, kinds):
+    from app.inventory.legacy_import import condition_for
+    assert condition_for(" Dead ") == "REPAIR"
+    data = _csv(CAMERA_HEADER, "1,MAG-CAM-010,,Logitech C920,,Disposed",
+                "2,MAG-CAM-011,,Logitech C920,,  DISPOSED ", "3,MAG-CAM-012,,Logitech C920,,Dead")
+    result = preview(data, {"CAMERA|Logitech C920": "new:Camera C920"}, None)
+    assert result.skipped == 2 and result.review == [
+        "Row 4 (MAG-CAM-012): Choose a category for new types."]
+    assert [m.count for m in result.models] == [1]
 
 
 def test_admin_previews_then_applies_through_the_page(client, kinds, inv):

@@ -1,4 +1,5 @@
-"""Import the old tech exports (TVs, monitors, printers, label printers, laminators).
+"""Import the old tech exports (TVs, monitors, printers, label printers, laminators,
+projectors, barcode scanners, cameras).
 
 Each row becomes a named unit with its typed fields, any MT asset tag, its lasting
 condition and the old notes. A row that needs a person goes to the review list
@@ -29,10 +30,15 @@ from app.models.constants import (
 )
 
 PREFIX_KINDS = {"MAG-TV-": "TV", "MAG-MON-": "MONITOR", "MAG-PNTR-": "PRINTER",
-                "MAG-LPRNT-": "LABEL_PRINTER", "MAG-LAM-": "LAMINATOR"}
+                "MAG-LPRNT-": "LABEL_PRINTER", "MAG-LAM-": "LAMINATOR",
+                "MAG-PROJ-": "PROJECTOR", "BRC-": "BARCODE_SCANNER",
+                "DOC-CAM-": "CAMERA", "MAG-CAM-": "CAMERA"}
 CONDITION_FOR_STATUS = {"broken (do not use)": INV_CONDITION_REPAIR,
                         "do not deploy": INV_CONDITION_REPAIR,
+                        "dead": INV_CONDITION_REPAIR,
                         "missing (do not use)": INV_CONDITION_LOST}
+# A disposed unit left the fleet, so its row is skipped even when the name is new.
+SKIPPED_STATUS = "disposed"
 NEW_PREFIX = "new:"
 NOT_CSV = "This file could not be read as a CSV."
 APPLY_FAILED = "Nothing was imported. The error was logged."
@@ -47,7 +53,8 @@ TV_KIND = "TV"
 # The exports carry both "id", a row number, and "ID", the unit name. Only the
 # exact "ID" is the name; every other header is trimmed and casefolded.
 _NAME_HEADER = "ID"
-_HEADERS = {"asset tag": "tag", "model": "model_text", "type": "model_text",
+_HEADERS = {"asset tag": "tag", "model": "model_text", "model number": "model_text",
+            "type": "model_text",
             "size": "size", "resolution": "resolution", "toner cartridge": "toner",
             "status": "status", "notes": "notes"}
 
@@ -123,12 +130,15 @@ def read_export(data: bytes) -> list[LegacyRow]:
 def _rows(reader) -> list[LegacyRow]:
     header = next(reader, None) or []
     columns = {}
+    model_columns = []
     for index, raw in enumerate(header):
         if raw == _NAME_HEADER:
             columns.setdefault("name", index)
             continue
         target = _HEADERS.get(raw.strip().casefold())
-        if target is not None:
+        if target == "model_text":
+            model_columns.append(index)
+        elif target is not None:
             columns.setdefault(target, index)
     rows = []
     # line is the spreadsheet row: the header is row 1.
@@ -138,8 +148,11 @@ def _rows(reader) -> list[LegacyRow]:
             index = columns.get(column)
             return values[index].strip() if index is not None and index < len(values) else ""
 
+        # The first non-empty of Model, Model Number and Type, in column order.
+        model_text = next((values[i].strip() for i in model_columns
+                           if i < len(values) and values[i].strip()), "")
         row = LegacyRow(line=line, name=" ".join(get("name").split()), tag=get("tag"),
-                        model_text=get("model_text"), size=get("size"),
+                        model_text=model_text, size=get("size"),
                         resolution=get("resolution"), toner=get("toner"),
                         status=get("status"), notes=get("notes"))
         if any(getattr(row, name) for name in _ROW_TEXT):
@@ -160,7 +173,8 @@ def parse_id(raw: str | None) -> int | None:
 
 def kind_code_for(name: str) -> str | None:
     upper = name.upper()
-    for prefix, code in PREFIX_KINDS.items():
+    # Longest first, so a short prefix never claims a name a longer one fits.
+    for prefix, code in sorted(PREFIX_KINDS.items(), key=lambda p: len(p[0]), reverse=True):
         if upper.startswith(prefix):
             return code
     return None
@@ -312,6 +326,9 @@ def _plan(data: bytes, mapping: dict[str, str],
     review: list[tuple[int, str]] = []
     candidates = []
     for row in rows:
+        if row.status.strip().casefold() == SKIPPED_STATUS:
+            result.skipped += 1
+            continue
         problem = _name_problem(row, name_counts)
         if problem is None and name_key(row.name) in live:
             result.skipped += 1

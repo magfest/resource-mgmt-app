@@ -60,6 +60,9 @@ EXPECTED = {
                 ("TONER", "TEXT", None, []), ("COLOR", "BOOL", None, [])],
     "LABEL_PRINTER": [MODEL, ("MEDIA", "TEXT", None, [])],
     "LAMINATOR": [MODEL],
+    "PROJECTOR": [MODEL],
+    "BARCODE_SCANNER": [MODEL],
+    "CAMERA": [MODEL],
 }
 
 # (kind, field) -> (position, is_active, on_label, label_text)
@@ -75,6 +78,8 @@ LABELS = {
     ("PRINTER", "TONER"): (4, 1, 0, None), ("PRINTER", "COLOR"): (5, 0, 0, None),
     ("LABEL_PRINTER", "MODEL"): (0, 1, 0, None), ("LABEL_PRINTER", "MEDIA"): (1, 1, 0, None),
     ("LAMINATOR", "MODEL"): (0, 1, 0, None),
+    ("PROJECTOR", "MODEL"): (0, 1, 0, None), ("BARCODE_SCANNER", "MODEL"): (0, 1, 0, None),
+    ("CAMERA", "MODEL"): (0, 1, 0, None),
 }
 
 
@@ -118,7 +123,7 @@ def test_upgrade_is_safe_on_a_database_that_already_has_the_seed(tmp_path):
     _flask(path, "db", "downgrade", "iv7p3q9r2s4t")
     _flask(path, "db", "upgrade")
     codes = _kind_codes(path)
-    assert len(codes) == len(set(codes)) == 5
+    assert len(codes) == len(set(codes)) == 8
     assert _seeded(path) == EXPECTED
     assert _labels(path) == LABELS
 
@@ -138,6 +143,20 @@ def test_revised_seed_on_a_database_that_ran_the_first_seed(tmp_path):
     assert "on_label" not in columns and "label_text" not in columns
     _flask(path, "db", "upgrade")
     assert _labels(path) == LABELS
+
+
+def test_more_gear_kinds_seed_on_a_database_at_the_previous_head(tmp_path):
+    path = tmp_path / "m.db"
+    _flask(path, "db", "upgrade", "iv3k8w1n5q7c")
+    assert _kind_codes(path) == ["TV", "MONITOR", "PRINTER", "LABEL_PRINTER", "LAMINATOR"]
+    _flask(path, "db", "upgrade")
+    assert _kind_codes(path) == list(EXPECTED)
+    assert _seeded(path) == EXPECTED
+    assert _labels(path) == LABELS
+    _flask(path, "db", "downgrade", "iv3k8w1n5q7c")
+    _flask(path, "db", "upgrade")
+    assert _kind_codes(path) == list(EXPECTED)
+    assert _seeded(path) == EXPECTED
 
 
 def _unit(inv, key, condition="IN_SERVICE"):
