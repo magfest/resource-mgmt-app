@@ -1,0 +1,24 @@
+{% extends "layout/base.html" %}
+{% block title %}Supplies on hand - Inventory{% endblock %}
+{% block content %}
+<h1>Supplies on hand</h1>
+<p>{{ rows|length }} item{{ '' if rows|length == 1 else 's' }}
+  &middot; <a href="{{ url_for('inventory.supplies', format='csv') }}">Download CSV</a></p>
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>Item</th><th>On hand</th><th>Last counted</th><th>Where</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{% if r.approximate %}about {% endif %}{{ r.total }} {{ r.unit }}</td>
+      <td>{% if r.counted_text %}{{ r.counted_text }}{% else %}<span class="muted">Never counted</span>{% endif %}</td>
+      <td>{{ r.where }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">No supplies are in stock.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
