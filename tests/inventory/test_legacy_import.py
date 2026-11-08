@@ -396,3 +396,25 @@ def test_import_note_adds_changed_text(inv):
     assert import_note(unit, "  ") is None
     assert import_note(unit, "b") is not None
     assert [n.body for n in unit_notes(unit.id)] == ["b", "a"]
+
+
+def test_import_note_keeps_text_past_the_typed_limit(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-IMP2")])
+    import_note(unit, "x" * 5000)
+    assert [len(n.body) for n in unit_notes(unit.id)] == [5000]
+
+
+def test_typed_note_over_the_limit_is_still_refused(inv):
+    from app.inventory.ledger import InventoryError
+    from app.inventory.notes import add_note
+    unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-IMP3")])
+    with pytest.raises(InventoryError):
+        add_note(unit, "ADMIN", "x" * 2001, "test:invadmin", source="PERSON")
+
+
+def test_a_long_legacy_note_imports_whole(kinds, inv):
+    long_note = "y" * 2500
+    data = _csv(TV_HEADER, f"1,MAG-TV-200,,LG,40,,1080p,,,{long_note}")
+    result = apply(data, {"TV|": "new:TV"}, inv.category.id, ACTOR)
+    assert len(result.ready) == 1
+    assert _note_bodies(_unit("MAG-TV-200")) == [("IMPORT", long_note)]

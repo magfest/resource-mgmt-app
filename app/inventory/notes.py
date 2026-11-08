@@ -29,7 +29,8 @@ def add_note(unit: InvUnit, note_type: str, body: str | None, user_id: str | Non
     text = normalize_note(body)
     if not text:
         raise InventoryError("A note cannot be blank.")
-    if len(text) > MAX_NOTE_LENGTH:
+    # Imported and earlier text came from an unbounded column; the cap would drop it or abort an import.
+    if source == INV_NOTE_SOURCE_PERSON and len(text) > MAX_NOTE_LENGTH:
         raise InventoryError(f"A note can be at most {MAX_NOTE_LENGTH} characters.")
     note = InvUnitNote(unit_id=unit.id, note_type=note_type, source=source,
                        body=text, created_by_user_id=user_id)
