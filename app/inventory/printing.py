@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.inventory.ledger import Actor, InventoryError, savepoint
+from app.inventory.unit_fields import details_line
 from app.inventory.zpl import LabelSpec, can_print_code, render_label
 from app.models import InvPrinter, InvPrintJob, InvPrintRoute
 from app.models.constants import (
@@ -63,8 +64,14 @@ def unit_number(unit) -> str | None:
 
 
 def fields_for_unit(unit) -> dict:
-    """Return the label rows and footer for a unit. Blank rows are left out."""
+    """Return the label title, rows and footer for a unit. Blank rows are left out.
+
+    An unnamed unit has no `title` key, so its stored jobs match fields built before names existed.
+    """
     rows = [["Type", unit.item.item_name]]
+    details = details_line(unit)
+    if details:
+        rows.append(["Details", details])
     rented = unit.ownership == INV_OWNERSHIP_RENTED
     tag = _active_value(unit, INV_IDENT_VENDOR_TAG) if rented else None
     if tag:
@@ -72,7 +79,10 @@ def fields_for_unit(unit) -> dict:
     serial = _active_value(unit, INV_IDENT_SERIAL)
     if serial:
         rows.append(["Serial", serial])
-    return {"rows": rows, "footer": FOOTER_RENTED if rented else FOOTER_OWNED}
+    fields = {"rows": rows, "footer": FOOTER_RENTED if rented else FOOTER_OWNED}
+    if unit.name:
+        fields["title"] = unit.name
+    return fields
 
 
 def fields_for_container(container) -> dict:
@@ -92,7 +102,7 @@ def render_job(job: InvPrintJob) -> str:
     if job.printed_date:
         rows.append(("Printed", job.printed_date.isoformat()))
     printer = job.printer
-    spec = LabelSpec(job.code, tuple(rows), job.fields.get("footer"))
+    spec = LabelSpec(job.code, tuple(rows), job.fields.get("footer"), job.fields.get("title"))
     return render_label(spec, printer.dpi, float(printer.width_in), float(printer.height_in))
 
 

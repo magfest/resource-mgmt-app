@@ -242,3 +242,56 @@ def test_local_today_is_a_date():
     from datetime import date
     from app.inventory.printing import local_today
     assert isinstance(local_today(), date)
+
+
+def _gear_unit(inv, name=None):
+    from app.inventory.names import set_unit_name
+    from app.inventory.unit_fields import set_unit_value
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("TV", "TV", [("BRAND", "Brand", "TEXT", None)])
+    inv.laptop.gear_kind_id = kind.id
+    db.session.flush()
+    db.session.refresh(inv.laptop)
+    unit = _unit(inv, [("FESTOPS_LABEL", "U-00001")])
+    set_unit_value(unit, kind.fields[0], "Sony")
+    if name:
+        set_unit_name(unit, name)
+    return unit
+
+
+def test_unit_fields_carry_the_name_and_details(inv):
+    from app.inventory.printing import fields_for_unit
+    fields = fields_for_unit(_gear_unit(inv, "MAG-TV-001"))
+    assert fields["title"] == "MAG-TV-001"
+    assert fields["rows"] == [["Type", "Laptop"], ["Details", "Sony"]]
+
+
+def test_unit_fields_for_an_unnamed_unit_have_no_title_key(inv):
+    from app.inventory.printing import fields_for_unit
+    assert "title" not in fields_for_unit(_gear_unit(inv))
+
+
+def test_renaming_a_unit_counts_as_changed_details(inv):
+    from app.inventory.names import set_unit_name
+    from app.inventory.printing import (
+        INV_JOB_SOURCE_SCAN, fields_for_unit, reprint_options,
+    )
+    from datetime import date
+    unit = _gear_unit(inv, "MAG-TV-001")
+    device = _station()
+    _printer("Zebra", device, INV_JOB_OWNED_UNIT)
+    request_label(INV_JOB_OWNED_UNIT, "U-00001", fields_for_unit(unit), NO_ONE,
+                  INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7), unit=unit)
+    assert reprint_options(unit)["details_changed"] is False
+    set_unit_name(unit, "MAG-TV-002")
+    db.session.flush()
+    assert reprint_options(unit)["details_changed"] is True
+
+
+def test_render_job_prints_the_title(inv):
+    from app.inventory.printing import fields_for_unit, render_job
+    unit = _gear_unit(inv, "MAG-TV-001")
+    _printer("Zebra", _station(), INV_JOB_OWNED_UNIT).height_in = 3
+    job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields_for_unit(unit), NO_ONE,
+                        INV_JOB_SOURCE_SCAN)
+    assert "^FDMAG-TV-001^FS" in render_job(job)

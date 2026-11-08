@@ -25,6 +25,7 @@ _QUIET_MODULES = 10
 # A row value past this many characters prints smaller so it still fits one line.
 ROW_FULL_CHARS = 22
 _NUMBER_FULL_CHARS = 14
+_TITLE_FULL_CHARS = 14
 _FOOTER_FULL_CHARS = 40
 _MAX_FIELD_CHARS = 64
 
@@ -32,6 +33,7 @@ _MAX_FIELD_CHARS = 64
 _MARGIN = 0.1
 _BAR_H = 0.33
 _NUMBER_H = 0.2
+_TITLE_H = 0.22
 _ROW_H = 0.15
 _ROW_PITCH = 0.2
 _FOOTER_H = 0.12
@@ -44,6 +46,7 @@ class LabelSpec:
     code: str
     rows: tuple[tuple[str, str], ...]
     footer: str | None
+    title: str | None = None
 
 
 def _dots(inches: float, dpi: int) -> int:
@@ -122,7 +125,24 @@ def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
 
     row_h = _dots(_ROW_H, dpi)
     row_top = number_top + _NUMBER_H + _GAP
-    for index, (label, value) in enumerate(spec.rows):
+    if spec.title:
+        title = _field(spec.title)
+        title_h = _fitted(_dots(_TITLE_H, dpi), title, _TITLE_FULL_CHARS)
+        lines.append(f"^FO{x_for(row_top, _TITLE_H)},{margin}^A0R,{title_h},{title_h}"
+                     f"^FB{span},1,0,C^FD{title}^FS")
+        row_top += _TITLE_H + _GAP
+
+    # A row must end above the footer rule, or above the bottom margin with no
+    # footer. A titled label drops rows from the end; an untitled one never has
+    # to, so its output is unchanged.
+    rows = spec.rows
+    if spec.title:
+        limit = float(width_in) - _MARGIN
+        if spec.footer:
+            limit -= _FOOTER_H + _GAP + _RULE_H + _GAP
+        fits = int((limit - row_top - _ROW_H) / _ROW_PITCH + 1e-9) + 1
+        rows = rows[:max(0, fits)]
+    for index, (label, value) in enumerate(rows):
         x = x_for(row_top + index * _ROW_PITCH, _ROW_H)
         value = _field(value)
         value_h = _fitted(row_h, value, ROW_FULL_CHARS)
