@@ -750,3 +750,73 @@ def test_csv_neutralises_formulas(client, inv):
     _week_units(inv, 1, names=["=SUM(A1)"])
     login(client, "test:operator")
     assert "'=SUM(A1)" in _list(client, format="csv").get_data(as_text=True)
+
+
+def test_csv_last_checked_is_warehouse_local_time(client, inv):
+    from datetime import datetime
+    from app.models import InvPrepStatus
+    event, units = _week_units(inv, 1)
+    db.session.add(InvPrepStatus(unit_id=units[0].id, event_cycle_id=event.id, status="CHECKED",
+                                 created_at=datetime(2026, 12, 8, 2, 30)))
+    db.session.commit()
+    login(client, "test:operator")
+    assert ",2026-12-07 21:30" in _list(client, format="csv").get_data(as_text=True)
+
+
+def test_local_iso_converts_utc():
+    from datetime import datetime
+    from app.inventory.printing import local_iso
+    assert local_iso(datetime(2026, 12, 8, 2, 30)) == "2026-12-07 21:30"
+
+
+def test_csv_filename_uses_local_date(client, inv, monkeypatch):
+    from datetime import date
+    _week_units(inv, 1)
+    monkeypatch.setattr("app.routes.inventory.admin_units.local_today",
+                        lambda: date(2026, 12, 4))
+    login(client, "test:operator")
+    assert "units-SMF2027-2026-12-04.csv" in _list(client, format="csv").headers[
+        "Content-Disposition"]
+
+
+def test_csv_leaves_week_cells_blank_without_a_default_event(client, inv):
+    add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "WK-001")])
+    db.session.commit()
+    login(client, "test:operator")
+    row = _list(client, format="csv").get_data(as_text=True).splitlines()[1].split(",")
+    assert row[4] == "" and row[6] == ""
+
+
+def test_csv_honours_the_show_filter(client, inv):
+    from app.models import InvPrepStatus
+    event, units = _week_units(inv, 3)
+    db.session.add(InvPrepStatus(unit_id=units[1].id, event_cycle_id=event.id,
+                                 status="FAILED_CHECK"))
+    db.session.commit()
+    login(client, "test:operator")
+    lines = _list(client, format="csv", show="broken").get_data(as_text=True).splitlines()
+    assert len(lines) == 2 and "WK-001" in lines[1]
+
+
+def test_pager_next_link_keeps_the_filters(client, inv):
+    _week_units(inv, 55)
+    login(client, "test:operator")
+    page = _list(client, q="week", show="not_seen").get_data(as_text=True)
+    assert "q=week" in page.split("Next")[0].rsplit("<a ", 1)[1]
+    assert "show=not_seen" in page.split("Next")[0].rsplit("<a ", 1)[1]
+
+
+def test_csv_does_not_query_per_unit(client, inv):
+    from tests.inventory.helpers import make_container
+    _week_units(inv, 3)
+    login(client, "test:operator")
+    bin_ = make_container(inv, "C-7100", kind="BIN")
+    db.session.query(InvUnit).update({"current_container_id": bin_.id})
+    db.session.commit()
+    few = _selects(lambda: _list(client, format="csv"))
+    _week_units_more = [add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", f"XX-{i:03d}")],
+                                 name=f"Extra {i}") for i in range(6)]
+    for u in _week_units_more:
+        u.current_container_id = bin_.id
+    db.session.commit()
+    assert _selects(lambda: _list(client, format="csv")) == few

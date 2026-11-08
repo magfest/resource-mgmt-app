@@ -4,8 +4,9 @@ import io
 
 from flask import Response
 
-# Spreadsheet apps run a cell that starts with one of these as a formula.
-_FORMULA_STARTS = ("=", "+", "-", "@")
+# Spreadsheet apps run a cell that starts with one of these as a formula;
+# a leading tab or carriage return can hide the real first character.
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _safe(cell):

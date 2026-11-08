@@ -54,6 +54,12 @@ def local_stamp(moment: datetime) -> str:
     return f"{local:%b} {local.day}, {local.hour % 12 or 12}:{local:%M} {local:%p}"
 
 
+def local_iso(moment: datetime) -> str:
+    """Format a stored UTC time as sortable `2026-12-07 21:30` in INV_LOCAL_TZ."""
+    local = moment.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(INV_LOCAL_TZ))
+    return f"{local:%Y-%m-%d %H:%M}"
+
+
 def unit_number(unit) -> str | None:
     """Return the number printed on a unit: its MAGFest tag, else its FestOps label.
 

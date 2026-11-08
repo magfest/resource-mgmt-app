@@ -1,6 +1,4 @@
 """Units page: find a unit by any identifier, then correct it or print its label."""
-from datetime import datetime
-
 from flask import abort, flash, redirect, request, url_for
 from sqlalchemy import false, func, or_
 from sqlalchemy.orm import selectinload
@@ -23,7 +21,7 @@ from app.inventory.names import name_key, set_unit_name
 from app.inventory.tree import display_name
 from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
-    local_stamp, reprint, reprint_options,
+    local_iso, local_stamp, local_today, reprint, reprint_options,
 )
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
 from app.inventory.unit_fields import (
@@ -34,7 +32,7 @@ from app.inventory.week import (
 )
 from app.inventory.unit_station import give_unit_number, number_refusal
 from app.models import (
-    InvField, InvFlag, InvGearKind, InvMovement, InvShift, InvUnit, InvUnitIdentifier,
+    InvContainer, InvField, InvFlag, InvGearKind, InvMovement, InvShift, InvUnit, InvUnitIdentifier,
     InvUnitValue, SupplyItem, User,
 )
 from app.inventory.describe import describe_actor, describe_movement
@@ -63,7 +61,8 @@ REPRINT_WORDS = {REPRINT_CURRENT_DETAILS: "Print the current details",
 
 
 # The units table reads these on every row.
-_ROW_LOADS = (selectinload(InvUnit.item), selectinload(InvUnit.current_container),
+_ROW_LOADS = (selectinload(InvUnit.item),
+              selectinload(InvUnit.current_container).selectinload(InvContainer.kind),
               selectinload(InvUnit.identifiers))
 
 
@@ -157,12 +156,14 @@ def _unit_rows(units: list[InvUnit], event) -> list[dict]:
     for u in units:
         prep = preps.get(u.id)
         status = week_status(prep)
-        if prep is None:
+        if event is None:
+            where = ""
+        elif prep is None:
             where = "Not seen"
         else:
             where = display_name(u.current_container) if u.current_container else "Not placed"
         rows.append({"unit": u, "number": unit_code(u), "open_flags": counts.get(u.id, 0),
-                     "week": status, "week_word": WEEK_WORDS[status], "where": where,
+                     "week": status, "week_word": WEEK_WORDS[status] if event else "", "where": where,
                      "checked_at": prep.created_at if prep else None})
     return rows
 
@@ -171,7 +172,7 @@ def _csv_rows(rows: list[dict]) -> list[list]:
     return [[r["number"] or "", r["unit"].name or "", r["unit"].item.item_name,
              model_number(r["unit"]) or "", r["week_word"],
              CONDITION_WORDS.get(r["unit"].condition, r["unit"].condition), r["where"],
-             r["open_flags"], f"{r['checked_at']:%Y-%m-%d %H:%M} UTC" if r["checked_at"] else ""]
+             r["open_flags"], local_iso(r["checked_at"]) if r["checked_at"] else ""]
             for r in rows]
 
 
@@ -194,7 +195,7 @@ def units():
     if request.args.get("format") == "csv":
         found = ordered.options(*_ROW_LOADS, selectinload(InvUnit.values)
                                 .selectinload(InvUnitValue.field)).all()
-        stamp = f"{datetime.utcnow():%Y-%m-%d}"
+        stamp = f"{local_today():%Y-%m-%d}"
         return csv_response(
             f"units-{event.code if event else 'no-event'}-{stamp}.csv",
             ["Number", "Name", "Type", "Model", "This week", "Condition", "Where",

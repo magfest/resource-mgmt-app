@@ -94,3 +94,9 @@ def test_week_totals(app, event, mixed):
 def test_show_condition(app, event, mixed, show, expected):
     rows = db.session.query(InvUnit).filter(show_condition(event, show)).all()
     assert {u.name for u in rows} == expected
+
+
+def test_csv_guard_covers_tab_and_carriage_return():
+    from app.inventory.csv_export import csv_response
+    body = csv_response("x.csv", ["a"], [["\tx"], ["\rx"], ["=1"], [None]]).get_data(as_text=True)
+    assert "'\tx" in body and "'\rx" in body and "'=1" in body
