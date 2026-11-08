@@ -356,7 +356,7 @@ def _inside_at(z, printer):
             assert 0 <= int(m.group(1)) < pw and 0 <= int(m.group(2)) < ll, line
 
 
-SPEC_LINE = "Laser Printer (BW, USB, DUPLEX) | 2026/11/07"
+SPEC_LINE = "Laser Printer (BW, USB, DUPLEX)"
 
 
 def test_named_printer_label_matches_the_approved_layout(inv, printer):
@@ -369,10 +369,11 @@ def test_named_printer_label_matches_the_approved_layout(inv, printer):
     job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields, NO_ONE,
                         INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
     z, texts = _printed_rows(job)
-    assert {"MAG-PNTR-007", "Model", "MFC-L2820DW", "Serial", "PF04CKVR", SPEC_LINE} <= texts
-    assert "Printed" not in texts and "Type" not in texts
+    assert {"MAG-PNTR-007", "Model", "MFC-L2820DW", "Serial", "PF04CKVR", SPEC_LINE,
+            "2026/11/07"} <= texts
+    assert "Printed" not in texts and "Type" not in texts and "2026-11-07" not in texts
     order = [z.index("^FDMAG-PNTR-007^FS"), z.index("^FDModel^FS"),
-             z.index("^FDSerial^FS"), z.index(f"^FD{SPEC_LINE}^FS")]
+             z.index("^FDSerial^FS"), z.index("^FD2026/11/07^FS"), z.index(f"^FD{SPEC_LINE}^FS")]
     assert order == sorted(order)
     _inside_at(z, printer)
 
@@ -387,7 +388,7 @@ def test_named_rented_unit_keeps_serial_and_last_line(inv, printer):
     job = request_label(INV_JOB_RENTED_UNIT, "R-00038", fields, NO_ONE,
                         INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
     z, texts = _printed_rows(job)
-    assert {"Vendor tag", "Serial", "SN1", SPEC_LINE} <= texts
+    assert {"Vendor tag", "Serial", "SN1", SPEC_LINE, "2026/11/07"} <= texts
     assert "Model" not in texts and "Printed" not in texts
     _inside_at(z, printer)
 
@@ -427,4 +428,18 @@ def test_a_job_stored_before_spec_lines_prints_as_before(inv, printer):
     job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields, NO_ONE,
                         INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
     z = render_job(job)
-    assert "^FDPrinted^FS" in z and "^FD2026-11-07^FS" in z and " | " not in z
+    assert "^FDPrinted^FS" in z and "^FD2026-11-07^FS" in z and "2026/11/07" not in z
+
+
+def test_an_original_date_reprint_of_a_named_unit_keeps_the_original_date(inv, printer):
+    from datetime import date
+    from app.inventory.printing import (
+        REPRINT_ORIGINAL_DATE, fields_for_unit, render_job, reprint,
+    )
+    unit = _named_printer(inv, [("FESTOPS_LABEL", "U-00001"), ("SERIAL", "PF04CKVR")])
+    request_label(INV_JOB_OWNED_UNIT, "U-00001", fields_for_unit(unit), NO_ONE,
+                  INV_JOB_SOURCE_SCAN, printed_date=date(2026, 10, 2), unit=unit)
+    again = reprint(unit, REPRINT_ORIGINAL_DATE, NO_ONE)
+    assert again.printed_date == date(2026, 10, 2)
+    z = render_job(again)
+    assert "^FD2026/10/02^FS" in z and f"^FD{SPEC_LINE}^FS" in z

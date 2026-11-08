@@ -108,13 +108,14 @@ def label_spec(code: str, fields: dict, printed_date: date | None) -> LabelSpec:
     """Build the label for stored fields. A job without `spec` prints a Printed row."""
     rows = [tuple(row) for row in fields.get("rows", [])]
     spec_text = fields.get("spec")
-    last_line = None
+    last_date = None
     if spec_text is not None:
-        # The date joins the spec line; a separate Printed row would not fit.
-        last_line = f"{spec_text} | {printed_date:%Y/%m/%d}" if printed_date else spec_text
+        # The date shares the spec line; a separate Printed row would not fit.
+        last_date = f"{printed_date:%Y/%m/%d}" if printed_date else None
     elif printed_date:
         rows.append(("Printed", printed_date.isoformat()))
-    return LabelSpec(code, tuple(rows), fields.get("footer"), fields.get("title"), last_line)
+    return LabelSpec(code, tuple(rows), fields.get("footer"), fields.get("title"),
+                     spec_text, last_date)
 
 
 def render_job(job: InvPrintJob) -> str:

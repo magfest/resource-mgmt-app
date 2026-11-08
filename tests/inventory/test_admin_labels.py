@@ -91,7 +91,8 @@ def test_reprint_of_a_named_unit_prints_its_title_and_spec_line(client, inv):
     login(client, "test:invadmin")
     html = client.post("/inv/admin/labels/reprint", data={"codes": "u-00001"}).get_data(as_text=True)
     assert "^FDLoaner 3^FS" in html and "^FDSN-1^FS" in html
-    assert f"^FDLaptop | {local_today():%Y/%m/%d}^FS" in html and "^FDPrinted^FS" not in html
+    assert "^FDLaptop^FS" in html and f"^FD{local_today():%Y/%m/%d}^FS" in html
+    assert "^FDPrinted^FS" not in html
 
 
 def test_a_tag_no_barcode_can_hold_does_not_stop_the_batch(client, inv):

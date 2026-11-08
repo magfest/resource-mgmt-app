@@ -8,6 +8,7 @@ top of the turned label sits at the highest X.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 SUPPORTED_DPI = (203, 300)
@@ -28,6 +29,9 @@ _NUMBER_FULL_CHARS = 14
 _TITLE_FULL_CHARS = 14
 _FOOTER_FULL_CHARS = 40
 _MAX_FIELD_CHARS = 64
+# Font 0 width per character over height, measured from a GX430t print of mixed-case
+# and capital text. Only the last line uses it; rows keep their older, wider budget.
+_LAST_LINE_WIDTH_RATIO = 0.5
 
 # Layout in inches, measured from the top of the turned label.
 _MARGIN = 0.1
@@ -47,8 +51,10 @@ class LabelSpec:
     rows: tuple[tuple[str, str], ...]
     footer: str | None
     title: str | None = None
-    # Printed headerless across the full width after the rows, and never dropped.
+    # Printed headerless after the rows and never dropped: the spec text at the
+    # left, the date right-justified. The date is never cut.
     last_line: str | None = None
+    last_date: str | None = None
 
 
 def _dots(inches: float, dpi: int) -> int:
@@ -119,6 +125,14 @@ def _fit_rows(rows, keep: int):
     return rows
 
 
+def _fit_last_line(text: str, room: int, height: int, floor: int) -> tuple[str, int]:
+    """Shrink text from `height` to fit `room` dots; below `floor`, cut it instead."""
+    fitted = int(room / (len(text) * _LAST_LINE_WIDTH_RATIO)) if text else height
+    if fitted >= floor:
+        return text, min(height, fitted)
+    return text[:int(room / (floor * _LAST_LINE_WIDTH_RATIO))], floor
+
+
 def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
                  height_in: float = 3.0) -> str:
     if dpi not in SUPPORTED_DPI:
@@ -166,7 +180,7 @@ def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
         if spec.footer:
             limit -= _FOOTER_H + _GAP + _RULE_H + _GAP
         fits = int((limit - row_top - _ROW_H) / _ROW_PITCH + 1e-9) + 1
-        if spec.last_line:
+        if spec.last_line or spec.last_date:
             fits -= 1
         rows = _fit_rows(rows, max(0, fits))
     for index, (label, value) in enumerate(rows):
@@ -176,12 +190,18 @@ def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
         lines.append(f"^FO{x},{margin}^A0R,{row_h},{row_h}^FD{_field(label)}^FS")
         lines.append(f"^FO{x},{margin}^A0R,{value_h},{value_h}"
                      f"^FB{span},1,0,R^FD{value}^FS")
-    if spec.last_line:
-        # Shrinks like the title so a long line stays on the label; _field cuts past 64.
-        last = _field(spec.last_line)
-        last_h = _fitted(row_h, last, ROW_FULL_CHARS)
+    if spec.last_line or spec.last_date:
         x = x_for(row_top + len(rows) * _ROW_PITCH, _ROW_H)
-        lines.append(f"^FO{x},{margin}^A0R,{last_h},{last_h}^FB{span},1,0,L^FD{last}^FS")
+        room = span
+        if spec.last_date:
+            date = _field(spec.last_date)
+            lines.append(f"^FO{x},{margin}^A0R,{row_h},{row_h}^FB{span},1,0,R^FD{date}^FS")
+            room -= math.ceil(len(date) * _LAST_LINE_WIDTH_RATIO * row_h) + _dots(_GAP, dpi)
+        if spec.last_line:
+            text, text_h = _fit_last_line(_field(spec.last_line), room, row_h,
+                                          _dots(_FOOTER_H, dpi))
+            lines.append(f"^FO{x},{margin}^A0R,{text_h},{text_h}"
+                         f"^FB{room},1,0,L^FD{text}^FS")
 
     if spec.footer:
         footer_top = float(width_in) - _MARGIN - _FOOTER_H

@@ -163,40 +163,64 @@ def test_titled_label_keeps_serial_and_printed_and_drops_type_then_vendor_tag():
     assert "^FDVendor tag^FS" not in z and "^FDSerial^FS" in z and "^FDPrinted^FS" in z
 
 
-LAST = "Laser Printer (BW, USB, DUPLEX) | 2026/11/07"
+SPEC = "Laser Printer (BW, USB, DUPLEX)"
+DATE = "2026/11/07"
 
 
-def _last(z, text):
-    return re.search(rf"\^FO(\d+),(\d+)\^A0R,(\d+),\d+\^FB(\d+),1,0,L\^FD{re.escape(text)}\^FS", z)
+def _just(z, text, align):
+    m = re.search(rf"\^FO(\d+),(\d+)\^A0R,(\d+),\d+\^FB(\d+),1,0,{align}"
+                  rf"\^FD{re.escape(text)}\^FS", z)
+    return m and tuple(int(g) for g in m.groups())
+
+
+def _no_field_crosses_the_rule(z):
+    rule_x = int(re.search(r"\^FO(\d+),\d+\^GB", z).group(1))
+    for line in z.splitlines():
+        m = re.match(r"\^FO(\d+),\d+\^A0R,(\d+)", line)
+        if m and "Return" not in line:
+            assert int(m.group(1)) > rule_x, line
 
 
 @pytest.mark.parametrize("dpi", [203, 300])
-def test_last_line_prints_headerless_full_width_after_the_rows(dpi):
+def test_spec_and_date_share_the_last_line_and_the_spec_fits_whole(dpi):
     rows = (("Model", "MFC-L2820DW"), ("Serial", "PF04CKVR"))
-    z = render_label(LabelSpec("U-00001", rows, "Return", "MAG-PNTR-007", LAST), dpi)
-    last = _last(z, LAST)
+    z = render_label(LabelSpec("U-00001", rows, "Return", "MAG-PNTR-007", SPEC, DATE), dpi)
+    span = round(3.0 * dpi) - 2 * round(0.1 * dpi)
+    date_x, date_y, date_h, date_w = _just(z, DATE, "R")
+    spec_x, spec_y, spec_h, spec_w = _just(z, SPEC, "L")
+    assert date_h == round(zpl._ROW_H * dpi) and date_w == span
+    assert spec_x == date_x and spec_y == date_y == round(0.1 * dpi)
+    assert round(zpl._FOOTER_H * dpi) <= spec_h <= date_h
+    assert spec_w + len(DATE) * 0.5 * date_h + round(zpl._GAP * dpi) <= span + 1
     serial = re.search(r"\^FO(\d+),\d+\^A0R,\d+,\d+\^FDSerial\^FS", z)
-    assert last and serial and int(last.group(1)) < int(serial.group(1))
-    assert int(last.group(4)) == round(3.0 * dpi) - 2 * round(0.1 * dpi)
-    assert int(last.group(3)) < round(zpl._ROW_H * dpi)
-    assert "^FDModel^FS" in z and "^FDSerial^FS" in z
-    rule = re.search(r"\^FO(\d+),\d+\^GB", z)
-    assert int(last.group(1)) > int(rule.group(1))
+    assert date_x < int(serial.group(1))
+    assert "|" not in z
+    _no_field_crosses_the_rule(z)
 
 
-def test_a_short_last_line_prints_at_row_height_and_a_long_one_is_cut_only_past_64():
-    z = render_label(LabelSpec("U-00001", (), None, "T", "Laminator"), 300)
-    assert int(_last(z, "Laminator").group(3)) == 45
-    long = "X" * 70
-    z = render_label(LabelSpec("U-00001", (), None, "T", long), 300)
-    assert _last(z, "X" * 64)
+@pytest.mark.parametrize("dpi", [203, 300])
+def test_a_long_spec_is_cut_at_the_floor_and_the_date_stays_whole(dpi):
+    long = "Laser Printer (" + "X" * 54 + ")"
+    assert len(long) == 70
+    z = render_label(LabelSpec("U-00001", (("Serial", "SN1"),), "Return", "T", long, DATE), dpi)
+    assert _just(z, DATE, "R")[2] == round(zpl._ROW_H * dpi)
+    spec = re.search(r"\^A0R,(\d+),\d+\^FB\d+,1,0,L\^FD([^^]*)\^FS", z)
+    assert int(spec.group(1)) == round(zpl._FOOTER_H * dpi)
+    assert long.startswith(spec.group(2)) and 0 < len(spec.group(2)) < 70
+    _no_field_crosses_the_rule(z)
+
+
+def test_a_short_spec_prints_at_row_height():
+    z = render_label(LabelSpec("U-00001", (), None, "T", "Laminator", DATE), 300)
+    assert _just(z, "Laminator", "L")[2] == 45
 
 
 def test_titled_label_with_a_last_line_drops_model_then_vendor_tag():
     rows = (("Model", "MFC-L2820DW"), ("Vendor tag", "Vendor A: A0038"), ("Serial", "SN1"))
-    z = render_label(LabelSpec("R-00038", rows, "Return", "MAG-PNTR-007", LAST), 300)
+    z = render_label(LabelSpec("R-00038", rows, "Return", "MAG-PNTR-007", SPEC, DATE), 300)
     assert "^FDModel^FS" not in z and "^FDVendor tag^FS" in z
-    assert "^FDSerial^FS" in z and _last(z, LAST)
+    assert "^FDSerial^FS" in z and _just(z, SPEC, "L") and _just(z, DATE, "R")
     more = (("Extra", "x"),) + rows
-    z = render_label(LabelSpec("R-00038", more, "Return", "MAG-PNTR-007", LAST), 300)
-    assert "^FDVendor tag^FS" not in z and "^FDSerial^FS" in z and _last(z, LAST)
+    z = render_label(LabelSpec("R-00038", more, "Return", "MAG-PNTR-007", SPEC, DATE), 300)
+    assert "^FDVendor tag^FS" not in z and "^FDSerial^FS" in z and _just(z, DATE, "R")
+    _no_field_crosses_the_rule(z)
