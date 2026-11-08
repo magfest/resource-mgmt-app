@@ -70,7 +70,8 @@ def _other_write_since(actor: Actor, stamp: datetime, own_unit_id=None, own_coun
     """True when this shift wrote anything but a flag after `stamp`.
 
     A movement on the check's own unit is its put-away, and a movement of the
-    count's own is part of the count; neither ends the window.
+    count's own is part of the count; neither ends the window. A print job on
+    the check's own unit is the info label its finish queued; undo leaves it queued.
     """
     moves = db.session.query(InvMovement.id).filter(_mine(InvMovement, actor),
                                                     InvMovement.created_at > stamp)
@@ -86,6 +87,9 @@ def _other_write_since(actor: Actor, stamp: datetime, own_unit_id=None, own_coun
         _mine(InvCount, actor), or_(InvCount.started_at > stamp, InvCount.submitted_at > stamp))
     jobs = db.session.query(InvPrintJob.id).filter(_mine(InvPrintJob, actor),
                                                    InvPrintJob.created_at > stamp)
+    if own_unit_id is not None:
+        jobs = jobs.filter(or_(InvPrintJob.unit_id.is_(None),
+                               InvPrintJob.unit_id != own_unit_id))
     return any(q.first() is not None for q in (moves, checks, counts, jobs))
 
 

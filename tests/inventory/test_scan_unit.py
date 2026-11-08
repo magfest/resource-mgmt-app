@@ -334,6 +334,33 @@ def test_finish_places_the_unit_and_queues_the_label(unit_client, inv, home, lap
     assert unit.current_container_id == home.id
 
 
+def _finish_works(client, code, line):
+    check = post(client, "scan", {"code": code}).json
+    return post(client, "finish", {"check_id": check["check_id"],
+                                   "answers": {str(line.id): "YES"}}).json
+
+
+def test_undo_after_a_finish_that_queued_the_label(unit_client, inv, laptop_line):
+    _tagged(inv, "TV-X-067", "FEST91067")
+    assert _finish_works(unit_client, "FEST91067", laptop_line)["label"] == "queued"
+    answer = unit_client.post("/inv/scan/api/undo", json={"client_request_id": "undo-1"}).json
+    assert answer["ok"] is True and answer["undone"] == "check"
+    assert InvPrintJob.query.one().status == "QUEUED"
+
+
+def test_a_label_for_another_unit_after_the_finish_ends_the_undo_window(
+        unit_client, inv, laptop_line):
+    from app.inventory.receive import label_job
+    _tagged(inv, "TV-X-068", "FEST91068")
+    other = _tagged(inv, "TV-X-069", "FEST91069")
+    _finish_works(unit_client, "FEST91068", laptop_line)
+    own = InvPrintJob.query.one()
+    label_job(other, Actor(shift_id=own.shift_id, device_id=own.device_id), "other-label")
+    db.session.commit()
+    answer = unit_client.post("/inv/scan/api/undo", json={"client_request_id": "undo-2"}).json
+    assert answer["ok"] is False and answer["message"] == "Too late to undo."
+
+
 def test_finish_needs_every_answer(unit_client, inv):
     _tagged(inv, "TV-X-061", "FEST91061")
     check = post(unit_client, "scan", {"code": "FEST91061"}).json
