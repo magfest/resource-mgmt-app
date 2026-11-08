@@ -8,7 +8,7 @@ from app.routes import get_user_ctx
 from app.inventory.audit import (
     ACTION_ADD_CODE, ACTION_CONDITION, ACTION_FIELDS, ACTION_ITEM,
     ACTION_RETIRE_CODE,
-    record_unit_change, unit_changes,
+    record_unit_change,
 )
 from app.inventory.checks import checked_serial, unit_code
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
@@ -18,7 +18,7 @@ from app.inventory.ledger import (
 )
 from app.inventory.cards import default_event
 from app.inventory.csv_export import csv_response
-from app.inventory.notes import NOTE_TYPE_WORDS, add_note
+from app.inventory.notes import NOTE_TYPE_WORDS, SOURCE_WORDS, add_note, unit_notes
 from app.inventory.names import name_key, set_unit_name
 from app.inventory.tree import display_name
 from app.inventory.printing import (
@@ -27,19 +27,20 @@ from app.inventory.printing import (
 )
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
 from app.inventory.unit_fields import (
-    active_fields, model_number, parse_value, set_unit_value, unit_field_rows,
+    active_fields, details_line, model_number, parse_value, set_unit_value, unit_field_rows,
 )
 from app.inventory.week import (
     SHOW_FILTERS, WEEK_WORDS, live_prep_rows, show_condition, week_status,
 )
 from app.inventory.unit_station import give_unit_number, number_refusal
 from app.models import (
-    InvContainer, InvField, InvFlag, InvGearKind, InvMovement, InvUnit, InvUnitIdentifier,
+    InvContainer, InvField, InvFlag, InvGearKind, InvUnit, InvUnitIdentifier,
     InvUnitValue, SupplyItem,
 )
 from app.inventory.history import CONDITION_WORDS
-from app.inventory.people import names_for
-from app.inventory.describe import describe_actor, describe_movement
+from app.inventory.people import actor_name, names_for
+from app.inventory.history import unit_history
+from app.inventory.unit_about import detail_rows, find_by_rows, placed_line, status_card, where_sentence
 from app.models.constants import (
     INV_CONDITION_RETIRED, INV_FIELD_BOOL, INV_FIELD_CHOICE, INV_FIELD_NUMBER,
     INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
@@ -218,19 +219,6 @@ def units():
                       ("no_number", "No number yet")))
 
 
-def _page_where(unit: InvUnit, event, seen: bool) -> str:
-    """Return the unit page's Where line, naming the recorded container even when unseen.
-
-    The Units list column and its CSV keep the shorter `_unit_rows` wording.
-    """
-    place = display_name(unit.current_container) if unit.current_container else None
-    if event is None or seen:
-        return f"Where: {place or 'Not placed'}"
-    if place:
-        return f"Where: Not seen this week. Last recorded in {place}."
-    return "Where: Not seen this week."
-
-
 def _unit_or_404(unit_id: int) -> InvUnit:
     unit = db.session.get(InvUnit, unit_id)
     if unit is None:
@@ -256,37 +244,45 @@ def _selectable_items(unit: InvUnit) -> list[SupplyItem]:
 @require_inventory_operator
 def unit_page(unit_id: int):
     unit = _unit_or_404(unit_id)
+    editing = request.args.get("tab") == "edit"
+    user_ctx = get_user_ctx()
+    context = {"unit": unit, "number": unit_code(unit), "editing": editing,
+               "note_types": note_types_for(user_ctx), "note_type_words": NOTE_TYPE_WORDS}
+    if editing:
+        options = reprint_options(unit)
+        context.update(
+            model=model_number(unit),
+            identifiers=sorted(unit.identifiers, key=lambda i: (i.retired_at is not None, i.id)),
+            kind_words=KIND_WORDS, kinds=IDENTIFIER_KINDS, conditions=INV_CONDITIONS,
+            condition_words=CONDITION_WORDS, items=_selectable_items(unit),
+            print_modes=[(m, REPRINT_WORDS[m]) for m in _print_modes(options)],
+            print_options=options, retired_condition=INV_CONDITION_RETIRED,
+            field_inputs=_field_inputs(unit), has_gear_kind=unit.item.gear_kind is not None,
+            can_give_number=_can_give_number(unit))
+        return render_inventory_page("inventory/unit.html", **context)
+
     flags = (db.session.query(InvFlag).filter(InvFlag.unit_id == unit.id)
              .order_by(InvFlag.created_at.desc(), InvFlag.id.desc()).all())
-    rows = flag_rows(flags)
-    movements = (db.session.query(InvMovement).filter(InvMovement.unit_id == unit.id)
-                 .options(selectinload(InvMovement.item),
-                          selectinload(InvMovement.unit).selectinload(InvUnit.identifiers),
-                          selectinload(InvMovement.subject_container),
-                          selectinload(InvMovement.from_container),
-                          selectinload(InvMovement.to_container),
-                          selectinload(InvMovement.shift), selectinload(InvMovement.device))
-                 .order_by(InvMovement.id.desc()).limit(20).all())
-    options = reprint_options(unit)
-    event = default_event()
-    summary = _unit_rows([unit], event)[0]
-    return render_inventory_page(
-        "inventory/unit.html", unit=unit, number=unit_code(unit), event=event,
-        summary=summary, model=model_number(unit),
-        where_text=_page_where(unit, event, seen=summary["checked_at"] is not None),
-        checked_text=local_iso(summary["checked_at"]) if summary["checked_at"] else "",
-        open_rows=[r for r in rows if r["flag"].resolved_at is None],
-        resolved_rows=[r for r in rows if r["flag"].resolved_at is not None],
-        movements=[(local_stamp(m.created_at), describe_movement(m), describe_actor(m))
-                   for m in movements],
-        identifiers=sorted(unit.identifiers, key=lambda i: (i.retired_at is not None, i.id)),
-        kind_words=KIND_WORDS, kinds=IDENTIFIER_KINDS, conditions=INV_CONDITIONS,
-        condition_words=CONDITION_WORDS, items=_selectable_items(unit),
-        print_modes=[(m, REPRINT_WORDS[m]) for m in _print_modes(options)],
-        print_options=options, retired_condition=INV_CONDITION_RETIRED,
-        changes=_change_rows(unit), field_inputs=_field_inputs(unit),
-        has_gear_kind=unit.item.gear_kind is not None, can_give_number=_can_give_number(unit),
-        note_types=note_types_for(get_user_ctx()), note_type_words=NOTE_TYPE_WORDS)
+    open_rows = [r for r in flag_rows(flags) if r["flag"].resolved_at is None]
+    notes = unit_notes(unit.id)
+    names = names_for(n.created_by_user_id for n in notes)
+    note_views = [{"badge": SOURCE_WORDS.get(n.source) or NOTE_TYPE_WORDS.get(n.note_type, n.note_type),
+                   "body": n.body,
+                   "byline": (f"{local_stamp(n.created_at)} \u00b7 "
+                              f"{actor_name(n.created_by_user_id, None, names)}")
+                   if n.source not in SOURCE_WORDS else None}
+                  for n in notes]
+    history = [{"stamp": local_stamp(line.at), "who": line.who, "text": line.text, "note": line.note}
+               for line in unit_history(unit)]
+    kind = unit.item.gear_kind
+    subline = " \u00b7 ".join(part for part in (unit.item.item_name, kind.name if kind else "",
+                                               details_line(unit)) if part)
+    context.update(
+        subline=subline, status=status_card(unit, default_event()),
+        where=where_sentence(unit), placed=placed_line(unit),
+        find_by=find_by_rows(unit), details=detail_rows(unit),
+        notes=note_views, open_rows=open_rows, history=history)
+    return render_inventory_page("inventory/unit.html", **context)
 
 
 def _can_give_number(unit: InvUnit) -> bool:
@@ -310,33 +306,9 @@ def _field_inputs(unit: InvUnit) -> list[dict]:
     return inputs
 
 
-CHANGE_FIELDS = {"codes": "Codes", "condition": "Condition", "item": "Item type",
-                 "name": "Name", "notes": "Notes"}
-
-
-def _change_rows(unit: InvUnit) -> list[dict]:
-    events = unit_changes(unit.id)
-    names = names_for(row.created_by_user_id for row, _ in events)
-
-    def who(user_id):
-        return names.get(user_id) or user_id
-
-    def words(field, value):
-        if field == "codes":
-            return ", ".join(value) or "none"
-        if field == "condition":
-            return CONDITION_WORDS.get(value, value)
-        return value or "none"
-
-    return [{"when": local_stamp(row.created_at),
-             "who": who(row.created_by_user_id),
-             "what": [f"{CHANGE_FIELDS.get(f, f)}: {words(f, c['old'])} to {words(f, c['new'])}"
-                      for f, c in changes.items()]}
-            for row, changes in events]
-
-
-def _back(unit: InvUnit):
-    return redirect(url_for("inventory.unit_page", unit_id=unit.id))
+def _back(unit: InvUnit, tab: str | None = None, anchor: str | None = None):
+    url = url_for("inventory.unit_page", unit_id=unit.id, tab=tab)
+    return redirect(f"{url}#{anchor}" if anchor else url)
 
 
 def _active_codes(unit: InvUnit) -> list[str]:
@@ -370,16 +342,16 @@ def _audited(action, unit: InvUnit, audit_action: str):
     return run
 
 
-def _commit_or_flash(action, success: str, unit: InvUnit):
+def _commit_or_flash(action, success: str, unit: InvUnit, anchor: str | None = None):
     try:
         action()
     except InventoryError as error:
         db.session.rollback()
         flash(str(error), "error")
-    else:
-        db.session.commit()
-        flash(success, "success")
-    return _back(unit)
+        return _back(unit, tab="edit")
+    db.session.commit()
+    flash(success, "success")
+    return _back(unit, anchor=anchor)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/identifiers")
@@ -472,7 +444,7 @@ def unit_add_note(unit_id: int):
             raise InventoryError("You cannot add that kind of note.")
         add_note(unit, note_type, request.form.get("body"), user_ctx.user_id)
 
-    return _commit_or_flash(add, "Note added.", unit)
+    return _commit_or_flash(add, "Note added.", unit, anchor="notes")
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/give-number")
@@ -490,7 +462,7 @@ def unit_give_number(unit_id: int):
     except InventoryError as error:
         db.session.rollback()
         flash(str(error), "error")
-        return _back(unit)
+        return _back(unit, tab="edit")
     # The number is saved first, so a missing printer route does not cost the unit its number.
     db.session.commit()
     code = added[0]
@@ -499,9 +471,9 @@ def unit_give_number(unit_id: int):
     except InventoryError as error:
         db.session.rollback()
         flash(f"{code} added, but the label could not be sent. {error}", "error")
-    else:
-        db.session.commit()
-        flash(f"{code} added and sent to the printer.", "success")
+        return _back(unit, tab="edit")
+    db.session.commit()
+    flash(f"{code} added and sent to the printer.", "success")
     return _back(unit)
 
 
@@ -512,6 +484,6 @@ def unit_print(unit_id: int):
     mode = request.form.get("mode", "")
     if mode not in REPRINT_MODES:
         flash("Pick how to print the label.", "error")
-        return _back(unit)
+        return _back(unit, tab="edit")
     return _commit_or_flash(lambda: reprint(unit, mode, admin_actor()),
                             "Label sent to the print queue.", unit)

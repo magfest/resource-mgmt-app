@@ -197,7 +197,8 @@ def test_each_correction_records_who_and_what_changed(client, inv, unit):
     assert events[1][2] == {"item": {"old": "Laptop", "new": "Wireless Access Point"}}
     assert events[2][2] == {"condition": {"old": "IN_SERVICE", "new": "REPAIR"}}
     page = client.get(base).get_data(as_text=True)
-    assert "Condition: In service to In repair" in page
+    history = page[page.index('id="history"'):]
+    assert "changed the condition from In service to In repair" in history
 
 
 def test_retiring_a_unit_records_the_codes_it_retired(client, unit):
@@ -242,8 +243,9 @@ def test_admin_saves_name_and_fields_in_one_form(client, inv, unit):
     resp = client.post(f"/inv/admin/units/{unit.id}/details", data=_details(unit, kind))
     assert resp.status_code == 302
     page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
-    for text in ("MAG-TV-107", "50 in", "4k", "Name: none to MAG-TV-107"):
+    for text in ("MAG-TV-107", "50 in", "4k"):
         assert text in page, text
+    assert "changed the name from none to MAG-TV-107" in page[page.index('id="history"'):]
     from app.models import ConfigAuditEvent
     rows = db.session.query(ConfigAuditEvent).filter_by(
         entity_type="inv_unit", entity_id=str(unit.id), action="FIELDS").all()
@@ -262,6 +264,8 @@ def test_one_bad_field_saves_nothing_and_says_which(client, inv, unit):
 
 def test_operator_sees_fields_but_cannot_save(client, inv, unit):
     kind = _tv_kind(inv)
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/units/{unit.id}/details", data=_details(unit, kind))
     login(client, "test:operator")
     page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
     assert "Resolution" in page
@@ -271,7 +275,7 @@ def test_operator_sees_fields_but_cannot_save(client, inv, unit):
 
 def test_unit_without_gear_kind_points_to_items_page(client, unit):
     login(client, "test:invadmin")
-    page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
+    page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
     assert "Set this model's gear kind on the Items page to add fields." in page
 
 
@@ -505,7 +509,7 @@ GIVE = "Give this unit a U- number and print"
 def test_admin_gives_an_unnumbered_unit_a_u_number_and_prints(client, bare, printer):
     login(client, "test:invadmin")
     base = f"/inv/admin/units/{bare.id}"
-    assert GIVE in client.get(base).get_data(as_text=True)
+    assert GIVE in client.get(f"{base}?tab=edit").get_data(as_text=True)
     resp = client.post(f"{base}/give-number", follow_redirects=True)
     (code,) = _numbers(bare)
     assert code.startswith("U-")
@@ -515,13 +519,13 @@ def test_admin_gives_an_unnumbered_unit_a_u_number_and_prints(client, bare, prin
     (action, who, changes), = _audit(bare)
     assert action == "ADD_CODE" and who == "test:invadmin"
     assert f"FestOps label {code}" in changes["codes"]["new"]
-    assert GIVE not in client.get(base).get_data(as_text=True)
+    assert GIVE not in client.get(f"{base}?tab=edit").get_data(as_text=True)
 
 
 def test_give_number_is_refused_when_the_unit_has_one(client, unit, printer):
     login(client, "test:invadmin")
     base = f"/inv/admin/units/{unit.id}"
-    assert GIVE not in client.get(base).get_data(as_text=True)
+    assert GIVE not in client.get(f"{base}?tab=edit").get_data(as_text=True)
     resp = client.post(f"{base}/give-number", follow_redirects=True)
     assert "already has a number" in resp.get_data(as_text=True)
     assert _numbers(unit) == ["U-0001"]
@@ -534,7 +538,7 @@ def test_give_number_is_hidden_and_refused_for_a_retired_unit(client, bare, prin
     db.session.commit()
     login(client, "test:invadmin")
     base = f"/inv/admin/units/{bare.id}"
-    assert GIVE not in client.get(base).get_data(as_text=True)
+    assert GIVE not in client.get(f"{base}?tab=edit").get_data(as_text=True)
     resp = client.post(f"{base}/give-number", follow_redirects=True)
     assert "A retired unit cannot be given a number." in resp.get_data(as_text=True)
     assert _numbers(bare) == [] and db.session.query(InvPrintJob).count() == 0
@@ -554,7 +558,7 @@ def test_give_number_without_a_printer_still_adds_the_number(client, bare):
 def test_operator_sees_no_give_number_button(client, bare, printer):
     login(client, "test:operator")
     base = f"/inv/admin/units/{bare.id}"
-    assert GIVE not in client.get(base).get_data(as_text=True)
+    assert GIVE not in client.get(f"{base}?tab=edit").get_data(as_text=True)
     assert client.post(f"{base}/give-number").status_code == 403
     assert _numbers(bare) == []
 
@@ -625,7 +629,7 @@ def test_unit_without_a_number_says_so_and_never_shows_its_database_id(client, n
 
 def test_unit_page_shows_the_internal_id_as_a_muted_line(client, nameless_number):
     login(client, "test:operator")
-    page = client.get(f"/inv/admin/units/{nameless_number.id}").get_data(as_text=True)
+    page = client.get(f"/inv/admin/units/{nameless_number.id}?tab=edit").get_data(as_text=True)
     assert (f'<div class="muted">Internal database ID: {nameless_number.id}. '
             "For troubleshooting only; it is never printed or scanned.</div>") in page
     assert f"unit {nameless_number.id}" not in page
@@ -875,47 +879,34 @@ def _prep(event, unit, status, when=None):
     db.session.commit()
 
 
-def test_unit_page_summary_says_works_with_local_time(client, inv):
+def test_unit_page_status_says_works_with_local_time(client, inv):
     from datetime import datetime
     event, (u,) = _week_units(inv, 1)
     _prep(event, u, "CHECKED", datetime(2026, 12, 8, 15, 14))
     login(client, "test:operator")
     page = _page(client, u)
-    assert "This week: Works, 2026-12-08 10:14" in page
-    assert page.index("This week:") < page.index("Fix this unit")
+    assert '<span class="works">Works</span>, checked Dec 8 at 10:14 AM' in page
+    assert page.index('id="status"') < page.index('id="where"')
 
 
-def test_unit_page_summary_says_broken(client, inv):
+def test_unit_page_status_says_broken(client, inv):
     event, (u,) = _week_units(inv, 1)
     _prep(event, u, "FAILED_CHECK")
     login(client, "test:operator")
-    assert "This week: Broken," in _page(client, u)
+    assert '<span class="broken">Broken</span>, checked' in _page(client, u)
 
 
-def test_unit_page_summary_not_seen_has_no_time(client, inv):
+def test_unit_page_status_not_checked_has_no_time(client, inv):
     _, (u,) = _week_units(inv, 1)
     login(client, "test:operator")
-    page = _page(client, u)
-    assert "This week: Not seen<" in page
-    assert "Where: Not seen this week.<" in page
+    assert "Not checked this week" in _page(client, u)
 
 
-def test_unit_page_not_seen_names_the_last_recorded_container(client, inv):
-    from tests.inventory.helpers import make_container
-    _week_units(inv, 0)
-    box = make_container(inv, "C-9002", name="Shelf two")
-    u = add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", "PL-002")])
-    db.session.commit()
-    login(client, "test:operator")
-    assert "Where: Not seen this week. Last recorded in C-9002 Shelf two.<" in _page(client, u)
-
-
-def test_unit_page_summary_omits_this_week_without_a_default_event(client, unit):
+def test_unit_page_without_a_default_event_still_says_where(client, unit):
     login(client, "test:operator")
     page = _page(client, unit)
-    assert "This week:" not in page
-    assert "Where: Not placed<" in page
-    assert "Condition: In service" in page
+    assert "Not placed yet" in page
+    assert "In service" in page
 
 
 def test_unit_page_without_a_default_event_shows_the_container(client, inv):
@@ -924,7 +915,7 @@ def test_unit_page_without_a_default_event_shows_the_container(client, inv):
     u = add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", "PL-003")])
     db.session.commit()
     login(client, "test:operator")
-    assert "Where: C-9003 Shelf three<" in _page(client, u)
+    assert "Shelf three" in _page(client, u)
 
 
 def test_units_list_still_says_not_seen_for_a_placed_unit(client, inv):
@@ -938,7 +929,7 @@ def test_units_list_still_says_not_seen_for_a_placed_unit(client, inv):
     assert ",Not seen," in _list(client, format="csv").get_data(as_text=True)
 
 
-def test_unit_page_summary_shows_where_for_a_placed_unit(client, inv):
+def test_unit_page_shows_where_for_a_placed_unit(client, inv):
     from tests.inventory.helpers import make_container
     event, _ = _week_units(inv, 0)
     box = make_container(inv, "C-9001", name="Shelf nine")
@@ -946,39 +937,99 @@ def test_unit_page_summary_shows_where_for_a_placed_unit(client, inv):
     db.session.commit()
     _prep(event, u, "CHECKED")
     login(client, "test:operator")
-    assert "Where: C-9001 Shelf nine<" in _page(client, u)
+    assert "Shelf nine" in _page(client, u)
 
 
-def test_unit_page_summary_counts_open_flags(client, unit):
+def test_unit_page_counts_open_flags(client, unit):
     login(client, "test:operator")
-    assert "Open flags: 0" in _page(client, unit)
+    page = _page(client, unit)
+    assert "No open flags" in page and 'id="flags"' not in page
     raise_flag(ACTOR, "LOOKUP", "DAMAGED", unit=unit)
     db.session.commit()
-    assert "Open flags: 1" in _page(client, unit)
+    page = _page(client, unit)
+    assert '<a href="#flags">1 open flags</a>' in page and 'id="flags"' in page
 
 
-def test_fix_this_unit_is_closed_on_a_normal_load(client, unit):
+def test_page_opens_on_about(client, unit):
     login(client, "test:invadmin")
     page = _page(client, unit)
-    assert '<details id="fix-unit">' in page
+    assert 'id="status"' in page and 'id="history"' in page
+    assert "Assigned to: not tracked yet" in page
+    assert 'name="condition"' not in page
 
 
-def test_fix_this_unit_opens_after_a_refused_identifier_or_number(client, inv, unit):
+def test_edit_tab_for_admin(client, unit):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
+    assert 'name="condition"' in page and 'name="note_type"' in page
+    assert "Internal database ID" in page
+    assert 'id="status"' not in page
+
+
+def test_unknown_tab_opens_about(client, unit):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/units/{unit.id}?tab=bogus").get_data(as_text=True)
+    assert 'id="status"' in page and 'name="condition"' not in page
+
+
+def test_edit_tab_for_operator_has_only_notes(client, unit):
+    login(client, "test:operator")
+    page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
+    assert 'name="note_type"' in page and "Internal database ID" in page
+    assert 'name="condition"' not in page and "unit_set_details" not in page
+    assert f"/units/{unit.id}/details" not in page
+
+
+def test_error_returns_to_edit(client, unit):
     login(client, "test:invadmin")
     resp = client.post(f"/inv/admin/units/{unit.id}/identifiers",
-                       data={"kind": "SERIAL", "value": "U-0099"}, follow_redirects=True)
-    assert '<details id="fix-unit" open>' in resp.get_data(as_text=True)
-    resp = client.post(f"/inv/admin/units/{unit.id}/give-number", follow_redirects=True)
-    assert "already has a number" in resp.get_data(as_text=True)
-    assert '<details id="fix-unit" open>' in resp.get_data(as_text=True)
-    assert '<details id="fix-unit">' in _page(client, unit)
+                       data={"kind": "SERIAL", "value": "U-0099"})
+    assert resp.headers["Location"].endswith("tab=edit")
+    resp = client.post(f"/inv/admin/units/{unit.id}/give-number")
+    assert resp.headers["Location"].endswith("tab=edit")
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "already has a number" in page and 'name="condition"' in page
+
+
+def test_success_returns_to_about(client, unit):
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/units/{unit.id}/condition", data={"condition": "REPAIR"})
+    assert "tab=" not in resp.headers["Location"]
+
+
+def test_note_success_returns_to_about_notes(client, unit):
+    login(client, "test:operator")
+    resp = client.post(f"/inv/admin/units/{unit.id}/notes",
+                       data={"note_type": "PICKER", "body": "Invented"})
+    assert resp.headers["Location"].endswith("#notes")
+    assert "tab=" not in resp.headers["Location"]
+
+
+def test_more_than_three_notes_fold(client, unit):
+    login(client, "test:operator")
+    for i in range(3):
+        client.post(f"/inv/admin/units/{unit.id}/notes",
+                    data={"note_type": "PICKER", "body": f"Invented {i}"})
+    assert "Show all notes" not in _page(client, unit)
+    client.post(f"/inv/admin/units/{unit.id}/notes",
+                data={"note_type": "PICKER", "body": "Invented 3"})
+    page = _page(client, unit)
+    assert "Show all notes (4)" in page
+    assert "Picker" in page
+
+
+def test_this_week_line_is_gone(client, inv):
+    _, (u,) = _week_units(inv, 1)
+    login(client, "test:operator")
+    page = _page(client, u)
+    assert "This week:" not in page and "Fix this unit" not in page
 
 
 def test_every_form_still_posts_where_it_did(client, inv):
     bare_unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-FORMS1")], name="Forms unit")
     db.session.commit()
     login(client, "test:invadmin")
-    page = _page(client, bare_unit)
+    page = client.get(f"/inv/admin/units/{bare_unit.id}?tab=edit").get_data(as_text=True)
     base = f"/inv/admin/units/{bare_unit.id}"
     serial = next(i for i in bare_unit.identifiers if i.value == "SN-FORMS1")
     for suffix in ("/details", "/notes", "/print", "/give-number",

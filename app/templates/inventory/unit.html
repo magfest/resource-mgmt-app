@@ -2,29 +2,54 @@
 {% from "inventory/_flag_rows.html" import resolve_form %}
 {% block title %}{{ unit.name or number or "No number yet" }} - Units - Inventory{% endblock %}
 {% block content %}
+<style nonce="{{ csp_nonce }}">
+  .unit-tabs { display: flex; gap: 16px; margin: 12px 0 16px; border-bottom: 1px solid #ddd; }
+  .unit-tabs a { padding: 8px 4px; text-decoration: none; color: inherit; border-bottom: 3px solid transparent; }
+  .unit-tabs a[aria-current="page"] { font-weight: 600; border-bottom-color: #333; }
+  .unit-page h2 { margin: 24px 0 8px; font-size: 1.15em; }
+  .unit-page, .unit-page td, .unit-page .note-body { overflow-wrap: anywhere; }
+  .unit-page .pair { width: 100%; border-collapse: collapse; }
+  .unit-page .pair th { text-align: left; font-weight: normal; color: #666; padding: 4px 12px 4px 0; vertical-align: top; }
+  .unit-page .pair td { padding: 4px 0; }
+  .unit-page .works { color: #1a7f37; font-weight: 600; }
+  .unit-page .broken { color: #c62828; font-weight: 600; }
+  .unit-page .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: #eee; font-size: 0.85em; }
+  .unit-page .note { padding: 8px 0; border-bottom: 1px solid #eee; }
+  .unit-page .note-body, .unit-page .history-note { white-space: pre-wrap; }
+  .unit-page .hist { padding: 6px 0; }
+  .unit-page .scroll-x { overflow-x: auto; }
+  .unit-page .field { display: block; margin-bottom: 8px; }
+  .unit-page textarea, .unit-page input[type="text"] { max-width: 100%; box-sizing: border-box; }
+</style>
+{% macro note_row(n) %}
+  <div class="note">
+    <span class="badge">{{ n.badge }}</span>
+    <div class="note-body">{{ n.body }}</div>
+    {% if n.byline %}<div class="muted">{{ n.byline }}</div>{% endif %}
+  </div>
+{% endmacro %}
+{% macro hist_row(h) %}
+  <div class="hist">{{ h.stamp }} &middot; {{ h.who }} {{ h.text }}
+    {% if h.note %}<div class="muted history-note">{{ h.note }}</div>{% endif %}</div>
+{% endmacro %}
+<div class="unit-page">
 <h1>{% if unit.name or number %}{{ unit.name or number }}{% else %}<span class="muted">No number yet</span>{% endif %}</h1>
-{% if unit.name %}<div class="muted">{{ number or "No number yet" }}</div>{% endif %}
-<div class="muted mb-16"><a href="{{ url_for('inventory.units') }}">Units</a></div>
-<div class="card mb-16">
-  <div><strong>Type</strong> {{ unit.item.item_name }}{% if model %} <span class="muted">{{ model }}</span>{% endif %}</div>
-  {% if event %}
-  <div>This week: {{ summary.week_word }}{% if summary.week != 'NOT_SEEN' and checked_text %}, {{ checked_text }}{% endif %}</div>
-  {% endif %}
-  <div>Condition: {{ condition_words.get(unit.condition, unit.condition) }}</div>
-  <div>{{ where_text }}</div>
-  <div>{% if summary.open_flags %}<a href="#open-flags">Open flags: {{ summary.open_flags }}</a>{% else %}Open flags: 0{% endif %}</div>
-  <div class="muted">Internal database ID: {{ unit.id }}. For troubleshooting only; it is never printed or scanned.</div>
-</div>
-
-<h2>Details</h2>
+{% if subline %}<div class="muted">{{ subline }}</div>{% endif %}
+<div class="muted"><a href="{{ url_for('inventory.units') }}">Units</a></div>
+<nav class="unit-tabs">
+  <a href="{{ url_for('inventory.unit_page', unit_id=unit.id) }}"{% if not editing %} aria-current="page"{% endif %}>About</a>
+  <a href="{{ url_for('inventory.unit_page', unit_id=unit.id, tab='edit') }}"{% if editing %} aria-current="page"{% endif %}>Edit</a>
+</nav>
+{% if editing %}
 {% if is_inv_admin %}
+<h2>Details</h2>
 <form method="post" action="{{ url_for('inventory.unit_set_details', unit_id=unit.id) }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label style="display: block;">Name
+  <label class="field">Name
     <input type="text" name="name" value="{{ unit.name or '' }}" maxlength="64" style="width: 100%; max-width: 360px;">
   </label>
   {% for f in field_inputs %}
-  <label style="display: block;">{{ f.field.name }}{% if not f.field.is_active %} (retired){% endif %}
+  <label class="field">{{ f.field.name }}{% if not f.field.is_active %} (retired){% endif %}
     {% if f.is_choice %}
     <select name="field_{{ f.field.id }}">
       <option value=""></option>
@@ -46,13 +71,8 @@
   {% if not has_gear_kind %}<div class="muted">Set this model's gear kind on the Items page to add fields.</div>{% endif %}
   <button type="submit" class="btn btn-small">Save details</button>
 </form>
-{% else %}
-<div class="card mb-16">
-  <div><strong>Name</strong> {{ unit.name or 'none' }}</div>
-  {% for f in field_inputs %}<div><strong>{{ f.field.name }}</strong> {{ f.text or 'none' }}</div>{% endfor %}
-  {% if not has_gear_kind %}<div class="muted">Set this model's gear kind on the Items page to add fields.</div>{% endif %}
-</div>
 {% endif %}
+
 {% if note_types %}
 <h2>Add a note</h2>
 <form method="post" action="{{ url_for('inventory.unit_add_note', unit_id=unit.id) }}" class="card mb-16">
@@ -65,30 +85,16 @@
 </form>
 {% endif %}
 
-<h2>Print label</h2>
-<form method="post" action="{{ url_for('inventory.unit_print', unit_id=unit.id) }}" class="card mb-16">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <select name="mode" aria-label="How to print">
-    {% for mode, words in print_modes %}<option value="{{ mode }}">{{ words }}</option>{% endfor %}
-  </select>
-  <button type="submit" class="btn btn-small">Print label</button>
-  {% if print_options.details_changed %}<div class="muted">The details changed since the last label.</div>{% endif %}
-</form>
-
-{% set fix_failed = get_flashed_messages(with_categories=true) | selectattr(0, "equalto", "error") | list %}
-<div class="mb-16">
-<details id="fix-unit"{% if fix_failed %} open{% endif %}>
-  <summary><strong>Fix this unit</strong></summary>
-<h2>Identifiers</h2>
-<div style="overflow-x: auto;">
+{% if is_inv_admin %}
+<h2>Codes</h2>
+<div class="scroll-x">
 <table>
-  <thead><tr><th>Kind</th><th>Code</th>{% if is_inv_admin %}<th></th>{% endif %}</tr></thead>
+  <thead><tr><th>Kind</th><th>Code</th><th></th></tr></thead>
   <tbody>
   {% for i in identifiers %}
     <tr {% if i.retired_at %}class="muted" style="opacity: 0.55;"{% endif %}>
       <td>{{ kind_words.get(i.kind, i.kind) }}{% if i.retired_at %} (retired){% endif %}</td>
       <td>{{ i.value }}</td>
-      {% if is_inv_admin %}
       <td>
         {% if not i.retired_at %}
         <form method="post" action="{{ url_for('inventory.unit_retire_identifier', unit_id=unit.id, identifier_id=i.id) }}" data-confirm="Retire {{ i.value }}? It stops finding this unit.">
@@ -97,14 +103,12 @@
         </form>
         {% endif %}
       </td>
-      {% endif %}
     </tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
 
-{% if is_inv_admin %}
 <form method="post" action="{{ url_for('inventory.unit_add_identifier', unit_id=unit.id) }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <strong>Add an identifier</strong>
@@ -117,6 +121,15 @@
   <button type="submit" class="btn btn-small">Add</button>
   <div class="muted">A MAGFest tag or FestOps label replaces the unit's current number. To change a serial, add the new one, then retire the old one.</div>
 </form>
+{% if can_give_number %}
+<form method="post" action="{{ url_for('inventory.unit_give_number', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="btn btn-small">Give this unit a U- number and print</button>
+  <div class="muted">This unit has no MAGFest tag or FestOps label to scan.</div>
+</form>
+{% endif %}
+
+<h2>Condition and model</h2>
 <form method="post" action="{{ url_for('inventory.unit_set_condition', unit_id=unit.id) }}" class="card mb-16" data-confirm-value="{{ retired_condition }}" data-confirm="Retire this unit? Every identifier on it stops finding it.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Condition
@@ -135,75 +148,21 @@
   </label>
   <button type="submit" class="btn btn-small">Change item type</button>
 </form>
-{% endif %}
 
-{% if is_inv_admin and can_give_number %}
-<form method="post" action="{{ url_for('inventory.unit_give_number', unit_id=unit.id) }}" class="card mb-16">
+<h2>Print label</h2>
+<form method="post" action="{{ url_for('inventory.unit_print', unit_id=unit.id) }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="btn btn-small">Give this unit a U- number and print</button>
-  <div class="muted">This unit has no MAGFest tag or FestOps label to scan.</div>
+  <select name="mode" aria-label="How to print">
+    {% for mode, words in print_modes %}<option value="{{ mode }}">{{ words }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn btn-small">Print label</button>
+  {% if print_options.details_changed %}<div class="muted">The details changed since the last label.</div>{% endif %}
 </form>
-{% endif %}
-</details>
-</div>
 
-<h2 id="open-flags">Open flags</h2>
-<div style="overflow-x: auto;">
-<table>
-  <thead><tr><th>When</th><th>Reason</th><th>Raised by</th><th>Note</th><th>Resolve</th></tr></thead>
-  <tbody>
-  {% for r in open_rows %}
-    <tr><td class="muted">{{ r.when }}</td><td>{{ r.reason }}</td><td>{{ r.raised_by }}</td><td>{{ r.flag.note or '' }}</td>
-      <td>{{ resolve_form(r, url_for('inventory.unit_page', unit_id=unit.id)) }}</td></tr>
-  {% else %}
-    <tr><td colspan="5" class="muted">No open flags.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-{% if resolved_rows %}
-<h2>Resolved flags</h2>
-<div style="overflow-x: auto;">
-<table>
-  <thead><tr><th>Raised</th><th>Reason</th><th>Note</th><th>Resolved by</th><th>Resolved</th><th>Resolution</th></tr></thead>
-  <tbody>
-  {% for r in resolved_rows %}
-    <tr><td class="muted">{{ r.when }}</td><td>{{ r.reason }}</td><td>{{ r.flag.note or '' }}</td><td>{{ r.resolved_by }}</td>
-      <td class="muted">{{ r.resolved_when }}</td><td>{{ r.flag.resolution_note }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
 {% endif %}
 
-<h2>Changes</h2>
-<div style="overflow-x: auto;">
-<table class="mb-16">
-  <thead><tr><th>When</th><th>What changed</th><th>Who</th></tr></thead>
-  <tbody>
-  {% for c in changes %}
-    <tr><td class="muted">{{ c.when }}</td><td>{% for line in c.what %}{{ line }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td><td>{{ c.who }}</td></tr>
-  {% else %}
-    <tr><td colspan="3" class="muted">No corrections.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-
-<h2>Recent movements</h2>
-<div style="overflow-x: auto;">
-<table>
-  <thead><tr><th>When</th><th>What</th><th>Who</th></tr></thead>
-  <tbody>
-  {% for when, text, who in movements %}
-    <tr><td class="muted">{{ when }}</td><td>{{ text }}</td><td>{{ who }}</td></tr>
-  {% else %}
-    <tr><td colspan="3" class="muted">No movements.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-
+<div class="muted">Internal database ID: {{ unit.id }}. For troubleshooting only; it is never printed or scanned.</div>
+{% if is_inv_admin %}
 <script nonce="{{ csp_nonce }}">
   document.addEventListener('submit', function (e) {
     var form = e.target.closest('form[data-confirm]');
@@ -214,4 +173,63 @@
     if (!window.confirm(form.getAttribute('data-confirm'))) e.preventDefault();
   });
 </script>
+{% endif %}
+{% else %}
+<div id="status" class="card mb-16">
+  {% if status.check %}<div>{% if status.check_word == 'WORKS' %}<span class="works">Works</span>{{ status.check[5:] }}{% elif status.check_word == 'BROKEN' %}<span class="broken">Broken</span>{{ status.check[6:] }}{% else %}{{ status.check }}{% endif %}</div>{% endif %}
+  <div>{{ status.standing }}</div>
+  <div>{% if status.open_flags %}<a href="#flags">{{ status.open_flags }} open flags</a>{% else %}No open flags{% endif %}</div>
+</div>
+
+<h2 id="where">Where it is</h2>
+<div>{{ where }}</div>
+{% if placed %}<div class="muted">{{ placed }}</div>{% endif %}
+
+<h2 id="who">Who has it</h2>
+<div class="muted">Assigned to: not tracked yet</div>
+<div class="muted">Allocated to: not tracked yet</div>
+<div class="muted">Checked out to: not tracked yet</div>
+
+<h2 id="find-by">Find it by</h2>
+{% if find_by %}
+<table class="pair">{% for label, value in find_by %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+{% else %}<div class="muted">No codes yet.</div>{% endif %}
+
+<h2 id="details">Details</h2>
+{% if details %}
+<table class="pair">{% for label, value in details %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+{% else %}<div class="muted">No details recorded.</div>{% endif %}
+
+<h2 id="notes">Notes</h2>
+{% for n in notes[:3] %}{{ note_row(n) }}{% else %}<div class="muted">No notes yet.</div>{% endfor %}
+{% if notes|length > 3 %}
+<details><summary>Show all notes ({{ notes|length }})</summary>
+  {% for n in notes[3:] %}{{ note_row(n) }}{% endfor %}
+</details>
+{% endif %}
+
+{% if open_rows %}
+<h2 id="flags">Open flags</h2>
+<div class="scroll-x">
+<table>
+  <thead><tr><th>When</th><th>Reason</th><th>Raised by</th><th>Note</th><th>Resolve</th></tr></thead>
+  <tbody>
+  {% for r in open_rows %}
+    <tr><td class="muted">{{ r.when }}</td><td>{{ r.reason }}</td><td>{{ r.raised_by }}</td><td>{{ r.flag.note or '' }}</td>
+      <td>{{ resolve_form(r, url_for('inventory.unit_page', unit_id=unit.id)) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<h2 id="history">What happened to it</h2>
+{% for h in history[:10] %}{{ hist_row(h) }}{% else %}<div class="muted">Nothing recorded yet.</div>{% endfor %}
+{% if history|length > 10 %}
+<details><summary>Show all ({{ history|length }})</summary>
+  {% for h in history[10:] %}{{ hist_row(h) }}{% endfor %}
+</details>
+{% endif %}
+{% endif %}
+</div>
 {% endblock %}
