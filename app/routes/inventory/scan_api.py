@@ -566,25 +566,19 @@ def _own_count(count_id) -> InvCount:
 @inventory_bp.post("/scan/api/count/submit")
 @api
 def scan_count_submit():
-    """Apply a count. A held item with no line refuses the whole submit and writes nothing."""
+    """Apply the touched lines of a count. A submit with no lines is refused."""
     _count_device()
     data = _json_body()
     raw_lines = data.get("lines")
-    refused: dict = {}
 
     def submit() -> dict:
         actor = scan_actor()
         if not isinstance(raw_lines, list):
             raise InventoryError("Send the counted lines.")
         count = _own_count(data.get("count_id"))
-        result = submit_count(count, [_line_in(r) for r in raw_lines], actor)
-        if result["unresolved"]:
-            refused.update(result)
-            raise InventoryError("Confirm or correct first: " + ", ".join(result["unresolved"]))
-        return result
+        return submit_count(count, [_line_in(r) for r in raw_lines], actor)
 
-    answer = run_once(data.get("client_request_id"), submit)
-    return jsonify({**answer, **refused} if refused else answer)
+    return jsonify(run_once(data.get("client_request_id"), submit))
 
 
 NOT_A_CHECK_DEVICE = "This scanner is not set up for checking."

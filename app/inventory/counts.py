@@ -29,6 +29,7 @@ from app.models.constants import (
 
 SERIALIZED_REFUSAL = "Count units at their own station."
 ALREADY_FINISHED = "This count is already finished."
+NOTHING_COUNTED = "Count at least one item first."
 TOO_LARGE = "That number is too large."
 MAX_QUANTITY = 100000
 
@@ -58,7 +59,10 @@ def _held_rows(container: InvContainer) -> list[InvStock]:
 
 
 def start_count(container: InvContainer, actor: Actor) -> InvCount:
-    """Open a count and record what the ledger holds as each held item's expected quantity."""
+    """Open a count and record what the ledger holds as each held item's expected quantity.
+
+    A line with a NULL counted quantity is unanswered. Readers treat it as not counted.
+    """
     count = InvCount(container_id=container.id, user_id=actor.user_id,
                      shift_id=actor.shift_id, device_id=actor.device_id,
                      started_at=datetime.utcnow())
@@ -86,12 +90,15 @@ def _is_blind(count: InvCount) -> bool:
 
 
 def _last_counted(count: InvCount) -> dict[int, datetime]:
-    """Latest submit time per item over this container's other submitted counts."""
+    """Latest submit time per item over this container's other submitted counts.
+
+    Only answered lines count; a held item the volunteer never touched keeps its old date.
+    """
     rows = (db.session.query(InvCountLine.item_id, func.max(InvCount.submitted_at))
             .join(InvCount, InvCount.id == InvCountLine.count_id)
             .filter(InvCount.container_id == count.container_id,
                     InvCount.submitted_at.isnot(None), InvCount.id != count.id,
-                    not_undone())
+                    InvCountLine.counted_quantity.isnot(None), not_undone())
             .group_by(InvCountLine.item_id).all())
     return dict(rows)
 
@@ -161,24 +168,20 @@ def _is_stale(count: InvCount, item_id: int) -> bool:
 
 
 def submit_count(count: InvCount, lines: list[CountLineIn], actor: Actor) -> dict:
-    """Apply a count. Returns `applied`, `stale` and `unresolved` item names.
+    """Apply the lines the volunteer touched. Returns `applied` and `stale` item names.
 
-    Nothing is written while `unresolved` is non-empty: a held item with no line.
-    A kept of 0 resolves an item as none. A stale line is skipped and recorded;
-    the other lines still apply. Raises InventoryError on invalid input.
+    Held items with no line are left alone: no movement, no counted value.
+    A kept of 0 records an item as none. A stale line is skipped and recorded;
+    the other lines still apply. Raises InventoryError on invalid input or no lines.
     """
     if count.submitted_at is not None:
         raise CountFinished(ALREADY_FINISHED)
     container = count.container
     if not container.is_active:
         raise InventoryError(f"{container.label_code} is inactive.")
+    if not lines:
+        raise InventoryError(NOTHING_COUNTED)
     items = _validated(lines)
-    unresolved = [r.item.item_name for r in _held_rows(container) if r.item_id not in items]
-    if unresolved:
-        return {"applied": 0, "stale": [], "unresolved": unresolved,
-                "unresolved_items": [{"item_id": r.item_id, "name": r.item.item_name}
-                                     for r in _held_rows(container)
-                                     if r.item_id not in items]}
     stored = {line.item_id: line for line in count.lines}
     live, stale = [], []
     for line in lines:
@@ -207,7 +210,7 @@ def submit_count(count: InvCount, lines: list[CountLineIn], actor: Actor) -> dic
                           actor, count_id=count.id)
     count.submitted_at = datetime.utcnow()
     db.session.flush()
-    return {"applied": len(live), "stale": stale, "unresolved": [], "unresolved_items": []}
+    return {"applied": len(live), "stale": stale}
 
 
 def item_choice(item: SupplyItem) -> dict:

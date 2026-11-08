@@ -75,21 +75,76 @@ def test_adjusts_are_written_before_discards_across_lines(inv):
     assert actions == ["ADJUST", "ADJUST", "DISCARD"]
 
 
-def test_uncounted_held_item_blocks_and_writes_nothing(inv):
-    tote = make_container(inv, "C-0001", kind="BIN")
-    tape = inv.pens.__class__(category_id=inv.category.id, item_name="Tape", unit="each")
+def _tape(inv, tote, quantity=4, name="Tape"):
+    tape = inv.pens.__class__(category_id=inv.category.id, item_name=name, unit="each")
     db.session.add(tape)
     db.session.flush()
-    add_stock(tape, tote, 4, ACTOR)
-    c = start_count(tote, ACTOR)
+    add_stock(tape, tote, quantity, ACTOR)
+    return tape
+
+
+def _line(count, item):
+    return InvCountLine.query.filter_by(count_id=count.id, item_id=item.id).one()
+
+
+def _held_three(inv):
+    from datetime import datetime
+    tote = make_container(inv, "C-0001", kind="BIN")
+    tape, glue = _tape(inv, tote, 4), _tape(inv, tote, 6, "Glue")
+    add_stock(inv.pens, tote, 10, ACTOR)
+    first = start_count(tote, ACTOR)
+    submit_count(first, [CountLineIn(inv.pens.id, kept=10), CountLineIn(tape.id, kept=4),
+                         CountLineIn(glue.id, kept=6)], ACTOR)
+    first.submitted_at = datetime(2026, 11, 1, 15, 0)
+    db.session.flush()
+    return tote, tape, glue
+
+
+def test_a_partial_recount_writes_only_the_touched_line(inv):
+    tote, tape, glue = _held_three(inv)
     before = InvMovement.query.count()
-    result = submit_count(c, [CountLineIn(inv.pens.id, kept=3)], ACTOR)
-    assert result["unresolved"] == ["Tape"] and result["applied"] == 0
-    assert InvMovement.query.count() == before
-    assert stock_quantity(inv.pens, tote) == 0 and c.submitted_at is None
-    result = submit_count(c, [CountLineIn(inv.pens.id, kept=3), CountLineIn(tape.id, kept=0)],
-                          ACTOR)
-    assert result["unresolved"] == [] and stock_quantity(tape, tote) == 0
+    c = start_count(tote, ACTOR)
+    result = submit_count(c, [CountLineIn(inv.pens.id, kept=7)], ACTOR)
+    assert result == {"applied": 1, "stale": []}
+    assert InvMovement.query.count() == before + 1
+    assert stock_quantity(inv.pens, tote) == 7
+    assert stock_quantity(tape, tote) == 4 and stock_quantity(glue, tote) == 6
+    assert _line(c, tape).counted_quantity is None and _line(c, tape).outcome is None
+    payload = {l["item_id"]: l for l in count_payload(start_count(tote, ACTOR))["lines"]}
+    assert payload[tape.id]["last_counted"] == "Nov 1, 10:00 AM"
+    assert payload[glue.id]["last_counted"] == "Nov 1, 10:00 AM"
+    assert payload[inv.pens.id]["last_counted"] != "Nov 1, 10:00 AM"
+
+
+def test_everything_else_matches_lines_are_answered_and_dated(inv):
+    tote, tape, glue = _held_three(inv)
+    before = InvMovement.query.count()
+    c = start_count(tote, ACTOR)
+    submit_count(c, [CountLineIn(inv.pens.id, kept=7), CountLineIn(tape.id, kept=4),
+                     CountLineIn(glue.id, kept=6)], ACTOR)
+    assert InvMovement.query.count() == before + 1
+    assert _line(c, tape).outcome == "UNCHANGED" and _line(c, tape).counted_quantity == 4
+    from datetime import datetime
+    c.submitted_at = datetime(2026, 11, 5, 17, 0)
+    db.session.flush()
+    payload = {l["item_id"]: l for l in count_payload(start_count(tote, ACTOR))["lines"]}
+    assert {l["last_counted"] for l in payload.values()} == {"Nov 5, 12:00 PM"}
+
+
+def test_a_count_with_nothing_touched_is_refused(inv):
+    tote = make_container(inv, "C-0001", kind="BIN")
+    add_stock(inv.pens, tote, 4, ACTOR)
+    first = start_count(tote, ACTOR)
+    with pytest.raises(InventoryError, match="Count at least one item first."):
+        submit_count(first, [], ACTOR)
+    assert first.submitted_at is None and stock_quantity(inv.pens, tote) == 4
+
+
+def test_blindness_stays_ended_after_a_partial_recount(inv):
+    tote, tape, glue = _held_three(inv)
+    c = start_count(tote, ACTOR)
+    submit_count(c, [CountLineIn(inv.pens.id, kept=7)], ACTOR)
+    assert count_payload(start_count(tote, ACTOR))["blind"] is False
 
 
 def test_stale_line_is_refused_and_applied_lines_stay(inv):
@@ -269,17 +324,20 @@ def test_submit_applies_and_a_repeat_request_writes_once(client, ct):
     assert InvMovement.query.filter(InvMovement.action.in_(["ADJUST", "DISCARD"])).count() == 2
 
 
-def test_submit_with_an_unresolved_item_is_refused_and_lists_it(client, ct):
+def test_submit_saves_the_touched_line_and_leaves_the_rest(client, ct):
     tote = make_container(ct, "C-0001", kind="BIN")
     add_stock(ct.pens, tote, 4, ACTOR)
     db.session.commit()
     count_id = _start(client, "C-0001")["count_id"]
-    answer = _submit(client, count_id, [])
-    assert answer["ok"] is False and answer["unresolved"] == ["Blue Pen"]
-    assert answer["unresolved_items"] == [{"item_id": ct.pens.id, "name": "Blue Pen"}]
+    empty = _submit(client, count_id, [])
+    assert empty["ok"] is False and empty["message"] == "Count at least one item first."
     assert InvCount.query.one().submitted_at is None
-    fixed = _submit(client, count_id, [{"item_id": ct.pens.id, "kept": 0}])
-    assert fixed["ok"] is True and stock_quantity(ct.pens, tote) == 0
+    other = ct.pens.__class__(category_id=ct.category.id, item_name="Tape", unit="each")
+    db.session.add(other)
+    db.session.commit()
+    fixed = _submit(client, count_id, [{"item_id": other.id, "kept": 2}])
+    assert fixed["ok"] is True and stock_quantity(ct.pens, tote) == 4
+    assert stock_quantity(other, tote) == 2
 
 
 def test_submit_reports_stale_by_name(client, ct):
@@ -507,14 +565,6 @@ def test_browse_refuses_a_device_on_another_station_and_bad_ids(client, ct):
     assert client.post(BROWSE, json={}).get_json()["ok"] is False
 
 
-def test_the_unresolved_refusal_names_the_items_to_confirm(client, ct):
-    tote = make_container(ct, "C-0001", kind="BIN")
-    add_stock(ct.pens, tote, 4, ACTOR)
-    db.session.commit()
-    count_id = _start(client, "C-0001")["count_id"]
-    assert _submit(client, count_id, [])["message"] == "Confirm or correct first: Blue Pen"
-
-
 # ---- page logic, run under node; no browser is driven ----
 
 STATIC = os.path.join(os.path.dirname(__file__), "..", "..", "app", "static", "inventory")
@@ -524,26 +574,43 @@ const assert = require('assert');
 const c = require(process.env.COUNT_JS);
 const st = c.createCount({count_id: 7, code: 'C-0001', name: '', blind: true,
   held: [{item_id: 1, name: 'Pens'}, {item_id: 2, name: 'Tape'}], lines: [], usual: []});
-assert.deepEqual(st.unresolved().map((h) => h.name), ['Pens', 'Tape']);
+assert.deepEqual(st.untouched().map((h) => h.name), ['Pens', 'Tape']);
 st.setLine({id: 1, name: 'Pens'}, 20, false);
-assert.deepEqual(st.unresolved().map((h) => h.name), ['Tape']);
+assert.deepEqual(st.untouched().map((h) => h.name), ['Tape']);
 assert.equal(st.unsent(), true);
 st.markNone(2);
-assert.equal(st.unresolved().length, 0);
+assert.equal(st.untouched().length, 0);
 st.setDiscard(1, 5, 'DRIED_OUT');
 st.setLine({id: 1, name: 'Pens'}, 22, true);   // a recount keeps the discard
 assert.deepEqual(st.payload(), [
   {item_id: 1, kept: 22, is_approximate: true, discarded: 5, discard_reason: 'DRIED_OUT'},
   {item_id: 2, kept: 0, is_approximate: false, discarded: 0, discard_reason: null}]);
 assert.equal(st.lineCount(), 2);
-st.addHeld([{item_id: 3, name: 'Glue'}, {item_id: 1, name: 'Pens'}]);
-assert.deepEqual(st.unresolved().map((h) => h.name), ['Glue']);
 assert.equal(c.staleText(['Pens', 'Tape']),
   'Pens changed while you counted. Count it again. Tape changed while you counted. Count it again.');
 assert.equal(c.lineText({kept: 0, is_approximate: false, discarded: 0}), 'none');
 assert.equal(c.lineText({kept: 20, is_approximate: true, discarded: 5, discard_reason: 'DRIED_OUT'}),
   'about 20, 5 thrown out (Dried out)');
 console.log('flow ok');
+"""
+
+REST_SCRIPT = r"""
+const assert = require('assert');
+const c = require(process.env.COUNT_JS);
+const st = c.createCount({count_id: 1, code: 'C-1', blind: false,
+  held: [{item_id: 1, name: 'Pens'}, {item_id: 2, name: 'Tape'}, {item_id: 3, name: 'Glue'}],
+  lines: [{item_id: 1, expected: 20}, {item_id: 2, expected: 5}, {item_id: 3, expected: 9}]});
+assert.equal(st.canMatchRest(), true);
+st.setLine({id: 1, name: 'Pens'}, 18, false);
+st.matchRest();
+assert.equal(st.canMatchRest(), false, 'nothing is left to confirm');
+assert.deepEqual(st.payload().map((l) => [l.item_id, l.kept]), [[1, 18], [2, 5], [3, 9]]);
+st.markNone(3);   // an answered line can be changed afterwards
+assert.equal(st.line(3).kept, 0);
+const blind = c.createCount({count_id: 2, code: 'C-2', blind: true,
+  held: [{item_id: 1, name: 'Pens'}], lines: []});
+assert.equal(blind.canMatchRest(), false, 'a blind count has no expected numbers');
+console.log('rest ok');
 """
 
 PAGE_PRELUDE = r"""
@@ -605,6 +672,28 @@ const startAnswer = {ok: true, count_id: 5, code: 'C-0001', name: '', blind: tru
   held: [{item_id: 1, name: 'Pens', pack_size: 12}], lines: [], usual: []};
 """
 
+REST_PAGE_SCRIPT = PAGE_PRELUDE + r"""
+(async () => {
+  const started = onScan('C-0001');
+  await tick();
+  writes[0].resolve({ok: true, count_id: 5, code: 'C-0001', name: '', blind: false,
+    held: [{item_id: 1, name: 'Pens'}, {item_id: 2, name: 'Tape'}], usual: [],
+    lines: [{item_id: 1, expected: 20}, {item_id: 2, expected: 5}]});
+  await started;
+  assert.ok(texts(panel).includes('In this container (2)'));
+  const before = messages.length;
+  find(panel, 'Submit count (0 lines)').handlers.click();
+  await tick();
+  assert.equal(writes.length, 1, 'nothing touched sends nothing');
+  assert.equal(messages[messages.length - 1], 'Count at least one item first.');
+  find(panel, 'Everything else matches').handlers.click();
+  assert.equal(find(panel, 'Everything else matches'), undefined, 'gone once nothing is untouched');
+  assert.ok(find(panel, 'Submit count (2 lines)'));
+  console.log('rest page ok');
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
 PAGE_SCRIPT = PAGE_PRELUDE + r"""
 (async () => {
   const first = onScan('C-0001');
@@ -623,24 +712,20 @@ PAGE_SCRIPT = PAGE_PRELUDE + r"""
   }
   assert.equal(leaveHold(), true, 'an unsent line guards the page');
 
-  // Submit is refused locally while Tape has no count.
-  find(panel, 'Submit count (1 line)').handlers.click();
-  await tick();
-  assert.equal(writes.length, 1, 'no write while a held item is unresolved');
+  // An untouched held item does not block Submit.
   assert.ok(texts(panel).includes('Tape'));
-  find(panel, 'None here').handlers.click();
 
   // Submit, then a scan during the write, then a second tap on Submit.
-  find(panel, 'Submit count (2 lines)').handlers.click();
+  find(panel, 'Submit count (1 line)').handlers.click();
   await tick();
   assert.equal(writes.length, 2);
   const rid = writes[1].rid;
   const during = onScan('I-1');
-  find(panel, 'Submit count (2 lines)').handlers.click();
+  find(panel, 'Submit count (1 line)').handlers.click();
   await tick();
   assert.equal(writes.length, 2, 'a second tap does not send a second submit');
   assert.equal(reads.filter((x) => x[0] === '/find').length, 2, 'the scan waits for the submit');
-  writes[1].resolve({ok: true, applied: 1, stale: ['Pens'], unresolved: []});
+  writes[1].resolve({ok: true, applied: 1, stale: ['Pens']});
   const waited = await during;
   assert.equal(waited.ok, false);
   assert.equal(reads.filter((x) => x[0] === '/find').length, 2, 'the waiting scan did not open a pad');
@@ -804,6 +889,16 @@ def test_count_state_logic_under_node(tmp_path):
     result = _node(tmp_path, FLOW_SCRIPT, "flow_check.js")
     assert result.returncode == 0, result.stderr
     assert "flow ok" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_everything_else_matches_under_node(tmp_path):
+    """Runs the line logic and the page script on a stub DOM under node; no browser is driven."""
+    for script, name, ok in ((REST_SCRIPT, "rest_check.js", "rest ok"),
+                             (REST_PAGE_SCRIPT, "rest_page_check.js", "rest page ok")):
+        result = _node(tmp_path, script, name)
+        assert result.returncode == 0, result.stderr
+        assert ok in result.stdout
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

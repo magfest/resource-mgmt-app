@@ -239,6 +239,28 @@ def test_undo_a_count_writes_the_inverse(inv, shift):
     assert [(m.action, m.quantity) for m in undo_rows] == [("ADJUST", 8)]
 
 
+def test_undo_of_a_partial_recount_leaves_unanswered_items_alone(inv, shift):
+    actor = _actor(shift)
+    tote = make_container(inv, "C-0010", kind="BIN")
+    add_stock(inv.pens, tote, 12, ADMIN)
+    tape = inv.pens.__class__(category_id=inv.category.id, item_name="Tape", unit="each")
+    db.session.add(tape)
+    db.session.flush()
+    add_stock(tape, tote, 4, ADMIN)
+    db.session.commit()
+    count = start_count(tote, actor)
+    submit_count(count, [CountLineIn(inv.pens.id, kept=20)], actor)
+    db.session.commit()
+    undo_last(shift, now=_later(count, 5))
+    db.session.commit()
+    assert stock_quantity(inv.pens, tote) == 12 and stock_quantity(tape, tote) == 4
+    assert [(m.item_id, m.action) for m in InvMovement.query.filter_by(note="undo")] == \
+        [(inv.pens.id, "ADJUST")]
+    lines = {l.item_id: l.outcome for l in InvCountLine.query.filter_by(count_id=count.id)}
+    assert lines == {inv.pens.id: "UNDONE", tape.id: None}
+    assert find_balance_mismatches() == []
+
+
 def test_undo_a_count_with_a_discard_returns_every_balance(inv, shift):
     actor = _actor(shift)
     tote = make_container(inv, "C-0010", kind="BIN")

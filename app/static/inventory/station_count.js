@@ -51,8 +51,8 @@
 
   function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
 
-  // The lines of one open count. unresolved() lists held items with no line, which block
-  // Submit. version() changes on every edit, so a repeat tap of an unchanged Submit can
+  // The lines of one open count. untouched() lists held items with no line; Submit saves
+  // only the lines that exist. version() changes on every edit, so a repeat tap of an unchanged Submit can
   // reuse its request id and an edited one cannot.
   function createCount(start) {
     var held = (start.held || []).slice();
@@ -109,14 +109,22 @@
       lines: function () { return order.map(function (id) { return lines[id]; }); },
       lineCount: function () { return order.length; },
       held: function () { return held.slice(); },
-      addHeld: function (items) {
-        items.forEach(function (item) {
-          if (!held.some(function (h) { return h.item_id === item.item_id; })) { held.push(item); }
+      untouched: function () {
+        return held.filter(function (h) { return !lines[h.item_id]; });
+      },
+      // True while an untouched held item has an expected number to confirm.
+      canMatchRest: function () {
+        return this.untouched().some(function (h) { return expected[h.item_id] !== undefined; });
+      },
+      // Answers every untouched held item as matching its expected number, like Matches.
+      matchRest: function () {
+        this.untouched().forEach(function (h) {
+          if (expected[h.item_id] === undefined) { return; }
+          var line = ensure(h.item_id, h.name);
+          line.kept = expected[h.item_id];
+          line.is_approximate = false;
         });
         edits += 1;
-      },
-      unresolved: function () {
-        return held.filter(function (h) { return !lines[h.item_id]; });
       },
       unsent: function () { return order.length > 0; },
       version: function () { return edits; },
@@ -235,10 +243,15 @@
     });
     box.appendChild(usual);
 
-    var open = count.unresolved();
+    var open = count.untouched();
     if (open.length) {
-      box.appendChild(el('div', 'cnt-section', 'Last count: confirm or correct (' + open.length + ')'));
+      box.appendChild(el('div', 'cnt-section', 'In this container (' + open.length + ')'));
       open.forEach(function (h) { box.appendChild(openRow(h)); });
+      if (count.canMatchRest()) {
+        box.appendChild(button('Everything else matches', 'cnt-small', function () {
+          edit(function () { count.matchRest(); });
+        }));
+      }
     }
     var done = count.lines();
     if (done.length) {
@@ -488,12 +501,6 @@
 
   function submit() {
     if (!count || submitting) { if (submitting) { S.showMessage(MESSAGES.submitting, 'info'); } return; }
-    var open = count.unresolved();
-    if (open.length) {
-      fail('Confirm or correct first: ' + open.map(function (h) { return h.name; }).join(', '));
-      render();
-      return;
-    }
     if (!count.lineCount()) { fail(MESSAGES.nothingCounted); return; }
     submitting = true;
     var mine = count;
@@ -511,12 +518,6 @@
   function finish(answer) {
     if (answer.need_name || answer.fatal || answer.cancelled) { return; }
     submitId = null;
-    if (!answer.ok && answer.unresolved) {
-      count.addHeld(answer.unresolved_items || []);
-      fail(answer.message);
-      render();
-      return;
-    }
     if (!answer.ok && answer.finished) {
       count = null;
       result = null;
