@@ -55,6 +55,12 @@
 {% if unit.imported_notes %}
 <h2>From the old system</h2>
 <div class="card mb-16" style="white-space: pre-wrap; overflow-wrap: anywhere;">{{ unit.imported_notes }}</div>
+{% if is_inv_admin %}
+<form method="post" action="{{ url_for('inventory.unit_clear_imported_notes', unit_id=unit.id) }}" class="mb-16" data-confirm="Clear the notes from the old system? Typed notes are kept.">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="btn btn-small">Clear old notes</button>
+</form>
+{% endif %}
 {% endif %}
 
 <h2>Print label</h2>

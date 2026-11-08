@@ -412,3 +412,41 @@ def test_un_retiring_into_a_held_name_is_refused(client, inv, unit):
     db.session.expire_all()
     assert db.session.get(InvUnit, unit.id).condition == "RETIRED"
     assert db.session.get(InvUnit, other.id).condition == "IN_SERVICE"
+
+
+def test_admin_clears_old_notes_and_the_change_is_recorded(client, unit):
+    unit.imported_notes = "Invented pickup note"
+    unit.notes = "Typed note stays"
+    db.session.commit()
+    login(client, "test:invadmin")
+    base = f"/inv/admin/units/{unit.id}"
+    page = client.get(base).get_data(as_text=True)
+    assert "Clear old notes" in page
+    assert 'data-confirm="Clear the notes from the old system? Typed notes are kept."' in page
+    resp = client.post(f"{base}/imported-notes/clear")
+    assert resp.status_code == 302
+    db.session.expire_all()
+    cleared = db.session.get(InvUnit, unit.id)
+    assert cleared.imported_notes is None and cleared.notes == "Typed note stays"
+    assert _audit(unit) == [("NOTES", "test:invadmin",
+                             {"Old notes": {"old": "Invented pickup note", "new": None}})]
+    page = client.get(base).get_data(as_text=True)
+    assert "From the old system" not in page
+    assert "Old notes: Invented pickup note to none" in page
+
+
+def test_operator_cannot_clear_old_notes(client, unit):
+    unit.imported_notes = "Invented pickup note"
+    db.session.commit()
+    login(client, "test:operator")
+    base = f"/inv/admin/units/{unit.id}"
+    assert "Clear old notes" not in client.get(base).get_data(as_text=True)
+    assert client.post(f"{base}/imported-notes/clear").status_code == 403
+    db.session.expire_all()
+    assert db.session.get(InvUnit, unit.id).imported_notes == "Invented pickup note"
+
+
+def test_clearing_absent_old_notes_records_nothing(client, unit):
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/units/{unit.id}/imported-notes/clear")
+    assert _audit(unit) == []

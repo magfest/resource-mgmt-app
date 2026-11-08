@@ -5,7 +5,8 @@ from sqlalchemy.orm import selectinload
 
 from app import db
 from app.inventory.audit import (
-    ACTION_ADD_CODE, ACTION_CONDITION, ACTION_FIELDS, ACTION_ITEM, ACTION_RETIRE_CODE,
+    ACTION_ADD_CODE, ACTION_CONDITION, ACTION_FIELDS, ACTION_ITEM, ACTION_NOTES,
+    ACTION_RETIRE_CODE,
     record_unit_change, unit_changes,
 )
 from app.inventory.checks import checked_serial, display_number
@@ -417,6 +418,24 @@ def unit_set_details(unit_id: int):
         db.session.flush()
 
     return _commit_or_flash(_audited(change, unit, ACTION_FIELDS), "Details saved.", unit)
+
+
+@inventory_bp.post("/admin/units/<int:unit_id>/imported-notes/clear")
+@require_inventory_admin
+def unit_clear_imported_notes(unit_id: int):
+    unit = _unit_or_404(unit_id)
+
+    def clear():
+        old = unit.imported_notes
+        if old is None:
+            return
+        unit.imported_notes = None
+        db.session.flush()
+        # The Changes table keeps the cleared text; nothing else does.
+        record_unit_change(unit.id, ACTION_NOTES, {"Old notes": {"old": old, "new": None}},
+                           admin_actor().user_id)
+
+    return _commit_or_flash(clear, "Old notes cleared.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/print")
