@@ -77,6 +77,13 @@ def _begin(unit: InvUnit, actor, event, again: bool = False) -> dict:
     return {**_check_answer(check, False), "card": card}
 
 
+def _holder_refusal(held: AlreadyReceived, tag: str | None) -> InventoryError:
+    """Name the unit that holds the tag; AlreadyReceived alone says only "Already received"."""
+    holder = held.unit
+    return InventoryError(
+        f"{(tag or '').strip()} is already on {holder.name or held.already['code']}.")
+
+
 def _unit_id(data: dict) -> int:
     unit_id = data.get("unit_id")
     return unit_id if type(unit_id) is int else -1
@@ -113,7 +120,7 @@ def scan_unit_scan():
         elif kind == KIND_AMBIGUOUS:
             units = [c for c in resolution.candidates if isinstance(c, InvUnit)]
             if units and len(units) == len(resolution.candidates):
-                unit = next((u for u in units if u.id == data.get("unit_id")), None)
+                unit = next((u for u in units if u.id == _unit_id(data)), None)
                 if unit is None:
                     return {"candidates": [unit_card(u) for u in units[:MAX_CANDIDATES]]}
         if unit is not None:
@@ -164,11 +171,7 @@ def scan_unit_link():
             queued = link_tag(_unit_id(data), _optional_text(data, "tag"), actor,
                               client_request_id=data.get("client_request_id"))
         except AlreadyReceived as held:
-            # The tag screen's "Already received" does not say which unit holds it.
-            holder = held.unit
-            raise InventoryError(
-                f"{(_optional_text(data, 'tag') or '').strip()} is already on "
-                f"{holder.name or held.already['code']}.") from None
+            raise _holder_refusal(held, _optional_text(data, "tag")) from None
         unit = db.session.get(InvUnit, queued["unit_id"])
         return {**_begin(unit, actor, event), "label": "queued"}
 
@@ -241,8 +244,11 @@ def scan_unit_create():
         tag = (_optional_text(data, "tag") or "").strip() or None
         if tag is None and item.needs_asset_tag:
             raise InventoryError(f"{item.item_name} needs an asset tag. Scan one.")
-        queued = receive_unit(item, actor, tag=tag, container=home,
-                              client_request_id=data.get("client_request_id"))
+        try:
+            queued = receive_unit(item, actor, tag=tag, container=home,
+                                  client_request_id=data.get("client_request_id"))
+        except AlreadyReceived as held:
+            raise _holder_refusal(held, tag) from None
         unit = db.session.get(InvUnit, queued["unit_id"])
         return {**_begin(unit, actor, event, again=True), "label": "queued"}
 

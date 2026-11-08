@@ -282,6 +282,15 @@ def test_create_with_a_tag_places_the_unit_at_home_and_opens_a_check(unit_client
     assert answer["label"] == "queued"
 
 
+def test_create_refuses_a_tag_another_unit_holds_and_names_it(unit_client, inv):
+    from app.models import InvUnit
+    _tagged(inv, "TV-X-080", "FEST91080")
+    before = InvUnit.query.count()
+    answer = post(unit_client, "create", {"item_id": inv.laptop.id, "tag": "FEST91080"}).json
+    assert answer["ok"] is False and "TV-X-080" in answer["message"]
+    assert InvUnit.query.count() == before
+
+
 def test_create_without_a_tag_gives_a_generated_number(unit_client, inv):
     answer = post(unit_client, "create", {"item_id": inv.laptop.id}).json
     assert answer["ok"] and answer["card"]["code"].startswith("U-") and answer["check_id"]
