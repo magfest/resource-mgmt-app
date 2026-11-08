@@ -324,25 +324,32 @@ def retire_received_unit(unit: InvUnit, actor: Actor) -> None:
     set_condition(unit, INV_CONDITION_RETIRED)
 
 
-def add_unit(item, container, actor, identifiers: list[tuple[str, str]]) -> InvUnit:
-    """Create a unit from one or more (kind, value) identifiers.
+def add_unit(item, container, actor, identifiers: list[tuple[str, str]],
+             name: str | None = None) -> InvUnit:
+    """Create a unit from (kind, value) identifiers, a name, or both.
 
-    The container may be None for gear that has not been shelved yet. A
-    refusal raises InventoryError; the caller rolls back the partial unit.
+    A unit with no identifiers needs a name. The container may be None for
+    gear that has not been shelved yet. A refusal raises InventoryError; the
+    caller rolls back the partial unit.
     """
+    # names and unit_fields import InventoryError from this module.
+    from app.inventory.names import set_unit_name
+    from app.inventory.unit_fields import apply_model_defaults
     if not item.is_serialized:
         raise InventoryError(
             f"{item.item_name} is counted stock; scan the item and enter a quantity.")
-    if not identifiers:
-        raise InventoryError("A unit needs at least one identifier.")
+    if not identifiers and not (name or "").strip():
+        raise InventoryError("A unit needs a name or at least one identifier.")
     container_id = container.id if container else None
     with savepoint():
         unit = InvUnit(item_id=item.id, current_container_id=container_id,
                        created_by_user_id=actor.user_id)
         db.session.add(unit)
         db.session.flush()
+        set_unit_name(unit, name)
         for kind, value in identifiers:
             add_identifier(unit, kind, value)
+        apply_model_defaults(unit)
         _movement(INV_ACTION_ADD, actor, item_id=item.id, unit_id=unit.id,
                   to_container_id=container_id)
     return unit

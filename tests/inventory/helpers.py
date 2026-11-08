@@ -29,3 +29,26 @@ def enrolled_client(client, name="Scanner 1", station_code="LOOKUP"):
     response = client.post("/inv/scan/enroll", data={"code": raw})
     assert response.status_code == 302, response.get_data(as_text=True)
     return db.session.query(InvEnrollCode).one().device
+
+
+def seed_gear_kind(code, name, fields):
+    """Create a gear kind with fields given as (code, name, type, unit_or_choices).
+
+    A list or tuple in the last slot becomes the choices of a CHOICE field.
+    Returns the kind; each field is reachable as kind.fields in order.
+    """
+    from app.models import InvField, InvFieldChoice, InvGearKind
+    kind = InvGearKind(code=code, name=name)
+    db.session.add(kind)
+    db.session.flush()
+    for position, (fcode, fname, ftype, extra) in enumerate(fields):
+        field = InvField(gear_kind_id=kind.id, code=fcode, name=fname, field_type=ftype,
+                         unit_label=extra if isinstance(extra, str) else None,
+                         position=position)
+        db.session.add(field)
+        db.session.flush()
+        for cpos, label in enumerate(extra if isinstance(extra, (list, tuple)) else ()):
+            db.session.add(InvFieldChoice(field_id=field.id, label=label, position=cpos))
+    db.session.flush()
+    db.session.refresh(kind)
+    return kind

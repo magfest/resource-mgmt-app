@@ -16,6 +16,16 @@ ACTION_ADD_CODE = "ADD_CODE"
 ACTION_RETIRE_CODE = "RETIRE_CODE"
 ACTION_CONDITION = "CONDITION"
 ACTION_ITEM = "ITEM"
+ACTION_NAME = "NAME"
+ACTION_NOTES = "NOTES"
+ACTION_FIELDS = "FIELDS"
+ACTION_TAG_LINK = "TAG_LINK"
+ACTION_TAG_UNDO = "TAG_UNDO"
+
+
+def audit_who(actor) -> str:
+    """The audit user id: the signed-in user, else the shift on a shared device."""
+    return actor.user_id or f"shift:{actor.shift_id}"
 
 
 def record_unit_change(unit_id: int, action: str, changes: dict, user_id: str) -> None:
