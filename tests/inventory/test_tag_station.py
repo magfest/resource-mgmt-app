@@ -43,8 +43,7 @@ globalThis.InvScan = {
     if (path === '/check') { return Promise.resolve(checkAnswer); }
     return Promise.resolve({ok: true, units: candidates});
   },
-  write: (path, body) => { writes.push([path, body]); return Promise.resolve(
-    {ok: true, name: 'Lobby TV', code: 'FEST00007', station_seen: true, waiting: 0}); }
+  write: (path, body) => new Promise((resolve) => writes.push([path, body, resolve]))
 };
 require(process.env.TAG_JS);
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -77,6 +76,13 @@ const texts = () => { const out = []; (function w(n) { out.push(n._text); n.chil
   pick(chooser.options[0].value);
   await tick();
   assert.equal(writes.length, 1, 'a picked unit posts tag/link once');
+  const checks = reads.filter((r) => r[0] === '/check').length;
+  assert.deepEqual(await onScan('FEST00099'), {ok: false});
+  assert.deepEqual(messages[messages.length - 1], ['Wait for the link to finish.', 'error']);
+  assert.equal(reads.filter((r) => r[0] === '/check').length, checks, 'no tag/check while saving');
+  assert.equal(undos.length, 0);
+  writes[0][2]({ok: true, name: 'Lobby TV', station_seen: true, waiting: 0});
+  await tick();
   assert.equal(writes[0][0], '/link');
   assert.deepEqual(writes[0][1], {unit_id: 5, tag: 'FEST00003'});
   assert.ok(messages.some((m) => m[0] === 'FEST00003 is now Lobby TV'));
@@ -84,6 +90,27 @@ const texts = () => { const out = []; (function w(n) { out.push(n._text); n.chil
   assert.equal(undos[0].url, '/undo');
   assert.deepEqual(undos[0].payload, {unit_id: 5});
   assert.deepEqual(subjects[subjects.length - 1], {unitId: 5, label: 'FEST00003'});
+
+  // need_name leaves the pick open for a second tap.
+  candidates = [{id: 7, name: 'Gym TV', model: 'LG', details: ''}];
+  await onScan('FEST00010');
+  await tick();
+  const again = chooser;
+  again.pick(again.options[0].value);
+  writes[writes.length - 1][2]({ok: false, need_name: true});
+  await tick();
+  const n = writes.length;
+  again.pick(again.options[0].value);
+  await tick();
+  assert.equal(writes.length, n + 1, 'a second tap posts tag/link again after need_name');
+  writes[writes.length - 1][2]({ok: true, name: 'Gym TV', waiting: 0, station_seen: true});
+  await tick();
+
+  const scanJs = require(process.env.SCAN_JS);
+  assert.deepEqual(scanJs.undoRequest(undos[0], '/default', 'r1'),
+                   {path: '/undo', payload: {unit_id: 5, client_request_id: 'r1'}});
+  assert.deepEqual(scanJs.undoRequest({kind: 'check'}, '/default', 'r2'),
+                   {path: '/default', payload: {client_request_id: 'r2'}});
 
   await onScan('FEST00004');
   assert.strictEqual(subjects[subjects.length - 1], null, 'a new scan clears the flag subject');
@@ -111,6 +138,7 @@ def test_tag_station_flow_under_node(tmp_path):
     path.write_text(SCRIPT)
     result = subprocess.run(
         ["node", str(path)], capture_output=True, text=True,
-        env={**os.environ, "TAG_JS": os.path.abspath(os.path.join(STATIC, "station_tag.js"))})
+        env={**os.environ, "TAG_JS": os.path.abspath(os.path.join(STATIC, "station_tag.js")),
+             "SCAN_JS": os.path.abspath(os.path.join(STATIC, "scan.js"))})
     assert result.returncode == 0, result.stderr
     assert "tag ok" in result.stdout

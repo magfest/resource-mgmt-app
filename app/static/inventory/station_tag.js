@@ -4,7 +4,8 @@
 (function (root) {
   'use strict';
 
-  var MESSAGES = {noMatch: 'No untagged unit has that name.'};
+  var MESSAGES = {noMatch: 'No untagged unit has that name.',
+                  saving: 'Wait for the link to finish.'};
 
   if (typeof document === 'undefined') { return; }
 
@@ -15,6 +16,7 @@
   // One object per scan. A callback that finds a newer object in `current` drops its work,
   // so a scan during the name prompt or the choices starts over and links nothing.
   var current = null;
+  var saving = false;  // a tag/link request is in flight; scans wait so its result is shown
   var note = null;   // {text, waiting, tag} outcome of the last link, shown while scanning
 
   function el(tag, className, text) {
@@ -83,14 +85,14 @@
   function link(mine, unit) {
     if (current !== mine || mine.linking) { return; }
     mine.linking = true;
+    saving = true;
     S.write(cfg.linkUrl, {unit_id: unit.id, tag: mine.tag}).then(function (answer) {
-      if (answer.need_name || answer.fatal || answer.cancelled) { return; }
+      saving = false;
+      if (answer.need_name || answer.fatal || answer.cancelled) { mine.linking = false; return; }
       if (!answer.ok) {
         if (current === mine) { fail(answer.message); backToScanning(); }
         return;
       }
-      // The link is saved; a newer scan changes what the screen shows, not whether it saved.
-      if (current !== mine) { return; }
       var name = answer.name || unit.name;
       var text = mine.tag + ' is now ' + name;
       note = {text: text, waiting: S.printerWaiting(answer), tag: mine.tag};
@@ -105,6 +107,7 @@
   }
 
   function onScan(code) {
+    if (saving) { fail(MESSAGES.saving); return Promise.resolve({ok: false}); }
     var mine = {tag: code, linking: false};
     current = mine;
     note = null;

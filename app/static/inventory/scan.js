@@ -318,7 +318,13 @@
     };
   }
 
-  var pure = {createUndoControl: createUndoControl, printerWaiting: printerWaiting, createPromptGate: createPromptGate,
+  // The route and body for an undo tap: the spec's own url and payload, else the default route.
+  function undoRequest(spec, defaultUrl, id) {
+    return {path: spec && spec.url ? spec.url : defaultUrl,
+            payload: Object.assign({}, spec && spec.payload, {client_request_id: id})};
+  }
+
+  var pure = {undoRequest: undoRequest, createUndoControl: createUndoControl, printerWaiting: printerWaiting, createPromptGate: createPromptGate,
               flagScanSound: flagScanSound, createCapture: createCapture, createRepeatGuard: createRepeatGuard,
               createScanQueue: createScanQueue, createWriteQueue: createWriteQueue,
               createPauseWatch: createPauseWatch, interpretResponse: interpretResponse,
@@ -473,9 +479,8 @@
     now: Date.now, windowMs: UNDO_MS, mint: newId,
     // A spec with a url undoes through that route; the default undoes a check or count.
     send: function (id) {
-      var spec = undoCtl.spec();
-      var path = spec && spec.url ? spec.url : body.dataset.undoUrl;
-      return writes.write(path, Object.assign({}, spec && spec.payload, {client_request_id: id}));
+      var req = undoRequest(undoCtl.spec(), body.dataset.undoUrl, id);
+      return writes.write(req.path, req.payload);
     },
     onChange: function () { renderUndo(); }
   });
