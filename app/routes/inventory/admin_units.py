@@ -1,6 +1,6 @@
 """Units page: find a unit by any identifier, then correct it or print its label."""
 from flask import abort, flash, redirect, request, url_for
-from sqlalchemy import func
+from sqlalchemy import false, func, or_
 from sqlalchemy.orm import selectinload
 
 from app import db
@@ -14,7 +14,7 @@ from app.inventory.ledger import (
     INV_CONDITIONS, NUMBER_KINDS, InventoryError, add_identifier, replace_number,
     retire_identifier, set_condition,
 )
-from app.inventory.names import find_by_name, set_unit_name
+from app.inventory.names import find_by_name, name_key, set_unit_name
 from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
     local_stamp, reprint, reprint_options,
@@ -86,6 +86,31 @@ def _search(q: str) -> list[InvUnit]:
     return list(found.values())[:SEARCH_LIMIT]
 
 
+def _search_condition(q: str):
+    """SQL condition matching the units `_search` would find, without its 50-row cap."""
+    clauses = []
+    resolution = resolve(q)
+    if resolution.kind == KIND_UNIT:
+        clauses.append(InvUnit.id == resolution.unit.id)
+    elif resolution.kind == KIND_AMBIGUOUS:
+        ids = [c.id for c in resolution.candidates if isinstance(c, InvUnit)]
+        if ids:
+            clauses.append(InvUnit.id.in_(ids))
+    key = name_key(q)
+    if key is not None:
+        clauses.append(InvUnit.name_key.like(f"%{_like_escape(key)}%", escape="\\"))
+    patterns = {normalize_code(q)}
+    if normalize_mac(q):
+        patterns.add(normalize_identifier(INV_IDENT_MAC, q))
+    patterns.discard("")
+    for pattern in patterns:
+        clauses.append(db.session.query(InvUnitIdentifier.id).filter(
+            InvUnitIdentifier.unit_id == InvUnit.id, InvUnitIdentifier.retired_at.is_(None),
+            InvUnitIdentifier.normalized_value.like(
+                f"%{_like_escape(pattern)}%", escape="\\")).exists())
+    return or_(*clauses) if clauses else false()
+
+
 def _filter_fields(kind: InvGearKind | None) -> list[InvField]:
     """Active CHOICE and BOOL fields of the kind; the only ones the page can filter on."""
     return [f for f in active_fields(kind)
@@ -99,7 +124,8 @@ def _selected_filters(fields: list[InvField]) -> dict[int, str]:
         raw = (request.args.get(f"f_{field.id}") or "").strip()
         if field.field_type == INV_FIELD_BOOL and raw in ("yes", "no"):
             chosen[field.id] = raw
-        elif field.field_type == INV_FIELD_CHOICE and raw.isdigit():
+        elif (field.field_type == INV_FIELD_CHOICE and raw.isascii() and raw.isdigit()
+              and len(raw) <= 9):
             if int(raw) in {c.id for c in field.choices}:
                 chosen[field.id] = raw
     return chosen
@@ -116,21 +142,18 @@ def _value_matches(field: InvField, answer: str):
 
 
 def _kind_units(kind: InvGearKind, fields: list[InvField], chosen: dict[int, str],
-                ids: list[int] | None) -> list[InvUnit]:
-    """Live units of the kind matching every chosen filter; limited to those ids when given."""
+                q: str) -> tuple[list[InvUnit], int]:
+    """Live units of the kind matching q and every chosen filter: (first 50, total)."""
     query = (db.session.query(InvUnit).join(SupplyItem, SupplyItem.id == InvUnit.item_id)
              .filter(SupplyItem.gear_kind_id == kind.id,
                      InvUnit.condition != INV_CONDITION_RETIRED))
-    if ids is not None:
-        query = query.filter(InvUnit.id.in_(ids))
+    if q:
+        query = query.filter(_search_condition(q))
     for field in fields:
         if field.id in chosen:
             query = query.filter(_value_matches(field, chosen[field.id]))
-    rows = query.order_by(InvUnit.name_key, InvUnit.id).limit(SEARCH_LIMIT).all()
-    if ids is not None:
-        order = {unit_id: i for i, unit_id in enumerate(ids)}
-        rows.sort(key=lambda u: order[u.id])
-    return rows
+    total = query.count()
+    return query.order_by(InvUnit.name_key, InvUnit.id).limit(SEARCH_LIMIT).all(), total
 
 
 @inventory_bp.get("/admin/units")
@@ -143,11 +166,12 @@ def units():
     fields = _filter_fields(kind)
     chosen = _selected_filters(fields)
     found: list[InvUnit] = []
+    total = 0
     if kind is not None:
-        found = _kind_units(kind, fields, chosen,
-                            [u.id for u in _search(q)] if q else None)
+        found, total = _kind_units(kind, fields, chosen, q)
     elif q:
         found = _search(q)
+        total = len(found)
     searched = bool(q) or kind is not None
     rows = []
     if found:
@@ -159,7 +183,7 @@ def units():
                 for u in found]
     kinds = db.session.query(InvGearKind).order_by(InvGearKind.name).all()
     return render_inventory_page("inventory/units.html", q=q, rows=rows, searched=searched,
-                                 kinds=kinds, kind=kind, filter_fields=fields, chosen=chosen,
+                                 kinds=kinds, kind=kind, total=total, limit=SEARCH_LIMIT, filter_fields=fields, chosen=chosen,
                                  condition_words=CONDITION_WORDS)
 
 

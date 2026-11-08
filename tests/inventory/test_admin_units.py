@@ -336,3 +336,55 @@ def test_filter_selects_appear_once_a_kind_is_chosen(client, inv):
     assert f'name="f_{kind.fields[1].id}"' in page
     assert f'name="f_{kind.fields[2].id}"' in page
     assert f'name="f_{kind.fields[0].id}"' not in page
+
+
+def _many_tvs(inv, count, prefix="TVN"):
+    kind = _tv_kind(inv)
+    units = []
+    for i in range(count):
+        u = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", f"{prefix}-{i:03d}")])
+        u.name = f"Stage TV {i:03d}"
+        u.name_key = u.name.casefold()
+        units.append(u)
+    db.session.commit()
+    return kind, units
+
+
+def test_q_with_kind_finds_a_match_past_the_first_fifty_name_hits(client, inv):
+    kind, units = _many_tvs(inv, 60)
+    login(client, "test:operator")
+    page = client.get("/inv/admin/units", query_string={
+        "q": "stage tv 059", "kind": "TV"}).get_data(as_text=True)
+    assert _ids_in(page, units) == [units[59].id]
+    page = client.get("/inv/admin/units", query_string={
+        "q": "stage tv", "kind": "TV"}).get_data(as_text=True)
+    assert "Showing the first 50 of 60." in page
+
+
+def test_no_cut_notice_when_everything_fits(client, inv):
+    _many_tvs(inv, 3)
+    login(client, "test:operator")
+    page = client.get("/inv/admin/units", query_string={"kind": "TV"}).get_data(as_text=True)
+    assert "Showing the first" not in page
+
+
+def test_unicode_digit_filter_is_ignored(client, inv):
+    kind, units = _tvs(inv)
+    res = kind.fields[1]
+    login(client, "test:operator")
+    for junk in ("²", "9" * 40):
+        resp = client.get("/inv/admin/units", query_string={"kind": "TV", f"f_{res.id}": junk})
+        assert resp.status_code == 200
+        assert _ids_in(resp.get_data(as_text=True), units) == [u.id for u in units]
+
+
+def test_retired_units_are_hidden_with_a_kind_and_the_page_says_so(client, inv):
+    from app.inventory.ledger import set_condition
+    kind, units = _tvs(inv)
+    set_condition(units[0], "RETIRED")
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get("/inv/admin/units", query_string={"kind": "TV"}).get_data(as_text=True)
+    assert "Retired units are hidden." in page
+    assert units[0].id not in _ids_in(page, units)
+    assert "Retired units are hidden." not in _search(client, "TV-1")

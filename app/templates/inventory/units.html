@@ -25,6 +25,7 @@
     </select>
   </label>
   {% endfor %}
+  {% if kind %}<p class="muted">Retired units are hidden.</p>{% endif %}
   <button type="submit" class="btn btn-small">Search</button>
 </form>
 <script nonce="{{ csp_nonce }}">
@@ -33,6 +34,7 @@
   });
 </script>
 {% if searched %}
+{% if kind and total > limit %}<p>Showing the first {{ limit }} of {{ total }}. Narrow the search or filters.</p>{% endif %}
 <div style="overflow-x: auto;">
 <table>
   <thead><tr><th>Number</th><th>Item</th><th>Condition</th><th>Container</th><th>Flags</th></tr></thead>
