@@ -31,6 +31,7 @@
   <main id="flag-panel" class="panel" hidden></main>
   <input id="scan-input" class="capture" type="text" inputmode="none" autocomplete="off"
          autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Scan a code">
+  <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/fullscreen.js') }}"></script>
   <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/scan_flag.js') }}"></script>
   <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/scan.js') }}"></script>
   {% block scripts %}{% endblock %}

@@ -23,6 +23,7 @@
       <input id="other-name" type="text" maxlength="64" autocomplete="off">
       <button type="submit" class="name">Start</button>
     </form>
+    <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/fullscreen.js') }}"></script>
     <script nonce="{{ csp_nonce }}">
       (function () {
         var message = document.getElementById('message');
