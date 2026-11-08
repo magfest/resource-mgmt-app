@@ -6,7 +6,7 @@ lookup for many units in one grouped subquery, so a list never costs a query per
 """
 from __future__ import annotations
 
-from sqlalchemy import false, func, or_, true
+from sqlalchemy import and_, false, func, or_, true
 
 from app import db
 from app.inventory.ledger import NUMBER_KINDS
@@ -67,11 +67,19 @@ def _has_number():
 
 
 def show_condition(event, show: str):
-    """SQL clause on InvUnit for one of SHOW_FILTERS; anything else matches all."""
-    if show == "no_number":
-        return ~_has_number()
+    """SQL clause on InvUnit for one of SHOW_FILTERS; anything else matches all.
+
+    Each filter matches owned units only, as `week_totals` counts them. A rental
+    gets no U- number and is not part of the week's count.
+    """
     if show not in SHOW_FILTERS:
         return true()
+    return and_(InvUnit.ownership == INV_OWNERSHIP_OWNED, _show_clause(event, show))
+
+
+def _show_clause(event, show: str):
+    if show == "no_number":
+        return ~_has_number()
     if event is None:
         return true() if show == "not_seen" else false()
     live = _live_prep_ids(event)

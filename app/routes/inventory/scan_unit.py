@@ -23,7 +23,7 @@ from app.inventory.unit_station import (
     digit_candidates, finish_unit, give_unit_number, place_last, unit_card,
 )
 from app.models import InvUnit, SupplyItem
-from app.models.constants import INV_STATION_UNIT
+from app.models.constants import INV_OWNERSHIP_OWNED, INV_STATION_UNIT
 
 from . import inventory_bp
 from .scan_api import (
@@ -124,7 +124,8 @@ def scan_unit_scan():
                 if unit is None:
                     return {"candidates": [unit_card(u) for u in units[:MAX_CANDIDATES]]}
         if unit is not None:
-            if unit_number(unit) is None:
+            # A rental is never given a U- number, so one with no tag goes straight to its check.
+            if unit_number(unit) is None and unit.ownership == INV_OWNERSHIP_OWNED:
                 return {"needs_number": True, "card": unit_card(unit),
                         "asset_tag_required": unit.item.needs_asset_tag}
             return _begin(unit, actor, _check_event(), again=data.get("again") is True)

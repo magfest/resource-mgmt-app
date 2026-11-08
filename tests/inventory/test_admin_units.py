@@ -702,6 +702,28 @@ def test_show_filters_narrow_the_list(client, inv):
     assert ids("no_number") == {nameless.id}
 
 
+def test_show_filters_leave_out_rented_units_and_the_plain_list_keeps_them(client, inv):
+    from app.models import InvPrepStatus
+    event, (owned,) = _week_units(inv, 1)
+    rented = add_unit(inv.laptop, None, ACTOR, [], name="Rented laptop")
+    rented.ownership = "RENTED"
+    seen_rental = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-RENT-2")], name="Rental two")
+    seen_rental.ownership = "RENTED"
+    db.session.add(InvPrepStatus(unit_id=seen_rental.id, event_cycle_id=event.id,
+                                 status="CHECKED"))
+    db.session.commit()
+    login(client, "test:operator")
+
+    def ids(**args):
+        page = _list(client, **args).get_data(as_text=True)
+        return {u.id for u in (owned, rented, seen_rental) if f"/inv/admin/units/{u.id}\"" in page}
+
+    assert ids(show="no_number") == set()
+    assert ids(show="not_seen") == {owned.id}
+    assert ids(show="seen") == set()
+    assert ids() == {owned.id, rented.id, seen_rental.id}
+
+
 def test_page_shows_week_and_where_and_counts(client, inv):
     from app.models import InvPrepStatus
     from tests.inventory.helpers import make_container

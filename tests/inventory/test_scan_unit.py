@@ -176,6 +176,16 @@ def test_scan_unit_with_no_number_needs_one(unit_client, inv, two_named_units):
     assert post(unit_client, "scan", {"code": "SN-A-1"}).json["asset_tag_required"] is True
 
 
+def test_scan_a_rented_unit_with_no_tag_opens_its_check(unit_client, inv, two_named_units):
+    a, _ = two_named_units
+    a.ownership = "RENTED"
+    add_identifier(a, "SERIAL", "SN-RENT-1")
+    db.session.commit()
+    answer = post(unit_client, "scan", {"code": "SN-RENT-1"}).json
+    assert answer["ok"] is True and "needs_number" not in answer
+    assert answer["check_id"] and answer["card"]["unit_id"] == a.id
+
+
 def test_scan_several_units_lists_candidates_and_unit_id_picks(unit_client, inv):
     a = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-DUP")], name="TV-X-020")
     b = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-DUP")], name="TV-X-021")
