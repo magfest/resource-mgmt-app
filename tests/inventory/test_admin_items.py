@@ -1,3 +1,5 @@
+from html.parser import HTMLParser
+
 from app import db
 from app.inventory.ledger import Actor, add_stock
 from app.models import SupplyItem
@@ -106,3 +108,59 @@ def test_counted_item_has_no_gear_kind(client, inv):
     page = client.get("/inv/admin/items").get_data(as_text=True)
     assert f"/inv/admin/items/{inv.pens.id}/gear-kind" not in page
     assert f"/inv/admin/items/{inv.laptop.id}/gear-kind" in page
+
+
+class _LabelAudit(HTMLParser):
+    """Collect visible controls and which of them a label covers."""
+
+    def __init__(self):
+        super().__init__()
+        self.controls, self.label_for, self.in_label = [], set(), 0
+        self.details = []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "label":
+            self.in_label += 1
+            if a.get("for"):
+                self.label_for.add(a["for"])
+        elif tag == "details":
+            self.details.append(a)
+        elif tag in ("input", "select", "textarea") and a.get("type") != "hidden":
+            self.controls.append((tag, a, self.in_label > 0))
+
+    def handle_endtag(self, tag):
+        if tag == "label":
+            self.in_label -= 1
+
+
+def _items_page(client):
+    login(client, "test:invadmin")
+    return client.get("/inv/admin/items").get_data(as_text=True)
+
+
+def test_items_page_labels_every_visible_control(client, inv):
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("TV", "TV", [("SIZE", "Size", "NUMBER", "in")])
+    db.session.commit()
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": str(kind.id)})
+    audit = _LabelAudit()
+    audit.feed(_items_page(client))
+    assert audit.controls
+    bare = [a.get("name") for _, a, wrapped in audit.controls
+            if not wrapped and a.get("id") not in audit.label_for]
+    assert bare == []
+
+
+def test_items_page_folds_defaults_closed(client, inv):
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("TV", "TV", [("SIZE", "Size", "NUMBER", "in")])
+    db.session.commit()
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": str(kind.id)})
+    html = _items_page(client)
+    assert "<summary>Defaults for new units</summary>" in html
+    audit = _LabelAudit()
+    audit.feed(html)
+    assert audit.details and all("open" not in d for d in audit.details)

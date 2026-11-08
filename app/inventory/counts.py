@@ -126,9 +126,10 @@ def count_payload(count: InvCount) -> dict:
     return {
         "count_id": count.id, "blind": blind, "lines": lines,
         "held": [{"item_id": r.item_id, "name": r.item.item_name,
-                  "pack_size": r.item.pack_size} for r in rows],
+                  "pack_size": r.item.pack_size, "prompt": count_prompt(r.item)} for r in rows],
         "usual": [{"item_id": u.item_id, "name": u.item.item_name,
-                   "pack_size": u.item.pack_size} for u in usual],
+                   "pack_size": u.item.pack_size, "prompt": count_prompt(u.item)}
+                  for u in usual],
     }
 
 
@@ -214,8 +215,17 @@ def submit_count(count: InvCount, lines: list[CountLineIn], actor: Actor) -> dic
     return {"applied": len(live), "stale": stale}
 
 
+def count_prompt(item: SupplyItem) -> str:
+    """Say what to count. The pad records single items unless Packs is tapped."""
+    prompt = f"How many {item.item_name}? Count each one"
+    if item.pack_size and item.pack_size > 1:
+        return f"{prompt}, or tap Packs of {item.pack_size}."
+    return f"{prompt}."
+
+
 def item_choice(item: SupplyItem) -> dict:
-    return {"id": item.id, "name": item.item_name, "pack_size": item.pack_size}
+    return {"id": item.id, "name": item.item_name, "pack_size": item.pack_size,
+            "prompt": count_prompt(item)}
 
 
 def browse_categories() -> list[dict]:

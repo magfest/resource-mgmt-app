@@ -238,7 +238,8 @@
     count.usual.forEach(function (item) {
       var line = count.line(item.item_id);
       usual.appendChild(button(item.name, 'cnt-item' + (line ? ' done' : ''), function () {
-        pickItem({id: item.item_id, name: item.name, pack_size: item.pack_size});
+        pickItem({id: item.item_id, name: item.name, pack_size: item.pack_size,
+                  prompt: item.prompt});
       }));
     });
     box.appendChild(usual);
@@ -266,9 +267,15 @@
     panel.appendChild(box);
   }
 
-  function packSizeOf(id) {
+  function heldItem(id) {
     var hit = count.held().filter(function (h) { return h.item_id === id; })[0];
-    return hit && hit.pack_size ? hit.pack_size : null;
+    return {id: id, pack_size: hit && hit.pack_size ? hit.pack_size : null,
+            prompt: hit ? hit.prompt : undefined};
+  }
+
+  function withName(item, name) {
+    item.name = name;
+    return item;
   }
 
   function openRow(h) {
@@ -280,7 +287,7 @@
     }
     var actions = el('div', 'cnt-actions');
     actions.appendChild(button('Count', 'cnt-small', function () {
-      pickItem({id: h.item_id, name: h.name, pack_size: packSizeOf(h.item_id)});
+      pickItem(withName(heldItem(h.item_id), h.name));
     }));
     if (expected !== null) {
       actions.appendChild(button('Matches', 'cnt-small', function () {
@@ -300,7 +307,7 @@
     row.appendChild(el('div', 'cnt-note', lineText(l)));
     var actions = el('div', 'cnt-actions');
     actions.appendChild(button('Recount', 'cnt-small', function () {
-      pickItem({id: l.item_id, name: l.name, pack_size: packSizeOf(l.item_id)});
+      pickItem(withName(heldItem(l.item_id), l.name));
     }));
     actions.appendChild(button('None', 'cnt-small', function () {
       edit(function () { count.markNone(l.item_id); });
@@ -339,7 +346,8 @@
 
   function pickItem(item) {
     if (!count) { return; }
-    S.showMessage(item.name + ': how many?', 'info');
+    // An older cached page may send items without a prompt.
+    S.showMessage(item.prompt || item.name + ': how many?', 'info');
     S.numberPad({packSize: item.pack_size, allowAbout: true}, function (answer) {
       if (!answer) { S.showMessage('', 'info'); render(); refocus(); return; }
       edit(function () { count.setLine(item, answer.quantity, answer.about); });

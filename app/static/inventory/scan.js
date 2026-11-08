@@ -649,7 +649,7 @@
       extras.appendChild(p);
     }
     if (opts.allowAbout) {
-      var a = el('button', null, 'About');
+      var a = el('button', null, 'Estimate');
       a.type = 'button';
       a.addEventListener('click', function () { about = !about; refresh(); });
       extras.appendChild(a);

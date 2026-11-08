@@ -10,7 +10,7 @@ from app import db
 from app.inventory import labels
 from app.inventory.checks import find_balance_mismatches
 from app.inventory.counts import (
-    CountLineIn, count_payload, start_count, submit_count,
+    CountLineIn, count_payload, count_prompt, item_choice, start_count, submit_count,
 )
 from app.inventory.ledger import Actor, InventoryError, add_stock, move_stock, stock_quantity
 from app.inventory.shifts import start_shift
@@ -205,7 +205,21 @@ def test_usual_items_list_station_items_with_pack_size(inv):
     db.session.flush()
     tote = make_container(inv, "C-0001", kind="BIN")
     usual = count_payload(start_count(tote, ACTOR))["usual"]
-    assert usual == [{"item_id": inv.pens.id, "name": "Blue Pen", "pack_size": 12}]
+    assert usual == [{"item_id": inv.pens.id, "name": "Blue Pen", "pack_size": 12,
+                      "prompt": "How many Blue Pen? Count each one, or tap Packs of 12."}]
+
+
+def test_count_prompt_names_packs_and_item_choice_carries_it(inv):
+    inv.pens.pack_size = 12
+    expected = "How many Blue Pen? Count each one, or tap Packs of 12."
+    assert count_prompt(inv.pens) == expected
+    assert item_choice(inv.pens)["prompt"] == expected
+
+
+@pytest.mark.parametrize("size", [None, 0, 1])
+def test_count_prompt_is_short_without_a_real_pack_size(inv, size):
+    inv.pens.pack_size = size
+    assert count_prompt(inv.pens) == "How many Blue Pen? Count each one."
 
 
 # ---- API ----
@@ -237,7 +251,8 @@ def test_start_answers_blind_with_no_expected_numbers_anywhere(client, ct):
     answer = _start(client, "C-0001")
     assert answer["ok"] is True and answer["blind"] is True and answer["lines"] == []
     assert answer["held"] == [{"item_id": ct.pens.id, "name": "Blue Pen",
-                               "pack_size": ct.pens.pack_size}]
+                               "pack_size": ct.pens.pack_size,
+                               "prompt": count_prompt(ct.pens)}]
     assert "37" not in json.dumps(answer) and "expected" not in json.dumps(answer)
     page = client.get("/inv/scan/count")
     assert b"37" not in page.data
@@ -296,12 +311,14 @@ def test_find_resolves_items_and_refuses_units_and_serialized(client, ct):
     db.session.commit()
     ok = client.post(FIND, json={"code": "I-0001"}).get_json()
     assert ok["ok"] is True and ok["items"] == [
-        {"id": ct.pens.id, "name": "Blue Pen", "pack_size": None}]
+        {"id": ct.pens.id, "name": "Blue Pen", "pack_size": None,
+         "prompt": "How many Blue Pen? Count each one."}]
     bad = client.post(FIND, json={"code": "999"}).get_json()
     assert bad["ok"] is False and bad["message"] == "Count units at their own station."
     assert client.post(FIND, json={"code": "nope"}).get_json()["ok"] is False
     found = client.post(FIND, json={"q": "pen"}).get_json()
     assert [i["name"] for i in found["items"]] == ["Blue Pen"]
+    assert found["items"][0]["prompt"] == "How many Blue Pen? Count each one."
 
 
 def test_find_during_a_count_refuses_a_container_scan(client, ct):
@@ -546,7 +563,8 @@ def test_browse_lists_a_categorys_active_items_by_name_without_quantities(client
     db.session.commit()
     answer = client.post(BROWSE, json={"category_id": ct.category.id}).get_json()
     assert [i["name"] for i in answer["items"]] == ["Aardvark", "Blue Pen"]
-    assert answer["items"][1] == {"id": ct.pens.id, "name": "Blue Pen", "pack_size": 12}
+    assert answer["items"][1] == {"id": ct.pens.id, "name": "Blue Pen", "pack_size": 12,
+                                "prompt": "How many Blue Pen? Count each one, or tap Packs of 12."}
     assert "37" not in json.dumps(answer) and "quantity" not in json.dumps(answer)
 
 
