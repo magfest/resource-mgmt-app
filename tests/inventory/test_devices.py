@@ -10,7 +10,12 @@ from app.inventory.devices import (
 )
 from app.inventory.ledger import InventoryError
 from app.models.constants import INV_STATION_UNIT
-from app.models import InvDevice, InvEnrollCode, InvShift
+from app.inventory.printing import local_stamp
+from app.inventory.shifts import start_shift
+from app.models import InvDevice, InvEnrollCode, InvPrinter, InvPrintJob, InvShift
+from app.models.constants import INV_STATION_PRINT
+from app.routes.inventory.admin_devices import device_rows
+from sqlalchemy import event
 from tests.inventory.helpers import enrolled_client, login, make_container
 
 
@@ -264,3 +269,164 @@ def test_set_station_to_unit_without_a_home_is_refused(inv):
     with pytest.raises(InventoryError, match=UNIT_NEEDS_HOME):
         set_station(bare, INV_STATION_UNIT, keep_home=True)
     assert bare.station_code == "LOOKUP"
+
+
+NOW = datetime(2026, 12, 7, 15, 0)
+
+
+def _row(device, now=NOW):
+    return next(r for r in device_rows(now) if r["device"].id == device.id)
+
+
+@pytest.fixture
+def scanner(inv):
+    device, _ = enroll_device("Scanner A", "test:invadmin")
+    device.last_seen_at = NOW - timedelta(seconds=10)
+    db.session.commit()
+    return device
+
+
+def _station(name="Print PC"):
+    device, _ = enroll_device(name, "test:invadmin", station_code=INV_STATION_PRINT)
+    return device
+
+
+def _printer(device, name="Zebra 1"):
+    printer = InvPrinter(name=name, dpi=203, width_in=2, height_in=1,
+                         device_id=device.id, device_name=name)
+    db.session.add(printer)
+    db.session.flush()
+    return printer
+
+
+def test_row_shows_who_is_signed_in(scanner):
+    start_shift(scanner, "Robin Test", now=NOW)
+    row = _row(scanner)
+    assert row["person"] == "Robin Test" and row["stale"] is False
+
+
+def test_nobody_signed_in_and_idle_shift_is_not_open(scanner):
+    assert _row(scanner)["person"] is None
+    start_shift(scanner, "Robin Test", now=NOW - timedelta(minutes=30))
+    assert _row(scanner)["person"] is None
+
+
+def test_unseen_device_is_stale(scanner):
+    scanner.last_seen_at = NOW - timedelta(minutes=20)
+    assert _row(scanner)["stale"] is True
+
+
+def test_never_seen_is_stale(scanner):
+    scanner.last_seen_at = None
+    row = _row(scanner)
+    assert row["stale"] is True and row["seen_text"] == "never"
+
+
+def test_seen_text_forms(scanner):
+    assert _row(scanner)["seen_text"] == "just now"
+    scanner.last_seen_at = NOW - timedelta(minutes=5)
+    assert _row(scanner)["seen_text"] == "5 min ago"
+    scanner.last_seen_at = NOW - timedelta(hours=2)
+    assert _row(scanner)["seen_text"] == local_stamp(NOW - timedelta(hours=2))
+
+
+def test_since_time_is_local(scanner):
+    now = datetime(2026, 12, 7, 15, 10)
+    start_shift(scanner, "Robin Test", now=datetime(2026, 12, 7, 15, 5))
+    scanner.last_seen_at = now
+    assert _row(scanner, now)["since"] == "10:05"
+
+
+def test_page_shows_who_and_since(app, scanner):
+    start_shift(scanner, "Robin Test")
+    scanner.last_seen_at = datetime.utcnow()
+    db.session.commit()
+    admin = app.test_client()
+    login(admin, "test:invadmin")
+    page = admin.get("/inv/admin/devices").get_data(as_text=True)
+    assert "Robin Test, since " in page and "just now" in page
+
+
+def test_print_station_lists_its_printer(inv):
+    station = _station()
+    station.last_seen_at = NOW - timedelta(minutes=2)
+    _printer(station)
+    db.session.commit()
+    row = _row(station)
+    assert row["person"] == "Print station"
+    assert row["printers"] == [{"name": "Zebra 1", "online": False, "waiting": 0}]
+
+
+def test_print_station_polling_is_online_with_waiting_count(app, inv):
+    station = _station()
+    station.last_seen_at = NOW - timedelta(seconds=5)
+    printer = _printer(station)
+    for n in range(2):
+        db.session.add(InvPrintJob(printer_id=printer.id, job_type="CONTAINER",
+                                   code=f"C{n}", fields={}, status="QUEUED", source="SCAN"))
+    db.session.commit()
+    assert _row(station)["printers"] == [{"name": "Zebra 1", "online": True, "waiting": 2}]
+    station.last_seen_at = None
+    db.session.commit()
+    admin = app.test_client()
+    login(admin, "test:invadmin")
+    page = admin.get("/inv/admin/devices").get_data(as_text=True)
+    assert "Print station" in page and "Zebra 1: Offline, 2 waiting" in page
+
+
+def test_page_is_renamed_and_folds_revoked(app, scanner):
+    revoke_device(scanner, "test:invadmin")
+    db.session.commit()
+    admin = app.test_client()
+    login(admin, "test:invadmin")
+    page = admin.get("/inv/admin/devices").get_data(as_text=True)
+    assert "<h1>Scanners and print stations</h1>" in page
+    assert "<summary>Revoked (1)</summary>" in page
+    assert "Needed for a Unit station: scan or type the warehouse label." in page
+
+
+def test_active_row_keeps_its_forms_and_change_is_folded(app, scanner):
+    admin = app.test_client()
+    login(admin, "test:invadmin")
+    page = admin.get("/inv/admin/devices").get_data(as_text=True)
+    for action in (f"/inv/admin/devices/{scanner.id}/station",
+                   f"/inv/admin/devices/{scanner.id}/revoke", "/inv/admin/devices/codes"):
+        assert f'action="{action}"' in page
+    assert "<details>\n          <summary>Change</summary>" in page
+    assert 'name="station_code"' in page and 'name="home_container_code"' in page
+    assert page.count('name="csrf_token"') >= 3
+
+
+def _count_queries(app, client):
+    seen = []
+
+    def count(conn, cursor, statement, *a):
+        seen.append(statement)
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        assert client.get("/inv/admin/devices").status_code == 200
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    return len(seen)
+
+
+def test_page_queries_do_not_grow_with_devices(app, inv):
+    admin = app.test_client()
+    login(admin, "test:invadmin")
+
+    def add(n):
+        for i in range(n):
+            station = _station(f"PC {i}-{db.session.query(InvDevice).count()}")
+            station.last_seen_at = datetime.utcnow()
+            _printer(station, f"Zebra {i}-{station.id}")
+            scanner, _ = enroll_device(f"S {station.id}", "test:invadmin")
+            start_shift(scanner, "Robin Test")
+        db.session.commit()
+
+    add(1)
+    login(admin, "test:invadmin")
+    few = _count_queries(app, admin)
+    add(4)
+    login(admin, "test:invadmin")
+    assert _count_queries(app, admin) == few

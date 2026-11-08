@@ -60,6 +60,12 @@ def local_iso(moment: datetime) -> str:
     return f"{local:%Y-%m-%d %H:%M}"
 
 
+def local_clock(moment: datetime) -> str:
+    """Format a stored UTC time as 24-hour `15:05` in INV_LOCAL_TZ."""
+    local = moment.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(INV_LOCAL_TZ))
+    return f"{local:%H:%M}"
+
+
 def unit_number(unit) -> str | None:
     """Return the number printed on a unit: its MAGFest tag, else its FestOps label.
 
