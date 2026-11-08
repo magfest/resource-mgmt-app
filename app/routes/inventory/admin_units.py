@@ -258,18 +258,23 @@ def unit_page(unit_id: int):
         has_gear_kind=unit.item.gear_kind is not None, can_give_number=_can_give_number(unit))
 
 
-_HAS_NUMBER = "This unit already has a number."
+def _give_number_refusal(unit: InvUnit) -> str | None:
+    """Why this unit cannot get a new U- number, or None when it can."""
+    if unit.condition == INV_CONDITION_RETIRED:
+        return "A retired unit cannot be given a number."
+    if unit.ownership != INV_OWNERSHIP_OWNED:
+        return "A rented unit cannot be given a U- number."
+    # Queried, not read from unit.identifiers, which may be loaded and stale.
+    if (db.session.query(InvUnitIdentifier.id)
+            .filter(InvUnitIdentifier.unit_id == unit.id,
+                    InvUnitIdentifier.kind.in_(NUMBER_KINDS),
+                    InvUnitIdentifier.retired_at.is_(None)).first()):
+        return "This unit already has a number."
+    return None
 
 
 def _can_give_number(unit: InvUnit) -> bool:
-    """A live owned unit with no active MAGFest tag or FestOps label."""
-    if unit.condition == INV_CONDITION_RETIRED or unit.ownership != INV_OWNERSHIP_OWNED:
-        return False
-    # Queried, not read from unit.identifiers, which may be loaded and stale.
-    return not (db.session.query(InvUnitIdentifier.id)
-                .filter(InvUnitIdentifier.unit_id == unit.id,
-                        InvUnitIdentifier.kind.in_(NUMBER_KINDS),
-                        InvUnitIdentifier.retired_at.is_(None)).first())
+    return _give_number_refusal(unit) is None
 
 
 def _field_inputs(unit: InvUnit) -> list[dict]:
@@ -478,17 +483,13 @@ def unit_give_number(unit_id: int):
     added = []
 
     def give():
-        if not _can_give_number(unit):
-            raise InventoryError(_HAS_NUMBER)
+        refusal = _give_number_refusal(unit)
+        if refusal:
+            raise InventoryError(refusal)
         code = allocate(PREFIX_UNIT, 1)[0]
         # allocate holds the sequence lock, so a second click reaches add_identifier after
         # the first commits and is refused there; replace_number would swap the number.
-        try:
-            add_identifier(unit, INV_IDENT_FESTOPS_LABEL, code)
-        except InventoryError as error:
-            if not _can_give_number(unit):
-                raise InventoryError(_HAS_NUMBER) from error
-            raise
+        add_identifier(unit, INV_IDENT_FESTOPS_LABEL, code)
         added.append(code)
 
     try:

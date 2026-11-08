@@ -500,7 +500,8 @@ def test_give_number_is_hidden_and_refused_for_a_retired_unit(client, bare, prin
     login(client, "test:invadmin")
     base = f"/inv/admin/units/{bare.id}"
     assert GIVE not in client.get(base).get_data(as_text=True)
-    client.post(f"{base}/give-number")
+    resp = client.post(f"{base}/give-number", follow_redirects=True)
+    assert "A retired unit cannot be given a number." in resp.get_data(as_text=True)
     assert _numbers(bare) == [] and db.session.query(InvPrintJob).count() == 0
 
 
