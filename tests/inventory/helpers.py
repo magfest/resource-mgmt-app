@@ -18,11 +18,20 @@ def make_container(inv, label_code, kind="PALLET", parent=None, name=None):
     return container
 
 
-def enrolled_client(client, name="Scanner 1", station_code="LOOKUP"):
-    """Enroll a device through the real code form; the client keeps only its cookie."""
+def enrolled_client(client, name="Scanner 1", station_code="LOOKUP", home_container=None):
+    """Enroll a device through the real code form; the client keeps only its cookie.
+
+    A UNIT device needs a home container, so one is made when none is given.
+    """
     from app.inventory.devices import create_enroll_code
-    from app.models import InvEnrollCode
-    raw = create_enroll_code(name, "test:invadmin", station_code=station_code)
+    from app.models import InvContainer, InvContainerKind, InvEnrollCode
+    if station_code == "UNIT" and home_container is None:
+        kind = db.session.query(InvContainerKind).filter_by(code="LOCATION").first()
+        home_container = InvContainer(label_code="C-UHOME", kind_id=kind.id, name="Unit home")
+        db.session.add(home_container)
+        db.session.flush()
+    raw = create_enroll_code(name, "test:invadmin", station_code=station_code,
+                             home_container=home_container)
     db.session.commit()
     with client.session_transaction() as sess:
         sess.clear()

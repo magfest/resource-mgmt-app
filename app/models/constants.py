@@ -108,9 +108,11 @@ INV_IDENT_UNIQUE_KINDS = (INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG)
 INV_DISCARD_REASONS = ("DRIED_OUT", "BROKEN", "EXPIRED", "OTHER")
 
 # A scanner station. Look up shows what a scan is. Count records quantities in
-# a container. TV check and Printer check run a per-model checklist on one unit.
+# a container. Unit runs a per-model checklist on one unit.
 INV_STATION_LOOKUP = "LOOKUP"
 INV_STATION_COUNT = "COUNT"
+# TV_CHECK, PRINTER_CHECK and TAG stations no longer exist. Old check and
+# movement rows keep their codes, so the names stay for history display.
 INV_STATION_TV_CHECK = "TV_CHECK"
 INV_STATION_PRINTER_CHECK = "PRINTER_CHECK"
 # Print station collects label jobs for the warehouse printers. Receive is
@@ -121,11 +123,10 @@ INV_STATION_TAG = "TAG"
 # Unit does the whole per-unit job in one pass: identify, tag, check, print.
 INV_STATION_UNIT = "UNIT"
 INV_STATIONS = (
-    INV_STATION_LOOKUP, INV_STATION_COUNT, INV_STATION_TV_CHECK,
-    INV_STATION_PRINTER_CHECK, INV_STATION_PRINT, INV_STATION_RECEIVE,
-    INV_STATION_TAG, INV_STATION_UNIT,
+    INV_STATION_LOOKUP, INV_STATION_COUNT, INV_STATION_PRINT, INV_STATION_RECEIVE,
+    INV_STATION_UNIT,
 )
-INV_CHECK_STATIONS = (INV_STATION_TV_CHECK, INV_STATION_PRINTER_CHECK)
+INV_CHECK_STATIONS = (INV_STATION_UNIT,)
 INV_STATION_NAMES = {
     INV_STATION_LOOKUP: "Look up",
     INV_STATION_COUNT: "Count",

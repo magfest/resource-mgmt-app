@@ -406,8 +406,7 @@ def test_the_screen_reasons_match_the_server_words(tmp_path):
 
 def test_every_station_page_has_the_flag_button_and_the_flow_script(client, inv):
     login(client, "test:operator")
-    for path in ("/inv/scan/", "/inv/scan/count", "/inv/scan/receive", "/inv/scan/check",
-                 "/inv/scan/check?station=PRINTER_CHECK"):
+    for path in ("/inv/scan/", "/inv/scan/count", "/inv/scan/receive", "/inv/scan/unit"):
         html = client.get(path).get_data(as_text=True)
         assert 'id="flag-btn"' in html, path
         assert html.index("inventory/scan_flag.js") < html.index("inventory/scan.js"), path

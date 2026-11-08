@@ -15,7 +15,7 @@ from app.models import (
     ConfigAuditEvent, InvPrinter, InvPrintJob, InvPrintRoute, InvTagLink, InvUnit,
 )
 from app.models.constants import INV_JOB_OWNED_UNIT
-from tests.inventory.helpers import enrolled_client
+from tests.inventory.helpers import make_container
 
 ACTOR = Actor(shift_id=None, user_id="test:operator")
 _n = [0]
@@ -60,7 +60,8 @@ def test_link_attaches_the_tag_prints_and_audits(inv, printer):
 
 
 def test_audit_names_the_shift(inv, printer):
-    client_device = enroll_device("Tag PC", "test:invadmin", station_code="TAG")[0]
+    client_device = enroll_device("Tag PC", "test:invadmin", station_code="UNIT",
+                                  home_container=make_container(inv, "LOC-T", kind="LOCATION"))[0]
     shift = start_shift(client_device, "Sam")
     unit = _named(inv)
     link_tag(unit.id, "FEST10001", Actor(shift_id=shift.id, device_id=client_device.id))
@@ -161,54 +162,17 @@ def test_undo_after_the_window_is_refused(inv, printer):
         undo_tag_link(unit.id, ACTOR)
 
 
-def _tag_client(client, station="TAG"):
-    device = enrolled_client(client, station_code=station)
-    start_shift(device, "Sam")
-    db.session.commit()
-    return device
-
-
-def test_tag_api_round_trip(client, inv, printer):
-    _tag_client(client)
-    unit = _named(inv, "Hall Printer")
-    r = client.post("/inv/scan/api/tag/check", json={"tag": "FEST10001"}).get_json()
-    assert r["ok"] is True
-    r = client.post("/inv/scan/api/tag/candidates", json={"q": "hall"}).get_json()
-    assert r["units"] == [{"id": unit.id, "name": "Hall Printer", "model": "Laptop",
-                           "details": "Laptop"}]
-    r = client.post("/inv/scan/api/tag/link", json={
-        "client_request_id": _rid(), "tag": "FEST10001", "unit_id": unit.id}).get_json()
-    assert r["ok"] is True and r["name"] == "Hall Printer"
-    r = client.post("/inv/scan/api/tag/undo", json={
-        "client_request_id": _rid(), "unit_id": unit.id}).get_json()
-    assert r["ok"] is True and r["message"] == "Label cancelled."
-
-
-def test_tag_api_refuses_a_device_on_another_station(client, inv, printer):
-    _tag_client(client, station="RECEIVE")
-    unit = _named(inv)
-    calls = [("check", {"tag": "FEST10001"}), ("candidates", {"q": "mag"}),
-             ("link", {"client_request_id": _rid(), "tag": "FEST10001", "unit_id": unit.id}),
-             ("undo", {"client_request_id": _rid(), "unit_id": unit.id})]
-    for path, body in calls:
-        r = client.post(f"/inv/scan/api/tag/{path}", json=body).get_json()
-        assert r["ok"] is False and "not set up" in r["message"], path
-    assert InvTagLink.query.count() == 0
-
-
 def test_unit_page_shows_the_shift_as_a_scanner(client, inv, printer):
     from tests.inventory.helpers import login
-    device = _tag_client(client)
+    device = enroll_device("Unit PC", "test:invadmin", station_code="UNIT",
+                           home_container=make_container(inv, "LOC-U", kind="LOCATION"))[0]
+    shift = start_shift(device, "Sam")
     unit = _named(inv)
-    r = client.post("/inv/scan/api/tag/link", json={
-        "client_request_id": _rid(), "tag": "FEST10001", "unit_id": unit.id}).get_json()
-    assert r["ok"] is True
-    with client.session_transaction() as sess:
-        sess.clear()
+    link_tag(unit.id, "FEST10001", Actor(shift_id=shift.id, device_id=device.id))
+    db.session.commit()
     login(client, "test:invadmin")
     page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
     assert "Sam (scanner)" in page and "FEST10001" in page
-    assert device.id
 
 
 def test_a_tag_taken_between_check_and_insert_gets_the_receive_refusal(inv, printer, monkeypatch):
@@ -253,8 +217,8 @@ def _count_selects(fn):
     return seen[0]
 
 
-def test_tag_candidates_load_fields_up_front(client, inv, printer):
-    from app.inventory.unit_fields import set_unit_value
+def test_tag_candidates_load_fields_up_front(inv, printer):
+    from app.inventory.unit_fields import model_number, set_unit_value, spec_line
     from tests.inventory.helpers import seed_gear_kind
     kind = seed_gear_kind("PRINTER", "Printer", [
         ("TONER", "Toner cartridge", "TEXT", None, {"on_label": True}),
@@ -269,11 +233,10 @@ def test_tag_candidates_load_fields_up_front(client, inv, printer):
             set_unit_value(unit, kind.fields[1], "yes")
         db.session.commit()
 
-    _tag_client(client)
-    ask = lambda: client.post("/inv/scan/api/tag/candidates", json={"q": "pntr"})
+    ask = lambda: [(model_number(u), spec_line(u)) for u in tag_candidates("pntr")]
     add(0, 2)
     few = _count_selects(ask)
     add(2, 4)
     more = _count_selects(ask)
-    assert len(ask().get_json()["units"]) == 6
+    assert len(ask()) == 6
     assert more == few

@@ -441,7 +441,7 @@ def test_the_count_start_answer_carries_each_held_items_pack_size(client, ct):
 def test_count_routes_refuse_a_device_on_another_station(client, ct):
     make_container(ct, "C-0001", kind="BIN")
     device = InvDevice.query.one()
-    device.station_code = "TV_CHECK"
+    device.station_code = "RECEIVE"
     db.session.commit()
     assert _start(client, "C-0001")["ok"] is False
     assert client.post(FIND, json={"q": "pen"}).get_json()["ok"] is False
@@ -577,7 +577,7 @@ def test_browse_uses_a_fixed_number_of_queries(client, ct):
 def test_browse_refuses_a_device_on_another_station_and_bad_ids(client, ct):
     assert client.post(BROWSE, json={"category_id": "x"}).get_json()["ok"] is False
     device = InvDevice.query.one()
-    device.station_code = "TV_CHECK"
+    device.station_code = "RECEIVE"
     db.session.commit()
     assert client.post(BROWSE, json={}).get_json()["ok"] is False
 

@@ -1,4 +1,4 @@
-"""TV and printer checks, check lines for a model, and the balance report.
+"""Unit checks, check lines for a model, and the balance report.
 
 A check records answers to a model's checklist and the unit's prep status for the
 default event. It never moves a unit; only the optional put-away does. Nothing
@@ -19,30 +19,24 @@ from app.inventory.cards import default_event, live_prep_row
 from app.inventory.codes import normalize_code
 from app.inventory.describe import unit_tag
 from app.inventory.ledger import (
-    NUMBER_KINDS, Actor, InventoryError, add_identifier, add_unit, move_unit, retire_identifier,
-    set_condition,
+    NUMBER_KINDS, Actor, InventoryError, move_unit, set_condition,
 )
 from app.inventory.printing import local_stamp, unit_number
-from app.inventory.receive import MAX_SERIAL, SAME_CODE, container_for_code
-from app.inventory.resolver import KIND_ITEM, KIND_UNUSED, resolve
+from app.inventory.receive import MAX_SERIAL, container_for_code
+from app.inventory.resolver import KIND_ITEM, resolve
 from app.models import (
     InvCheck, InvCheckAnswer, InvCheckItem, InvMovement, InvPrepStatus, InvStock, InvUnit,
-    InvUnitIdentifier, SupplyItem,
+    InvUnitIdentifier,
 )
 from app.models.constants import (
     INV_CHECK_FAILED, INV_CHECK_OPEN, INV_CHECK_PASSED, INV_CHECK_SET_ASIDE,
     INV_CHECK_STATIONS, INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
-    INV_CONDITION_RETIRED, INV_IDENT_FESTOPS_LABEL,
-    INV_IDENT_SERIAL, INV_PREP_CHECKED, INV_PREP_FAILED_CHECK, INV_STATION_NAMES,
-    INV_STATION_PRINTER_CHECK, INV_STATION_TV_CHECK, INV_STATION_UNIT,
+    INV_CONDITION_RETIRED, INV_IDENT_SERIAL, INV_PREP_CHECKED, INV_PREP_FAILED_CHECK,
 )
 
 NO_EVENT = "No default event is set. Ask an inventory admin."
 NOTE_MAX = InvCheck.note.type.length
 FAILED_CONDITIONS = (INV_CONDITION_REPAIR, INV_CONDITION_RETIRED)
-# What each check station checks: the singular for "This is a printer", the plural for "checks TVs".
-STATION_WORDS = {INV_STATION_TV_CHECK: ("TV", "TVs"),
-                 INV_STATION_PRINTER_CHECK: ("printer", "printers")}
 
 
 def active_check_items(item) -> list[InvCheckItem]:
@@ -101,29 +95,12 @@ class CheckBlocked(InventoryError):
                                      "name": check.unit.item.item_name}}
 
 
-class WrongGear(InventoryError):
-    """The unit's model belongs to the other check station. `extra` carries the prompt fields."""
-
-    def __init__(self, unit: InvUnit, owner: str, can_switch: bool):
-        what = STATION_WORDS[owner][0]
-        name = INV_STATION_NAMES[owner]
-        text = (f"This is a {what}. Switch this scanner to {name}?" if can_switch
-                else f"This is a {what}. Use {name} for it.")
-        super().__init__(text)
-        self.extra = {"wrong_station": owner, "wrong_station_name": name, "what": what,
-                      "can_switch": can_switch}
-
-
 class ChecklistChanged(InventoryError):
     """The model's checklist changed after the screen loaded it. Rescanning reloads the lines."""
 
     def __init__(self):
         super().__init__("That checklist changed. Scan the unit again.")
         self.extra = {"changed": True}
-
-
-class NoUnitForSerial(InventoryError):
-    """No active unit holds the scanned serial; the station offers to create one."""
 
 
 def _default_event():
@@ -141,40 +118,6 @@ def unit_code(unit: InvUnit) -> str | None:
 def unit_phrase(unit: InvUnit) -> str:
     """Name a unit inside a sentence: its code, else its name, else a plain phrase."""
     return unit_code(unit) or unit.name or "a unit with no number yet"
-
-
-def check_station_error(raw) -> str | None:
-    """Return the refusal for a bad check-station value, or None. Blank clears the station."""
-    if raw and raw not in INV_CHECK_STATIONS:
-        return "Pick a check station from the list, or leave it blank."
-    return None
-
-
-def station_models(station_code: str) -> list[SupplyItem]:
-    """The active serialized models whose `check_station` is this station, by name."""
-    return (db.session.query(SupplyItem)
-            .filter(SupplyItem.check_station == station_code,
-                    SupplyItem.is_serialized.is_(True), SupplyItem.is_active.is_(True))
-            .order_by(SupplyItem.item_name, SupplyItem.id).all())
-
-
-def station_for(item: SupplyItem) -> str | None:
-    """The check station set on this model, or None when it has none."""
-    return item.check_station if item.check_station in INV_CHECK_STATIONS else None
-
-
-def require_station(unit: InvUnit, station_code: str, can_switch: bool) -> None:
-    """Refuse a unit this station does not check.
-
-    A model listed for the other check station raises WrongGear; a model in no list
-    raises a plain refusal.
-    """
-    owner = station_for(unit.item)
-    if owner == station_code:
-        return
-    if owner is None:
-        raise InventoryError(f"{unit.item.item_name} is not checked at this station.")
-    raise WrongGear(unit, owner, can_switch)
 
 
 def open_check_for(actor: Actor) -> InvCheck | None:
@@ -201,13 +144,10 @@ def open_check(unit: InvUnit, station_code: str, actor: Actor, event_cycle) -> I
     """
     default = _default_event()
     event = event_cycle or default
-    if station_code not in INV_CHECK_STATIONS and station_code != INV_STATION_UNIT:
+    if station_code not in INV_CHECK_STATIONS:
         raise InventoryError(f"{station_code or 'That'} is not a check station.")
     if unit.condition == INV_CONDITION_RETIRED:
         raise InventoryError("That unit is retired.")
-    # The Unit station checks any model; the TV and printer stations check only their own.
-    if station_code != INV_STATION_UNIT and station_for(unit.item) != station_code:
-        raise InventoryError(f"{unit.item.item_name} is not checked at this station.")
     _set_aside_ended_shifts(actor)
     other = blocking_check(actor, unit)
     if other is not None:
@@ -306,116 +246,6 @@ def checked_serial(unit: InvUnit, raw) -> str:
     if holders:
         raise InventoryError(f"{text} belongs to {unit_phrase(holders[0])}. Nothing was changed.")
     return text
-
-
-def check_serial(unit: InvUnit, scanned: str, check: InvCheck | None = None) -> dict:
-    """Compare a scanned serial with the record; the unit's barcode wins.
-
-    Returns `{"result": "matches" | "recorded" | "replaced", "old": str | None}`.
-    A serial held by a different active unit is refused and nothing changes. A
-    replacement is written to the check's note so the change has a who and a when.
-    """
-    _default_event()
-    raw, normalized = _clean_serial(scanned)
-    number = unit_number(unit)
-    if number and normalize_code(number) == normalized:
-        raise InventoryError(SAME_CODE)
-    if check is not None and (labels.parse(normalized) is not None or _is_a_number(normalized)):
-        other = resolve(raw).unit
-        if other is not None and other.id != check.unit_id:
-            raise CheckBlocked(check)
-    _require_serial_shape(raw, normalized)
-    current = (db.session.query(InvUnitIdentifier)
-               .filter(InvUnitIdentifier.unit_id == unit.id,
-                       InvUnitIdentifier.kind == INV_IDENT_SERIAL,
-                       InvUnitIdentifier.retired_at.is_(None))
-               .order_by(InvUnitIdentifier.id).all())
-    if any(i.normalized_value == normalized for i in current):
-        return {"result": "matches", "old": None}
-    holders = _units_with_serial(normalized, exclude=unit)
-    if holders:
-        raise InventoryError(f"{raw} belongs to {unit_phrase(holders[0])}. Nothing was changed.")
-    old = current[0].value if current else None
-    for identifier in current:
-        retire_identifier(identifier)
-    add_identifier(unit, INV_IDENT_SERIAL, raw)
-    if current and check is not None:
-        check.note = _joined_note([check.note, f"Serial changed from {old} to {raw}"])
-    return {"result": "replaced" if current else "recorded", "old": old}
-
-
-def _tail(value: str) -> str:
-    return "..." + value[-4:]
-
-
-def serial_message(answer: dict, scanned: str) -> str:
-    """The line the screen shows after a serial scan."""
-    if answer["result"] == "matches":
-        return "Serial matches."
-    if answer["result"] == "recorded":
-        return "Serial recorded."
-    return (f"Record says {_tail(answer['old'])}, unit says {_tail(scanned.strip())}. "
-            "Using the unit's.")
-
-
-def unused_unit_label(label_code) -> str:
-    code = normalize_code(label_code if isinstance(label_code, str) else "")
-    parsed = labels.parse(code)
-    if parsed is None or parsed[0] != labels.PREFIX_UNIT:
-        raise InventoryError("Scan a U- label for a unit.")
-    code = labels.format_code(*parsed)
-    if resolve(code).kind != KIND_UNUSED:
-        raise InventoryError(f"{code} is not an unused unit label.")
-    return code
-
-
-def _already_numbered(raw: str, unit: InvUnit) -> InventoryError:
-    return InventoryError(f"{raw} already has number {unit_phrase(unit)}. Use that label.")
-
-
-def bind_label(label_code: str, serial: str, actor: Actor) -> InvUnit:
-    """Bind an unused U- label to the one active unit that holds this serial.
-
-    Raises NoUnitForSerial when none matches. A unit that already has a number is
-    refused, since an owned unit keeps one number.
-    """
-    _default_event()
-    code = unused_unit_label(label_code)
-    raw, normalized = _clean_serial(serial)
-    if normalize_code(code) == normalized:
-        raise InventoryError(SAME_CODE)
-    _require_serial_shape(raw, normalized)
-    matches = _units_with_serial(normalized)
-    if not matches:
-        raise NoUnitForSerial(f"No unit has serial {raw}.")
-    if len(matches) > 1:
-        numbers = " and ".join(unit_phrase(u) for u in matches)
-        raise InventoryError(f"Serial {raw} is on {len(matches)} units: {numbers}. "
-                             "An inventory admin must fix one.")
-    unit = matches[0]
-    if unit_number(unit):
-        raise _already_numbered(raw, unit)
-    add_identifier(unit, INV_IDENT_FESTOPS_LABEL, code)
-    return unit
-
-
-def create_checked_unit(item: SupplyItem, label_code: str, serial: str, actor: Actor) -> InvUnit:
-    """Create an owned unit whose one number is the unused U- label, with its serial."""
-    _default_event()
-    code = unused_unit_label(label_code)
-    raw, normalized = _clean_serial(serial)
-    if normalize_code(code) == normalized:
-        raise InventoryError(SAME_CODE)
-    _require_serial_shape(raw, normalized)
-    if not item.is_serialized or not item.is_active:
-        raise InventoryError(f"{item.item_name} cannot be checked as a unit.")
-    holders = _units_with_serial(normalized)
-    if holders:
-        if unit_number(holders[0]):
-            raise _already_numbered(raw, holders[0])
-        raise InventoryError(f"{raw} is already on a unit. Scan the label again.")
-    return add_unit(item, None, actor, [(INV_IDENT_FESTOPS_LABEL, code),
-                                        (INV_IDENT_SERIAL, raw)])
 
 
 def prep_status(unit: InvUnit, event_cycle) -> str | None:

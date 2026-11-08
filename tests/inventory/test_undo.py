@@ -41,7 +41,7 @@ def _rid():
 
 @pytest.fixture
 def shift(client, inv):
-    device = enrolled_client(client, station_code="TV_CHECK")
+    device = enrolled_client(client, station_code="UNIT")
     shift = start_shift(device, "Sam")
     db.session.commit()
     return shift
@@ -52,7 +52,7 @@ def _actor(shift):
 
 
 def _fail_and_retire(t, event, actor):
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "NO", t.remote.id: "YES"}, actor,
                  failed_condition="RETIRED")
     db.session.commit()
@@ -68,7 +68,7 @@ def _later(check_or_count, seconds):
 
 def test_undo_a_failed_check_restores_condition_and_voids_prep(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "NO", t.remote.id: "YES"}, actor, failed_condition="REPAIR")
     db.session.commit()
     answer = undo_last(shift, now=_later(check, 5))
@@ -85,7 +85,7 @@ def test_undo_a_pass_that_cleared_repair_puts_repair_back(inv, tv_checklist, eve
     t, actor = tv_checklist, _actor(shift)
     t.tv.condition = "REPAIR"
     db.session.commit()
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
     assert t.tv.condition == "IN_SERVICE"
@@ -132,7 +132,7 @@ def test_undo_is_refused_whole_when_a_retired_tag_was_taken(inv, tv_checklist, e
 def test_undo_says_what_stays_after_a_put_away(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
     bin2 = make_container(inv, "C-0002", kind="BIN")
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     from app.inventory.checks import put_away
     assert put_away(t.tv, "C-0002", actor) is None
@@ -145,14 +145,14 @@ def test_undo_says_what_stays_after_a_put_away(inv, tv_checklist, event, shift):
 def test_look_up_shows_not_checked_after_undo_and_a_new_check_opens(
         client, inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
     assert "Checked" in card_for(resolve("TECH00412"), event)["lines"]
     undo_last(shift, now=_later(check, 5))
     db.session.commit()
     assert "Not checked" in card_for(resolve("TECH00412"), event)["lines"]
-    answer = client.post("/inv/scan/api/check/open", json={
+    answer = client.post("/inv/scan/api/unit/scan", json={
         "client_request_id": _rid(), "code": "TECH00412"}).get_json()
     assert answer["ok"] is True and "already_checked" not in answer
     assert answer["check_id"] != check.id
@@ -160,14 +160,14 @@ def test_look_up_shows_not_checked_after_undo_and_a_new_check_opens(
 
 def test_undo_after_the_window_or_another_write_is_refused(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
     with pytest.raises(InventoryError, match=TOO_LATE):
         undo_last(shift, now=_later(check, 31))
     assert UNDO_WINDOW == timedelta(seconds=30)
     # Another write on the shift ends the window even inside 30 seconds.
-    open_check(t.tv2, "TV_CHECK", actor, event)
+    open_check(t.tv2, "UNIT", actor, event)
     db.session.commit()
     with pytest.raises(InventoryError, match=TOO_LATE):
         undo_last(shift, now=_later(check, 5))
@@ -176,7 +176,7 @@ def test_undo_after_the_window_or_another_write_is_refused(inv, tv_checklist, ev
 
 def test_a_stock_write_on_the_shift_ends_the_window(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     add_stock(inv.pens, t.where, 3, actor)
     db.session.commit()
@@ -186,9 +186,9 @@ def test_a_stock_write_on_the_shift_ends_the_window(inv, tv_checklist, event, sh
 
 def test_a_flag_does_not_end_the_window(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
-    raise_flag(actor, "TV_CHECK", "DAMAGED", unit=t.tv2)
+    raise_flag(actor, "UNIT", "DAMAGED", unit=t.tv2)
     db.session.commit()
     assert undo_last(shift, now=_later(check, 5))["undone"] == "check"
 
@@ -198,7 +198,7 @@ def test_undo_refuses_when_nothing_is_there_and_when_already_undone(
     t, actor = tv_checklist, _actor(shift)
     with pytest.raises(InventoryError, match="Nothing to undo."):
         undo_last(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
     undo_last(shift, now=_later(check, 5))
@@ -210,7 +210,7 @@ def test_undo_refuses_when_nothing_is_there_and_when_already_undone(
 
 def test_undo_refuses_when_the_unit_changed_since(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "NO", t.remote.id: "YES"}, actor, failed_condition="REPAIR")
     t.tv.condition = "LOST"
     db.session.commit()
@@ -379,7 +379,7 @@ def test_the_endpoint_refuses_late_and_says_so(client, inv, shift):
 
 
 def test_the_endpoint_needs_json_a_shift_and_a_scanner(client, inv):
-    device = enrolled_client(client, station_code="TV_CHECK")
+    device = enrolled_client(client, station_code="UNIT")
     db.session.commit()
     assert client.post(UNDO, data="x", content_type="text/plain").status_code == 415
     answer = _post(client).get_json()
@@ -528,7 +528,7 @@ def test_undo_of_a_repair_check_is_refused_after_someone_retires_the_unit(
         inv, tv_checklist, event, shift):
     from app.inventory.ledger import set_condition
     t, actor = tv_checklist, _actor(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "NO", t.remote.id: "YES"}, actor, failed_condition="REPAIR")
     db.session.commit()
     set_condition(t.tv, "RETIRED")
@@ -541,10 +541,10 @@ def test_undo_of_a_repair_check_is_refused_after_someone_retires_the_unit(
 
 def test_undoing_a_recheck_keeps_the_earlier_pass(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
-    first = open_check(t.tv, "TV_CHECK", actor, event)
+    first = open_check(t.tv, "UNIT", actor, event)
     finish_check(first, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
-    second = open_check(t.tv, "TV_CHECK", actor, event)
+    second = open_check(t.tv, "UNIT", actor, event)
     finish_check(second, {t.power.id: "NO", t.remote.id: "YES"}, actor,
                  failed_condition="REPAIR")
     db.session.commit()
@@ -558,7 +558,7 @@ def test_undoing_a_recheck_keeps_the_earlier_pass(inv, tv_checklist, event, shif
 
 def test_undoing_the_only_check_leaves_the_unit_unchecked(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
-    check = open_check(t.tv, "TV_CHECK", actor, event)
+    check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
     undo_last(shift, now=_later(check, 5))
@@ -583,12 +583,12 @@ def test_the_movements_log_names_an_undo(inv, shift):
 
 def test_the_finish_payload_names_a_retired_unit_by_its_number(client, inv, tv_checklist, event):
     t = tv_checklist
-    enrolled_client(client, station_code="TV_CHECK")
+    enrolled_client(client, station_code="UNIT")
     start_shift(db.session.query(__import__("app.models", fromlist=["x"]).InvDevice).one(), "Sam")
     db.session.commit()
-    opened = client.post("/inv/scan/api/check/open",
+    opened = client.post("/inv/scan/api/unit/scan",
                          json={"client_request_id": _rid(), "code": "TECH00412"}).get_json()
-    out = client.post("/inv/scan/api/check/finish", json={
+    out = client.post("/inv/scan/api/unit/finish", json={
         "client_request_id": _rid(), "check_id": opened["check_id"],
         "answers": {str(t.power.id): "NO", str(t.remote.id): "YES"},
         "failed_condition": "RETIRED"}).get_json()
@@ -597,11 +597,11 @@ def test_the_finish_payload_names_a_retired_unit_by_its_number(client, inv, tv_c
 
 def _bound_unit(t, serial, label_actor):
     from app.inventory import labels
-    from app.inventory.checks import bind_label
+    from app.inventory.ledger import add_identifier
     unit = add_unit(t.tv_item, None, ADMIN, [("SERIAL", serial)])
     code = labels.allocate(labels.PREFIX_UNIT, 1)[0]
     db.session.commit()
-    bind_label(code, serial, label_actor)
+    add_identifier(unit, "FESTOPS_LABEL", code)
     db.session.commit()
     return unit
 
@@ -609,7 +609,7 @@ def _bound_unit(t, serial, label_actor):
 def test_undo_reports_a_label_this_shift_bound(inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
     unit = _bound_unit(t, "NEW1", actor)
-    check = open_check(unit, "TV_CHECK", actor, event)
+    check = open_check(unit, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
     assert "The label stays on it." in undo_last(shift, now=_later(check, 5))["message"]
@@ -619,9 +619,9 @@ def test_a_label_bound_before_this_check_is_not_reported_as_staying(
         inv, tv_checklist, event, shift):
     t, actor = tv_checklist, _actor(shift)
     unit = _bound_unit(t, "NEW2", ADMIN)
-    open_check(unit, "TV_CHECK", ADMIN, event)
+    open_check(unit, "UNIT", ADMIN, event)
     db.session.commit()
-    mine = open_check(unit, "TV_CHECK", actor, event)
+    mine = open_check(unit, "UNIT", actor, event)
     finish_check(mine, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
     assert "label stays" not in undo_last(shift, now=_later(mine, 5))["message"]
@@ -632,7 +632,7 @@ def test_undo_names_a_unit_with_no_number_by_its_name(inv, tv_checklist, event, 
     t, actor = tv_checklist, _actor(shift)
     bare = add_unit(t.tv_item, t.where, ADMIN, [], name="Lobby TV")
     db.session.commit()
-    check = open_check(bare, "TV_CHECK", actor, event)
+    check = open_check(bare, "UNIT", actor, event)
     finish_check(check, {t.power.id: "NO", t.remote.id: "YES"}, actor, failed_condition="REPAIR")
     db.session.commit()
     message = undo_last(shift, now=_later(check, 5))["message"]

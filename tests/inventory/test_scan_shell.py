@@ -183,22 +183,14 @@ def test_resolve_needs_json(client, inv):
     assert client.post("/inv/scan/api/resolve", data={"code": "x"}).status_code == 415
 
 
-def test_resolve_names_the_wrong_station(client, inv):
+def test_resolve_never_names_a_wrong_station(client, inv):
     inv.laptop.check_station = "PRINTER_CHECK"
-    enrolled_client(client, station_code="TV_CHECK")
+    enrolled_client(client, station_code="UNIT")
     add_unit(inv.laptop, None, ACTOR, [("SERIAL", "P1")])
     db.session.commit()
     r = client.post("/inv/scan/api/resolve", json={"code": "P1"}).get_json()
-    assert r["wrong_station"] == "PRINTER_CHECK"
+    assert "wrong_station" not in r
     assert r["kind"] == "UNIT" and r["card"]["title"] == "Laptop"
-
-
-def test_look_up_never_names_a_wrong_station(client, inv):
-    inv.laptop.check_station = "PRINTER_CHECK"
-    enrolled_client(client)
-    add_unit(inv.laptop, None, ACTOR, [("SERIAL", "P1")])
-    db.session.commit()
-    assert "wrong_station" not in client.post("/inv/scan/api/resolve", json={"code": "P1"}).get_json()
 
 
 def test_resolve_reports_unknown_and_unused_codes(client, inv):
@@ -509,20 +501,12 @@ def test_look_up_card_shows_name_fields_and_notes(app, inv):
     assert card["name"] is None and card["fields"] == [] and card["notes"] is None
 
 
-def test_the_tag_page_needs_the_tag_station_and_a_shift(client, inv):
-    from app.models import InvDevice
-    enrolled_client(client, station_code="TAG")
-    assert "/scan/who" in client.get("/inv/scan/tag").headers["Location"]
-    device = InvDevice.query.one()
-    start_shift(device, "Sam")
-    db.session.commit()
-    assert client.get("/inv/scan/").headers["Location"].endswith("/inv/scan/tag")
-    page = client.get("/inv/scan/tag")
-    assert page.status_code == 200
-    assert b'data-station="TAG"' in page.data and b"station_tag.js" in page.data
-    device.station_code = "LOOKUP"
-    db.session.commit()
-    assert client.get("/inv/scan/tag").status_code == 302
+def test_the_tag_and_check_pages_are_gone(client, inv):
+    login(client, "test:operator")
+    assert client.get("/inv/scan/tag").status_code == 404
+    assert client.get("/inv/scan/check").status_code == 404
+    assert client.post("/inv/scan/api/check/open", json={}).status_code == 404
+    assert client.post("/inv/scan/api/tag/link", json={}).status_code == 404
 
 
 def _named(inv, name, identifiers=()):

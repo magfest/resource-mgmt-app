@@ -99,8 +99,8 @@ def _tagged(inv, name, tag, container=None):
     return unit
 
 
-def test_tv_check_device_is_refused(client, inv, event):
-    enrolled_client(client, station_code="TV_CHECK")
+def test_another_stations_device_is_refused(client, inv, event):
+    enrolled_client(client, station_code="COUNT")
     answer = post(client, "scan", {"code": "FEST91002"})
     assert answer.json["ok"] is False and answer.json["message"] == NOT_UNIT
 
@@ -122,7 +122,7 @@ def test_every_route_but_keepalive_refuses_a_unit_device_with_no_home(
 
 
 def test_keepalive_refuses_another_station(client, inv, event):
-    enrolled_client(client, station_code="TV_CHECK")
+    enrolled_client(client, station_code="COUNT")
     assert post(client, "keepalive").json["message"] == NOT_UNIT
 
 

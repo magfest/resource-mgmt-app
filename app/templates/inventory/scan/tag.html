@@ -1,9 +1,0 @@
-{% extends "inventory/scan/layout.html" %}
-{% block content %}{% endblock %}
-{% block scripts %}
-<script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/station_tag.js') }}"
-        data-check-url="{{ url_for('inventory.scan_tag_check') }}"
-        data-candidates-url="{{ url_for('inventory.scan_tag_candidates') }}"
-        data-link-url="{{ url_for('inventory.scan_tag_link') }}"
-        data-undo-url="{{ url_for('inventory.scan_tag_undo') }}"></script>
-{% endblock %}

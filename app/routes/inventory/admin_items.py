@@ -7,14 +7,12 @@ never belong in the Supply catalog.
 from flask import abort, flash, redirect, request, url_for
 
 from app import db
-from app.inventory.checks import check_station_error
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import InventoryError
 from app.inventory.unit_fields import active_fields, display_value, set_model_default
 from app.models import (
     InvGearKind, InvModelDefault, InvStock, InvUnit, SupplyCategory, SupplyItem,
 )
-from app.models.constants import INV_CHECK_STATIONS, INV_STATION_NAMES
 
 from . import inventory_bp
 from .helpers import render_inventory_page, require_inventory_admin
@@ -28,7 +26,6 @@ def items():
             .order_by(SupplyCategory.name, SupplyItem.item_name).all())
     categories = (db.session.query(SupplyCategory).filter_by(is_active=True)
                   .order_by(SupplyCategory.name).all())
-    stations = [(code, INV_STATION_NAMES[code]) for code in INV_CHECK_STATIONS]
     gear_kinds = db.session.query(InvGearKind).order_by(InvGearKind.name).all()
     defaults = {}
     for item in rows:
@@ -39,7 +36,7 @@ def items():
                                   [c.label for c in f.choices if c.is_active])
                                  for f in active_fields(item.gear_kind)]
     return render_inventory_page("inventory/items.html", items=rows, categories=categories,
-                                 stations=stations, gear_kinds=gear_kinds, defaults=defaults)
+                                 gear_kinds=gear_kinds, defaults=defaults)
 
 
 def _barcode_error(item_id: int | None, barcode: str | None) -> str | None:
@@ -84,8 +81,6 @@ def update_item(item_id: int):
         flash(f"{item.item_name} has serialized units and must stay serialized.", "error")
         return redirect(url_for("inventory.items"))
     pack_size, error = _parse_pack_size(request.form.get("pack_size"))
-    check_station = (request.form.get("check_station") or "").strip() or None
-    error = check_station_error(check_station) or error
     error = error or _barcode_error(item.id, barcode)
     if error:
         flash(error, "error")
@@ -95,7 +90,7 @@ def update_item(item_id: int):
     item.is_orderable = request.form.get("is_orderable") == "1"
     item.barcode = barcode
     item.pack_size = pack_size
-    item.check_station = check_station
+    item.needs_asset_tag = bool(request.form.get("needs_asset_tag"))
     db.session.commit()
     flash(f"Saved {item.item_name}.", "success")
     return redirect(url_for("inventory.items"))

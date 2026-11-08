@@ -7,8 +7,6 @@ body.not-saved-on { background: #f9c9c9; }
 .band { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #fff; background: #455a64; }
 .station-LOOKUP .band { background: #455a64; }
 .station-COUNT .band { background: #1565c0; }
-.station-TV_CHECK .band { background: #6a1b9a; }
-.station-PRINTER_CHECK .band { background: #00796b; }
 .station-RECEIVE .band { background: #e65100; }
 /* At 390 px the band holds the station name, the volunteer's name, Flag and Done on one row.
    The station name keeps its width; a long volunteer name gives way with an ellipsis. */
@@ -100,7 +98,6 @@ body.not-saved-on { background: #f9c9c9; }
 .cnt-stale { color: #b71c1c; font-weight: 600; margin-bottom: 6px; }
 /* Check. The unit name and number stay at the top; YES and NO sit side by side; Finish stays in reach. */
 .chk-head { position: sticky; top: 0; z-index: 5; padding: 6px 0; background: #fff; border-bottom: 2px solid #6a1b9a; }
-.station-PRINTER_CHECK .chk-head { border-bottom-color: #00796b; }
 .chk-name { font-size: 1.3rem; font-weight: 700; }
 .chk-code { font-family: ui-monospace, monospace; font-size: 1.6rem; font-weight: 700; }
 .chk-sub { color: #455a64; }
@@ -115,7 +112,6 @@ body.not-saved-on { background: #f9c9c9; }
 .chk-no.on { background: #c62828; border-color: #c62828; color: #fff; }
 .chk-foot { position: sticky; bottom: 0; padding: 8px 0; background: #fff; }
 .chk-finish { display: block; width: 100%; min-height: 60px; font-size: 1.3rem; font-weight: 700; border: 0; border-radius: 10px; background: #6a1b9a; color: #fff; }
-.station-PRINTER_CHECK .chk-finish { background: #00796b; }
 .chk-big { display: block; width: 100%; min-height: 64px; margin: 0 0 12px; font-size: 1.3rem; font-weight: 700; border: 2px solid #90a4ae; border-radius: 10px; background: #eceff1; }
 .chk-small { display: block; width: 100%; min-height: 48px; margin-top: 8px; font-size: 1.05rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
 .chk-result { font-size: 2rem; font-weight: 800; margin: 12px 0; }

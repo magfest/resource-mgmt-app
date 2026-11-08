@@ -11,23 +11,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from app import csrf, db
 from app.inventory import labels
 from app.inventory.cards import candidate_card, card_for, default_event
-from app.inventory.checks import (
-    NO_EVENT, STATION_WORDS, CheckBlocked, CheckFinished, NoUnitForSerial, bind_label, blocking_check,
-    unit_code,
-    active_check_items, check_serial, create_checked_unit, finish_check, last_result, open_check,
-    open_check_for, put_away, require_station, serial_message, set_aside, station_models,
-    unused_unit_label,
-)
+from app.inventory.checks import NO_EVENT, active_check_items, unit_code
 from app.inventory.codes import normalize_code
-from app.inventory.devices import set_station
 from app.inventory.flags import FLAG_WORDS, find_subject, raise_flag
 from app.inventory.counts import (
     SERIALIZED_REFUSAL, CountLineIn, browse_categories, browse_items, count_payload,
     item_choice, start_count, submit_count,
 )
-from app.inventory.tagging import link_tag, tag_candidates, undo_tag_link
 from app.inventory.tree import display_name
-from app.inventory.unit_fields import model_number, spec_line
 from app.inventory.undo import undo_last
 from app.inventory.ledger import InventoryError, create_container
 from app.inventory.names import find_by_name
@@ -46,11 +37,7 @@ from app.inventory.resolver import (
 from app.inventory.zpl import can_print_code
 from app.inventory.shifts import current_shift, end_shift, start_shift, touch
 from app.models import InvCheck, InvContainerKind, InvCount, InvUnit, SupplyItem
-from app.models.constants import (
-    INV_CHECK_STATIONS, INV_CONDITION_RETIRED, INV_IDENT_SERIAL, INV_SHIFT_END_ENDED,
-    INV_STATION_COUNT,
-    INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_TAG, INV_STATION_TV_CHECK,
-)
+from app.models.constants import INV_SHIFT_END_ENDED, INV_STATION_COUNT, INV_STATION_LOOKUP
 
 from . import inventory_bp
 from .scan_auth import device_api, require_scanner, scan_actor
@@ -161,19 +148,6 @@ def _json_body() -> dict:
     return data
 
 
-def _wrong_station(resolution) -> str | None:
-    """The check station that owns this scan's model, when this device runs a different one."""
-    principal = g.scan_principal
-    if not principal.is_device or principal.device.station_code not in INV_CHECK_STATIONS:
-        return None
-    item = (resolution.unit.item if resolution.kind == KIND_UNIT
-            else resolution.item if resolution.kind == KIND_ITEM else None)
-    owner = item.check_station if item is not None else None
-    if owner and owner != principal.device.station_code:
-        return owner
-    return None
-
-
 def _can_create_tag(code: str) -> bool:
     """Only a printable code that is not a FestOps label can become an owned unit's tag."""
     return bool(code) and labels.parse(code) is None and can_print_code(code)
@@ -210,10 +184,6 @@ def scan_resolve():
         out["card"] = card_for(resolution, event)
         if by_name:
             out["unit_id"] = resolution.unit.id
-        owner = _wrong_station(resolution)
-        if owner:
-            out["wrong_station"] = owner
-            out["wrong_station_name"] = INV_STATION_NAMES.get(owner, owner)
     elif resolution.kind == KIND_AMBIGUOUS:
         shown = resolution.candidates[:MAX_CANDIDATES]
         out["candidates"] = [{"card": candidate_card(c, event),
@@ -607,27 +577,6 @@ def scan_count_submit():
     return jsonify(run_once(data.get("client_request_id"), submit))
 
 
-NOT_A_CHECK_DEVICE = "This scanner is not set up for checking."
-
-
-def _check_station(data: dict) -> str:
-    """The station this request checks for: a device's own, or an operator's chosen one.
-
-    A device on another station is refused. An operator has no station, so the page sends one.
-    """
-    principal = g.scan_principal
-    if principal.is_device:
-        if principal.device.station_code not in INV_CHECK_STATIONS:
-            raise InventoryError(NOT_A_CHECK_DEVICE)
-        return principal.device.station_code
-    chosen = data.get("station_code")
-    if chosen is None:
-        return INV_STATION_TV_CHECK
-    if chosen not in INV_CHECK_STATIONS:
-        raise InventoryError("Pick TV check or Printer check.")
-    return chosen
-
-
 def _check_event():
     event = default_event()
     if event is None:
@@ -653,296 +602,3 @@ def _check_answer(check: InvCheck, serial_checked: bool) -> dict:
              for line in active_check_items(check.unit.item)]
     return {"check_id": check.id, "unit_id": check.unit_id, "code": unit_code(check.unit),
             "name": check.unit.item.item_name, "lines": lines, "serial_checked": serial_checked}
-
-
-def _begin_check(unit: InvUnit, station: str, actor, event, again=False,
-                 serial_checked=False) -> dict:
-    """Gate the unit, then open its check; a unit already checked asks first unless `again`."""
-    principal = g.scan_principal
-    require_station(unit, station, can_switch=principal.is_device)
-    blocked = blocking_check(actor, unit)
-    if blocked is not None:
-        raise CheckBlocked(blocked)
-    resumed = open_check_for(actor)
-    if resumed is None and not again:
-        prior = last_result(unit, event)
-        if prior is not None:
-            return {"already_checked": prior, "code": unit_code(unit),
-                    "name": unit.item.item_name}
-    check = open_check(unit, station, actor, event)
-    return _check_answer(check, serial_checked)
-
-
-def _unit_for_scan(resolution: Resolution, data: dict, station: str) -> dict | InvUnit:
-    """The unit a scan names, or the answer that asks the volunteer to choose or bind."""
-    plural = STATION_WORDS[station][1]
-    kind = resolution.kind
-    if kind == KIND_UNIT:
-        return resolution.unit
-    if kind == KIND_AMBIGUOUS:
-        units = [c for c in resolution.candidates if isinstance(c, InvUnit)]
-        if units and len(units) == len(resolution.candidates):
-            chosen = data.get("unit_id")
-            match = next((u for u in units if u.id == chosen), None)
-            if match is not None:
-                return match
-            return {"candidates": [{"unit_id": u.id, "code": unit_code(u),
-                                    "name": u.item.item_name} for u in units[:MAX_CANDIDATES]]}
-    if kind == KIND_UNUSED and resolution.prefix == labels.PREFIX_UNIT:
-        return {"unused": True, "code": resolution.code}
-    if kind == KIND_UNKNOWN:
-        raise InventoryError(UNKNOWN_CODE)
-    if kind == KIND_UNUSED and resolution.prefix == labels.PREFIX_ITEM:
-        what = "item label"
-    else:
-        what = "container" if kind in (KIND_CONTAINER, KIND_UNUSED) else "model barcode"
-    raise InventoryError(f"This is a {what}; this station checks {plural}.")
-
-
-def _scanned_its_serial(unit: InvUnit, resolution: Resolution) -> bool:
-    """True when the scan matched one of the unit's active serials, so the serial step is done."""
-    return any(i.kind == INV_IDENT_SERIAL and i.retired_at is None
-               and i.normalized_value == resolution.code for i in unit.identifiers)
-
-
-@inventory_bp.post("/scan/api/check/keepalive")
-@api
-def scan_check_keepalive():
-    """Keep the shift open while a check has no server traffic. The `api` wrapper touches it."""
-    _check_station({})
-    return jsonify(ok=True)
-
-
-@inventory_bp.post("/scan/api/check/open")
-@api
-def scan_check_open():
-    """Open a check for a scanned unit, or say what the scan needs next."""
-    data = _json_body()
-
-    def start() -> dict:
-        station = _check_station(data)
-        actor = scan_actor()
-        event = _check_event()
-        resolution = resolve(_optional_text(data, "code"))
-        found = _unit_for_scan(resolution, data, station)
-        if isinstance(found, dict):
-            # An unused label must not start a bind while another unit's check is open.
-            open_one = open_check_for(actor) if found.get("unused") else None
-            if open_one is not None:
-                raise CheckBlocked(open_one)
-            return found
-        return _begin_check(found, station, actor, event, again=data.get("again") is True,
-                            serial_checked=_scanned_its_serial(found, resolution))
-
-    return jsonify(run_once(data.get("client_request_id"), start))
-
-
-@inventory_bp.post("/scan/api/check/serial")
-@api
-def scan_check_serial():
-    """Compare the scanned serial barcode with the unit's record."""
-    data = _json_body()
-
-    def compare() -> dict:
-        _check_station(data)
-        scan_actor()
-        _check_event()
-        check = _own_check(data.get("check_id"))
-        if check.status != "OPEN":
-            raise CheckFinished("This check is already finished.")
-        scanned = _optional_text(data, "code")
-        answer = check_serial(check.unit, scanned, check)
-        return {**answer, "message": serial_message(answer, scanned)}
-
-    return jsonify(run_once(data.get("client_request_id"), compare))
-
-
-@inventory_bp.post("/scan/api/check/finish")
-@api
-def scan_check_finish():
-    """Finish a check; an optional put-away moves the unit after the check is saved."""
-    data = _json_body()
-
-    def finish() -> dict:
-        _check_station(data)
-        actor = scan_actor()
-        check = _own_check(data.get("check_id"))
-        raw = data.get("answers")
-        if not isinstance(raw, dict):
-            raise InventoryError("Answer every line.")
-        try:
-            answers = {int(k): v for k, v in raw.items()}
-        except (TypeError, ValueError):
-            raise InventoryError("Answer every line.") from None
-        condition = _optional_text(data, "failed_condition")
-        line_ids = data.get("line_ids")
-        # Retiring the unit retires its numbers, so name it before finishing.
-        code = unit_code(check.unit)
-        finish_check(check, answers, actor, failed_condition=condition,
-                     note=_optional_text(data, "note"),
-                     line_ids=line_ids if isinstance(line_ids, list) else None)
-        unit = check.unit
-        out = {"status": check.status, "condition": unit.condition,
-               "code": code}
-        put_code = _optional_text(data, "put_away_code")
-        if put_code and put_code.strip() and unit.condition != INV_CONDITION_RETIRED:
-            error = put_away(unit, put_code, actor)
-            if error:
-                out["put_away_error"] = error
-        return out
-
-    return jsonify(run_once(data.get("client_request_id"), finish))
-
-
-@inventory_bp.post("/scan/api/check/set-aside")
-@api
-def scan_check_set_aside():
-    """Close an open check with no result."""
-    data = _json_body()
-
-    def aside() -> dict:
-        _check_station(data)
-        actor = scan_actor()
-        set_aside(_own_check(data.get("check_id")), actor)
-        return {}
-
-    return jsonify(run_once(data.get("client_request_id"), aside))
-
-
-@inventory_bp.post("/scan/api/check/bind-label")
-@api
-def scan_check_bind_label():
-    """Bind an unused U- label to the unit with the scanned serial, then open its check.
-
-    With no unit holding the serial, the answer lists this station's models to create one.
-    """
-    data = _json_body()
-
-    def bind() -> dict:
-        station = _check_station(data)
-        actor = scan_actor()
-        event = _check_event()
-        serial = _optional_text(data, "serial")
-        try:
-            unit = bind_label(_optional_text(data, "label_code"), serial, actor)
-        except NoUnitForSerial:
-            models = station_models(station)
-            if not models:
-                raise InventoryError(
-                    "No models are listed for this station. Ask an inventory admin.") from None
-            return {"create": True, "label_code": unused_unit_label(data.get("label_code")),
-                    "serial": serial.strip(),
-                    "models": [{"id": m.id, "name": m.item_name} for m in models]}
-        answer = _begin_check(unit, station, actor, event, again=True, serial_checked=True)
-        return {**answer, "code": unit_code(unit)}
-
-    return jsonify(run_once(data.get("client_request_id"), bind))
-
-
-@inventory_bp.post("/scan/api/check/create-unit")
-@api
-def scan_check_create_unit():
-    """Create an owned unit from an unused U- label and a serial, then open its check."""
-    data = _json_body()
-
-    def create() -> dict:
-        station = _check_station(data)
-        actor = scan_actor()
-        event = _check_event()
-        item_id = data.get("item_id")
-        item = next((m for m in station_models(station) if m.id == item_id), None) \
-            if type(item_id) is int else None
-        if item is None:
-            known = db.session.get(SupplyItem, item_id) if type(item_id) is int else None
-            if known is None:
-                raise InventoryError("Pick a model.")
-            raise InventoryError(f"{known.item_name} is not checked at this station.")
-        unit = create_checked_unit(item, _optional_text(data, "label_code"),
-                                   _optional_text(data, "serial"), actor)
-        return _begin_check(unit, station, actor, event, again=True, serial_checked=True)
-
-    return jsonify(run_once(data.get("client_request_id"), create))
-
-
-@inventory_bp.post("/scan/api/station")
-@api
-def scan_station_switch():
-    """Move the requesting device to the other check station; no other device changes."""
-    data = _json_body()
-
-    def switch() -> dict:
-        principal = g.scan_principal
-        if not principal.is_device:
-            raise InventoryError("Signed-in operators have no station to switch.")
-        _check_station(data)
-        scan_actor()
-        code = data.get("station_code")
-        if code not in INV_CHECK_STATIONS:
-            raise InventoryError("Pick TV check or Printer check.")
-        set_station(principal.device, code, keep_home=True)
-        return {"station_code": code}
-
-    return jsonify(run_once(data.get("client_request_id"), switch))
-
-
-def _tag_device() -> None:
-    """Refuse a device enrolled for another station; a signed-in operator passes."""
-    principal = g.scan_principal
-    if principal.is_device and principal.device.station_code != INV_STATION_TAG:
-        raise InventoryError("This scanner is not set up for tagging.")
-
-
-@inventory_bp.post("/scan/api/tag/check")
-@api
-def scan_tag_check():
-    """Check a scanned FEST tag before the unit step. Reads only."""
-    _tag_device()
-    tag = _optional_text(_json_body(), "tag")
-    if not tag or not tag.strip():
-        raise InventoryError("Scan a tag.")
-    check_tag(tag.strip())
-    return jsonify(ok=True)
-
-
-@inventory_bp.post("/scan/api/tag/candidates")
-@api
-def scan_tag_candidates():
-    """List named units with no number whose name contains the text. Reads only."""
-    _tag_device()
-    text = _optional_text(_json_body(), "q") or ""
-    return jsonify(ok=True, units=[
-        {"id": u.id, "name": u.name, "model": model_number(u) or u.item.item_name,
-         "details": spec_line(u)} for u in tag_candidates(text)])
-
-
-@inventory_bp.post("/scan/api/tag/link")
-@api
-def scan_tag_link():
-    """Attach a tag to a named unit and queue the combined label."""
-    _tag_device()
-    data = _json_body()
-
-    def link() -> dict:
-        actor = scan_actor()
-        unit_id = data.get("unit_id")
-        return link_tag(unit_id if type(unit_id) is int else -1,
-                        _optional_text(data, "tag"), actor,
-                        client_request_id=data.get("client_request_id"))
-
-    return jsonify(run_once(data.get("client_request_id"), link))
-
-
-@inventory_bp.post("/scan/api/tag/undo")
-@api
-def scan_tag_undo():
-    """Undo the tag this scanner linked last."""
-    _tag_device()
-    data = _json_body()
-
-    def undo() -> dict:
-        actor = scan_actor()
-        unit_id = data.get("unit_id")
-        message = undo_tag_link(unit_id if type(unit_id) is int else -1, actor)
-        return {"unit_id": unit_id, "message": message}
-
-    return jsonify(run_once(data.get("client_request_id"), undo))

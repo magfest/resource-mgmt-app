@@ -89,7 +89,7 @@ class SupplyItem(db.Model):
     # The Unit station asks for an asset tag instead of offering a U- number.
     needs_asset_tag = db.Column(db.Boolean, nullable=False, default=False,
                                 server_default=db.false())
-    # TV_CHECK or PRINTER_CHECK; NULL for models no station checks.
+    # Unused since the Unit station replaced the per-model check stations.
     check_station = db.Column(db.String(16), nullable=True)
     # The kind whose typed fields describe this model's units; NULL for none.
     gear_kind_id = db.Column(

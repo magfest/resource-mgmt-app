@@ -191,11 +191,30 @@ def test_revoking_closes_the_open_shift(client, inv):
 
 
 def test_station_is_set_at_enrollment_and_changed_on_the_devices_page(client, inv):
-    device = enrolled_client(client, name="Scanner 3", station_code="TV_CHECK")
-    assert device.station_code == "TV_CHECK"
+    device = enrolled_client(client, name="Scanner 3", station_code="RECEIVE")
+    assert device.station_code == "RECEIVE"
     login(client, "test:invadmin")
     client.post(f"/inv/admin/devices/{device.id}/station", data={"station_code": "COUNT"})
     assert db.session.get(InvDevice, device.id).station_code == "COUNT"
+
+
+def test_removed_stations_cannot_be_assigned(inv):
+    home = make_container(inv, "LOC-0002", kind="LOCATION")
+    device, _ = enroll_device("CT60 old", "test:invadmin", station_code=INV_STATION_UNIT,
+                              home_container=home)
+    for code in ("TAG", "TV_CHECK", "PRINTER_CHECK"):
+        with pytest.raises(InventoryError):
+            set_station(device, code, keep_home=True)
+        with pytest.raises(InventoryError):
+            create_enroll_code("CT60 new", "test:invadmin", station_code=code)
+    assert device.station_code == "UNIT"
+
+
+def test_removed_station_names_still_render_for_history():
+    from app.models.constants import INV_STATION_NAMES
+    assert INV_STATION_NAMES["TV_CHECK"] == "TV check"
+    assert INV_STATION_NAMES["PRINTER_CHECK"] == "Printer check"
+    assert INV_STATION_NAMES["TAG"] == "Tag"
 
 
 def test_unknown_station_is_refused(client, inv):
