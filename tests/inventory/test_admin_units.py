@@ -351,10 +351,15 @@ def _many_tvs(inv, count, prefix="TVN"):
 
 
 def test_q_with_kind_finds_a_match_past_the_first_fifty_name_hits(client, inv):
+    from app.inventory.unit_fields import set_unit_value
     kind, units = _many_tvs(inv, 60)
+    res = kind.fields[1]
+    set_unit_value(units[59], res, "4k")
+    db.session.commit()
+    four_k = next(c for c in res.choices if c.label == "4k")
     login(client, "test:operator")
     page = client.get("/inv/admin/units", query_string={
-        "q": "stage tv 059", "kind": "TV"}).get_data(as_text=True)
+        "q": "stage tv", "kind": "TV", f"f_{res.id}": four_k.id}).get_data(as_text=True)
     assert _ids_in(page, units) == [units[59].id]
     page = client.get("/inv/admin/units", query_string={
         "q": "stage tv", "kind": "TV"}).get_data(as_text=True)
