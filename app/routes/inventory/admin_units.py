@@ -254,8 +254,12 @@ def unit_page(unit_id: int):
                           selectinload(InvMovement.shift), selectinload(InvMovement.device))
                  .order_by(InvMovement.id.desc()).limit(20).all())
     options = reprint_options(unit)
+    event = default_event()
+    summary = _unit_rows([unit], event)[0]
     return render_inventory_page(
-        "inventory/unit.html", unit=unit, number=unit_code(unit),
+        "inventory/unit.html", unit=unit, number=unit_code(unit), event=event,
+        summary=summary, model=model_number(unit),
+        checked_text=local_iso(summary["checked_at"]) if summary["checked_at"] else "",
         open_rows=[r for r in rows if r["flag"].resolved_at is None],
         resolved_rows=[r for r in rows if r["flag"].resolved_at is not None],
         movements=[(local_stamp(m.created_at), describe_movement(m), describe_actor(m))

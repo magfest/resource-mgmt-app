@@ -840,3 +840,96 @@ def test_csv_does_not_query_per_unit(client, inv):
     few = _selects(lambda: _list(client, format="csv"))
     add_placed(4, 2)
     assert _selects(lambda: _list(client, format="csv")) == few
+
+
+def _page(client, unit):
+    return client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
+
+
+def _prep(event, unit, status, when=None):
+    from app.models import InvPrepStatus
+    db.session.add(InvPrepStatus(unit_id=unit.id, event_cycle_id=event.id, status=status,
+                                 **({"created_at": when} if when else {})))
+    db.session.commit()
+
+
+def test_unit_page_summary_says_works_with_local_time(client, inv):
+    from datetime import datetime
+    event, (u,) = _week_units(inv, 1)
+    _prep(event, u, "CHECKED", datetime(2026, 12, 8, 15, 14))
+    login(client, "test:operator")
+    page = _page(client, u)
+    assert "This week: Works, 2026-12-08 10:14" in page
+    assert page.index("This week:") < page.index("Fix this unit")
+
+
+def test_unit_page_summary_says_broken(client, inv):
+    event, (u,) = _week_units(inv, 1)
+    _prep(event, u, "FAILED_CHECK")
+    login(client, "test:operator")
+    assert "This week: Broken," in _page(client, u)
+
+
+def test_unit_page_summary_not_seen_has_no_time(client, inv):
+    _, (u,) = _week_units(inv, 1)
+    login(client, "test:operator")
+    page = _page(client, u)
+    assert "This week: Not seen<" in page
+    assert "Where: Not seen" in page
+
+
+def test_unit_page_summary_omits_this_week_without_a_default_event(client, unit):
+    login(client, "test:operator")
+    page = _page(client, unit)
+    assert "This week:" not in page
+    assert "Where:" not in page
+    assert "Condition: In service" in page
+
+
+def test_unit_page_summary_shows_where_for_a_placed_unit(client, inv):
+    from tests.inventory.helpers import make_container
+    event, _ = _week_units(inv, 0)
+    box = make_container(inv, "C-9001", name="Shelf nine")
+    u = add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", "PL-001")])
+    db.session.commit()
+    _prep(event, u, "CHECKED")
+    login(client, "test:operator")
+    assert "Where: C-9001 Shelf nine" in _page(client, u)
+
+
+def test_unit_page_summary_counts_open_flags(client, unit):
+    login(client, "test:operator")
+    assert "Open flags: 0" in _page(client, unit)
+    raise_flag(ACTOR, "LOOKUP", "DAMAGED", unit=unit)
+    db.session.commit()
+    assert "Open flags: 1" in _page(client, unit)
+
+
+def test_fix_this_unit_is_closed_on_a_normal_load(client, unit):
+    login(client, "test:invadmin")
+    page = _page(client, unit)
+    assert '<details id="fix-unit">' in page
+
+
+def test_fix_this_unit_opens_after_a_refused_identifier_or_number(client, inv, unit):
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/units/{unit.id}/identifiers",
+                       data={"kind": "SERIAL", "value": "U-0099"}, follow_redirects=True)
+    assert '<details id="fix-unit" open>' in resp.get_data(as_text=True)
+    resp = client.post(f"/inv/admin/units/{unit.id}/give-number", follow_redirects=True)
+    assert "already has a number" in resp.get_data(as_text=True)
+    assert '<details id="fix-unit" open>' in resp.get_data(as_text=True)
+    assert '<details id="fix-unit">' in _page(client, unit)
+
+
+def test_every_form_still_posts_where_it_did(client, inv):
+    bare_unit = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-FORMS1")], name="Forms unit")
+    bare_unit.imported_notes = "old"
+    db.session.commit()
+    login(client, "test:invadmin")
+    page = _page(client, bare_unit)
+    base = f"/inv/admin/units/{bare_unit.id}"
+    serial = next(i for i in bare_unit.identifiers if i.value == "SN-FORMS1")
+    for suffix in ("/details", "/imported-notes/clear", "/print", "/give-number",
+                   "/identifiers", "/condition", "/item", f"/identifiers/{serial.id}/retire"):
+        assert f'action="/inv{base[4:]}{suffix}"' in page, suffix

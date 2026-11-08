@@ -6,9 +6,13 @@
 {% if unit.name %}<div class="muted">{{ number or "No number yet" }}</div>{% endif %}
 <div class="muted mb-16"><a href="{{ url_for('inventory.units') }}">Units</a></div>
 <div class="card mb-16">
-  <div><strong>Item</strong> {{ unit.item.item_name }}</div>
-  <div><strong>Condition</strong> {{ condition_words.get(unit.condition, unit.condition) }}</div>
-  <div><strong>Container</strong> {{ unit.current_container.label_code if unit.current_container else 'Not placed' }}</div>
+  <div><strong>Type</strong> {{ unit.item.item_name }}{% if model %} <span class="muted">{{ model }}</span>{% endif %}</div>
+  {% if event %}
+  <div>This week: {{ summary.week_word }}{% if summary.week != 'NOT_SEEN' and checked_text %}, {{ checked_text }}{% endif %}</div>
+  {% endif %}
+  <div>Condition: {{ condition_words.get(unit.condition, unit.condition) }}</div>
+  {% if event %}<div>Where: {{ summary.where }}</div>{% endif %}
+  <div>{% if summary.open_flags %}<a href="#open-flags">Open flags: {{ summary.open_flags }}</a>{% else %}Open flags: 0{% endif %}</div>
   <div class="muted">Internal database ID: {{ unit.id }}. For troubleshooting only; it is never printed or scanned.</div>
 </div>
 
@@ -56,12 +60,6 @@
 {% if unit.imported_notes %}
 <h2>From the old system</h2>
 <div class="card mb-16" style="white-space: pre-wrap; overflow-wrap: anywhere;">{{ unit.imported_notes }}</div>
-{% if is_inv_admin %}
-<form method="post" action="{{ url_for('inventory.unit_clear_imported_notes', unit_id=unit.id) }}" class="mb-16" data-confirm="Clear the notes from the old system? Typed notes are kept.">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="btn btn-small">Clear old notes</button>
-</form>
-{% endif %}
 {% endif %}
 
 <h2>Print label</h2>
@@ -73,14 +71,11 @@
   <button type="submit" class="btn btn-small">Print label</button>
   {% if print_options.details_changed %}<div class="muted">The details changed since the last label.</div>{% endif %}
 </form>
-{% if is_inv_admin and can_give_number %}
-<form method="post" action="{{ url_for('inventory.unit_give_number', unit_id=unit.id) }}" class="card mb-16">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="btn btn-small">Give this unit a U- number and print</button>
-  <div class="muted">This unit has no MAGFest tag or FestOps label to scan.</div>
-</form>
-{% endif %}
 
+{% set fix_failed = get_flashed_messages(with_categories=true) | selectattr(0, "equalto", "error") | list %}
+<div class="mb-16">
+<details id="fix-unit"{% if fix_failed %} open{% endif %}>
+  <summary><strong>Fix this unit</strong></summary>
 <h2>Identifiers</h2>
 <div style="overflow-x: auto;">
 <table>
@@ -139,7 +134,23 @@
 </form>
 {% endif %}
 
-<h2>Open flags</h2>
+{% if is_inv_admin and can_give_number %}
+<form method="post" action="{{ url_for('inventory.unit_give_number', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="btn btn-small">Give this unit a U- number and print</button>
+  <div class="muted">This unit has no MAGFest tag or FestOps label to scan.</div>
+</form>
+{% endif %}
+{% if is_inv_admin and unit.imported_notes %}
+<form method="post" action="{{ url_for('inventory.unit_clear_imported_notes', unit_id=unit.id) }}" class="mb-16" data-confirm="Clear the notes from the old system? Typed notes are kept.">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="btn btn-small">Clear old notes</button>
+</form>
+{% endif %}
+</details>
+</div>
+
+<h2 id="open-flags">Open flags</h2>
 <div style="overflow-x: auto;">
 <table>
   <thead><tr><th>When</th><th>Reason</th><th>Raised by</th><th>Note</th><th>Resolve</th></tr></thead>
