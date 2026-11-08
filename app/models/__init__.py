@@ -214,7 +214,7 @@ from .constants import (
 
 # Re-export inventory models
 from .inventory import (
-    InvContainerKind, InvContainer, InvUnit, InvUnitIdentifier, InvStock,
+    InvContainerKind, InvContainer, InvUnit, InvUnitIdentifier, InvUnitNote, InvStock,
     InvDevice, InvEnrollCode, InvShift, InvCount, InvCountLine, InvMovement,
     InvCheckItem, InvCheck, InvCheckAnswer, InvPrepStatus, InvFlag, InvStationItem,
     InvScanRequest, InvLabelSequence,
@@ -419,6 +419,7 @@ __all__ = [
     "InvContainer",
     "InvUnit",
     "InvUnitIdentifier",
+    "InvUnitNote",
     "InvStock",
     "InvDevice",
     "InvEnrollCode",

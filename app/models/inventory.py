@@ -167,6 +167,30 @@ class InvUnitIdentifier(db.Model):
     )
 
 
+class InvUnitNote(db.Model):
+    """One note on a unit. Notes are appended and never edited or deleted.
+
+    note_type sets the audience. source says whether a person wrote it or it
+    was copied from the old notes columns. created_by_user_id is NULL for
+    copied notes.
+    """
+    __tablename__ = "inv_unit_notes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    unit_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_units.id", name="fk_inv_unit_notes_unit_id"),
+        nullable=False, index=True,
+    )
+    note_type = db.Column(db.String(16), nullable=False)
+    source = db.Column(db.String(16), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_by_user_id = db.Column(db.String(64), nullable=True)
+
+    unit = db.relationship("InvUnit", backref="unit_notes")
+
+
 class InvStock(db.Model):
     """Cached count of one non-serialized item in one container."""
     __tablename__ = "inv_stock"

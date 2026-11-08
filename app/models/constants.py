@@ -191,6 +191,17 @@ INV_COUNT_LINE_STALE = "STALE"
 INV_COUNT_LINE_UNCHANGED = "UNCHANGED"
 INV_COUNT_LINE_UNDONE = "UNDONE"
 
+# Unit note audiences. PUBLIC shows to anyone who can see the unit; ADMIN and
+# PICKER are for staff. EARLIER and IMPORT mark text copied from the old
+# overwritable notes column and the old tech export.
+INV_NOTE_PUBLIC = "PUBLIC"
+INV_NOTE_ADMIN = "ADMIN"
+INV_NOTE_PICKER = "PICKER"
+INV_NOTE_TYPES = (INV_NOTE_ADMIN, INV_NOTE_PUBLIC, INV_NOTE_PICKER)
+INV_NOTE_SOURCE_PERSON = "PERSON"
+INV_NOTE_SOURCE_IMPORT = "IMPORT"
+INV_NOTE_SOURCE_EARLIER = "EARLIER"
+
 # Space kinds. A SLICE is part of a room. A FREEFORM space has no parent and
 # uses location_note for where it sits. Combining two slices for one event is
 # not a kind; it is SpaceEventOverride.combined_into_space_id.

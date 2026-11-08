@@ -6,6 +6,7 @@ from functools import wraps
 from flask import abort, current_app, redirect, render_template, session, url_for
 
 from app.inventory.ledger import Actor
+from app.models.constants import INV_NOTE_TYPES
 from app.models import ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR
 from app.routes import get_user_ctx
 
@@ -19,6 +20,11 @@ def is_inventory_admin(user_ctx) -> bool:
 def is_inventory_operator(user_ctx) -> bool:
     """Admins operate scanners too."""
     return is_inventory_admin(user_ctx) or ROLE_INVENTORY_OPERATOR in user_ctx.roles
+
+
+def note_types_for(user_ctx) -> tuple[str, ...]:
+    """Note types this user may write; empty for anyone who is not an operator."""
+    return INV_NOTE_TYPES if is_inventory_operator(user_ctx) else ()
 
 
 def _guard(check, message):
