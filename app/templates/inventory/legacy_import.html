@@ -87,7 +87,8 @@
     var notice = document.getElementById('preview-first');
     // Import posts the choices on screen, so a choice that was never previewed hides it.
     function changed() {
-      if (apply) { apply.hidden = true; notice.hidden = false; }
+      // base.html sets button.btn to inline-block, which overrides the hidden attribute.
+      if (apply) { apply.hidden = true; apply.style.display = "none"; notice.hidden = false; }
     }
     selects.forEach(function (select) {
       select.addEventListener('change', refresh);
