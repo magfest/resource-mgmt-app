@@ -608,12 +608,15 @@
 
   // Calls onDone({quantity, entered, packs, about}) or onDone(null) on Cancel.
   // quantity is in base units: entered times packSize when Packs is on.
+  // opts.lines are text lines above the readout; opts.actions are {label, onPick}
+  // buttons drawn before Cancel.
   function drawNumberPad(opts, onDone) {
     var digits = '';
     var packs = false;
     var about = false;
     clearPanel();
     var pad = el('div', 'pad');
+    (opts.lines || []).forEach(function (line) { pad.appendChild(el('p', 'pad-line', line)); });
     var readout = el('div', 'readout', '0');
     pad.appendChild(readout);
     function refresh() {
@@ -654,6 +657,12 @@
       a.addEventListener('click', function () { about = !about; refresh(); });
       extras.appendChild(a);
     }
+    (opts.actions || []).forEach(function (action) {
+      var b = el('button', null, action.label);
+      b.type = 'button';
+      b.addEventListener('click', action.onPick);
+      extras.appendChild(b);
+    });
     var cancel = el('button', null, 'Cancel');
     cancel.type = 'button';
     cancel.addEventListener('click', function () { onDone(null); });

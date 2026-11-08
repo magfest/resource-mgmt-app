@@ -11,6 +11,7 @@
     asideAsk: 'Set the first one aside and check this one?',
     idle: 'Scan the asset tag, U- label or serial.',
     which: 'Which unit is this? Tap the number written on it.',
+    notATag: 'Nothing saved. Scan the asset tag, U- label or serial.',
     tagRequired: 'Put an asset tag on it and scan the tag.',
     orTag: 'Or scan its asset tag.',
     next: 'Scan its pallet, or scan the next unit.',
@@ -320,6 +321,12 @@
     refocus();
   }
 
+  // A scan that names another unit means the finished one has left the volunteer's hands,
+  // so a pallet scan after it must not move the finished one. A rescan of that unit keeps it.
+  function forgetLastUnless(unitId) {
+    if (unitId == null || unitId !== lastUnitId) { lastUnitId = null; }
+  }
+
   // Every request that can open a check answers with the same set of cases.
   // `again` is what a repeat of the request must add; `code` finds the unit again.
   function openAnswer(answer, code, unitId) {
@@ -331,8 +338,13 @@
       return {ok: false};
     }
     if (answer.placed) { return placedAnswer(answer); }
-    if (answer.candidates) { chooseUnit(code, answer.candidates); return {ok: false}; }
+    if (answer.candidates) {
+      lastUnitId = null;
+      chooseUnit(code, answer.candidates);
+      return {ok: false};
+    }
     if (answer.needs_number) {
+      forgetLastUnless(answer.card && answer.card.unit_id);
       held = {card: answer.card, tagRequired: !!answer.asset_tag_required};
       phase = 'number';
       S.showMessage('', 'info');
@@ -342,7 +354,11 @@
       return {ok: false};
     }
     if (answer.which) { startWhich(answer.tag); return {ok: false}; }
-    if (answer.already_checked) { askAgain(code, answer, unitId); return {ok: false}; }
+    if (answer.already_checked) {
+      forgetLastUnless(answer.card && answer.card.unit_id);
+      askAgain(code, answer, unitId);
+      return {ok: false};
+    }
     if (check && check.id === answer.check_id) {
       S.showMessage('You are already checking this unit.', 'info');
       return {ok: false};
@@ -413,14 +429,23 @@
   }
 
   // Step 2: the volunteer taps the number written on the unit. `tag` is the asset tag that
-  // matched no unit, or null after No code on it.
+  // matched no unit, or null after No code on it. Picking a unit links `tag` as its asset
+  // tag, so the screen shows it; a serial or UPC can land here too.
   function startWhich(tag) {
     held = null;
     offered = null;
     check = null;
+    lastUnitId = null;
     phase = 'idle';
-    S.showMessage(MESSAGES.which, 'info');
-    S.numberPad({}, function (entered) {
+    var pad = {};
+    if (tag) {
+      S.showMessage('', 'info');
+      pad = {lines: ['Scanned ' + tag + '.', MESSAGES.which],
+             actions: [{label: 'Not an asset tag', onPick: notATag}]};
+    } else {
+      S.showMessage(MESSAGES.which, 'info');
+    }
+    S.numberPad(pad, function (entered) {
       if (entered === null) { cancelHeld(); return; }
       S.read(cfg.candidatesUrl, {digits: String(entered.entered)}).then(function (answer) {
         if (stopped(answer)) { return; }
@@ -429,6 +454,11 @@
       });
     });
     refocus();
+  }
+
+  function notATag() {
+    cancelHeld();
+    S.showMessage(MESSAGES.notATag, 'info');
   }
 
   function showMatches(tag, cards) {

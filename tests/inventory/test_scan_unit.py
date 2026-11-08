@@ -1,4 +1,7 @@
 """Unit station JSON routes: find, number, check, place and queue the label."""
+import os
+import shutil
+import subprocess
 from datetime import datetime
 
 import pytest
@@ -470,3 +473,127 @@ def test_an_operator_has_no_home_and_places_nothing(client, inv, event, printer,
     assert created["ok"]
     db.session.expire_all()
     assert unit.current_container_id is None
+
+
+UNIT_SCREEN_SCRIPT = r"""
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+const tick = () => new Promise(r => setImmediate(r));
+
+function node(tag) {
+  const n = {tag, className: '', children: [], handlers: {}, type: '',
+    appendChild(c) { this.children.push(c); return c; },
+    addEventListener(e, f) { this.handlers[e] = f; }, focus() {}};
+  let text = '';
+  Object.defineProperty(n, 'textContent', {
+    get() { return text; }, set(v) { text = v == null ? '' : String(v); n.children = []; }});
+  return n;
+}
+function find(root, text) {
+  if (root.tag === 'button' && root.textContent === text) { return root; }
+  for (const c of root.children) { const hit = find(c, text); if (hit) { return hit; } }
+  return null;
+}
+async function click(root, text) {
+  const b = find(root, text);
+  assert.ok(b, 'no button ' + text);
+  b.handlers.click();
+  await tick(); await tick();
+}
+
+const panel = node('main');
+let reply = {}, writes = [], message = '', pad = null, choice = null, opts = null, n = 0;
+const S = {feedback() {}, setFlagSubject() {}, offerUndo() {}, onActivity() {}, holdLeave() {},
+  showMessage: t => { message = t; }, start: o => { opts = o; }, requestId: () => 'r' + (++n),
+  choose: (options, onPick, note) => { choice = {options, onPick, note}; },
+  numberPad: (o, onDone) => { pad = {opts: o, onDone}; }, askText() {},
+  read: (path, body) => Promise.resolve(reply[path] ? reply[path](body) : {ok: true, candidates: []}),
+  write: (path, body) => { writes.push({path, body});
+    return Promise.resolve(reply[path] ? reply[path](body) : {ok: false, message: 'no'}); }};
+const document = {currentScript: {dataset: {scanUrl: '/scan', finishUrl: '/finish',
+    linkUrl: '/link', candidatesUrl: '/cand', setAsideUrl: '/aside', keepAliveUrl: '/keep'}},
+  getElementById: id => id === 'panel' ? panel : node('input'),
+  createElement: node};
+vm.runInNewContext(fs.readFileSync(process.env.UNIT_JS, 'utf8'),
+  {window: {InvScan: S}, document, setInterval() {}, Promise, setImmediate});
+
+const card = id => ({unit_id: id, name: 'TV-X-' + id, type: 'TV', code: 'FEST9' + id});
+async function finishOne(id) {
+  reply['/scan'] = () => ({ok: true, check_id: 500 + id, unit_id: id, lines: [], card: card(id)});
+  await opts.onScan('FEST9' + id); await tick();
+  reply['/finish'] = () => ({ok: true, status: 'PASSED', condition: 'IN_SERVICE',
+    name: 'TV-X-' + id, placed: 'Warehouse', label: 'none', card: card(id)});
+  await click(panel, 'Works');
+}
+async function palletSends() {
+  reply['/scan'] = () => ({ok: false, message: 'x'});
+  await opts.onScan('C-0201'); await tick();
+  return writes.filter(w => w.path === '/scan').pop().body.last_unit_id;
+}
+async function scanAnswers(answer) {
+  reply['/scan'] = () => answer;
+  await opts.onScan('SCAN'); await tick();
+}
+
+(async () => {
+  await finishOne(1);
+  assert.strictEqual(await palletSends(), 1, 'a pallet scan right after a finish places it');
+
+  await finishOne(2);
+  await scanAnswers({ok: true, already_checked: {result: 'Passed', when: 'today'},
+                     code: 'FEST93', name: 'TV', card: card(3)});
+  choice.onPick('cancel');
+  assert.strictEqual(await palletSends(), null, 'already checked, then Cancel');
+
+  await finishOne(11);
+  await scanAnswers({ok: true, already_checked: {result: 'Passed', when: 'today'},
+                     code: 'FEST911', name: 'TV', card: card(11)});
+  choice.onPick('cancel');
+  assert.strictEqual(await palletSends(), 11, 'a rescan of the same unit keeps it');
+
+  await finishOne(4);
+  await scanAnswers({ok: true, needs_number: true, card: card(5), asset_tag_required: false});
+  await click(panel, 'Cancel');
+  assert.strictEqual(await palletSends(), null, 'needs a number, then Cancel');
+
+  await finishOne(6);
+  await scanAnswers({ok: true, candidates: [card(7), card(8)]});
+  choice.onPick(null);
+  assert.strictEqual(await palletSends(), null, 'two candidates, then Cancel');
+
+  await finishOne(9);
+  await scanAnswers({ok: true, which: true, tag: 'SN-UNKNOWN-1'});
+  // The script runs in another context, so its arrays are compared as JSON.
+  assert.strictEqual(JSON.stringify(pad.opts.lines), JSON.stringify(
+    ['Scanned SN-UNKNOWN-1.', 'Which unit is this? Tap the number written on it.']));
+  assert.strictEqual(JSON.stringify(pad.opts.actions.map(a => a.label)),
+                     JSON.stringify(['Not an asset tag']));
+  const before = writes.length;
+  pad.opts.actions[0].onPick();
+  assert.strictEqual(message, 'Nothing saved. Scan the asset tag, U- label or serial.');
+  assert.strictEqual(writes.length, before, 'Not an asset tag saves nothing');
+  assert.strictEqual(await palletSends(), null, 'which, then Not an asset tag');
+
+  await finishOne(10);
+  await click(panel, 'No code on it');
+  assert.ok(!pad.opts.lines && !pad.opts.actions, 'No code on it shows no scanned code');
+  pad.onDone({entered: 3}); await tick(); await tick();
+  choice.onPick('cancel');
+  assert.strictEqual(await palletSends(), null, 'No code on it, number pad, then Cancel');
+  console.log('unit screen ok');
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_unit_screen_forgets_the_last_unit_and_shows_the_scanned_code_under_node(tmp_path):
+    """Runs station_unit.js on a stub page under node; it does not drive a browser."""
+    script = tmp_path / "unit_screen.js"
+    script.write_text(UNIT_SCREEN_SCRIPT)
+    static = os.path.join(os.path.dirname(__file__), "..", "..", "app", "static", "inventory")
+    result = subprocess.run(
+        ["node", str(script)], capture_output=True, text=True,
+        env={**os.environ, "UNIT_JS": os.path.abspath(os.path.join(static, "station_unit.js"))})
+    assert result.returncode == 0, result.stderr
+    assert "unit screen ok" in result.stdout
