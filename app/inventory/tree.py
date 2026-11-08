@@ -37,3 +37,17 @@ def would_cycle(container: InvContainer, new_parent: InvContainer | None) -> boo
     if new_parent.id == container.id:
         return True
     return any(a.id == container.id for a in ancestors(new_parent))
+
+
+def place_name(container: InvContainer) -> str:
+    return container.name or container.label_code
+
+
+def top_of(container: InvContainer) -> InvContainer:
+    """Return the outermost container above this one, or the container itself."""
+    chain = ancestors(container)
+    return chain[-1] if chain else container
+
+
+def unplaced_text(root: InvContainer) -> str:
+    return f"In the {place_name(root)}, exact location not assigned"

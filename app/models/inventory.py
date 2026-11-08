@@ -542,6 +542,7 @@ class InvPrepStatus(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     unit = db.relationship("InvUnit")
+    shift = db.relationship("InvShift")
 
     __table_args__ = (
         db.Index("ix_inv_prep_status_unit_event", "unit_id", "event_cycle_id"),

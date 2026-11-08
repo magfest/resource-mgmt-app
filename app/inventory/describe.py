@@ -9,7 +9,7 @@ from app.models.constants import (
 )
 
 # The most recognizable code first: a MAGFest tag is on the gear itself.
-_TAG_ORDER = (INV_IDENT_MAGFEST_TAG, INV_IDENT_FESTOPS_LABEL, INV_IDENT_VENDOR_TAG,
+TAG_ORDER = (INV_IDENT_MAGFEST_TAG, INV_IDENT_FESTOPS_LABEL, INV_IDENT_VENDOR_TAG,
               INV_IDENT_SERIAL, INV_IDENT_MAC)
 
 
@@ -27,7 +27,7 @@ def unit_tag(unit) -> str | None:
     The database id is never a fallback: it looks like a scannable number and is not one.
     """
     active = [i for i in unit.identifiers if i.retired_at is None]
-    for kind in _TAG_ORDER:
+    for kind in TAG_ORDER:
         for identifier in active:
             if identifier.kind == kind:
                 # The tag is shown in canonical form, whatever was typed.
