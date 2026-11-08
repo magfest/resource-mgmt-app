@@ -507,3 +507,19 @@ def test_look_up_card_shows_name_fields_and_notes(app, inv):
     db.session.commit()
     card = card_for(resolve("S2"), None)
     assert card["name"] is None and card["fields"] == [] and card["notes"] is None
+
+
+def test_the_tag_page_needs_the_tag_station_and_a_shift(client, inv):
+    from app.models import InvDevice
+    enrolled_client(client, station_code="TAG")
+    assert "/scan/who" in client.get("/inv/scan/tag").headers["Location"]
+    device = InvDevice.query.one()
+    start_shift(device, "Sam")
+    db.session.commit()
+    assert client.get("/inv/scan/").headers["Location"].endswith("/inv/scan/tag")
+    page = client.get("/inv/scan/tag")
+    assert page.status_code == 200
+    assert b'data-station="TAG"' in page.data and b"station_tag.js" in page.data
+    device.station_code = "LOOKUP"
+    db.session.commit()
+    assert client.get("/inv/scan/tag").status_code == 302

@@ -12,7 +12,7 @@ from app.inventory.shifts import current_shift, recent_names
 from app.models import InvContainer
 from app.models.constants import (
     INV_CHECK_STATIONS, INV_STATION_COUNT, INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_PRINT, INV_STATION_RECEIVE,
-    INV_STATION_TV_CHECK,
+    INV_STATION_TAG, INV_STATION_TV_CHECK,
 )
 
 from . import inventory_bp
@@ -48,6 +48,8 @@ def scan_home():
             return redirect(url_for("inventory.scan_receive_page"))
         if principal.device.station_code == INV_STATION_COUNT:
             return redirect(url_for("inventory.scan_count_page"))
+        if principal.device.station_code == INV_STATION_TAG:
+            return redirect(url_for("inventory.scan_tag_page"))
         if principal.device.station_code in INV_CHECK_STATIONS:
             return redirect(url_for("inventory.scan_check_page"))
     if not principal.is_device or principal.device.station_code == INV_STATION_LOOKUP:
@@ -81,6 +83,26 @@ def scan_receive_page():
     return render_template(
         "inventory/scan/receive.html", station=INV_STATION_RECEIVE,
         station_name=INV_STATION_NAMES[INV_STATION_RECEIVE], is_device=principal.is_device,
+        who=who)
+
+
+@inventory_bp.get("/scan/tag")
+@require_scanner
+def scan_tag_page():
+    """Tag station. A device needs the TAG station and an open shift."""
+    principal = g.scan_principal
+    if principal.is_device:
+        if principal.device.station_code != INV_STATION_TAG:
+            return redirect(url_for("inventory.scan_home"))
+        shift = current_shift(principal.device)
+        db.session.commit()  # keeps an IDLE close
+        if shift is None:
+            return redirect(url_for("inventory.scan_who"))
+    who = who_text()
+    db.session.commit()  # keeps an IDLE close
+    return render_template(
+        "inventory/scan/tag.html", station=INV_STATION_TAG,
+        station_name=INV_STATION_NAMES[INV_STATION_TAG], is_device=principal.is_device,
         who=who)
 
 

@@ -471,7 +471,12 @@
   var undoTimer = null;
   var undoCtl = createUndoControl({
     now: Date.now, windowMs: UNDO_MS, mint: newId,
-    send: function (id) { return writes.write(body.dataset.undoUrl, {client_request_id: id}); },
+    // A spec with a url undoes through that route; the default undoes a check or count.
+    send: function (id) {
+      var spec = undoCtl.spec();
+      var path = spec && spec.url ? spec.url : body.dataset.undoUrl;
+      return writes.write(path, Object.assign({}, spec && spec.payload, {client_request_id: id}));
+    },
     onChange: function () { renderUndo(); }
   });
 
@@ -500,6 +505,7 @@
 
   // A station calls this after a finished check or submitted count: {kind: 'check' | 'count',
   // name: 'FEST10001', onUndone: fn}. The button hides itself after 30 seconds.
+  // A url and payload in the spec send the undo to that route instead.
   function offerUndo(spec) {
     undoCtl.offer(spec);
     if (undoTimer !== null) { clearTimeout(undoTimer); }
@@ -532,7 +538,11 @@
     options.forEach(function (option) {
       var label = typeof option === 'string' ? option : option.label;
       var value = typeof option === 'string' ? option : option.value;
-      var button = el('button', 'choice', label);
+      var button = el('button', 'choice', option.lines ? null : label);
+      // Lines stack name, model and details; the first is the large one.
+      (option.lines || []).forEach(function (line, i) {
+        if (line) { button.appendChild(el('span', i === 0 ? 'choice-main' : 'choice-sub', line)); }
+      });
       button.type = 'button';
       button.addEventListener('click', function () { onPick(value); });
       host.appendChild(button);

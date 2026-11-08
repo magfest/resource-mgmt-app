@@ -125,3 +125,11 @@ body.not-saved-on { background: #f9c9c9; }
 .undo[hidden] { display: none; }
 .undo-btn { background: #fff3e0; border-color: #e65100; }
 .undo-btn:disabled { opacity: 0.6; }
+
+.station-TAG .band { background: #2e7d32; }
+.choice-main, .choice-sub { display: block; }
+.choice-main { font-size: 1.4rem; font-weight: 700; }
+.choice-sub { font-size: 1rem; color: #455a64; }
+.tag-step { font-size: 1.4rem; font-weight: 700; margin: 12px 0; }
+.tag-done { font-weight: 600; color: #1b5e20; }
+.tag-wait { font-weight: 700; color: #e65100; }
