@@ -1,0 +1,50 @@
+{% extends "layout/base.html" %}
+{% from "inventory/_flag_rows.html" import subject, resolve_form %}
+{% block title %}Flags - Inventory{% endblock %}
+{% block content %}
+<h1>Flags</h1>
+<div class="muted mb-16">Problems raised at a scanner station. Fix the cause on the unit page, then resolve the flag with a note.</div>
+<h2>Open ({{ open_rows|length }})</h2>
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>When</th><th>Station</th><th>Reason</th><th>Subject</th><th>Raised by</th><th>Note</th><th>Resolve</th></tr></thead>
+  <tbody>
+  {% for r in open_rows %}
+    <tr>
+      <td class="muted">{{ r.when }}</td>
+      <td>{{ r.station }}</td>
+      <td>{{ r.reason }}</td>
+      <td>{{ subject(r) }}</td>
+      <td>{{ r.raised_by }}</td>
+      <td>{{ r.flag.note or '' }}</td>
+      <td>{{ resolve_form(r) }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No open flags.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<h2>Resolved</h2>
+<div class="muted mb-16">Latest {{ resolved_limit }}.</div>
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>Raised</th><th>Reason</th><th>Subject</th><th>Note</th><th>Resolved by</th><th>Resolved</th><th>Resolution</th></tr></thead>
+  <tbody>
+  {% for r in resolved_rows %}
+    <tr>
+      <td class="muted">{{ r.when }}</td>
+      <td>{{ r.reason }}</td>
+      <td>{{ subject(r) }}</td>
+      <td>{{ r.flag.note or '' }}</td>
+      <td>{{ r.resolved_by }}</td>
+      <td class="muted">{{ r.resolved_when }}</td>
+      <td>{{ r.flag.resolution_note }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">Nothing resolved yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

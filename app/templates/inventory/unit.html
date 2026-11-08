@@ -1,0 +1,134 @@
+{% extends "layout/base.html" %}
+{% from "inventory/_flag_rows.html" import resolve_form %}
+{% block title %}{{ number }} - Units - Inventory{% endblock %}
+{% block content %}
+<h1>{{ number }}</h1>
+<div class="muted mb-16"><a href="{{ url_for('inventory.units') }}">Units</a></div>
+<div class="card mb-16">
+  <div><strong>Item</strong> {{ unit.item.item_name }}</div>
+  <div><strong>Condition</strong> {{ condition_words.get(unit.condition, unit.condition) }}</div>
+  <div><strong>Container</strong> {{ unit.current_container.label_code if unit.current_container else 'Not placed' }}</div>
+</div>
+
+<h2>Print label</h2>
+<form method="post" action="{{ url_for('inventory.unit_print', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <select name="mode" aria-label="How to print">
+    {% for mode, words in print_modes %}<option value="{{ mode }}">{{ words }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn btn-small">Print label</button>
+  {% if print_options.details_changed %}<div class="muted">The details changed since the last label.</div>{% endif %}
+</form>
+
+<h2>Identifiers</h2>
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>Kind</th><th>Code</th>{% if is_inv_admin %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for i in identifiers %}
+    <tr {% if i.retired_at %}class="muted" style="opacity: 0.55;"{% endif %}>
+      <td>{{ kind_words.get(i.kind, i.kind) }}{% if i.retired_at %} (retired){% endif %}</td>
+      <td>{{ i.value }}</td>
+      {% if is_inv_admin %}
+      <td>
+        {% if not i.retired_at %}
+        <form method="post" action="{{ url_for('inventory.unit_retire_identifier', unit_id=unit.id, identifier_id=i.id) }}" data-confirm="Retire {{ i.value }}? It stops finding this unit.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Retire</button>
+        </form>
+        {% endif %}
+      </td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if is_inv_admin %}
+<form method="post" action="{{ url_for('inventory.unit_add_identifier', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <strong>Add an identifier</strong>
+  <div class="row">
+    <label>Kind
+      <select name="kind">{% for kind, words in kinds %}<option value="{{ kind }}">{{ words }}</option>{% endfor %}</select>
+    </label>
+    <label>Code <input type="text" name="value" required maxlength="128"></label>
+  </div>
+  <button type="submit" class="btn btn-small">Add</button>
+  <div class="muted">To change a serial, add the new one, then retire the old one.</div>
+</form>
+<form method="post" action="{{ url_for('inventory.unit_set_condition', unit_id=unit.id) }}" class="card mb-16" data-confirm-value="{{ retired_condition }}" data-confirm="Retire this unit? Every identifier on it stops finding it.">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Condition
+    <select name="condition">
+      {% for c in conditions %}<option value="{{ c }}" {% if unit.condition == c %}selected{% endif %}>{{ condition_words.get(c, c) }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Save condition</button>
+</form>
+<form method="post" action="{{ url_for('inventory.unit_set_item', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Item type
+    <select name="item_id">
+      {% for i in items %}<option value="{{ i.id }}" {% if unit.item_id == i.id %}selected{% endif %}>{{ i.item_name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Change item type</button>
+</form>
+{% endif %}
+
+<h2>Open flags</h2>
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>When</th><th>Reason</th><th>Raised by</th><th>Note</th><th>Resolve</th></tr></thead>
+  <tbody>
+  {% for r in open_rows %}
+    <tr><td class="muted">{{ r.when }}</td><td>{{ r.reason }}</td><td>{{ r.raised_by }}</td><td>{{ r.flag.note or '' }}</td>
+      <td>{{ resolve_form(r, url_for('inventory.unit_page', unit_id=unit.id)) }}</td></tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">No open flags.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if resolved_rows %}
+<h2>Resolved flags</h2>
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>Raised</th><th>Reason</th><th>Note</th><th>Resolved by</th><th>Resolved</th><th>Resolution</th></tr></thead>
+  <tbody>
+  {% for r in resolved_rows %}
+    <tr><td class="muted">{{ r.when }}</td><td>{{ r.reason }}</td><td>{{ r.flag.note or '' }}</td><td>{{ r.resolved_by }}</td>
+      <td class="muted">{{ r.resolved_when }}</td><td>{{ r.flag.resolution_note }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<h2>Recent movements</h2>
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>When</th><th>What</th><th>Who</th></tr></thead>
+  <tbody>
+  {% for when, text, who in movements %}
+    <tr><td class="muted">{{ when }}</td><td>{{ text }}</td><td>{{ who }}</td></tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">No movements.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  document.addEventListener('submit', function (e) {
+    var form = e.target.closest('form[data-confirm]');
+    if (!form) return;
+    var only = form.getAttribute('data-confirm-value');
+    var select = form.querySelector('select[name="condition"]');
+    if (only && select && select.value !== only) return;
+    if (!window.confirm(form.getAttribute('data-confirm'))) e.preventDefault();
+  });
+</script>
+{% endblock %}

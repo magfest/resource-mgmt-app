@@ -1,0 +1,31 @@
+{% extends "layout/base.html" %}
+{% block title %}Units - Inventory{% endblock %}
+{% block content %}
+<h1>Units</h1>
+<form method="get" class="card mb-16">
+  <label>Find a unit by tag, label, serial or MAC
+    <input type="text" name="q" value="{{ q }}" maxlength="128" autofocus>
+  </label>
+  <button type="submit" class="btn btn-small">Search</button>
+</form>
+{% if q %}
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>Number</th><th>Item</th><th>Condition</th><th>Container</th><th>Flags</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{{ url_for('inventory.unit_page', unit_id=r.unit.id) }}">{{ r.number }}</a></td>
+      <td>{{ r.unit.item.item_name }}</td>
+      <td>{{ condition_words.get(r.unit.condition, r.unit.condition) }}</td>
+      <td>{{ r.unit.current_container.label_code if r.unit.current_container else 'Not placed' }}</td>
+      <td>{% if r.open_flags %}{{ r.open_flags }} open{% else %}<span class="muted">None</span>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">No unit matches {{ q }}.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

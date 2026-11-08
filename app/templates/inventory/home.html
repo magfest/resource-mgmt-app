@@ -16,6 +16,8 @@
   {% else %}
   <li class="muted">An inventory admin manages the other pages here.</li>
   {% endif %}
+  <li><a href="{{ url_for('inventory.flags') }}">Flags ({{ open_flags }})</a></li>
+  <li><a href="{{ url_for('inventory.units') }}">Units</a></li>
   <li><a href="{{ url_for('inventory.labels') }}">Labels</a></li>
   <li><a href="{{ url_for('inventory.print_queue') }}">Print queue</a></li>
   <li><a href="{{ url_for('inventory.scan_home') }}">Open the scanner</a></li>

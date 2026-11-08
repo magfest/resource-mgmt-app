@@ -288,6 +288,20 @@ def _require_serial_shape(raw: str, normalized: str) -> None:
         raise InventoryError("That is the model barcode. Scan the serial (S/N).")
 
 
+def checked_serial(unit: InvUnit, raw) -> str:
+    """Return a serial an admin may add to this unit, or refuse with the scanner's message.
+
+    Refuses label-shaped codes, unit numbers, model barcodes and a serial another
+    active unit holds. The caller adds the identifier.
+    """
+    text, normalized = _clean_serial(raw)
+    _require_serial_shape(text, normalized)
+    holders = _units_with_serial(normalized, exclude=unit)
+    if holders:
+        raise InventoryError(f"{text} belongs to {display_number(holders[0])}. Nothing was changed.")
+    return text
+
+
 def check_serial(unit: InvUnit, scanned: str, check: InvCheck | None = None) -> dict:
     """Compare a scanned serial with the record; the unit's barcode wins.
 
