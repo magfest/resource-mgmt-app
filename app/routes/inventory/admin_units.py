@@ -7,7 +7,8 @@ from app import db
 from app.inventory.checks import checked_serial, display_number
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
 from app.inventory.ledger import (
-    INV_CONDITIONS, InventoryError, add_identifier, retire_identifier, set_condition,
+    INV_CONDITIONS, NUMBER_KINDS, InventoryError, add_identifier, replace_number,
+    retire_identifier, set_condition,
 )
 from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
@@ -165,13 +166,15 @@ def unit_add_identifier(unit_id: int):
     def add():
         if kind not in KIND_WORDS:
             raise InventoryError("Pick what kind of code this is.")
-        if kind == INV_IDENT_SERIAL:
-            value_clean = checked_serial(unit, value)
+        if kind in NUMBER_KINDS:
+            # An owned unit keeps one number, so a new tag or label retires the old one.
+            replace_number(unit, kind, value, admin_actor())
+        elif kind == INV_IDENT_SERIAL:
+            add_identifier(unit, kind, checked_serial(unit, value))
         else:
-            value_clean = value.strip()
-        add_identifier(unit, kind, value_clean)
+            add_identifier(unit, kind, value.strip())
 
-    return _commit_or_flash(add, "Code added.", unit)
+    return _commit_or_flash(add, "Code saved.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/identifiers/<int:identifier_id>/retire")

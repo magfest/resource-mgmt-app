@@ -126,3 +126,14 @@ def test_label_shaped_serial_is_refused_and_saves_nothing(client, unit):
                        data={"kind": "SERIAL", "value": "U-0099"}, follow_redirects=True)
     assert "not a serial" in resp.get_data(as_text=True)
     assert db.session.query(InvUnitIdentifier).count() == before
+
+
+def test_a_new_tag_replaces_the_units_number(client, unit):
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/units/{unit.id}/identifiers",
+                data={"kind": "MAGFEST_TAG", "value": "TECH412"}, follow_redirects=True)
+    assert resolve("TECH412").kind == KIND_UNIT
+    assert resolve("U-0001").kind != KIND_UNIT
+    active = {i.kind for i in db.session.query(InvUnitIdentifier)
+              .filter_by(unit_id=unit.id, retired_at=None)}
+    assert active == {"MAGFEST_TAG", "SERIAL", "MAC"}

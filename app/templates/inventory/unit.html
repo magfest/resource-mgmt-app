@@ -56,7 +56,7 @@
     <label>Code <input type="text" name="value" required maxlength="128"></label>
   </div>
   <button type="submit" class="btn btn-small">Add</button>
-  <div class="muted">To change a serial, add the new one, then retire the old one.</div>
+  <div class="muted">A MAGFest tag or FestOps label replaces the unit's current number. To change a serial, add the new one, then retire the old one.</div>
 </form>
 <form method="post" action="{{ url_for('inventory.unit_set_condition', unit_id=unit.id) }}" class="card mb-16" data-confirm-value="{{ retired_condition }}" data-confirm="Retire this unit? Every identifier on it stops finding it.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
