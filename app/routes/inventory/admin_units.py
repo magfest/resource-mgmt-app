@@ -23,7 +23,7 @@ from app.inventory.names import name_key, set_unit_name
 from app.inventory.tree import display_name
 from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
-    local_iso, local_stamp, local_today, reprint, reprint_options,
+    local_iso, local_today, local_when, reprint, reprint_options,
 )
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
 from app.inventory.unit_fields import (
@@ -268,11 +268,11 @@ def unit_page(unit_id: int):
     names = names_for(n.created_by_user_id for n in notes)
     note_views = [{"badge": SOURCE_WORDS.get(n.source) or NOTE_TYPE_WORDS.get(n.note_type, n.note_type),
                    "body": n.body,
-                   "byline": (f"{local_stamp(n.created_at)} \u00b7 "
+                   "byline": (f"{local_when(n.created_at)} \u00b7 "
                               f"{actor_name(n.created_by_user_id, None, names)}")
                    if n.source not in SOURCE_WORDS else None}
                   for n in notes]
-    history = [{"stamp": local_stamp(line.at), "who": line.who, "text": line.text, "note": line.note}
+    history = [{"stamp": local_when(line.at), "who": line.who, "text": line.text, "note": line.note}
                for line in unit_history(unit)]
     kind = unit.item.gear_kind
     subline = " \u00b7 ".join(part for part in (unit.item.item_name, kind.name if kind else "",

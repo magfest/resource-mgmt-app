@@ -178,7 +178,7 @@
 <div id="status" class="card mb-16">
   {% if status.check %}<div>{% if status.check_word == 'WORKS' %}<span class="works">Works</span>{{ status.check[5:] }}{% elif status.check_word == 'BROKEN' %}<span class="broken">Broken</span>{{ status.check[6:] }}{% else %}{{ status.check }}{% endif %}</div>{% endif %}
   <div>{{ status.standing }}</div>
-  <div>{% if status.open_flags %}<a href="#flags">{{ status.open_flags }} open flags</a>{% else %}No open flags{% endif %}</div>
+  <div>{% if status.open_flags %}<a href="#flags">{{ status.open_flags }} open flag{{ '' if status.open_flags == 1 else 's' }}</a>{% else %}No open flags{% endif %}</div>
 </div>
 
 <h2 id="where">Where it is</h2>

@@ -947,7 +947,8 @@ def test_unit_page_counts_open_flags(client, unit):
     raise_flag(ACTOR, "LOOKUP", "DAMAGED", unit=unit)
     db.session.commit()
     page = _page(client, unit)
-    assert '<a href="#flags">1 open flags</a>' in page and 'id="flags"' in page
+    assert '<a href="#flags">1 open flag</a>' in page and 'id="flags"' in page
+    assert "1 open flags" not in page
 
 
 def test_page_opens_on_about(client, unit):
@@ -1036,3 +1037,31 @@ def test_every_form_still_posts_where_it_did(client, inv):
     for suffix in ("/details", "/notes", "/print", "/give-number",
                    "/identifiers", "/condition", "/item", f"/identifiers/{serial.id}/retire"):
         assert f'action="/inv{base[4:]}{suffix}"' in page, suffix
+
+
+def test_unit_page_shows_note_and_history_times_in_the_at_form(client, unit):
+    from datetime import datetime
+    from app.inventory.notes import add_note
+    from app.inventory.printing import local_stamp, local_when
+    moment = datetime(2026, 11, 7, 22, 53)
+    note = add_note(unit, "ADMIN", "Bracket bent", "test:invadmin")
+    note.created_at = moment
+    db.session.commit()
+    login(client, "test:invadmin")
+    page = _page(client, unit)
+    assert f"{local_when(moment)} &middot;" in page or f"{local_when(moment)} \u00b7" in page
+    assert f"{local_stamp(moment)} &middot;" not in page and f"{local_stamp(moment)} \u00b7" not in page
+
+
+def test_about_tab_shows_migrated_notes_with_source_words_and_no_byline(client, unit):
+    from app.inventory.notes import SOURCE_WORDS, add_note, import_note
+    import_note(unit, "Old system said: spare charger in bin")
+    earlier = add_note(unit, "ADMIN", "Typed before notes existed", None, "EARLIER")
+    db.session.commit()
+    login(client, "test:invadmin")
+    page = _page(client, unit)
+    assert "Old system said: spare charger in bin" in page
+    assert "Typed before notes existed" in page
+    assert SOURCE_WORDS["IMPORT"] in page and SOURCE_WORDS["EARLIER"] in page
+    assert earlier.created_by_user_id is None
+    assert "Unknown" not in page

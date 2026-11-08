@@ -17,8 +17,9 @@ down_revision = "iw5u2n8k4r7d"
 branch_labels = None
 depends_on = None
 
+# Both copies share the unit's created_at and ids break the tie, so EARLIER goes in last to read as the newest note.
 # (old column, note source)
-COPIES = (("notes", "EARLIER"), ("imported_notes", "IMPORT"))
+COPIES = (("imported_notes", "IMPORT"), ("notes", "EARLIER"))
 
 
 def upgrade():
