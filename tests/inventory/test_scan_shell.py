@@ -523,3 +523,113 @@ def test_the_tag_page_needs_the_tag_station_and_a_shift(client, inv):
     device.station_code = "LOOKUP"
     db.session.commit()
     assert client.get("/inv/scan/tag").status_code == 302
+
+
+def _named(inv, name, identifiers=()):
+    unit = add_unit(inv.laptop, None, ACTOR, list(identifiers), name=name)
+    db.session.commit()
+    return unit
+
+
+def test_look_up_finds_one_unit_by_part_of_its_name(client, inv):
+    unit = _named(inv, "MAG-PNTR-007")
+    enrolled_client(client)
+    r = client.post("/inv/scan/api/resolve", json={"code": "pntr-007"}).get_json()
+    assert r["ok"] is True and r["kind"] == "UNIT" and r["unit_id"] == unit.id
+    assert r["card"]["name"] == "MAG-PNTR-007"
+
+
+def test_look_up_offers_a_choice_when_several_names_match(client, inv):
+    units = [_named(inv, f"MAG-PNTR-00{i}") for i in range(1, 4)]
+    _named(inv, "MAG-TV-107")
+    enrolled_client(client)
+    r = client.post("/inv/scan/api/resolve", json={"code": "PNTR"}).get_json()
+    assert r["kind"] == "AMBIGUOUS"
+    assert [c["unit_id"] for c in r["candidates"]] == [u.id for u in units]
+    assert [c["card"]["name"] for c in r["candidates"]] == [u.name for u in units]
+
+
+def test_a_code_still_wins_over_a_name(client, inv):
+    _named(inv, None, [("MAGFEST_TAG", "TECH412")])
+    _named(inv, "TECH412")
+    enrolled_client(client)
+    r = client.post("/inv/scan/api/resolve", json={"code": "TECH412"}).get_json()
+    assert r["kind"] == "UNIT" and r["card"]["tag"] == "TECH412"
+    assert "unit_id" not in r
+
+
+def test_a_retired_name_and_no_match_stay_unknown(client, inv):
+    unit = _named(inv, "MAG-PNTR-007")
+    set_condition(unit, "RETIRED")
+    db.session.commit()
+    enrolled_client(client)
+    r = client.post("/inv/scan/api/resolve", json={"code": "PNTR-007"}).get_json()
+    assert r["kind"] == "UNKNOWN"
+
+
+def test_label_options_accept_a_unit_found_by_name(client, inv):
+    unit = _named(inv, "MAG-PNTR-007")
+    enrolled_client(client)
+    r = client.post("/inv/scan/api/label/options",
+                    json={"code": "PNTR-007", "unit_id": unit.id}).get_json()
+    assert r["ok"] is True and r["kind"] == "UNIT", r
+
+
+LOOKUP_SCRIPT = r"""
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+const {flagLookup} = require(process.env.SCAN_JS);
+const tick = () => new Promise(r => setImmediate(r));
+
+// A name hit flags by unit id; a code hit keeps flagging by code.
+assert.deepStrictEqual(flagLookup({ok: true, kind: 'UNIT', code: 'PNTR', unit_id: 7,
+  card: {title: 'Printer', tag: ''}}), {subject: {unitId: 7, label: 'Printer'}});
+assert.deepStrictEqual(flagLookup({ok: true, kind: 'UNIT', code: 'TECH412',
+  card: {title: 'Laptop', tag: 'TECH412'}}), {subject: {code: 'TECH412', label: 'Laptop TECH412'}});
+assert.strictEqual(flagLookup({ok: true, kind: 'UNKNOWN', code: 'X'}), null);
+
+let flagged = null, printed = null, opts = null, answer = null;
+const buttons = [];
+const S = {esc: s => String(s), showMessage() {}, showPanel() {}, feedback() {},
+  choose() {}, messages: {}, setFlagSubject: s => { flagged = s; },
+  start: o => { opts = o; }, read: () => Promise.resolve(answer)};
+const L = {reset() {}, newTag() {}, show: t => { printed = t; }};
+const document = {currentScript: {dataset: {resolveUrl: '/r'}},
+  getElementById: () => ({appendChild: b => buttons.push(b)}),
+  createElement: () => ({handlers: {}, addEventListener(e, f) { this.handlers[e] = f; }})};
+vm.runInNewContext(fs.readFileSync(process.env.LOOKUP_JS, 'utf8'),
+  {window: {InvScan: S, InvLabel: L}, document});
+
+(async () => {
+  answer = {ok: true, kind: 'UNIT', code: 'PNTR', unit_id: 7,
+    card: {title: 'Printer', name: 'MAG-PNTR-007', tag: '', lines: [], history: []}};
+  assert.strictEqual((await opts.onScan('pntr')).ok, true);
+  await tick();
+  assert.strictEqual(flagged.unitId, 7);
+  buttons[buttons.length - 1].handlers.click();
+  assert.strictEqual(printed.unitId, 7);
+  answer = {ok: true, kind: 'UNIT', code: 'TECH412',
+    card: {title: 'Laptop', tag: 'TECH412', lines: [], history: []}};
+  await opts.onScan('TECH412');
+  assert.strictEqual(flagged.unitId, undefined);
+  assert.strictEqual(flagged.code, 'TECH412');
+  buttons[buttons.length - 1].handlers.click();
+  assert.strictEqual(printed.unitId, null);
+  console.log('lookup ok');
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_look_up_name_hit_prints_and_flags_by_unit_id_under_node(tmp_path):
+    """Runs station_lookup.js on a stub page under node; it does not drive a browser."""
+    script = tmp_path / "lookup_check.js"
+    script.write_text(LOOKUP_SCRIPT)
+    static = os.path.join(os.path.dirname(__file__), "..", "..", "app", "static", "inventory")
+    result = subprocess.run(
+        ["node", str(script)], capture_output=True, text=True,
+        env={**os.environ, "SCAN_JS": os.path.abspath(os.path.join(static, "scan.js")),
+             "LOOKUP_JS": os.path.abspath(os.path.join(static, "station_lookup.js"))})
+    assert result.returncode == 0, result.stderr
+    assert "lookup ok" in result.stdout

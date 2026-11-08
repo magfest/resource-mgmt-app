@@ -318,6 +318,24 @@
     };
   }
 
+  // What a resolve answer gives the flag flow: {subject}, {choices}, or null when nothing is flaggable.
+  // A unit found by name has a unit_id, since its typed text resolves no code.
+  function flagLookup(answer) {
+    function named(card) { return [card.title, card.tag].filter(Boolean).join(' '); }
+    if (answer.kind === 'CONTAINER' || answer.kind === 'UNIT') {
+      return {subject: answer.unit_id != null
+        ? {unitId: answer.unit_id, label: named(answer.card)}
+        : {code: answer.code, label: named(answer.card)}};
+    }
+    if (answer.kind === 'AMBIGUOUS' && answer.candidates.length &&
+        answer.candidates.every(function (c) { return c.unit_id != null; })) {
+      return {choices: answer.candidates.map(function (c) {
+        return {unitId: c.unit_id, label: named(c.card)};
+      })};
+    }
+    return null;
+  }
+
   // The route and body for an undo tap: the spec's own url and payload, else the default route.
   function undoRequest(spec, defaultUrl, id) {
     return {path: spec && spec.url ? spec.url : defaultUrl,
@@ -325,7 +343,7 @@
   }
 
   var pure = {undoRequest: undoRequest, createUndoControl: createUndoControl, printerWaiting: printerWaiting, createPromptGate: createPromptGate,
-              flagScanSound: flagScanSound, createCapture: createCapture, createRepeatGuard: createRepeatGuard,
+              flagScanSound: flagScanSound, flagLookup: flagLookup, createCapture: createCapture, createRepeatGuard: createRepeatGuard,
               createScanQueue: createScanQueue, createWriteQueue: createWriteQueue,
               createPauseWatch: createPauseWatch, interpretResponse: interpretResponse,
               MESSAGES: MESSAGES, esc: esc, IDLE_MS: IDLE_MS, REPEAT_MS: REPEAT_MS};
@@ -737,19 +755,8 @@
   // What a scan means to the flag flow: a container or one unit can be flagged.
   function lookupFlag(code) {
     return read(body.dataset.resolveUrl, {code: code}).then(function (answer) {
-      var F = root.InvFlagFlow;
-      function named(card) { return [card.title, card.tag].filter(Boolean).join(' '); }
       if (!answer.ok) { return {message: answer.message}; }
-      if (answer.kind === 'CONTAINER' || answer.kind === 'UNIT') {
-        return {subject: {code: answer.code, label: named(answer.card)}};
-      }
-      if (answer.kind === 'AMBIGUOUS' && answer.candidates.length &&
-          answer.candidates.every(function (c) { return c.unit_id != null; })) {
-        return {choices: answer.candidates.map(function (c) {
-          return {unitId: c.unit_id, label: named(c.card)};
-        })};
-      }
-      return {message: F.MESSAGES.container};
+      return flagLookup(answer) || {message: root.InvFlagFlow.MESSAGES.container};
     });
   }
 

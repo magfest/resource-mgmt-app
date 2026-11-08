@@ -108,7 +108,9 @@
       }, answer.more ? 'and ' + answer.more + ' more' : null);
     } else {
       S.feedback('ok');
-      showCard(answer.card, {code: answer.code, unitId: null, item: answer.kind === 'ITEM'});
+      // A unit found by name carries unit_id, since its typed text resolves no code.
+      showCard(answer.card, {code: answer.code, unitId: answer.unit_id == null ? null : answer.unit_id,
+                             item: answer.kind === 'ITEM'});
     }
   }
 

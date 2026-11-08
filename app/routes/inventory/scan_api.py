@@ -30,6 +30,7 @@ from app.inventory.tree import display_name
 from app.inventory.unit_fields import model_number, spec_line
 from app.inventory.undo import undo_last
 from app.inventory.ledger import InventoryError, create_container
+from app.inventory.names import find_by_name
 from app.inventory.receive import (
     check_tag, container_for_code, receive_unit, reprint_unit, undo_message, undo_receive,
 )
@@ -178,17 +179,37 @@ def _can_create_tag(code: str) -> bool:
     return bool(code) and labels.parse(code) is None and can_print_code(code)
 
 
+def _with_names(raw: str | None, resolution: Resolution) -> Resolution:
+    """Fall back to live unit names when the text matched no code."""
+    if resolution.kind != KIND_UNKNOWN or not isinstance(raw, str):
+        return resolution
+    named = find_by_name(raw, MAX_CANDIDATES)
+    if len(named) == 1:
+        return Resolution(KIND_UNIT, resolution.code, unit=named[0])
+    if named:
+        return Resolution(KIND_AMBIGUOUS, resolution.code, candidates=tuple(named))
+    return resolution
+
+
 @inventory_bp.post("/scan/api/resolve")
 @api
 def scan_resolve():
-    """Say what a scanned value is. Reads only, so it needs no shift and stores nothing."""
+    """Say what a scanned value is. Reads only, so it needs no shift and stores nothing.
+
+    A unit found by name carries `unit_id`; its code would not resolve again.
+    """
     raw = _json_body().get("code")
-    resolution = resolve(raw if isinstance(raw, str) else None)
+    raw = raw if isinstance(raw, str) else None
+    coded = resolve(raw)
+    resolution = _with_names(raw, coded)
+    by_name = resolution is not coded
     event = default_event()
     out = {"ok": True, "kind": resolution.kind, "code": resolution.code,
            "prefix": resolution.prefix}
     if resolution.kind in (KIND_CONTAINER, KIND_UNIT, KIND_ITEM):
         out["card"] = card_for(resolution, event)
+        if by_name:
+            out["unit_id"] = resolution.unit.id
         owner = _wrong_station(resolution)
         if owner:
             out["wrong_station"] = owner
@@ -339,7 +360,10 @@ def _label_target(data: dict) -> Resolution:
     unit_id = data.get("unit_id")
     if unit_id is not None and type(unit_id) is not int:
         raise InventoryError(PICK_ONE)
+    # Look up sends unit_id for a name hit; without one, an unknown code stays a new tag.
     resolution = resolve(raw)
+    if unit_id is not None:
+        resolution = _with_names(raw, resolution)
     kind = resolution.kind
     if kind == KIND_UNIT:
         if unit_id is not None and unit_id != resolution.unit.id:
