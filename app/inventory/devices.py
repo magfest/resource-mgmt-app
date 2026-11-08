@@ -18,7 +18,7 @@ from app import db
 from app.inventory.ledger import InventoryError
 from app.models import InvContainer, InvDevice, InvEnrollCode, InvShift
 from app.models.constants import (
-    INV_SHIFT_END_REVOKED, INV_STATION_LOOKUP, INV_STATIONS,
+    INV_SHIFT_END_REVOKED, INV_STATION_LOOKUP, INV_STATION_UNIT, INV_STATIONS,
 )
 from app.security_audit import CATEGORY_ADMIN, EVENT_CONFIG_MODIFY, log_security_event
 
@@ -29,6 +29,7 @@ ENROLL_CODE_LIFETIME = timedelta(minutes=10)
 # No 0, 1, I, L, O or U: the code is read aloud and typed on a handheld keyboard.
 _CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
 _CODE_LENGTH = 8
+UNIT_NEEDS_HOME = "A Unit station needs a home container, such as the warehouse."
 CODE_REFUSED = "That code did not work. Ask an inventory admin for a new one."
 
 
@@ -41,6 +42,11 @@ def _check_station(station_code: str) -> None:
         raise InventoryError(f"{station_code or 'That'} is not a station.")
 
 
+def _check_unit_home(station_code: str, home_container_id: int | None) -> None:
+    if station_code == INV_STATION_UNIT and home_container_id is None:
+        raise InventoryError(UNIT_NEEDS_HOME)
+
+
 def enroll_device(name: str, user_id: str, station_code: str = INV_STATION_LOOKUP,
                   home_container: InvContainer | None = None) -> tuple[InvDevice, str]:
     """Create a device and return it with its raw cookie token."""
@@ -48,6 +54,7 @@ def enroll_device(name: str, user_id: str, station_code: str = INV_STATION_LOOKU
     if not name or len(name) > 64:
         raise InventoryError("Name this scanner, such as Scanner 3.")
     _check_station(station_code)
+    _check_unit_home(station_code, home_container.id if home_container else None)
     raw = secrets.token_urlsafe(32)
     device = InvDevice(
         name=name, token_hash=hash_token(raw), enrolled_by_user_id=user_id,
@@ -74,6 +81,7 @@ def create_enroll_code(name: str, user_id: str, station_code: str = INV_STATION_
     if not name or len(name) > 64:
         raise InventoryError("Name this scanner, such as Scanner 3.")
     _check_station(station_code)
+    _check_unit_home(station_code, home_container.id if home_container else None)
     now = now or datetime.utcnow()
     plain = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(_CODE_LENGTH))
     db.session.add(InvEnrollCode(
@@ -123,9 +131,11 @@ def set_station(device: InvDevice, station_code: str,
     `user_id` is the admin who changed it; a scanner switching itself passes None.
     """
     _check_station(station_code)
+    new_home_id = (device.home_container_id if keep_home
+                   else home_container.id if home_container else None)
+    _check_unit_home(station_code, new_home_id)
     device.station_code = station_code
-    if not keep_home:
-        device.home_container_id = home_container.id if home_container else None
+    device.home_container_id = new_home_id
     log_security_event(EVENT_CONFIG_MODIFY, category=CATEGORY_ADMIN, user_id=user_id,
                        details={"source": "inventory_device_station", "device_id": device.id,
                                 "station_code": device.station_code})

@@ -86,6 +86,9 @@ class SupplyItem(db.Model):
     # Base units per pack, such as 12 for a box of Sharpies. NULL means the
     # model is never counted in packs.
     pack_size = db.Column(db.Integer, nullable=True)
+    # The Unit station asks for an asset tag instead of offering a U- number.
+    needs_asset_tag = db.Column(db.Boolean, nullable=False, default=False,
+                                server_default=db.false())
     # TV_CHECK or PRINTER_CHECK; NULL for models no station checks.
     check_station = db.Column(db.String(16), nullable=True)
     # The kind whose typed fields describe this model's units; NULL for none.

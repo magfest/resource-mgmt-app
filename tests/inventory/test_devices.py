@@ -5,10 +5,11 @@ import pytest
 
 from app import db
 from app.inventory.devices import (
-    COOKIE_NAME, ENROLL_CODE_LIFETIME, create_enroll_code, enroll_device,
+    COOKIE_NAME, ENROLL_CODE_LIFETIME, UNIT_NEEDS_HOME, create_enroll_code, enroll_device,
     redeem_enroll_code, revoke_device, set_station,
 )
 from app.inventory.ledger import InventoryError
+from app.models.constants import INV_STATION_UNIT
 from app.models import InvDevice, InvEnrollCode, InvShift
 from tests.inventory.helpers import enrolled_client, login, make_container
 
@@ -210,3 +211,37 @@ def test_home_container_is_set_from_its_label(client, inv):
     db.session.commit()
     device, _ = redeem_enroll_code(raw)
     assert device.home_container_id == bin_.id
+
+
+def test_unit_station_needs_a_home_container(inv):
+    with pytest.raises(InventoryError, match="A Unit station needs a home container"):
+        enroll_device("CT60 one", "test:invadmin", station_code=INV_STATION_UNIT)
+    with pytest.raises(InventoryError, match=UNIT_NEEDS_HOME):
+        create_enroll_code("CT60 one", "test:invadmin", station_code=INV_STATION_UNIT)
+
+
+def test_unit_station_enrolls_with_a_home(inv):
+    home = make_container(inv, "LOC-0001", kind="LOCATION")
+    device, _ = enroll_device("CT60 one", "test:invadmin", station_code=INV_STATION_UNIT,
+                              home_container=home)
+    assert device.station_code == "UNIT"
+    create_enroll_code("CT60 two", "test:invadmin", station_code=INV_STATION_UNIT,
+                       home_container=home)
+
+
+def test_set_station_to_unit_keeps_an_existing_home(inv):
+    home = make_container(inv, "LOC-0001", kind="LOCATION")
+    device, _ = enroll_device("CT60 one", "test:invadmin", home_container=home)
+    set_station(device, INV_STATION_UNIT, keep_home=True)
+    assert device.station_code == "UNIT"
+
+
+def test_set_station_to_unit_without_a_home_is_refused(inv):
+    home = make_container(inv, "LOC-0001", kind="LOCATION")
+    device, _ = enroll_device("CT60 one", "test:invadmin", home_container=home)
+    with pytest.raises(InventoryError, match=UNIT_NEEDS_HOME):
+        set_station(device, INV_STATION_UNIT)
+    bare, _ = enroll_device("CT60 two", "test:invadmin")
+    with pytest.raises(InventoryError, match=UNIT_NEEDS_HOME):
+        set_station(bare, INV_STATION_UNIT, keep_home=True)
+    assert bare.station_code == "LOOKUP"

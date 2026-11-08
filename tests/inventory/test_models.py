@@ -45,6 +45,7 @@ def test_new_supply_item_is_orderable_and_counted(inv):
     db.session.flush()
     assert item.is_orderable is True
     assert item.is_serialized is False
+    assert item.needs_asset_tag is False
 
 
 def _event(code="SMF27"):
