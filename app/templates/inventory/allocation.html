@@ -11,6 +11,11 @@
   /* A 44 px tap area: the bare checkbox and word are 18 px tall on a phone. */
   .alloc-tick { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding-right: 12px; }
   .alloc-tick input { width: 22px; height: 22px; margin: 0; }
+  .alloc-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0; border-bottom: 1px solid #e5e7eb; }
+  .alloc-tabs a { display: inline-block; padding: 10px 14px; min-height: 24px; text-decoration: none; border-bottom: 3px solid transparent; }
+  .alloc-tabs a[aria-current="page"] { font-weight: bold; border-bottom-color: #2563eb; }
+  .alloc-dept { background: #f3f4f6; margin: 16px 0 0; padding: 8px 10px; font-size: 15px; overflow-wrap: anywhere; }
+  .alloc-note { margin: 6px 0; padding: 4px 0 4px 10px; border-left: 3px solid #d1d5db; white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>
 <h1>Allocation</h1>
 {% if error %}
@@ -34,37 +39,66 @@
       {% for s in options %}<option value="{{ s.kind }}:{{ s.id }}"{% if s.kind == selection.kind and s.id == selection.id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
     </select>
   </label>
+  {% for k, v in filters.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <button type="submit" class="btn btn-small">Show</button>
 </form>
 
 {% if selection %}
+{% set pick = selection.kind ~ ':' ~ selection.id %}
+{% set base = dict(filters, event=event.id, pick=pick) %}
+{% set no_show = dict(base) %}
+{% set _ = no_show.pop('show', none) %}
 <p><strong>{{ selection.name }}: {{ totals.requested }} requested · {{ totals.approved }} approved · {{ totals.allocated }} allocated · {{ totals.free }} free</strong></p>
 <p class="muted">Free means in service and allocated to nothing, for any event.</p>
 
-<h2>Department lines</h2>
+<nav class="alloc-tabs" role="tablist" aria-label="Allocation views">
+  <a href="{{ url_for('inventory.allocation', **dict(base, tab='assets')) }}"{% if tab == 'assets' %} aria-current="page"{% endif %}>Assets ({{ assets_count }})</a>
+  <a href="{{ url_for('inventory.allocation', **dict(base, tab='lines')) }}"{% if tab == 'lines' %} aria-current="page"{% endif %}>Department lines ({{ lines_count }})</a>
+</nav>
+<form method="get" class="alloc-form mb-16">
+  {% for k, v in base.items() if k != 'dept' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <label>Department
+    <select name="dept">
+      <option value="">All departments</option>
+      {% for id, name in dept_options %}<option value="{{ id }}"{% if id == dept_id %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Show</button>
+</form>
+
+{% if tab == 'lines' %}
+<p class="alloc-filters">
+  {% for key, label in [('short', 'Still short'), ('all', 'All'), ('notes', 'Has notes')] %}
+  <a href="{{ url_for('inventory.allocation', **dict(base, lines=key)) }}"{% if lines_show == key %} aria-current="true"{% endif %}>{{ label }}</a>{% if not loop.last %} · {% endif %}
+  {% endfor %}
+</p>
+{% for group in groups %}
+<h2 class="alloc-dept">{{ group.name }} · {{ group.lines|length }} line{{ '' if group.lines|length == 1 else 's' }} · {{ group.allocated }} of {{ group.requested }} allocated{% if group.short > 0 %} · {{ group.short }} short{% endif %}</h2>
 <ul class="alloc-list">
-  {% for line in lines %}
+  {% for line in group.lines %}
   <li>
-    <div>{{ line_label(line) }}</div>
-    {% if line.state != 'REMOVED' %}
-    <div class="muted">Requested {{ line.requested }} · Approved {{ line.approved if line.approved is not none else 'not reviewed' }} · {{ line.allocated }} of {{ line.requested }} allocated</div>
+    {% if line.state == 'REMOVED' %}
+    <div class="alloc-note">{{ line.words }}</div>
+    {% else %}
+    <div><strong>{{ line.public_id }} · line {{ line.line_number }}</strong></div>
+    <div class="alloc-note">{{ line.notes if line.notes else 'No note' }}</div>
+    <div class="muted">Requested {{ line.requested }} · Approved {{ line.approved if line.approved is not none else 'not reviewed' }} · {{ line.allocated }} of {{ line.requested }} allocated{% if short_count(line) > 0 %} · {{ short_count(line) }} short{% endif %}{% if line.allocations %} · {% for a in line.allocations %}{{ unit_code(a.unit) or 'No number yet' }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</div>
     {% endif %}
-    {% if line.allocations %}<div class="muted">{% for a in line.allocations %}{{ unit_code(a.unit) or 'No number yet' }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+    {% if line.state == 'REMOVED' %}<div class="muted">{% for a in line.allocations %}{{ unit_code(a.unit) or 'No number yet' }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
     {% for w in line.warnings %}<span class="pill pill-warning">{{ w }}</span>{% endfor %}
   </li>
-  {% else %}
-  <li class="muted">No department lines for {{ event.code }}.</li>
   {% endfor %}
 </ul>
-
-{% set carry = {'event': event.id, selection.kind: selection.id} %}
-{% if unallocated_only %}{% set carry = dict(carry, show='unallocated') %}{% endif %}
-{% set base = {'event': event.id, 'pick': selection.kind ~ ':' ~ selection.id} %}
-<h2>Assets</h2>
+{% else %}
+<p class="muted">No department lines to show for {{ event.code }}.</p>
+{% endfor %}
+{% else %}
+{% set carry = dict(base, **{selection.kind: selection.id}) %}
+{% set _ = carry.pop('pick') %}
 <p class="alloc-filters">
-  <a href="{{ url_for('inventory.allocation', **base) }}"{% if not unallocated_only %} aria-current="true"{% endif %}>All assets</a>
+  <a href="{{ url_for('inventory.allocation', **no_show) }}"{% if not unallocated_only %} aria-current="true"{% endif %}>All assets</a>
   ·
-  <a href="{{ url_for('inventory.allocation', show='unallocated', **base) }}"{% if unallocated_only %} aria-current="true"{% endif %}>Unallocated only</a>
+  <a href="{{ url_for('inventory.allocation', **dict(base, show='unallocated')) }}"{% if unallocated_only %} aria-current="true"{% endif %}>Unallocated only</a>
 </p>
 {% set tickable = rows|rejectattr('allocation')|rejectattr('warning')|list %}
 {% set ticked_button %}<button type="submit" class="btn btn-small" form="alloc-pick">Allocate ticked to…</button>{% endset %}
@@ -105,6 +139,7 @@
   {% for k, v in carry.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   {{ ticked_button }}
 </form>
+{% endif %}
 {% endif %}
 {% endif %}
 {% endif %}

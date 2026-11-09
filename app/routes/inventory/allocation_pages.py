@@ -3,6 +3,9 @@ from flask import abort, flash, redirect, request, url_for
 from sqlalchemy.orm import joinedload
 
 from app.inventory.allocation_rights import can_allocate
+from app.inventory.allocation_view import (
+    LINES_ALL, LINES_NOTES, LINES_SHORT, departments, filter_lines, group_by_department, short_count,
+)
 from app.inventory.allocation import RowChange, allocate, move, release, save_changes
 from app.inventory.checks import unit_code, unit_phrase
 from app.inventory.demand import (
@@ -70,18 +73,35 @@ def _render_allocation(error=None, picked=None, was=None):
     event = pick_event(events, _int(request.values.get("event")))
     options = selections(event.id if event else None)
     selection = _requested_selection(event)
-    ctx = dict(line_label=line_label, unit_code=unit_code, events=events, event=event, options=options, selection=selection,
+    ctx = dict(line_label=line_label, unit_code=unit_code, short_count=short_count, events=events, event=event, options=options, selection=selection,
                can_allocate=can_allocate(get_user_ctx()),
                unallocated_only=request.values.get("show") == "unallocated",
                error=error, picked=picked, was=was)
     if event is None or selection is None:
         return render_inventory_page("inventory/allocation.html", lines=[], rows=[],
-                                     totals=None, **ctx)
+                                     totals=None, tab="assets", dept_id=None, dept_options=[],
+                                     lines_show=LINES_SHORT, filters={}, groups=[], lines_count=0,
+                                     assets_count=0, **ctx)
     lines = demand_lines(event.id, selection)
     assets = selection_assets(selection, ctx["unallocated_only"])
+    tab = "lines" if request.values.get("tab") == "lines" else "assets"
+    options_by_id = dict(departments(lines))
+    dept_id = _int(request.values.get("dept"))
+    dept_id = dept_id if dept_id in options_by_id else None
+    lines_show = request.values.get("lines")
+    lines_show = lines_show if lines_show in (LINES_ALL, LINES_NOTES) else LINES_SHORT
+    filters = {"tab": tab, "lines": lines_show}
+    if dept_id:
+        filters["dept"] = dept_id
+    if ctx["unallocated_only"]:
+        filters["show"] = "unallocated"
+    shown = filter_lines(lines, dept_id, lines_show)
+    # The Lines tab needs no asset rows, so they are built only when the Assets tab shows.
+    rows = _asset_rows(assets, lines, event) if tab == "assets" else []
     return render_inventory_page(
-        "inventory/allocation.html", lines=lines, totals=shortfall(selection, lines),
-        rows=_asset_rows(assets, lines, event), **ctx)
+        "inventory/allocation.html", lines=lines, totals=shortfall(selection, lines), rows=rows,
+        tab=tab, dept_id=dept_id, dept_options=list(options_by_id.items()), lines_show=lines_show,
+        filters=filters, groups=group_by_department(shown), lines_count=len(shown), assets_count=len(assets), **ctx)
 
 
 @inventory_bp.get("/allocation")

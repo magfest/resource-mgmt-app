@@ -1,4 +1,7 @@
 """The read-only allocation page: shortfall, department lines and assets."""
+import html
+import re
+
 from sqlalchemy import event as sa_event
 
 from app import db
@@ -27,8 +30,9 @@ def test_page_shows_shortfall_lines_and_assets(client, alloc):
     page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
     assert "Test TV: 6 requested · 2 approved · 0 allocated · 3 free" in page
     assert "Free means in service and allocated to nothing, for any event." in page
-    assert "Alpha Team · one 4K" in page and "0 of 4 allocated" in page and "not reviewed" in page
     assert "U-0001" in page and "Lobby TV 1" in page and "Not allocated" in page
+    lines = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id, tab="lines")
+    assert "one 4K" in lines and "0 of 4 allocated" in lines and "not reviewed" in lines
     assert "<table" not in page
 
 
@@ -58,7 +62,7 @@ def test_unallocated_only_hides_allocated_assets(client, alloc):
     db.session.commit()
     login(client, "test:admin")
     page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id, show="unallocated")
-    assets = page.split("<h2>Assets</h2>")[1]
+    assets = page.split("Allocation views")[1]
     assert "U-0002" in assets and "U-0001" not in assets
     assert "U-0001" in _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
 
@@ -91,7 +95,7 @@ def test_person_text_is_escaped(client, alloc):
     supply_line(alloc, alloc.alpha, 2, notes="<b>x</b>")
     db.session.commit()
     login(client, "test:admin")
-    page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
+    page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id, tab="lines")
     assert "&lt;b&gt;" in page and "<b>x</b>" not in page
 
 
@@ -137,7 +141,7 @@ def test_a_printer_item_without_supply_lines_shows_only_its_service(client, allo
     login(client, "test:admin")
     page = _page(client, alloc, event=alloc.event.id)
     assert ">TechOps: Printer<" in page and ">Test Printer<" not in page
-    assert "front desk" in _page(client, alloc, event=alloc.event.id,
+    assert "front desk" in _page(client, alloc, event=alloc.event.id, tab="lines",
                                  pick=f"service:{alloc.printer_service.id}")
     supply_line(alloc, alloc.alpha, 1, item=alloc.printer)
     db.session.commit()
@@ -150,9 +154,8 @@ def test_each_line_lists_the_asset_numbers_allocated_to_it(client, alloc):
     make_allocation(make_asset(alloc.tv, "U-0002"), line)
     db.session.commit()
     login(client, "test:admin")
-    page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
-    block = page.split("<h2>Department lines</h2>")[1].split("<h2>Assets</h2>")[0]
-    assert "U-0001" in block and "U-0002" in block
+    block = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id, tab="lines")
+    assert "U-0001, U-0002" in block
 
 
 def test_a_removed_line_marks_its_asset_row_and_a_live_line_does_not(client, alloc):
@@ -167,7 +170,7 @@ def test_a_removed_line_marks_its_asset_row_and_a_live_line_does_not(client, all
     db.session.delete(gone)
     db.session.commit()
     page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
-    assets = page.split("<h2>Assets</h2>")[1]
+    assets = page.split("Allocation views")[1]
     first, second = assets.split("U-0002")
     assert "Line changed: removed" in first.split("U-0001")[1]
     assert "Line changed: removed" not in second
@@ -183,3 +186,121 @@ def test_ticked_button_shows_above_and_below_only_with_a_tickable_asset(client, 
     db.session.commit()
     page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
     assert page.count("Allocate ticked to…") == 2
+
+
+NOTE_120 = "Four wall-mounted televisions for the registration hall, with brackets, power strips and a spare remote, " \
+           "delivered Thursday."[:120]
+
+
+def _lines_page(client, alloc, **args):
+    return _page(client, alloc, event=alloc.event.id, item=alloc.tv.id, tab="lines", **args)
+
+
+def test_lines_tab_shows_order_line_full_note_and_numbers(client, alloc):
+    line = supply_line(alloc, alloc.alpha, 4, notes=NOTE_120)
+    make_allocation(make_asset(alloc.tv, "U-0001"), line)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _lines_page(client, alloc)
+    assert len(NOTE_120) == 120 and NOTE_120 in page
+    assert "TST27-ALPHA-SUP-1 · line 1" in page
+    assert "Requested 4 · Approved not reviewed · 1 of 4 allocated · 3 short · U-0001" in page
+    assert "Alpha Team · 1 line · 1 of 4 allocated · 3 short" in page
+    assert "Department lines (1)" in page and "Assets (1)" in page
+    assert "<table" not in page
+
+
+def test_lines_tab_says_no_note(client, alloc):
+    supply_line(alloc, alloc.alpha, 2)
+    db.session.commit()
+    login(client, "test:admin")
+    assert "No note" in _lines_page(client, alloc)
+
+
+def test_lines_tab_filters_by_department_and_show(client, alloc):
+    supply_line(alloc, alloc.alpha, 2)
+    full = supply_line(alloc, alloc.beta, 1, notes="beta full")
+    make_allocation(make_asset(alloc.tv, "U-0001"), full)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _lines_page(client, alloc, dept=alloc.beta.id)
+    assert "Alpha Team ·" not in page.split("Allocation views")[-1] and "beta full" not in page
+    assert "beta full" in _lines_page(client, alloc, lines="all")
+    assert "beta full" not in _lines_page(client, alloc, lines="junk")
+    assert "TST27-ALPHA-SUP-1" in _lines_page(client, alloc, lines="junk")
+    assert "beta full" in _lines_page(client, alloc, lines="notes")
+    assert "TST27-ALPHA-SUP-1" not in _lines_page(client, alloc, lines="notes")
+
+
+def test_unknown_department_means_all_departments(client, alloc):
+    supply_line(alloc, alloc.alpha, 2)
+    db.session.commit()
+    login(client, "test:admin")
+    assert "TST27-ALPHA-SUP-1" in _lines_page(client, alloc, dept=999999)
+
+
+def test_tabs_carry_filters(client, alloc):
+    supply_line(alloc, alloc.alpha, 2)
+    supply_line(alloc, alloc.beta, 2)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _lines_page(client, alloc, dept=alloc.beta.id, lines="all")
+    link = re.search(r'<a [^>]*href="([^"]*)"[^>]*>\s*Assets \(', page)
+    assert link, page
+    href = html.unescape(link.group(1))
+    assert f"dept={alloc.beta.id}" in href and "lines=all" in href and "tab=assets" in href
+    assert f"pick=item:{alloc.tv.id}" in href
+    assert 'role="tablist"' in page and 'aria-current="page"' in page
+
+
+def test_unknown_tab_means_assets(client, alloc):
+    make_asset(alloc.tv, "U-0001")
+    supply_line(alloc, alloc.alpha, 2)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id, tab="junk")
+    assert "U-0001" in page and "TST27-ALPHA-SUP-1" not in page
+
+
+def test_lines_tab_escapes_notes(client, alloc):
+    supply_line(alloc, alloc.alpha, 2, notes="<b>4 TVs</b>")
+    db.session.commit()
+    login(client, "test:admin")
+    page = _lines_page(client, alloc)
+    assert "&lt;b&gt;4 TVs&lt;/b&gt;" in page and "<b>4 TVs</b>" not in page
+
+
+def test_removed_row_shows_saved_words_pill_and_asset(client, alloc):
+    row = make_allocation(make_asset(alloc.tv, "U-0001"), supply_line(alloc, alloc.alpha, 1),
+                          "Gone TVs")
+    row.work_line_id = None
+    db.session.commit()
+    login(client, "test:admin")
+    page = _lines_page(client, alloc)
+    assert "Gone TVs" in page and "Line changed: removed" in page and "U-0001" in page
+
+
+def test_lines_tab_runs_in_a_fixed_number_of_selects(client, alloc):
+    login(client, "test:admin")
+    depts = [alloc.alpha, alloc.beta]
+
+    def selects_for(n):
+        for i in range(n):
+            line = supply_line(alloc, depts[i % 2], 2, notes=f"note {n}{i}")
+            make_allocation(make_asset(alloc.tv, f"U-{n}{i:03d}"), line)
+        db.session.commit()
+        seen = [0]
+
+        def count(conn, cursor, statement, *args):
+            if statement.lstrip().upper().startswith("SELECT"):
+                seen[0] += 1
+
+        sa_event.listen(db.engine, "before_cursor_execute", count)
+        try:
+            _lines_page(client, alloc, lines="all")
+        finally:
+            sa_event.remove(db.engine, "before_cursor_execute", count)
+        db.session.expire_all()
+        return seen[0]
+
+    assert selects_for(1) == selects_for(5)

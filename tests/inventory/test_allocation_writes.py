@@ -82,7 +82,8 @@ def test_ticked_assets_allocate_in_one_action(client, alloc):
     page = _post(client, "allocate", alloc, unit=[u.id for u in units],
                  line_id=line.id).get_data(as_text=True)
     assert "Allocated 3 assets to Alpha Team · any." in page
-    assert "3 of 4 allocated" in page
+    assert "3 of 4 allocated" in client.get(
+        f"/inv/allocation?event={alloc.event.id}&item={alloc.tv.id}&tab=lines&lines=all").get_data(as_text=True)
 
 
 def test_a_refused_batch_flashes_and_writes_nothing(client, alloc):
