@@ -12,7 +12,7 @@ from app.inventory.audit import (
     ACTION_RETIRE_CODE,
     record_unit_change,
 )
-from app.inventory.allocation import current_allocation
+from app.inventory.allocation import allocation_sentence, current_allocation
 from app.inventory.checks import checked_serial, unit_code, unit_phrase
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
 from app.inventory.ledger import (
@@ -299,7 +299,7 @@ def unit_page(unit_id: int):
     context.update(
         subline=subline, check=check_line(unit),
         added=added_line(unit), last_seen=local_day(seen) if seen else None,
-        open_flags=len(open_rows),
+        open_flags=len(open_rows), allocation=allocation_sentence(unit),
         where=where_sentence(unit), placed=placed_line(unit),
         find_by=find_by_rows(unit), details=detail_rows(unit),
         notes=note_views, open_rows=open_rows, history=history)

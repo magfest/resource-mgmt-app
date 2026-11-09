@@ -1077,6 +1077,19 @@ def test_page_opens_on_about(client, unit):
     page = _page(client, unit)
     assert "Last checked" in page and 'id="where"' in page
     assert "Assigned to: not tracked yet" in page
+    assert "Checked out to: not tracked yet" in page
+    assert "Allocated to: nothing" in page
+
+
+def test_asset_page_shows_its_allocation(client, alloc):
+    from tests.inventory.helpers import make_allocation, make_asset, supply_line
+    asset = make_asset(alloc.tv, "U-0001")
+    make_allocation(asset, supply_line(alloc, alloc.alpha, 1, notes="one 4K"))
+    db.session.commit()
+    login(client, "test:invadmin")
+    page = _page(client, asset)
+    assert "Allocated to: Alpha Team for TST27 \u00b7 one 4K" in page
+    assert "Allocated to: nothing" not in page
 
 
 def test_edit_tab_for_admin(client, unit):

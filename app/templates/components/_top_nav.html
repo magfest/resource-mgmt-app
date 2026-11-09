@@ -59,6 +59,8 @@
         <div class="top-nav-menu-label">Manage</div>
         <a href="{{ url_for('work.techops_all_requests') }}">All TechOps Requests</a>
         <a href="{{ url_for('approvals.dashboard_home', work_type='TECHOPS') }}">Reviewer Groups</a>
+        <a href="{{ url_for('inventory.allocation') }}">Allocation</a>
+        <a href="{{ url_for('inventory.deployment_report') }}">Deployment report</a>
         {% endif %}
         {% if techops_viewer and not techops_admin %}
         <div class="top-nav-menu-label">Read</div>
@@ -95,9 +97,11 @@
         <div class="top-nav-divider"></div>
         <a href="{{ url_for('work.supply_admin_home') }}">Supply Home</a>
         {% endif %}
-        {% if nav_is_inventory %}
+        {% if nav_is_inventory or supply_admin %}
         <div class="top-nav-menu-label">Inventory</div>
-        <a href="{{ url_for('inventory.home') }}">Inventory Home</a>
+        {% if nav_is_inventory %}<a href="{{ url_for('inventory.home') }}">Inventory Home</a>{% endif %}
+        <a href="{{ url_for('inventory.allocation') }}">Allocation</a>
+        <a href="{{ url_for('inventory.deployment_report') }}">Deployment report</a>
         {% endif %}
       </div>
     </div>

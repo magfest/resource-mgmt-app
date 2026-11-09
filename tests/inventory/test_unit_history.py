@@ -12,7 +12,9 @@ from app.inventory.ledger import Actor, add_unit, move_unit
 from app.inventory.notes import add_note
 from app.inventory.printing import local_when
 from app.models import ConfigAuditEvent, InvDevice, InvFlag, InvMovement, InvShift, InvUnitNote
-from tests.inventory.helpers import make_container
+from app.inventory.allocation import allocate, move, release
+from app.models import InvAllocationEvent
+from tests.inventory.helpers import make_asset, make_container, supply_line
 
 T0 = datetime(2026, 11, 1, 12, 0)
 
@@ -90,7 +92,31 @@ def _selects(fn):
     return seen[0]
 
 
-def test_history_query_count_is_fixed(inv):
+def _allocation_events(unit, alloc, count):
+    for i in range(count):
+        db.session.add(InvAllocationEvent(
+            unit_id=unit.id, action="ALLOCATE", event_cycle_id=alloc.event.id,
+            department_id=alloc.alpha.id, line_label=f"words {i}",
+            performed_by_user_id="test:invadmin"))
+
+
+def test_allocation_changes_show_in_history(alloc):
+    unit = make_asset(alloc.tv, "U-0001")
+    allocate([unit], supply_line(alloc, alloc.alpha, 1, notes="one 4K").id, "test:invadmin")
+    move(unit, supply_line(alloc, alloc.beta, 1, notes="any").id, "test:invadmin")
+    release(unit, "test:invadmin")
+    # stamp the three events at now + 1, 2 and 3 hours, so they sort above the ADD movement
+    events = db.session.query(InvAllocationEvent).order_by(InvAllocationEvent.id).all()
+    for hours, ev in enumerate(events, start=1):
+        ev.created_at = datetime.utcnow() + timedelta(hours=hours)
+    db.session.commit()
+    texts = [l.text for l in unit_history(unit)][:3]
+    assert texts == ["released it from Beta Team for TST27: any",
+                     "moved its allocation to Beta Team for TST27: any",
+                     "allocated it to Alpha Team for TST27: one 4K"]
+
+
+def test_history_query_count_is_fixed(inv, alloc):
     actor = Actor(user_id="test:invadmin")
     small = add_unit(inv.laptop, None, actor, [("FESTOPS_LABEL", "U-0002")])
     big = add_unit(inv.laptop, None, actor, [("FESTOPS_LABEL", "U-0003")])
@@ -99,6 +125,8 @@ def test_history_query_count_is_fixed(inv):
         move_unit(small, container, actor)
     for container in containers:
         move_unit(big, container, actor)
+    _allocation_events(big, alloc, 5)
+    _allocation_events(small, alloc, 1)
     db.session.commit()
     db.session.expire_all()
     first = _selects(lambda: unit_history(small))

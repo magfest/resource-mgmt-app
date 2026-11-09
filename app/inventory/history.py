@@ -1,6 +1,6 @@
 """An asset's history as one list of sentences, newest first.
 
-Merges movements, finished checks, audit rows, flags and typed notes. It reads
+Merges movements, finished checks, audit rows, flags, allocation changes and typed notes. It reads
 only; nothing here writes. Notes copied from the old system produce no line.
 """
 from __future__ import annotations
@@ -15,14 +15,17 @@ from app.inventory.audit import ACTION_TAG_LINK, unit_changes
 from app.inventory.flags import FLAG_WORDS
 from app.inventory.notes import NOTE_TYPE_WORDS
 from app.inventory.people import actor_name, names_for
-from app.models import InvCheck, InvFlag, InvMovement, InvShift, InvUnit, InvUnitNote
+from app.models import InvAllocationEvent, InvCheck, InvFlag, InvMovement, InvShift, InvUnit, InvUnitNote
 from app.models.constants import (
-    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_CHECK_FAILED, INV_CHECK_PASSED, INV_CHECK_SET_ASIDE,
+    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ALLOCATION_ALLOCATE, INV_ALLOCATION_MOVE, INV_CHECK_FAILED, INV_CHECK_PASSED, INV_CHECK_SET_ASIDE,
     INV_NOTE_SOURCE_PERSON,
 )
 
 CONDITION_WORDS = {"IN_SERVICE": "In service", "REPAIR": "In repair", "LOST": "Lost",
                    "FOUND": "Found", "RETIRED": "Retired"}
+
+_ALLOCATION_VERBS = {INV_ALLOCATION_ALLOCATE: "allocated it to",
+                     INV_ALLOCATION_MOVE: "moved its allocation to"}
 
 _CHECK_TEXT = {INV_CHECK_PASSED: "checked it: Works", INV_CHECK_FAILED: "checked it: Broken",
                INV_CHECK_SET_ASIDE: "set it aside during a check"}
@@ -90,12 +93,17 @@ def unit_history(unit: InvUnit) -> list[HistoryLine]:
     notes = (db.session.query(InvUnitNote)
              .filter(InvUnitNote.unit_id == unit.id,
                      InvUnitNote.source == INV_NOTE_SOURCE_PERSON).all())
+    # Sentences come from the event's own snapshot; the line may be gone or reworded since.
+    allocations = (db.session.query(InvAllocationEvent)
+                   .filter(InvAllocationEvent.unit_id == unit.id)
+                   .options(selectinload(InvAllocationEvent.department),
+                            selectinload(InvAllocationEvent.event_cycle)).all())
     audits = unit_changes(unit.id, limit=None)
 
     names = names_for(
         [m.performed_by_user_id for m in movements] + [c.performed_by_user_id for c in checks]
         + [f.performed_by_user_id for f in flags] + [f.resolved_by_user_id for f in flags]
-        + [n.created_by_user_id for n in notes] + [row.created_by_user_id for row, _ in audits])
+        + [n.created_by_user_id for n in notes] + [a.performed_by_user_id for a in allocations] + [row.created_by_user_id for row, _ in audits])
     # Rows store the shift id; load the shifts once so no row triggers its own query.
     shift_ids = {r.shift_id for r in (*movements, *checks, *flags) if r.shift_id}
     shifts = {}
@@ -118,6 +126,11 @@ def unit_history(unit: InvUnit) -> list[HistoryLine]:
                           f"added {'an' if n.note_type == 'ADMIN' else 'a'} "
                           f"{NOTE_TYPE_WORDS.get(n.note_type, n.note_type).lower()} note")
               for n in notes]
+    for a in allocations:
+        verb = _ALLOCATION_VERBS.get(a.action, "released it from")
+        lines.append(HistoryLine(
+            a.created_at, actor_name(a.performed_by_user_id, None, names),
+            f"{verb} {a.department.name} for {a.event_cycle.code}: {a.line_label}"))
     for row, changes in audits:
         who_name = actor_name(row.created_by_user_id, None, names)
         lines += [HistoryLine(row.created_at, who_name, text)

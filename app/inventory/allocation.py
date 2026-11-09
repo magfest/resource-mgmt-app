@@ -37,6 +37,15 @@ def current_allocation(unit_id: int) -> InvAllocation | None:
     return db.session.query(InvAllocation).filter_by(unit_id=unit_id).first()
 
 
+def allocation_sentence(unit: InvUnit) -> str:
+    """Return the asset page line for the unit's allocation, from live line words when the line exists."""
+    row = current_allocation(unit.id)
+    if row is None:
+        return "Allocated to: nothing"
+    return (f"Allocated to: {row.department.name} for {row.event_cycle.code}"
+            f" \u00b7 {_live_words(row)}")
+
+
 def line_lock_query(work_line_id: int) -> Query:
     """Return the query that locks one work line until the transaction ends.
 

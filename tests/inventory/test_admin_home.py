@@ -164,3 +164,11 @@ def test_home_shows_found_and_moved_since(client, week):
     login(client, "test:operator")
     page = client.get("/inv/").data.decode()
     assert "Found<strong>2</strong>" in page and "Moved since" not in page
+
+
+def test_operator_home_links_the_planning_pages(client, week):
+    login(client, "test:operator")
+    page = client.get("/inv/").data.decode()
+    assert "Planning" in page
+    assert 'href="/inv/allocation"' in page and "Allocation" in page
+    assert 'href="/inv/allocation/report"' in page and "Deployment report" in page
