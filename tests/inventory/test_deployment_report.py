@@ -147,3 +147,22 @@ def test_a_formula_looking_note_is_neutralised(client, alloc):
     supply_line(alloc, alloc.alpha, 1, notes="=SUM(A1)")
     db.session.commit()
     assert "'=SUM(A1)" in _csv(client, alloc).get_data(as_text=True)
+
+
+def test_report_shows_the_full_note(client, alloc):
+    note = "word " * 24
+    supply_line(alloc, alloc.alpha, 1, notes=note)
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get(f"/inv/allocation/report?event={alloc.event.id}").get_data(as_text=True)
+    assert note.strip() in page and "…" not in page
+    parsed = list(csv.reader(io.StringIO(_csv(client, alloc).get_data(as_text=True))))
+    assert parsed[1][5] == note.strip()
+
+
+def test_report_escapes_notes(client, alloc):
+    supply_line(alloc, alloc.alpha, 1, notes="<b>4 TVs</b>")
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get(f"/inv/allocation/report?event={alloc.event.id}").get_data(as_text=True)
+    assert "&lt;b&gt;4 TVs&lt;/b&gt;" in page and "<b>4 TVs</b>" not in page

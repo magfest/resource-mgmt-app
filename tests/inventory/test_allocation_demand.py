@@ -4,7 +4,8 @@ from sqlalchemy import event as sa_event
 from app import db
 from app.inventory.demand import (
     LINE_ARCHIVED, LINE_DRAFT, LINE_OPEN, Shortfall, allocation_events, asset_warning,
-    demand_line, demand_lines, find_selection, line_label, line_words, pick_event,
+    demand_line, demand_lines, find_selection, line_label, line_notes, line_words,
+    pick_event,
     selection_assets, selections, shortfall,
 )
 from app.models import WorkItem, WorkPortfolio
@@ -207,3 +208,33 @@ def test_demand_lines_run_in_a_fixed_number_of_selects(alloc):
         return seen[0]
 
     assert selects_for(1) == selects_for(5)
+
+
+def test_line_notes_are_full_and_have_no_fallback(alloc):
+    long = "word " * 24
+    line = supply_line(alloc, alloc.alpha, 1, notes=long)
+    assert line_notes(line) == long.strip() and len(line_notes(line)) == 119
+    assert len(line_words(line)) == 80 and line_words(line).endswith("…")
+    blank = supply_line(alloc, alloc.alpha, 1)
+    assert line_notes(blank) == "" and line_words(blank) == "Test TV"
+    printer = techops_line(alloc, alloc.alpha, location="front desk")
+    assert line_notes(printer) == "front desk"
+    assert line_notes(techops_line(alloc, alloc.alpha)) == ""
+
+
+def test_demand_lines_carry_full_notes(alloc):
+    long = "word " * 24
+    supply_line(alloc, alloc.alpha, 1, notes=long)
+    db.session.commit()
+    sel = find_selection("item", alloc.tv.id, alloc.event.id)
+    assert [l.notes for l in demand_lines(alloc.event.id, sel)] == [long.strip()]
+
+
+def test_a_removed_row_notes_are_its_saved_words(alloc):
+    line = techops_line(alloc, alloc.alpha)
+    make_allocation(make_asset(alloc.printer, "U-0001"), line, words="front desk")
+    db.session.commit()
+    db.session.delete(line)
+    db.session.commit()
+    sel = find_selection("service", alloc.printer_service.id, alloc.event.id)
+    assert [l.notes for l in demand_lines(alloc.event.id, sel)] == ["front desk"]

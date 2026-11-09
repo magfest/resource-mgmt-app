@@ -64,8 +64,8 @@ class Selection:
 class DemandLine:
     """One department line, or one REMOVED allocation whose line was deleted.
 
-    A REMOVED row has no work line, request or quantities; its words are the
-    allocation's line_label snapshot.
+    A REMOVED row has no work line, request or quantities; its words and notes are
+    the allocation's line_label snapshot.
     """
     work_line_id: int | None
     event_cycle_id: int
@@ -74,6 +74,7 @@ class DemandLine:
     public_id: str | None
     line_number: int | None
     words: str
+    notes: str
     requested: int | None
     approved: int | None
     state: str
@@ -189,23 +190,33 @@ def pick_event(events: list[EventCycle], event_id: int | None) -> EventCycle | N
             or (events[0] if events else None))
 
 
-def line_words(line: WorkLine) -> str:
-    """Describe what a Supply or TechOps line asks for, in at most 80 characters."""
+def line_notes(line: WorkLine) -> str:
+    """Return the department's own words for a line, uncut; "" when it wrote none."""
     supply, techops = line.supply_detail, line.techops_detail
     if supply is not None:
-        parts = [supply.requester_notes if (supply.requester_notes or "").strip()
-                 else supply.item.item_name]
+        parts = [supply.requester_notes]
     elif techops is not None:
         parts = [techops.location, techops.usage, techops.description]
         if techops.service_type.code == "PRINTER":
             # Imported here: the techops package loads every TechOps route module on import.
             from app.routes.work.techops.labels import PRINTER_VOLUME
             parts.append(PRINTER_VOLUME.get((techops.config or {}).get("volume")))
-        if not any((p or "").strip() for p in parts):
-            parts = [techops.service_type.name]
     else:
         parts = []
-    text = ", ".join(" ".join(p.split()) for p in parts if p and p.strip())
+    return ", ".join(" ".join(p.split()) for p in parts if p and p.strip())
+
+
+def line_words(line: WorkLine) -> str:
+    """Describe what a Supply or TechOps line asks for, in at most 80 characters.
+
+    Falls back to the item or service name when the department wrote nothing.
+    """
+    text = line_notes(line)
+    if not text:
+        if line.supply_detail is not None:
+            text = line.supply_detail.item.item_name
+        elif line.techops_detail is not None:
+            text = line.techops_detail.service_type.name
     return text if len(text) <= _MAX_WORDS else text[:_MAX_WORDS - 1] + "…"
 
 
@@ -273,7 +284,8 @@ def _from_line(line: WorkLine, allocations: list[InvAllocation]) -> DemandLine |
         work_line_id=line.id, event_cycle_id=portfolio.event_cycle_id,
         department_id=portfolio.department_id, department_name=portfolio.department.name,
         public_id=line.work_item.public_id, line_number=line.line_number,
-        words=line_words(line), requested=requested, approved=approved, state=_state(line),
+        words=line_words(line), notes=line_notes(line),
+        requested=requested, approved=approved, state=_state(line),
         source=source, item_id=supply.item_id if supply else None,
         service_type_id=techops.service_type_id if techops else None,
         space_id=techops.space_id if techops else None, allocations=allocations)
@@ -283,8 +295,9 @@ def _removed(row: InvAllocation) -> DemandLine:
     return DemandLine(
         work_line_id=None, event_cycle_id=row.event_cycle_id, department_id=row.department_id,
         department_name=row.department.name, public_id=None, line_number=None,
-        words=row.line_label, requested=None, approved=None, state=LINE_REMOVED, source=None,
-        item_id=None, service_type_id=None, space_id=None, allocations=[row])
+        words=row.line_label, notes=row.line_label, requested=None, approved=None,
+        state=LINE_REMOVED, source=None, item_id=None, service_type_id=None, space_id=None,
+        allocations=[row])
 
 
 def _sort_key(line: DemandLine):

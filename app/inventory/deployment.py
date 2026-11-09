@@ -93,7 +93,7 @@ def deployment_rows(event_cycle_id: int) -> list[ReportRow]:
             department=line.department_name, room=room, what=selection.name,
             public_id=line.public_id or "",
             line_number="" if line.line_number is None else str(line.line_number),
-            words=line.words,
+            words=line.notes or line.words,
             requested="" if removed else str(line.requested),
             approved="" if removed else ("not reviewed" if line.approved is None
                                          else str(line.approved)),
