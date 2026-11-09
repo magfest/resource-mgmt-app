@@ -1,20 +1,22 @@
 """Allocation page: department lines for one event beside the assets that can fill them."""
-from flask import request
+from flask import abort, flash, redirect, request, url_for
 from sqlalchemy.orm import joinedload
 
 from app.inventory.allocation_rights import can_allocate
-from app.inventory.checks import unit_code
+from app.inventory.allocation import allocate, move, release
+from app.inventory.checks import unit_code, unit_phrase
 from app.inventory.demand import (
-    allocation_events, asset_warning, demand_lines, find_selection, line_label, pick_event,
+    LINE_OPEN, allocation_events, asset_warning, demand_lines, find_selection, line_label, pick_event,
     selection_assets, selections, shortfall,
 )
 from app.inventory.unit_fields import details_line
 from app import db
-from app.models import InvAllocation
+from app.inventory.ledger import InventoryError
+from app.models import InvAllocation, InvUnit
 from app.routes import get_user_ctx
 
 from . import inventory_bp
-from .helpers import render_inventory_page, require_allocation_reader
+from .helpers import render_inventory_page, require_allocation_reader, require_allocator
 
 
 def _int(value):
@@ -78,3 +80,100 @@ def allocation():
     return render_inventory_page(
         "inventory/allocation.html", lines=lines, totals=shortfall(selection, lines),
         rows=_asset_rows(assets, lines, event), **ctx)
+
+
+def _carried() -> dict:
+    """Event, selection and filter that every write route hands back to the page."""
+    return {key: request.values[key] for key in ("event", "item", "service", "show")
+            if request.values.get(key)}
+
+
+def _units_from(values) -> list[InvUnit]:
+    units = []
+    for raw in values:
+        unit = db.session.get(InvUnit, _int(raw)) if _int(raw) is not None else None
+        if unit is None:
+            abort(404)
+        units.append(unit)
+    return units
+
+
+@inventory_bp.get("/allocation/pick")
+@require_allocator
+def allocation_pick():
+    carried = _carried()
+    units = _units_from(request.args.getlist("unit"))
+    if not units:
+        flash("Tick at least one asset.", "error")
+        return redirect(url_for("inventory.allocation", **carried))
+    event = pick_event(allocation_events(), _int(request.args.get("event")))
+    selection = _requested_selection()
+    if event is None or selection is None:
+        return redirect(url_for("inventory.allocation", **carried))
+    is_move = request.args.get("move") == "1" and len(units) == 1
+    current = None
+    if is_move:
+        held = db.session.query(InvAllocation).filter_by(unit_id=units[0].id).one_or_none()
+        current = held.work_line_id if held else None
+    options = [line for line in demand_lines(event.id, selection)
+               if line.state == LINE_OPEN and line.left > 0
+               and not (is_move and line.work_line_id == current)]
+    if is_move:
+        heading = f"Move {unit_phrase(units[0])} to…"
+    elif len(units) == 1:
+        heading = f"Allocate {unit_phrase(units[0])} to…"
+    else:
+        heading = f"Allocate {len(units)} assets to…"
+    return render_inventory_page(
+        "inventory/allocation_pick.html", heading=heading, options=options, units=units,
+        line_label=line_label, is_move=is_move, carried=carried,
+        back=url_for("inventory.allocation", **carried))
+
+
+def _finish(work):
+    """Run one write; commit and flash its message, or roll back and flash the refusal."""
+    try:
+        message = work()
+    except InventoryError as error:
+        db.session.rollback()
+        flash(str(error), "error")
+    else:
+        db.session.commit()
+        flash(message, "success")
+    return redirect(url_for("inventory.allocation", **_carried()))
+
+
+@inventory_bp.post("/allocation/allocate")
+@require_allocator
+def allocation_allocate():
+    units = _units_from(request.form.getlist("unit"))
+    line_id = _int(request.form.get("line_id"))
+    user_id = get_user_ctx().user_id
+
+    def work():
+        line = allocate(units, line_id, user_id)
+        who = unit_phrase(units[0]) if len(units) == 1 else f"{len(units)} assets"
+        return f"Allocated {who} to {line_label(line)}."
+    return _finish(work)
+
+
+@inventory_bp.post("/allocation/move")
+@require_allocator
+def allocation_move():
+    unit = _units_from(request.form.getlist("unit")[:1] or [None])[0]
+    line_id = _int(request.form.get("line_id"))
+    user_id = get_user_ctx().user_id
+    return _finish(lambda: f"Moved {unit_phrase(unit)} to "
+                           f"{line_label(move(unit, line_id, user_id))}.")
+
+
+@inventory_bp.post("/allocation/release")
+@require_allocator
+def allocation_release():
+    unit = _units_from(request.form.getlist("unit")[:1] or [None])[0]
+    user_id = get_user_ctx().user_id
+
+    def work():
+        release(unit, user_id)
+        return f"Released {unit_phrase(unit)}."
+    return _finish(work)
