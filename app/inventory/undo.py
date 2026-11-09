@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from app import db
 from app.inventory.checks import unit_phrase
 from app.inventory.counts import not_undone
+from app.inventory.last_check import latest_check_rows
 from app.inventory.ledger import (
     NUMBER_KINDS, Actor, InventoryError, _active_numbers, _is_taken, _locked_stock,
     reverse_movement,
@@ -221,9 +222,9 @@ def _stays_text(check: InvCheck, unit: InvUnit, actor: Actor) -> str:
 def _undo_check(check: InvCheck, actor: Actor) -> dict:
     unit = (db.session.query(InvUnit).filter_by(id=check.unit_id)
             .with_for_update().populate_existing().one())
-    prep = (db.session.query(InvPrepStatus)
-            .filter_by(unit_id=unit.id, event_cycle_id=check.event_cycle_id)
-            .order_by(InvPrepStatus.id.desc()).first())
+    prep = latest_check_rows([unit.id]).get(unit.id)
+    if prep is not None and prep.check_id != check.id:
+        raise InventoryError("A newer check of this unit exists.")
     own_prep = prep is not None and prep.check_id == check.id \
         and prep.status in (INV_PREP_CHECKED, INV_PREP_FAILED_CHECK)
     if not own_prep or check.previous_condition is None:

@@ -259,7 +259,7 @@ def test_lookup_card_shows_path_condition_prep_and_history(app, inv):
                            note="Cracked bezel"))
     db.session.commit()
     card = card_for(resolve("S1"), event)
-    assert "Needs repair" in card["lines"] and "Checked" in card["lines"]
+    assert "Needs repair" in card["lines"] and any(x.startswith("Works \u00b7 ") for x in card["lines"])
     assert any("Cracked bezel" in line for line in card["lines"])
 
 

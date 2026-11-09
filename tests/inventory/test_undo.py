@@ -10,7 +10,7 @@ from app import db
 from app.inventory.cards import card_for
 from app.inventory.describe import describe_movement
 from app.inventory.checks import (
-    find_balance_mismatches, finish_check, open_check, prep_status,
+    find_balance_mismatches, finish_check, open_check,
 )
 from app.inventory.counts import CountLineIn, count_payload, start_count, submit_count
 from app.inventory.flags import raise_flag
@@ -21,10 +21,12 @@ from app.inventory.resolver import resolve
 from app.inventory.shifts import start_shift
 from app.inventory.undo import UNDO_WINDOW, undo_last
 from app.models import (
-    InvCheck, InvCount, InvCountLine, InvMovement, InvPrepStatus, InvScanRequest,
+    EventCycle, InvCheck, InvCount, InvCountLine, InvMovement, InvPrepStatus, InvScanRequest,
     InvUnitIdentifier,
 )
-from tests.inventory.helpers import enrolled_client, login, make_container
+from tests.inventory.helpers import (
+    enrolled_client, latest_prep_status as prep_status, login, make_container,
+)
 from tests.inventory.test_checks import event, tv_checklist  # noqa: F401  (fixtures)
 
 ADMIN = Actor(user_id="test:invadmin")
@@ -75,7 +77,7 @@ def test_undo_a_failed_check_restores_condition_and_voids_prep(inv, tv_checklist
     assert answer["undone"] == "check"
     assert answer["message"].startswith("Check of TECH00412 undone.")
     assert t.tv.condition == "IN_SERVICE"
-    assert prep_status(t.tv, event) is None
+    assert prep_status(t.tv) is None
     assert check.status == "VOIDED"
     rows = [r.status for r in InvPrepStatus.query.order_by(InvPrepStatus.id)]
     assert rows == ["FAILED_CHECK", "VOIDED"]
@@ -148,7 +150,7 @@ def test_look_up_shows_not_checked_after_undo_and_a_new_check_opens(
     check = open_check(t.tv, "UNIT", actor, event)
     finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
     db.session.commit()
-    assert "Checked" in card_for(resolve("TECH00412"), event)["lines"]
+    assert any(x.startswith("Works \u00b7 ") for x in card_for(resolve("TECH00412"), event)["lines"])
     undo_last(shift, now=_later(check, 5))
     db.session.commit()
     assert "Not checked" in card_for(resolve("TECH00412"), event)["lines"]
@@ -548,12 +550,27 @@ def test_undoing_a_recheck_keeps_the_earlier_pass(inv, tv_checklist, event, shif
     finish_check(second, {t.power.id: "NO", t.remote.id: "YES"}, actor,
                  failed_condition="REPAIR")
     db.session.commit()
-    assert prep_status(t.tv, event) == "FAILED_CHECK"
+    assert prep_status(t.tv) == "FAILED_CHECK"
     undo_last(shift, now=_later(second, 5))
-    assert prep_status(t.tv, event) == "CHECKED"
-    assert "Checked" in card_for(resolve("TECH00412"), event)["lines"]
+    assert prep_status(t.tv) == "CHECKED"
+    assert any(x.startswith("Works \u00b7 ") for x in card_for(resolve("TECH00412"), event)["lines"])
     from app.inventory.checks import last_result
-    assert last_result(t.tv, event)["result"] == "Passed"
+    assert last_result(t.tv)["result"] == "Passed"
+
+
+def test_undo_refuses_when_a_newer_check_exists(inv, tv_checklist, event, shift):
+    t, actor = tv_checklist, _actor(shift)
+    other = EventCycle(code="MWEST27", name="MAGWest 2027", is_active=True)
+    db.session.add(other)
+    db.session.flush()
+    first = open_check(t.tv, "UNIT", actor, event)
+    finish_check(first, {t.power.id: "YES", t.remote.id: "YES"}, actor)
+    second = open_check(t.tv, "UNIT", ADMIN, other)
+    finish_check(second, {t.power.id: "YES", t.remote.id: "YES"}, ADMIN)
+    db.session.commit()
+    with pytest.raises(InventoryError) as refused:
+        undo_last(shift, now=_later(first, 5))
+    assert str(refused.value) == "A newer check of this unit exists."
 
 
 def test_undoing_the_only_check_leaves_the_unit_unchecked(inv, tv_checklist, event, shift):
@@ -563,7 +580,7 @@ def test_undoing_the_only_check_leaves_the_unit_unchecked(inv, tv_checklist, eve
     db.session.commit()
     undo_last(shift, now=_later(check, 5))
     from app.inventory.checks import last_result
-    assert prep_status(t.tv, event) is None and last_result(t.tv, event) is None
+    assert prep_status(t.tv) is None and last_result(t.tv) is None
 
 
 def test_the_movements_log_names_an_undo(inv, shift):

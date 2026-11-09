@@ -69,7 +69,7 @@ def _begin(unit: InvUnit, actor, event, again: bool = False) -> dict:
     resumed = open_check_for(actor)
     card = unit_card(unit)
     if resumed is None and not again:
-        prior = last_result(unit, event)
+        prior = last_result(unit)
         if prior is not None:
             return {"already_checked": prior, "code": unit_code(unit),
                     "name": unit.item.item_name, "card": card}

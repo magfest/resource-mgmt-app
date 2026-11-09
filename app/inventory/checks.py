@@ -15,9 +15,10 @@ from sqlalchemy import func
 
 from app import db
 from app.inventory import labels
-from app.inventory.cards import default_event, live_prep_row
+from app.inventory.cards import default_event
 from app.inventory.codes import normalize_code
 from app.inventory.describe import unit_tag
+from app.inventory.last_check import latest_check_rows
 from app.inventory.ledger import (
     NUMBER_KINDS, Actor, InventoryError, move_unit, set_condition,
 )
@@ -248,22 +249,15 @@ def checked_serial(unit: InvUnit, raw) -> str:
     return text
 
 
-def prep_status(unit: InvUnit, event_cycle) -> str | None:
-    """The unit's newest live prep status for the event, or None when it has none."""
-    row = live_prep_row(unit, event_cycle)
-    return row.status if row else None
-
-
-def last_result(unit: InvUnit, event_cycle) -> dict | None:
-    """The finished check behind the unit's live prep status, when it counts as checked."""
-    row = live_prep_row(unit, event_cycle)
-    if row is None or row.status not in (INV_PREP_CHECKED, INV_PREP_FAILED_CHECK):
+def last_result(unit: InvUnit) -> dict | None:
+    """The unit's latest check from any event, returned only when it passed."""
+    prep = latest_check_rows([unit.id]).get(unit.id)
+    if prep is None or prep.status != INV_PREP_CHECKED or prep.check_id is None:
         return None
-    check = db.session.get(InvCheck, row.check_id) if row.check_id else None
-    if check is None or check.status not in (INV_CHECK_PASSED, INV_CHECK_FAILED):
+    check = db.session.get(InvCheck, prep.check_id)
+    if check is None or check.status != INV_CHECK_PASSED:
         return None
-    return {"result": "Passed" if check.status == INV_CHECK_PASSED else "Failed",
-            "when": local_stamp(check.finished_at)}
+    return {"result": "Passed", "when": local_stamp(check.finished_at)}
 
 
 def _joined_note(parts: list[str]) -> str | None:

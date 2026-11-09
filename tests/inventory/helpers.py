@@ -67,3 +67,10 @@ def seed_gear_kind(code, name, fields):
     db.session.flush()
     db.session.refresh(kind)
     return kind
+
+
+def latest_prep_status(unit):
+    """The status of the unit's newest live check row from any event, or None."""
+    from app.inventory.last_check import latest_check_rows
+    row = latest_check_rows([unit.id]).get(unit.id)
+    return row.status if row else None

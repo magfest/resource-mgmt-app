@@ -6,11 +6,11 @@ import pytest
 
 from app import db
 from app.inventory.checks import (
-    active_check_items, unit_code, finish_check, last_result, open_check, prep_status, set_aside,
+    active_check_items, unit_code, finish_check, last_result, open_check, set_aside,
 )
 from app.inventory.ledger import Actor, InventoryError, add_unit
 from app.models import EventCycle, InvCheck, InvCheckItem, SupplyItem
-from tests.inventory.helpers import make_container
+from tests.inventory.helpers import latest_prep_status as prep_status, make_container
 
 ACTOR = Actor(user_id="test:invadmin")
 NO_EVENT = "No default event is set. Ask an inventory admin."
@@ -57,7 +57,7 @@ def test_nothing_passes_by_default_and_note_lines_pass_with_a_note(inv, event, t
         finish_check(check, {t.power.id: "YES"}, ACTOR)
     finish_check(check, {t.power.id: "YES", t.remote.id: "NO"}, ACTOR)
     assert check.status == "PASSED" and "Remote present?" in check.note
-    assert prep_status(t.tv, event) == "CHECKED"
+    assert prep_status(t.tv) == "CHECKED"
 
 
 def test_a_value_other_than_yes_or_no_does_not_count_as_an_answer(inv, event, tv_checklist):
@@ -75,7 +75,7 @@ def test_failed_check_changes_condition_never_location(inv, event, tv_checklist)
     finish_check(check, {t.power.id: "NO", t.remote.id: "YES"}, ACTOR, failed_condition="REPAIR")
     assert t.tv.condition == "REPAIR" and t.tv.current_container_id == where
     assert check.previous_condition == "IN_SERVICE"
-    assert prep_status(t.tv, event) == "FAILED_CHECK"
+    assert prep_status(t.tv) == "FAILED_CHECK"
     with pytest.raises(InventoryError, match="repair or retire"):
         finish_check(open_check(t.tv2, "UNIT", ACTOR, event),
                      {t.power.id: "NO", t.remote.id: "YES"}, ACTOR)
@@ -122,7 +122,7 @@ def test_set_aside_leaves_the_unit_unchecked_and_frees_the_shift(inv, event, tv_
     t = tv_checklist
     check = open_check(t.tv, "UNIT", ACTOR, event)
     set_aside(check, ACTOR)
-    assert check.status == "SET_ASIDE" and prep_status(t.tv, event) is None
+    assert check.status == "SET_ASIDE" and prep_status(t.tv) is None
     assert open_check(t.tv2, "UNIT", ACTOR, event).status == "OPEN"
 
 
@@ -169,7 +169,7 @@ def test_already_checked_shows_the_local_time_not_utc(inv, event, tv_checklist):
     check.finished_at = datetime(2026, 11, 8, 2, 23)
     db.session.commit()
     # INV_LOCAL_TZ is US Eastern, five hours behind UTC in November.
-    assert last_result(t.tv, event)["when"] == "Nov 7, 9:23 PM"
+    assert last_result(t.tv)["when"] == "Nov 7, 9:23 PM"
 
 
 def test_a_unit_with_only_a_serial_is_named_by_its_serial(inv, event, tv_checklist):

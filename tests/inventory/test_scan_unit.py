@@ -7,9 +7,12 @@ from datetime import datetime
 import pytest
 
 from app import db
+from app.inventory.cards import card_for
+from app.inventory.checks import finish_check, open_check
 from app.inventory.devices import create_enroll_code, enroll_device
 from app.inventory.ledger import Actor, add_identifier, add_unit
-from app.inventory.printing import unit_number
+from app.inventory.printing import local_day, unit_number
+from app.inventory.resolver import resolve
 from app.inventory.shifts import start_shift
 from app.models import (
     ConfigAuditEvent, EventCycle, InvCheck, InvCheckItem, InvDevice, InvPrintJob, InvPrinter,
@@ -148,6 +151,46 @@ def test_scan_a_checked_unit_asks_first_and_again_reopens(unit_client, inv, lapt
     assert "check_id" not in asked
     again = post(unit_client, "scan", {"code": "FEST91011", "again": True}).json
     assert again["check_id"]
+
+
+def _check_under(unit, line, event, answer):
+    check = open_check(unit, "UNIT", ACTOR, event)
+    finish_check(check, {line.id: answer}, ACTOR, failed_condition="REPAIR" if answer == "NO" else None)
+    db.session.commit()
+    return check
+
+
+def _second_event():
+    cycle = EventCycle(code="MWEST27", name="MAGWest 2027", is_active=True)
+    db.session.add(cycle)
+    db.session.flush()
+    return cycle
+
+
+def test_unit_station_asks_again_only_after_a_pass(unit_client, inv, event, laptop_line):
+    passed = _tagged(inv, "TV-X-020", "FEST91020")
+    failed = _tagged(inv, "TV-X-021", "FEST91021")
+    _check_under(passed, laptop_line, event, "YES")
+    _check_under(failed, laptop_line, event, "NO")
+    assert "already_checked" in post(unit_client, "scan", {"code": "FEST91020"}).json
+    answer = post(unit_client, "scan", {"code": "FEST91021"}).json
+    assert answer["check_id"] and "already_checked" not in answer
+
+
+def test_unit_station_asks_again_for_a_check_under_another_event(
+        unit_client, inv, event, laptop_line):
+    unit = _tagged(inv, "TV-X-022", "FEST91022")
+    _check_under(unit, laptop_line, _second_event(), "YES")
+    asked = post(unit_client, "scan", {"code": "FEST91022"}).json
+    assert asked["already_checked"]["result"] == "Passed"
+
+
+def test_lookup_card_shows_the_latest_check_from_any_event(inv, event, laptop_line):
+    unit = _tagged(inv, "TV-X-023", "FEST91023")
+    _check_under(unit, laptop_line, _second_event(), "YES")
+    prep = InvPrepStatus.query.filter_by(unit_id=unit.id).one()
+    card = card_for(resolve("FEST91023"), event)
+    assert f"Works \u00b7 {local_day(prep.created_at)}" in card["lines"]
 
 
 def test_scan_blocked_by_another_open_check(unit_client, inv):
