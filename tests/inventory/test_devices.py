@@ -237,7 +237,7 @@ def test_home_container_is_set_from_its_label(client, inv):
 
 
 def test_unit_station_needs_a_home_container(inv):
-    with pytest.raises(InventoryError, match="A Unit station needs a home container"):
+    with pytest.raises(InventoryError, match="A Check station needs a home location"):
         enroll_device("CT60 one", "test:invadmin", station_code=INV_STATION_UNIT)
     with pytest.raises(InventoryError, match=UNIT_NEEDS_HOME):
         create_enroll_code("CT60 one", "test:invadmin", station_code=INV_STATION_UNIT)
@@ -456,3 +456,19 @@ def test_page_queries_do_not_grow_with_devices(app, inv):
     add(4)
     login(admin, "test:invadmin")
     assert _count_queries(app, admin) == few
+
+
+def test_unit_station_is_named_check():
+    from app.models.constants import INV_STATION_NAMES
+    assert INV_STATION_NAMES[INV_STATION_UNIT] == "Check"
+
+
+def test_switching_a_scanner_to_the_unit_station_says_check(client, inv):
+    device = enrolled_client(client, name="Scanner 4", station_code="COUNT")
+    home = make_container(inv, "LOC-0002", kind="LOCATION")
+    db.session.commit()
+    login(client, "test:invadmin")
+    response = client.post(f"/inv/admin/devices/{device.id}/station",
+                           data={"station_code": "UNIT", "home_container_code": "LOC-0002"},
+                           follow_redirects=True)
+    assert "is now a Check scanner." in response.get_data(as_text=True)

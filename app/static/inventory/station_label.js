@@ -8,7 +8,7 @@
     notSaved: 'Not saved.'
   };
 
-  // Quick reprint is offered only while the last label's number is still the unit's number.
+  // Quick reprint is offered only while the last label's number is still the asset's number.
   function layout(answer) {
     if (answer.kind !== 'UNIT') { return {quick: false, current: 'Print label', changed: false}; }
     var quick = answer.has_history === true && answer.quick_reprint === true;
@@ -156,11 +156,11 @@
     });
   }
 
-  // An unknown asset tag: pick the item type, optionally type a serial, then create and print.
+  // An unknown asset tag: pick the item, optionally type a serial, then create and print.
   function newTag(code, back) {
     reset();
     var seen = epoch;
-    S.askText('Item type: part of the name', function (text) {
+    S.askText('Item: part of the name', function (text) {
       if (text === null) { back(); return; }
       S.read(cfg.itemsUrl, {q: text}).then(function (answer) {
         if (answer.need_name || answer.fatal || seen !== epoch) { return; }
@@ -198,7 +198,7 @@
         if (answer.ok) {
           S.feedback('ok');
           S.showMessage('', 'info');
-          if (seen === epoch) { showResult(answer, back, 'New unit created.'); }
+          if (seen === epoch) { showResult(answer, back, 'New asset created.'); }
           return;
         }
         S.feedback('error');

@@ -157,7 +157,7 @@ def test_a_model_barcode_is_refused_as_a_serial(client, inv, unit):
     inv.laptop.barcode = "012345678905"
     db.session.commit()
     login(client, "test:invadmin")
-    assert "That is the model barcode. Scan the serial (S/N)." in _add_serial(
+    assert "That is the item barcode. Scan the serial number (S/N)." in _add_serial(
         client, unit, "012345678905")
 
 
@@ -168,7 +168,7 @@ def test_a_serial_over_the_length_limit_is_refused(client, unit):
 
 def test_the_units_own_number_is_refused_as_a_serial(client, unit):
     login(client, "test:invadmin")
-    assert "U-0001 is a unit number, not a serial. Scan the SERIAL." in _add_serial(
+    assert "U-0001 is an asset number, not a serial number. Scan the SERIAL." in _add_serial(
         client, unit, "U-0001")
 
 
@@ -549,7 +549,7 @@ def test_give_number_is_hidden_and_refused_for_a_retired_unit(client, bare, prin
     base = f"/inv/admin/units/{bare.id}"
     assert GIVE not in client.get(f"{base}?tab=edit").get_data(as_text=True)
     resp = client.post(f"{base}/give-number", follow_redirects=True)
-    assert "A retired unit cannot be given a number." in resp.get_data(as_text=True)
+    assert "A retired asset cannot be given a number." in resp.get_data(as_text=True)
     assert _numbers(bare) == [] and db.session.query(InvPrintJob).count() == 0
 
 
@@ -660,7 +660,7 @@ def test_second_give_number_is_refused_when_the_first_won_the_race(
     login(client, "test:invadmin")
     before = db.session.query(InvLabelSequence.next_value).filter_by(prefix="U").scalar()
     resp = client.post(f"/inv/admin/units/{unit.id}/give-number", follow_redirects=True)
-    assert "This unit already has a number." in resp.get_data(as_text=True)
+    assert "This asset already has a number." in resp.get_data(as_text=True)
     assert _numbers(unit) == ["U-0001"]
     assert db.session.query(InvPrintJob).count() == 0
     assert db.session.query(InvLabelSequence.next_value).filter_by(prefix="U").scalar() == before

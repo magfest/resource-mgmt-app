@@ -299,7 +299,7 @@ def test_a_container_card_lists_its_contents_and_history(app, inv):
     db.session.commit()
     card = card_for(resolve("C-0001"), None)
     assert card["tag"] == "C-0001"
-    assert "Holds 1 container and 1 unit" in card["lines"]
+    assert "Holds 1 container and 1 asset" in card["lines"]
     assert "Created C-0001" in card["history"][0]["text"]
 
 
@@ -662,5 +662,5 @@ def test_unit_station_page_stops_when_the_device_has_no_home(client, inv):
     device.home_container_id = None
     db.session.commit()
     page = client.get("/inv/scan/unit")
-    assert b"This scanner has no home container. Ask an inventory admin." in page.data
+    assert b"This scanner has no home location. Ask an inventory admin." in page.data
     assert b"station_unit.js" not in page.data

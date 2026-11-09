@@ -1,23 +1,23 @@
-// Unit station: scan a unit, give it a number if it has none, check it, finish once.
-// The server places the unit in this scanner's home container. A scan of a pallet after a
-// finished unit moves that unit. All text from the server or from people goes in with textContent.
+// Check station: scan an asset, give it a number if it has none, check it, finish once.
+// The server places the asset in this scanner's home location. A scan of a pallet after a
+// finished asset moves that asset. All text from the server or from people goes in with textContent.
 (function (root) {
   'use strict';
 
   var MESSAGES = {
     answerEvery: 'Answer every line.',
     sending: 'Saving. Wait for it to finish.',
-    alreadySaved: 'This check was already saved. Scan a unit to start the next one.',
+    alreadySaved: 'This check was already saved. Scan an asset to start the next one.',
     asideAsk: 'Set the first one aside and check this one?',
-    idle: 'Scan the asset tag, U- label or serial.',
-    which: 'Which unit is this? Tap the number written on it.',
-    notATag: 'Nothing saved. Scan the asset tag, U- label or serial.',
+    idle: 'Scan the asset tag, label or serial.',
+    which: 'Which asset is this? Tap the number written on it.',
+    notATag: 'Nothing saved. Scan the asset tag, label or serial.',
     tagRequired: 'Put an asset tag on it and scan the tag.',
     orTag: 'Or scan its asset tag.',
-    next: 'Scan its pallet, or scan the next unit.',
-    nextRetired: 'Scan the next unit.',
-    notPlaced: 'Not placed: only a shared scanner places units.',
-    noMatch: 'No unit ends in that number.'
+    next: 'Scan where it\'s going (optional), or scan the next asset.',
+    nextRetired: 'Scan the next asset.',
+    notPlaced: 'Not placed: only a shared scanner places assets.',
+    noMatch: 'No asset ends in that number.'
   };
 
   // The answers to one open check. version() changes on every edit, so a repeat tap of an
@@ -25,7 +25,7 @@
   function createCheck(open) {
     var lines = (open.lines || []).slice();
     var answers = {};
-    var floor = null;       // 'pass' or 'fail' for a model with no lines
+    var floor = null;       // 'pass' or 'fail' for an item with no lines
     var note = null;
     var condition = null;
     var edits = 0;
@@ -107,7 +107,7 @@
     };
   }
 
-  // The sentence a finished unit shows. `answer` is the finish answer.
+  // The sentence a finished asset shows. `answer` is the finish answer.
   function doneText(answer) {
     var name = answer.name;
     if (answer.condition === 'RETIRED') { return name + ' retired.'; }
@@ -184,12 +184,12 @@
     return tapIds[key];
   }
 
-  // A model with no spec fields reports its own name as the spec; showing it twice adds nothing.
+  // An item with no spec fields reports its own name as the spec; showing it twice adds nothing.
   function specOf(card) { return card.spec && card.spec !== card.type ? card.spec : null; }
 
   function cardLines(c) { return [c.name, c.type, specOf(c), c.code]; }
 
-  // The card leads with the name, then type and spec, then the code.
+  // The card leads with the name, then item and spec, then the number.
   function cardNode(card, withSub) {
     var head = el('div', 'chk-head');
     head.appendChild(el('div', 'chk-name', card.name));
@@ -202,7 +202,7 @@
   }
 
   function noCodeButton() {
-    return button('No code on it', 'chk-big', function () { startWhich(null); });
+    return button('No number on it', 'chk-big', function () { startWhich(null); });
   }
 
   function render() {
@@ -227,7 +227,7 @@
     if (held.tagRequired) {
       box.appendChild(el('div', 'chk-step', MESSAGES.tagRequired));
     } else {
-      box.appendChild(button('Give it a U- number', 'chk-big', giveNumber));
+      box.appendChild(button('Give it a label number', 'chk-big', giveNumber));
       box.appendChild(el('div', 'chk-step', MESSAGES.orTag));
     }
     box.appendChild(button('Cancel', 'chk-small', cancelHeld));
@@ -327,8 +327,8 @@
     refocus();
   }
 
-  // A scan that names another unit means the finished one has left the volunteer's hands,
-  // so a pallet scan after it must not move the finished one. A rescan of that unit keeps it.
+  // A scan that names another asset means the finished one has left the volunteer's hands,
+  // so a pallet scan after it must not move the finished one. A rescan of that asset keeps it.
   function forgetLastUnless(unitId) {
     if (unitId == null || unitId !== lastUnitId) { lastUnitId = null; }
   }
@@ -366,7 +366,7 @@
       return {ok: false};
     }
     if (check && check.id === answer.check_id) {
-      S.showMessage('You are already checking this unit.', 'info');
+      S.showMessage('You are already checking this asset.', 'info');
       return {ok: false};
     }
     startCheck(answer);
@@ -380,7 +380,7 @@
     result = null;
     S.setFlagSubject(null);
     S.feedback('ok');
-    S.showMessage((card.name || 'The unit') + ' is on ' + answer.placed + '.', 'ok');
+    S.showMessage((card.name || 'The asset') + ' is on ' + answer.placed + '.', 'ok');
     render();
     refocus();
     return {ok: true};
@@ -431,11 +431,11 @@
     }).concat([{label: 'Cancel', value: null}]), function (unitId) {
       if (unitId === null) { backToScreen(); return; }
       gate.run(function () { return scanWrite(code, {unit_id: unitId}); }).catch(stepFailed);
-    }, 'Two units match: tap the one in your hand');
+    }, 'Two assets match: tap the one in your hand');
   }
 
-  // Step 2: the volunteer taps the number written on the unit. `tag` is the asset tag that
-  // matched no unit, or null after No code on it. Picking a unit links `tag` as its asset
+  // Step 2: the volunteer taps the number written on the asset. `tag` is the asset tag that
+  // matched no asset, or null after No number on it. Picking an asset links `tag` as its asset
   // tag, so the screen shows it; a serial or UPC can land here too.
   function startWhich(tag) {
     held = null;
@@ -485,7 +485,7 @@
   }
 
   function askName(tag) {
-    S.askText('Unit name', function (text) {
+    S.askText('Asset name', function (text) {
       if (text === null || text === '') { showMatches(tag, []); return; }
       S.read(cfg.candidatesUrl, {name: text}).then(function (answer) {
         if (stopped(answer)) { return; }
@@ -577,7 +577,7 @@
         if (!answer.ok && !answer.finished) { fail(answer.message); return; }
         check = null;
         phase = 'idle';
-        S.showMessage('Set aside. Scan the next unit.', 'info');
+        S.showMessage('Set aside. Scan the next asset.', 'info');
         render();
         refocus();
       });

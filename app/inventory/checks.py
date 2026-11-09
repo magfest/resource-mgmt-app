@@ -1,7 +1,7 @@
-"""Unit checks, check lines for a model, and the balance report.
+"""Asset checks, check lines for an item, and the balance report.
 
-A check records answers to a model's checklist and the unit's prep status for the
-default event. It never moves a unit; only the optional put-away does. Nothing
+A check records answers to an item's checklist and the asset's prep status for the
+default event. It never moves an asset; only the optional put-away does. Nothing
 here commits. The balance report compares the InvStock cache with the movement log. It
 reports only. A mismatch means a write bypassed the ledger, and the fix is a
 count, so nothing here repairs a row.
@@ -41,7 +41,7 @@ FAILED_CONDITIONS = (INV_CONDITION_REPAIR, INV_CONDITION_RETIRED)
 
 
 def active_check_items(item) -> list[InvCheckItem]:
-    """Return the model's active check lines in position order."""
+    """Return the item's active check lines in position order."""
     return (db.session.query(InvCheckItem)
             .filter_by(item_id=item.id, is_active=True)
             .order_by(InvCheckItem.position, InvCheckItem.id)
@@ -87,7 +87,7 @@ class CheckFinished(InventoryError):
 
 
 class CheckBlocked(InventoryError):
-    """Another unit's check is open on this shift. `extra` rides in the answer."""
+    """Another asset's check is open on this shift. `extra` rides in the answer."""
 
     def __init__(self, check: InvCheck):
         who = unit_phrase(check.unit)
@@ -97,10 +97,10 @@ class CheckBlocked(InventoryError):
 
 
 class ChecklistChanged(InventoryError):
-    """The model's checklist changed after the screen loaded it. Rescanning reloads the lines."""
+    """The item's checklist changed after the screen loaded it. Rescanning reloads the lines."""
 
     def __init__(self):
-        super().__init__("That checklist changed. Scan the unit again.")
+        super().__init__("That checklist changed. Scan the asset again.")
         self.extra = {"changed": True}
 
 
@@ -118,7 +118,7 @@ def unit_code(unit: InvUnit) -> str | None:
 
 def unit_phrase(unit: InvUnit) -> str:
     """Name a unit inside a sentence: its code, else its name, else a plain phrase."""
-    return unit_code(unit) or unit.name or "a unit with no number yet"
+    return unit_code(unit) or unit.name or "an asset with no number yet"
 
 
 def open_check_for(actor: Actor) -> InvCheck | None:
@@ -148,7 +148,7 @@ def open_check(unit: InvUnit, station_code: str, actor: Actor, event_cycle) -> I
     if station_code not in INV_CHECK_STATIONS:
         raise InventoryError(f"{station_code or 'That'} is not a check station.")
     if unit.condition == INV_CONDITION_RETIRED:
-        raise InventoryError("That unit is retired.")
+        raise InventoryError("That asset is retired.")
     _set_aside_ended_shifts(actor)
     other = blocking_check(actor, unit)
     if other is not None:
@@ -225,14 +225,14 @@ def _is_a_number(normalized: str) -> bool:
 
 
 def _require_serial_shape(raw: str, normalized: str) -> None:
-    """Refuse a scan that is a unit number or a model barcode before anything is written.
+    """Refuse a scan that is an asset number or an item barcode before anything is written.
 
     A mis-scan must not turn a tag or a UPC into a serial.
     """
     if labels.parse(normalized) is not None or _is_a_number(normalized):
-        raise InventoryError(f"{raw} is a unit number, not a serial. Scan the SERIAL.")
+        raise InventoryError(f"{raw} is an asset number, not a serial number. Scan the SERIAL.")
     if resolve(raw).kind == KIND_ITEM:
-        raise InventoryError("That is the model barcode. Scan the serial (S/N).")
+        raise InventoryError("That is the item barcode. Scan the serial number (S/N).")
 
 
 def checked_serial(unit: InvUnit, raw) -> str:
@@ -283,7 +283,7 @@ def finish_check(check: InvCheck, answers: dict, actor: Actor,
     _require_open(check)
     unit = check.unit
     if unit.condition == INV_CONDITION_RETIRED:
-        raise InventoryError("That unit is retired.")
+        raise InventoryError("That asset is retired.")
     lines = active_check_items(unit.item)
     by_id = {line.id: line for line in lines}
     if not isinstance(answers, dict) or any(k not in by_id for k in answers):

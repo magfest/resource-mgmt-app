@@ -97,12 +97,12 @@ def test_number_refusal_messages(inv):
     unit = _units(inv, "TV-X-007")[0]
     assert number_refusal(unit) is None
     unit.ownership = INV_OWNERSHIP_RENTED
-    assert number_refusal(unit) == "A rented unit cannot be given a U- number."
+    assert number_refusal(unit) == "A rented asset cannot be given a label."
     unit.ownership = "OWNED"
     add_identifier(unit, INV_IDENT_MAGFEST_TAG, "FEST90007")
-    assert number_refusal(unit) == "This unit already has a number."
+    assert number_refusal(unit) == "This asset already has a number."
     unit.condition = INV_CONDITION_RETIRED
-    assert number_refusal(unit) == "A retired unit cannot be given a number."
+    assert number_refusal(unit) == "A retired asset cannot be given a number."
 
 
 def test_give_unit_number_adds_a_u_label_once(inv):
@@ -214,7 +214,7 @@ def test_place_last_refuses_a_unit_that_is_not_the_last_one(inv, event):
     first = _finished(inv, event, "TV-X-061", "FEST91061")
     _finished(inv, event, "TV-X-062", "FEST91062")
     make_container(inv, "C-0002")
-    with pytest.raises(InventoryError, match="Scan the unit again"):
+    with pytest.raises(InventoryError, match="Scan the asset again"):
         place_last(ACTOR, "C-0002", first.id)
 
 
@@ -223,7 +223,7 @@ def test_place_last_refuses_once_the_next_unit_is_open(inv, event):
     second = _units(inv, "TV-X-067")[0]
     _check(second, event)
     make_container(inv, "C-0002")
-    with pytest.raises(InventoryError, match="Scan the unit again"):
+    with pytest.raises(InventoryError, match="Scan the asset again"):
         place_last(ACTOR, "C-0002", first.id)
     assert first.current_container_id is None
 
@@ -231,7 +231,7 @@ def test_place_last_refuses_once_the_next_unit_is_open(inv, event):
 def test_place_last_refuses_a_unit_another_scanner_finished(inv, event):
     unit = _finished(inv, event, "TV-X-068", "FEST91068")
     make_container(inv, "C-0002")
-    with pytest.raises(InventoryError, match="Scan the unit again"):
+    with pytest.raises(InventoryError, match="Scan the asset again"):
         place_last(Actor(user_id="test:invadmin"), "C-0002", unit.id)
     assert unit.current_container_id is None
 
@@ -249,7 +249,7 @@ def test_place_last_refuses_a_retired_unit(inv, event):
     unit = _numbered(inv)
     finish_unit(_check(unit, event), {}, ACTOR, home=None, failed_condition=INV_CONDITION_RETIRED)
     make_container(inv, "C-0002")
-    with pytest.raises(InventoryError, match="A retired unit is not placed."):
+    with pytest.raises(InventoryError, match="A retired asset is not placed."):
         place_last(ACTOR, "C-0002", unit.id)
 
 

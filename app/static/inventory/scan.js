@@ -15,8 +15,8 @@
 
   // The error vocabulary every station shares. Wording matches the design spec.
   var MESSAGES = {
-    unknown: 'Not a MAGFest code: scan the white asset tag',
-    ambiguous: 'Two units match: tap the one in your hand',
+    unknown: 'Not a MAGFest number: scan the asset tag',
+    ambiguous: 'Two assets match: tap the one in your hand',
     repeat: function (seconds) {
       return 'Already done, ' + seconds + (seconds === 1 ? ' second' : ' seconds') + ' ago';
     },
@@ -319,7 +319,7 @@
   }
 
   // What a resolve answer gives the flag flow: {subject}, {choices}, or null when nothing is flaggable.
-  // A unit found by name has a unit_id, since its typed text resolves no code.
+  // An asset found by name has a unit_id, since its typed text resolves no number.
   function flagLookup(answer) {
     function named(card) { return [card.title, card.tag].filter(Boolean).join(' '); }
     if (answer.kind === 'CONTAINER' || answer.kind === 'UNIT') {
@@ -562,7 +562,7 @@
       var label = typeof option === 'string' ? option : option.label;
       var value = typeof option === 'string' ? option : option.value;
       var button = el('button', 'choice', option.lines ? null : label);
-      // Lines stack name, model and details; the first is the large one.
+      // Lines stack name, item and details; the first is the large one.
       (option.lines || []).forEach(function (line, i) {
         if (line) { button.appendChild(el('span', i === 0 ? 'choice-main' : 'choice-sub', line)); }
       });
@@ -761,7 +761,7 @@
     focusCapture();
   }
 
-  // What a scan means to the flag flow: a container or one unit can be flagged.
+  // What a scan means to the flag flow: a container or one asset can be flagged.
   function lookupFlag(code) {
     return read(body.dataset.resolveUrl, {code: code}).then(function (answer) {
       if (!answer.ok) { return {message: answer.message}; }

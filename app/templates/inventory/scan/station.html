@@ -1,5 +1,5 @@
 {% extends "inventory/scan/layout.html" %}
-{% block content %}<p class="hint">Scan a label, tag, serial or barcode.</p>{% endblock %}
+{% block content %}<p class="hint">Scan a label, asset tag, serial or barcode.</p>{% endblock %}
 {% block scripts %}
 <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/station_label.js') }}"
         data-options-url="{{ url_for('inventory.scan_label_options') }}"

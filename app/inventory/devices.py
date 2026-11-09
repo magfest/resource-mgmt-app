@@ -29,7 +29,7 @@ ENROLL_CODE_LIFETIME = timedelta(minutes=10)
 # No 0, 1, I, L, O or U: the code is read aloud and typed on a handheld keyboard.
 _CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
 _CODE_LENGTH = 8
-UNIT_NEEDS_HOME = "A Unit station needs a home container, such as the warehouse."
+UNIT_NEEDS_HOME = "A Check station needs a home location, such as the warehouse."
 CODE_REFUSED = "That code did not work. Ask an inventory admin for a new one."
 
 

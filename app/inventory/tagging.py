@@ -1,6 +1,6 @@
-"""Attach a pre-printed asset tag to a named unit that has no number.
+"""Attach a pre-printed asset tag to a named asset that has no number.
 
-The Unit station links tags through here and finds unnumbered units by name.
+The Check station links asset tags through here and finds unnumbered assets by name.
 Nothing here commits; the caller does, so a refusal rolls the whole link back.
 """
 from __future__ import annotations
@@ -23,9 +23,9 @@ from app.models.constants import INV_CONDITION_RETIRED, INV_IDENT_MAGFEST_TAG, I
 
 
 def tag_candidates(text: str, limit: int = 10) -> list[InvUnit]:
-    """Live units whose name contains the text and that hold no tag or label.
+    """Live assets whose name contains the text and that hold no number.
 
-    A unit with an MT tag counts as numbered: MT tags are stored as MAGFEST_TAG.
+    An asset with an asset tag counts as numbered: asset tags are stored as MAGFEST_TAG.
     """
     key = name_key(text)
     if key is None:
@@ -50,7 +50,7 @@ def _locked_unit(unit_id) -> InvUnit:
     unit = (db.session.query(InvUnit).filter_by(id=unit_id if type(unit_id) is int else -1)
             .with_for_update().populate_existing().one_or_none())
     if unit is None or unit.condition == INV_CONDITION_RETIRED:
-        raise InventoryError("That unit is not in use.")
+        raise InventoryError("That asset is not in use.")
     return unit
 
 
@@ -65,21 +65,21 @@ def _held_number(unit: InvUnit) -> InvUnitIdentifier | None:
 
 def link_tag(unit_id: int, tag: str, actor: Actor,
              client_request_id: str | None = None, queue_label: bool = True) -> dict:
-    """Attach `tag` to a named unit that has no number, record it and queue the label.
+    """Attach `tag` to a named asset that has no number, record it and queue the label.
 
     Two scanners can pass the first read together. The row lock serializes them on
     PostgreSQL; the number is read again after the lock, so the second one is refused.
 
     Args:
-        queue_label: False skips the label and the print route check. The Unit
+        queue_label: False skips the label and the print route check. The Check
             station passes False because its finish queues the label, and a
-            unit retired by that finish must get none.
+            asset retired by that finish must get none.
     """
     tag = (tag or "").strip()
     unit = _locked_unit(unit_id)
     held = _held_number(unit)
     if held is not None:
-        raise InventoryError(f"{unit.name or 'This unit'} already has {held.value}.")
+        raise InventoryError(f"{unit.name or 'This asset'} already has {held.value}.")
     check_tag(tag)
     if queue_label:
         # Checked before anything is written, so a missing route leaves no tag behind.

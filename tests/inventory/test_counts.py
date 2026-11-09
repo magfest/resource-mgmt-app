@@ -715,7 +715,7 @@ REST_PAGE_SCRIPT = PAGE_PRELUDE + r"""
     held: [{item_id: 1, name: 'Pens'}, {item_id: 2, name: 'Tape'}], usual: [],
     lines: [{item_id: 1, expected: 20}, {item_id: 2, expected: 5}]});
   await started;
-  assert.ok(texts(panel).includes('In this container (2)'));
+  assert.ok(texts(panel).includes('In this location or container (2)'));
   const before = messages.length;
   find(panel, 'Submit count (0 lines)').handlers.click();
   await tick();
@@ -795,8 +795,8 @@ FINISHED_SCRIPT = PAGE_PRELUDE + r"""
   writes[1].resolve({ok: false, message: 'This count is already finished.', finished: true});
   await tick();
   assert.equal(messages[messages.length - 1],
-    'This count was already saved. Scan a container to count again.');
-  assert.ok(texts(panel).includes('Count: scan a container label to start.'));
+    'This count was already saved. Scan a location or container to count again.');
+  assert.ok(texts(panel).includes('Count: scan a location or container label to start.'));
   assert.equal(leaveHold(), false);
   const next = onScan('C-0002');
   await tick();
@@ -815,7 +815,7 @@ FINISHED_SCRIPT = PAGE_PRELUDE + r"""
   find(panel, 'Cancel count').handlers.click();
   assert.equal(leaveHold(), false);
   assert.equal(writes.length, 3, 'cancel sends nothing');
-  assert.ok(texts(panel).includes('Count: scan a container label to start.'));
+  assert.ok(texts(panel).includes('Count: scan a location or container label to start.'));
   console.log('finished ok');
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -110,7 +110,7 @@ def test_the_same_code_in_both_steps_is_refused(client, rc):
 
 def test_a_tag_no_barcode_can_hold_is_refused(client, rc):
     r = _post(client, rc, tag="T" * 21)
-    assert r == {"ok": False, "message": "This tag cannot be printed as a barcode."}
+    assert r == {"ok": False, "message": "This asset tag cannot be printed as a barcode."}
     assert InvUnit.query.count() == 0 and InvPrintJob.query.count() == 0
 
 
@@ -212,7 +212,7 @@ def test_check_tag_accepts_a_free_printable_tag_and_creates_nothing(client, rc):
 
 def test_check_tag_refuses_unprintable_label_shaped_and_held_tags(client, rc):
     assert client.post(CHECK, json={"tag": "T" * 21}).get_json()["message"] == \
-        "This tag cannot be printed as a barcode."
+        "This asset tag cannot be printed as a barcode."
     shaped = client.post(CHECK, json={"tag": "U-00001"}).get_json()
     assert shaped["ok"] is False and "tap Skip" in shaped["message"]
     first = _post(client, rc, tag="FEST00001")
@@ -455,7 +455,7 @@ globalThis.InvScan = {
 require(process.env.RECEIVE_JS);
 const tick = () => new Promise((r) => setTimeout(r, 0));
 (async () => {
-  find(panel, 'Choose item type').handlers.click();
+  find(panel, 'Choose item').handlers.click();
   await tick();
   find(panel, 'Start scanning').handlers.click();
   await onScan('T1');

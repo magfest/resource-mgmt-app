@@ -88,7 +88,7 @@ def touch_shift() -> None:
 @inventory_bp.post("/scan/api/flag")
 @api
 def scan_flag():
-    """Flag a unit or container for a lead. The station is the device's, never the client's."""
+    """Flag an asset or container for a lead. The station is the device's, never the client's."""
     data = _json_body()
 
     def flag() -> dict:
@@ -149,12 +149,12 @@ def _json_body() -> dict:
 
 
 def _can_create_tag(code: str) -> bool:
-    """Only a printable code that is not a FestOps label can become an owned unit's tag."""
+    """Only a printable code that is not a label can become an owned asset's asset tag."""
     return bool(code) and labels.parse(code) is None and can_print_code(code)
 
 
 def _with_names(raw: str | None, resolution: Resolution) -> Resolution:
-    """Fall back to live unit names when the text matched no code."""
+    """Fall back to live asset names when the text matched no number."""
     if resolution.kind != KIND_UNKNOWN or not isinstance(raw, str):
         return resolution
     named = find_by_name(raw, MAX_CANDIDATES)
@@ -272,7 +272,7 @@ def scan_receive_check_tag():
 @inventory_bp.post("/scan/api/receive")
 @api
 def scan_receive():
-    """Receive one owned unit and queue its label."""
+    """Receive one owned asset and queue its label."""
     data = _json_body()
 
     def receive() -> dict:
@@ -280,7 +280,7 @@ def scan_receive():
         item_id = data.get("item_id")
         item = db.session.get(SupplyItem, item_id) if type(item_id) is int else None
         if item is None:
-            raise InventoryError("Pick an item type.")
+            raise InventoryError("Pick an item.")
         code = _optional_text(data, "container_code")
         container = container_for_code(code) if code else None
         return receive_unit(item, actor, tag=_optional_text(data, "tag"),
@@ -293,7 +293,7 @@ def scan_receive():
 @inventory_bp.post("/scan/api/receive/undo")
 @api
 def scan_receive_undo():
-    """Undo the unit this scanner received last."""
+    """Undo the asset this scanner received last."""
     data = _json_body()
 
     def undo() -> dict:
@@ -308,7 +308,7 @@ def scan_receive_undo():
 @inventory_bp.post("/scan/api/receive/reprint")
 @api
 def scan_receive_reprint():
-    """Queue another label for a unit already received."""
+    """Queue another label for an asset already received."""
     data = _json_body()
 
     def reprint() -> dict:
@@ -320,7 +320,7 @@ def scan_receive_reprint():
 
 
 NOTHING_ATTACHED = "This label has nothing attached to it yet."
-NO_MATCH = "Nothing matches that code."
+NO_MATCH = "Nothing matches that number."
 PICK_ONE = "Choose which one to print."
 
 
@@ -404,7 +404,7 @@ def scan_label_print():
 @inventory_bp.post("/scan/api/label/new-tag")
 @api
 def scan_label_new_tag():
-    """Create an owned unit for an asset tag no unit holds, and queue its label."""
+    """Create an owned asset for an asset tag no asset holds, and queue its label."""
     data = _json_body()
 
     def create() -> dict:
@@ -412,20 +412,20 @@ def scan_label_new_tag():
         tag = _optional_text(data, "tag")
         resolution = resolve(tag)
         if resolution.kind != KIND_UNKNOWN or not _can_create_tag(resolution.code):
-            raise InventoryError("That code already belongs to something. Look it up instead.")
+            raise InventoryError("That number already belongs to something. Look it up instead.")
         item_id = data.get("item_id")
         item = db.session.get(SupplyItem, item_id) if type(item_id) is int else None
         if item is None:
-            raise InventoryError("Pick an item type.")
+            raise InventoryError("Pick an item.")
         return receive_unit(item, actor, tag=tag, serial=_optional_text(data, "serial"),
                             client_request_id=data.get("client_request_id"))
 
     return jsonify(run_once(data.get("client_request_id"), create))
 
 
-START_A_COUNT = "Scan a container label to start counting."
+START_A_COUNT = "Scan a location or container label to start counting."
 FINISH_FIRST = "Submit this count before starting another."
-UNKNOWN_CODE = "Not a MAGFest code: scan the white asset tag"
+UNKNOWN_CODE = "Not a MAGFest number: scan the asset tag"
 
 
 def _count_device() -> None:
@@ -593,7 +593,7 @@ def _own_check(check_id) -> InvCheck:
         check.device_id == principal.device.id if principal.is_device
         else check.performed_by_user_id == principal.user_id and check.device_id is None)
     if not mine:
-        raise InventoryError("That check is not open on this scanner. Scan the unit again.")
+        raise InventoryError("That check is not open on this scanner. Scan the asset again.")
     return check
 
 

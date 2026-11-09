@@ -1,4 +1,4 @@
-// Count station: scan a container, count each item, submit once.
+// Count station: scan a location or container, count each item, submit once.
 // The first count of a container is blind; the server sends no expected numbers then.
 // All text from the server or from people goes in with textContent.
 (function (root) {
@@ -9,13 +9,13 @@
     {value: 'EXPIRED', label: 'Expired'}, {value: 'OTHER', label: 'Other'}
   ];
   var MESSAGES = {
-    startFirst: 'Scan a container label to start counting.',
-    idle: 'Count: scan a container label to start.',
+    startFirst: 'Scan a location or container label to start counting.',
+    idle: 'Count: scan a location or container label to start.',
     finishFirst: 'Submit this count before starting another.',
     submitting: 'Submitting. Wait for it to finish.',
     nothingCounted: 'Count at least one item first.',
     noItems: 'No item matches that.',
-    alreadySaved: 'This count was already saved. Scan a container to count again.',
+    alreadySaved: 'This count was already saved. Scan a location or container to count again.',
     cancelAsk: 'Discard this count? Nothing in it has been sent.'
   };
   var KEEPALIVE_MS = 5 * 60 * 1000;
@@ -246,7 +246,7 @@
 
     var open = count.untouched();
     if (open.length) {
-      box.appendChild(el('div', 'cnt-section', 'In this container (' + open.length + ')'));
+      box.appendChild(el('div', 'cnt-section', 'In this location or container (' + open.length + ')'));
       open.forEach(function (h) { box.appendChild(openRow(h)); });
       if (count.canMatchRest()) {
         box.appendChild(button('Everything else matches', 'cnt-small', function () {
@@ -450,7 +450,7 @@
 
   function offerCreate(answer) {
     var where = answer.home ? 'It goes in ' + answer.home + '.'
-      : 'This scanner has no home container, so it goes at the top level.';
+      : 'This scanner has no home location, so it goes at the top level.';
     S.choose(answer.kinds.map(function (k) { return {label: k.name, value: k.id}; }),
       function (kindId) { createThenStart(answer.code, kindId); },
       answer.code + ' is a new label. Pick what it is. ' + where);

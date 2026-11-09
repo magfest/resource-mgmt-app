@@ -135,7 +135,7 @@ INV_STATION_NAMES = {
     INV_STATION_PRINT: "Print station",
     INV_STATION_RECEIVE: "Receive",
     INV_STATION_TAG: "Tag",
-    INV_STATION_UNIT: "Unit",
+    INV_STATION_UNIT: "Check",
 }
 
 # Typed fields a gear kind defines for its units. CHOICE values come from

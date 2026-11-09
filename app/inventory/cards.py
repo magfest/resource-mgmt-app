@@ -62,7 +62,7 @@ def _container_card(container: InvContainer) -> dict:
     lines = [container.kind.name]
     if not container.is_active:
         lines.append("Inactive")
-    lines.append(f"Holds {_plural(children, 'container')} and {_plural(units, 'unit')}")
+    lines.append(f"Holds {_plural(children, 'container')} and {_plural(units, 'asset')}")
     lines += _flag_lines(InvFlag.container_id == container.id)
     return {"title": display_name(container), "tag": container.label_code,
             "path": path_text(container), "lines": lines,
@@ -89,7 +89,7 @@ def _item_card(item: SupplyItem) -> dict:
     if not item.is_active:
         lines.append("Inactive")
     if item.is_serialized:
-        lines.append("Tracked by unit; scan a unit's tag")
+        lines.append("Tracked by asset; scan an asset's tag")
     else:
         lines.append("Counted by quantity")
         stock = (db.session.query(InvStock).filter(InvStock.item_id == item.id,

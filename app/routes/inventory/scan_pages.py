@@ -108,7 +108,7 @@ def scan_count_page():
 @inventory_bp.get("/scan/unit")
 @require_scanner
 def scan_unit_page():
-    """Unit station. A device needs the UNIT station and an open shift; an operator may open it."""
+    """Check station. A device needs the UNIT station and an open shift; an operator may open it."""
     principal = g.scan_principal
     home = None
     if principal.is_device:

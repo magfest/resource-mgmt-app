@@ -1,4 +1,4 @@
-"""Unit station rules: one pass over a unit on a CT60 scanner.
+"""Check station rules: one pass over an asset on a CT60 scanner.
 
 Find the unit, give it a number if it has none, check it, place it in the
 scanner's home container and queue its info label. Nothing here commits; the
@@ -27,8 +27,8 @@ from app.models.constants import (
     INV_JOB_FAILED, INV_OWNERSHIP_OWNED,
 )
 
-NOT_THE_LAST = "Scan the unit again, then its pallet."
-RETIRED_NOT_PLACED = "A retired unit is not placed."
+NOT_THE_LAST = "Scan the asset again, then where it's going."
+RETIRED_NOT_PLACED = "A retired asset is not placed."
 TAG_REQUIRED = "Put an asset tag on it and scan the tag."
 
 
@@ -72,15 +72,15 @@ def digit_candidates(digits: str, limit: int = 10) -> list[InvUnit]:
 def number_refusal(unit: InvUnit) -> str | None:
     """Why this unit cannot get a new U- number, or None when it can."""
     if unit.condition == INV_CONDITION_RETIRED:
-        return "A retired unit cannot be given a number."
+        return "A retired asset cannot be given a number."
     if unit.ownership != INV_OWNERSHIP_OWNED:
-        return "A rented unit cannot be given a U- number."
+        return "A rented asset cannot be given a label."
     # Queried, not read from unit.identifiers, which may be loaded and stale.
     if (db.session.query(InvUnitIdentifier.id)
             .filter(InvUnitIdentifier.unit_id == unit.id,
                     InvUnitIdentifier.kind.in_(NUMBER_KINDS),
                     InvUnitIdentifier.retired_at.is_(None)).first()):
-        return "This unit already has a number."
+        return "This asset already has a number."
     # A U- number stands in for a tag, so a type that needs a tag never gets one.
     if unit.item.needs_asset_tag:
         return TAG_REQUIRED

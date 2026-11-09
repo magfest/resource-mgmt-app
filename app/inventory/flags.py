@@ -1,6 +1,6 @@
 """Flags: a problem a scanner volunteer reports for a lead to fix at a laptop.
 
-A flag names one unit or one container. Nothing here commits; the caller does.
+A flag names one asset or one container. Nothing here commits; the caller does.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ FLAG_WORDS = {"WRONG_DATA": "Wrong details", "DAMAGED": "Damaged",
 NOT_FLAGGABLE = "Flag the container it is in instead. Scan the container label."
 ALREADY_FLAGGED = "That is already flagged."
 NOTE_NEEDED = "Say what is wrong."
-PICK_UNIT = "Two units match. Scan again and tap the one in your hand."
+PICK_UNIT = "Two assets match. Scan again and tap the one in your hand."
 
 NOTE_LENGTH = InvFlag.note.type.length
 
@@ -44,7 +44,7 @@ def raise_flag(actor: Actor, station_code: str, reason: str, unit: InvUnit | Non
     the same subject and reason.
     """
     if (unit is None) == (container is None):
-        raise InventoryError("Flag one unit or one container.")
+        raise InventoryError("Flag one asset or one container.")
     if reason not in INV_FLAG_REASONS:
         raise InventoryError("Pick a reason.")
     note = clean_note(note)
@@ -100,6 +100,6 @@ def find_subject(code, unit_id) -> tuple[InvUnit | None, InvContainer | None]:
     if unit_id is not None:
         unit = db.session.get(InvUnit, unit_id) if type(unit_id) is int else None
         if unit is None:
-            raise InventoryError("That unit was not found. Scan it again.")
+            raise InventoryError("That asset was not found. Scan it again.")
         return unit, None
     return subject_for(resolve(code if isinstance(code, str) else None))

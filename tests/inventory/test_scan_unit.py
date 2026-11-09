@@ -23,8 +23,8 @@ from tests.inventory.helpers import enrolled_client, login, make_container
 
 ACTOR = Actor(user_id="test:invadmin")
 BASE = "/inv/scan/api/unit/"
-NOT_UNIT = "This scanner is not set up as a Unit station."
-NO_HOME = "This scanner has no home container. Ask an inventory admin."
+NOT_UNIT = "This scanner is not set up as a Check station."
+NO_HOME = "This scanner has no home location. Ask an inventory admin."
 _n = [0]
 
 
@@ -251,19 +251,19 @@ def test_scan_unused_u_label_is_refused(unit_client):
     db.session.commit()
     answer = post(unit_client, "scan", {"code": code}).json
     assert answer["message"] == (
-        "This U- label is on no unit. Scan the unit's asset tag, or tap No code on it.")
+        "This label is on no asset. Scan its asset tag, or tap No number on it.")
 
 
 def test_scan_anything_else_is_refused(unit_client):
     answer = post(unit_client, "scan", {"code": "C-9999"}).json
-    assert answer["message"] == "No unit has that code. Tap No code on it to find the unit."
+    assert answer["message"] == "No asset has that number. Tap No number on it to find the asset."
 
 
 def test_scan_a_pallet_without_a_last_unit_is_refused(unit_client, inv):
     make_container(inv, "C-0201", kind="PALLET", name="Pallet 1")
     db.session.commit()
     assert post(unit_client, "scan", {"code": "C-0201"}).json["message"] == (
-        "Scan a unit first, then its pallet.")
+        "Scan an asset first, then where it's going.")
 
 
 def test_scan_a_pallet_places_the_last_unit(unit_client, inv, home, laptop_line):
@@ -315,7 +315,7 @@ def test_give_number_adds_a_u_label_and_records_who(unit_client, two_named_units
     row = ConfigAuditEvent.query.filter_by(action="ADD_CODE", entity_id=str(a.id)).one()
     assert row.created_by_user_id.startswith("shift:")
     again = post(unit_client, "give-number", {"unit_id": a.id}).json
-    assert again["message"] == "This unit already has a number."
+    assert again["message"] == "This asset already has a number."
 
 
 def test_give_number_refuses_a_type_that_needs_an_asset_tag(unit_client, two_named_units, inv):
@@ -376,7 +376,7 @@ def test_create_without_a_tag_is_refused_when_the_model_needs_one(unit_client, i
 
 
 def test_create_refuses_an_unknown_model(unit_client):
-    assert post(unit_client, "create", {"item_id": 99999}).json["message"] == "Pick a model."
+    assert post(unit_client, "create", {"item_id": 99999}).json["message"] == "Pick an item."
 
 
 def test_finish_places_the_unit_and_queues_the_label(unit_client, inv, home, laptop_line):
@@ -470,7 +470,7 @@ def test_finish_with_a_stale_checklist_is_refused_and_writes_nothing(unit_client
                                         "answers": {str(laptop_line.id): "YES"},
                                         "line_ids": [laptop_line.id]}).json
     assert done["ok"] is False and done["changed"] is True
-    assert done["message"] == "That checklist changed. Scan the unit again."
+    assert done["message"] == "That checklist changed. Scan the asset again."
     assert InvCheck.query.one().status == "OPEN" and InvPrepStatus.query.count() == 0
 
 
@@ -495,7 +495,7 @@ def test_another_device_cannot_finish_or_set_aside_this_devices_check(
     row = InvCheck.query.one()
     row.device_id = other.id
     db.session.commit()
-    refusal = "That check is not open on this scanner. Scan the unit again."
+    refusal = "That check is not open on this scanner. Scan the asset again."
     done = post(unit_client, "finish", {"check_id": check["check_id"],
                                         "answers": {str(laptop_line.id): "YES"}}).json
     aside = post(unit_client, "set-aside", {"check_id": check["check_id"]}).json
@@ -619,21 +619,21 @@ async function scanAnswers(answer) {
   await scanAnswers({ok: true, which: true, tag: 'SN-UNKNOWN-1'});
   // The script runs in another context, so its arrays are compared as JSON.
   assert.strictEqual(JSON.stringify(pad.opts.lines), JSON.stringify(
-    ['Scanned SN-UNKNOWN-1.', 'Which unit is this? Tap the number written on it.']));
+    ['Scanned SN-UNKNOWN-1.', 'Which asset is this? Tap the number written on it.']));
   assert.strictEqual(JSON.stringify(pad.opts.actions.map(a => a.label)),
                      JSON.stringify(['Not an asset tag']));
   const before = writes.length;
   pad.opts.actions[0].onPick();
-  assert.strictEqual(message, 'Nothing saved. Scan the asset tag, U- label or serial.');
+  assert.strictEqual(message, 'Nothing saved. Scan the asset tag, label or serial.');
   assert.strictEqual(writes.length, before, 'Not an asset tag saves nothing');
   assert.strictEqual(await palletSends(), null, 'which, then Not an asset tag');
 
   await finishOne(10);
-  await click(panel, 'No code on it');
-  assert.ok(!pad.opts.lines && !pad.opts.actions, 'No code on it shows no scanned code');
+  await click(panel, 'No number on it');
+  assert.ok(!pad.opts.lines && !pad.opts.actions, 'No number on it shows no scanned code');
   pad.onDone({entered: 3}); await tick(); await tick();
   choice.onPick('cancel');
-  assert.strictEqual(await palletSends(), null, 'No code on it, number pad, then Cancel');
+  assert.strictEqual(await palletSends(), null, 'No number on it, number pad, then Cancel');
   console.log('unit screen ok');
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -650,3 +650,9 @@ def test_unit_screen_forgets_the_last_unit_and_shows_the_scanned_code_under_node
         env={**os.environ, "UNIT_JS": os.path.abspath(os.path.join(static, "station_unit.js"))})
     assert result.returncode == 0, result.stderr
     assert "unit screen ok" in result.stdout
+
+
+def test_unit_station_refusal_names_the_check_station(client, inv, event):
+    enrolled_client(client, station_code="COUNT")
+    answer = post(client, "scan", {"code": "FEST91002"})
+    assert "not set up as a Check station" in answer.json["message"]

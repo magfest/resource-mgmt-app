@@ -1,6 +1,6 @@
-"""Receive owned gear: one scan pair makes a unit and queues its label.
+"""Receive owned assets: one scan pair makes an asset and queues its label.
 
-Receiving records units and never changes an item total or a stock count,
+Receiving records assets and never changes an item total or a stock count,
 since only some of a group may be scanned. Nothing here commits.
 """
 from __future__ import annotations
@@ -27,10 +27,10 @@ from app.models.constants import (
 
 # zpl._field cuts text at 64 characters, and a label must never print a cut serial.
 MAX_SERIAL = 64
-LABEL_SHAPED = "That is a FestOps label. Scan the asset tag, or tap Skip."
-NOT_PRINTABLE = "This tag cannot be printed as a barcode."
-SAME_CODE = "That is the same code as the tag. Scan the SERIAL."
-NOTHING_TO_UNDO = "Only the last unit this scanner received can be undone."
+LABEL_SHAPED = "That is a label. Scan the asset tag, or tap Skip."
+NOT_PRINTABLE = "This asset tag cannot be printed as a barcode."
+SAME_CODE = "That is the same number as the asset tag. Scan the SERIAL."
+NOTHING_TO_UNDO = "Only the last asset this scanner received can be undone."
 LABEL_CANCELLED = "Label cancelled."
 THROW_AWAY = "Throw that label away."
 
@@ -52,8 +52,8 @@ def container_for_code(raw: str | None) -> InvContainer:
     """Return the active container a scanned code names, or refuse."""
     resolution = resolve(raw)
     if resolution.kind != KIND_CONTAINER:
-        raise InventoryError(f"{resolution.code or 'That'} is not a container. "
-                             "Scan a container label.")
+        raise InventoryError(f"{resolution.code or 'That'} is not a location or container. "
+                             "Scan a location or container label.")
     if not resolution.container.is_active:
         raise InventoryError(f"{resolution.code} is not in use.")
     return resolution.container
@@ -113,9 +113,9 @@ def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
     transaction. The caller rolls back on a refusal.
 
     Args:
-        queue_label: False skips the label and the print route check. The Unit
+        queue_label: False skips the label and the print route check. The Check
             station passes False because its finish queues the label, and a
-            unit retired by that finish must get none.
+            asset retired by that finish must get none.
     """
     tag, serial = _clean(tag), _clean(serial)
     if not item.is_serialized:
@@ -211,9 +211,9 @@ def reprint_unit(unit_id, actor: Actor, client_request_id=None) -> dict:
     """Queue the unit's label again with the fields and date of its newest label."""
     unit = db.session.get(InvUnit, unit_id) if type(unit_id) is int else None
     if unit is None or unit.condition == INV_CONDITION_RETIRED:
-        raise InventoryError("That unit is not in use, so it has no label to print.")
+        raise InventoryError("That asset is not in use, so it has no label to print.")
     if unit.ownership != INV_OWNERSHIP_OWNED:
-        raise InventoryError("Only owned gear prints from this station.")
+        raise InventoryError("Only owned assets print from this station.")
     previous = (db.session.query(InvPrintJob).filter_by(unit_id=unit.id)
                 .order_by(InvPrintJob.id.desc()).first())
     job = label_job(

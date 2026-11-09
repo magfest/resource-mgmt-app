@@ -1,4 +1,4 @@
-// Flag flow for the scan shell: pick what is wrong with a unit or container, in two taps.
+// Flag flow for the scan shell: pick what is wrong with an asset or container, in two taps.
 // Pure state logic. The shell draws each view and routes scans here while the flow is open.
 (function (root) {
   'use strict';
@@ -17,7 +17,7 @@
     notSaved: 'Not saved. Try again.',
     saved: 'Flagged for a lead.',
     container: 'Flag the container it is in instead. Scan the container label.',
-    pickUnit: 'Two units match: tap the one in your hand'
+    pickUnit: 'Two assets match: tap the one in your hand'
   };
 
   function reasonLabel(code) {

@@ -114,7 +114,7 @@ def test_a_unit_with_an_mt_tag_is_refused(inv, printer):
 
 def test_a_label_shaped_or_held_tag_is_refused_with_receive_messages(inv, printer):
     a, b = _named(inv, "A unit"), _named(inv, "B unit")
-    with pytest.raises(InventoryError, match="FestOps label"):
+    with pytest.raises(InventoryError, match="That is a label"):
         link_tag(a.id, "U-00001", ACTOR)
     link_tag(a.id, "FEST10001", ACTOR)
     db.session.commit()

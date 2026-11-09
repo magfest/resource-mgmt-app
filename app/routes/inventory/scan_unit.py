@@ -1,7 +1,7 @@
-"""JSON endpoints for the Unit station, a one-pass check on a CT60 scanner.
+"""JSON endpoints for the Check station, a one-pass check on a CT60 scanner.
 
-A scan finds the unit, gives it a number if it has none, opens its check, and
-the finish places it in the scanner's home container and queues its info label.
+A scan finds the asset, gives it a number if it has none, opens its check, and
+the finish places it in the scanner's home location and queues its info label.
 Answers carry `ok` and `message` like the check routes; a refusal is HTTP 200.
 """
 from flask import g, jsonify
@@ -32,11 +32,11 @@ from .scan_api import (
 )
 from .scan_auth import scan_actor
 
-NOT_A_UNIT_STATION = "This scanner is not set up as a Unit station."
-NO_HOME = "This scanner has no home container. Ask an inventory admin."
-SCAN_UNIT_FIRST = "Scan a unit first, then its pallet."
-UNUSED_U_LABEL = "This U- label is on no unit. Scan the unit's asset tag, or tap No code on it."
-NO_SUCH_UNIT = "No unit has that code. Tap No code on it to find the unit."
+NOT_A_UNIT_STATION = "This scanner is not set up as a Check station."
+NO_HOME = "This scanner has no home location. Ask an inventory admin."
+SCAN_UNIT_FIRST = "Scan an asset first, then where it's going."
+UNUSED_U_LABEL = "This label is on no asset. Scan its asset tag, or tap No number on it."
+NO_SUCH_UNIT = "No asset has that number. Tap No number on it to find the asset."
 
 
 def _station_only() -> None:
@@ -100,7 +100,7 @@ def scan_unit_keepalive():
 @inventory_bp.post("/scan/api/unit/scan")
 @api
 def scan_unit_scan():
-    """Place the last unit on a scanned pallet, or find a unit and open its check."""
+    """Place the last asset on a scanned pallet, or find an asset and open its check."""
     home = _home()
     data = _json_body()
 
@@ -154,7 +154,7 @@ def scan_unit_candidates():
     elif name is not None:
         found = tag_candidates(name)
     else:
-        raise InventoryError("Type the unit's number or name.")
+        raise InventoryError("Type the asset's number or name.")
     return jsonify(ok=True, candidates=[unit_card(u) for u in found])
 
 
@@ -243,7 +243,7 @@ def scan_unit_create():
         item_id = data.get("item_id")
         item = db.session.get(SupplyItem, item_id) if type(item_id) is int else None
         if item is None:
-            raise InventoryError("Pick a model.")
+            raise InventoryError("Pick an item.")
         tag = (_optional_text(data, "tag") or "").strip() or None
         if tag is None and item.needs_asset_tag:
             raise InventoryError(f"{item.item_name} needs an asset tag. Scan one.")

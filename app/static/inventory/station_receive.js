@@ -1,4 +1,4 @@
-// Receive station for owned gear: set up once, then scan each unit and stick on its label.
+// Receive station for owned assets: set up once, then scan each asset and stick on its label.
 // The scan order is chosen at setup because tags have no format; the app cannot tell a tag
 // from a serial by reading it. All text from the server or from people goes in with textContent.
 (function (root) {
@@ -10,9 +10,9 @@
   var SKIP_TEXT = {tag: 'Skip asset tag', serial: 'Skip serial'};
   var MODE_TEXT = {BOTH: 'Asset tag, then serial', TAG: 'Asset tag only', SERIAL: 'Serial only'};
   var MESSAGES = {
-    sameCode: 'That is the same code as the tag. Scan the SERIAL.',
+    sameCode: 'That is the same number as the asset tag. Scan the SERIAL.',
     notStarted: 'Press Start scanning first.',
-    needItem: 'Choose an item type first.',
+    needItem: 'Choose an item first.',
     noItems: 'No serialized item matches that.',
     cancelled: 'Not saved.',
     serialLong: 'That serial is longer than ' + MAX_SERIAL + ' characters. It cannot print whole.'
@@ -22,7 +22,7 @@
     return String(a).trim().toUpperCase() === String(b).trim().toUpperCase();
   }
 
-  // The codes for one unit. scan() and skip() return {kind: 'hold'}, {kind: 'refuse', message},
+  // The numbers for one asset. scan() and skip() return {kind: 'hold'}, {kind: 'refuse', message},
   // or {kind: 'submit', payload: {tag, serial}}. A skipped step sends no value; the server
   // then makes a U- number for a missing tag.
   function createLoop(mode) {
@@ -171,7 +171,7 @@
       box.appendChild(el('div', 'rcv-head', summary()));
       box.appendChild(progressNode());
       box.appendChild(el('div', 'rcv-step bad', 'Already received'));
-      box.appendChild(el('div', 'rcv-sub', 'This is ' + (already.code || 'a unit with no number yet') +
+      box.appendChild(el('div', 'rcv-sub', 'This is ' + (already.code || 'an asset with no number yet') +
         (already.item_name ? ', ' + already.item_name : '')));
       box.appendChild(el('div', 'rcv-sub', 'Nothing was created'));
       // A scan clears `already` while this screen shows; the button keeps its own copy.
@@ -215,12 +215,12 @@
   function renderSetup() {
     panel.textContent = '';
     var box = el('div', 'rcv');
-    box.appendChild(el('div', 'rcv-title', 'Receive owned gear'));
+    box.appendChild(el('div', 'rcv-title', 'Receive owned assets'));
     if (done > 0) { box.appendChild(progressNode()); }
     box.appendChild(noteNode());
-    box.appendChild(row('Item type', setup.item ? setup.item.name : 'Choose item type', chooseItem));
+    box.appendChild(row('Item', setup.item ? setup.item.name : 'Choose item', chooseItem));
     var modes = el('div', 'rcv-row');
-    modes.appendChild(el('div', 'rcv-label', 'Scan for each unit'));
+    modes.appendChild(el('div', 'rcv-label', 'Scan for each asset'));
     Object.keys(MODE_TEXT).forEach(function (mode) {
       var b = button(MODE_TEXT[mode], 'rcv-pick' + (setup.mode === mode ? ' on' : ''), function () {
         setup.mode = mode;
@@ -230,19 +230,19 @@
       modes.appendChild(b);
     });
     box.appendChild(modes);
-    var locText = locating ? 'Scan the location label now'
+    var locText = locating ? 'Scan where it\'s going'
       : setup.location ? setup.location.code + (setup.location.name ? ' ' + setup.location.name : '')
-      : 'Skip: no location';
+      : 'Skip: no place';
     var locExtra = null;
     if (locating || setup.location) {
-      locExtra = button(locating ? 'Cancel' : 'Clear location', 'rcv-link', function () {
-        // Cancel abandons the re-scan; only Clear location drops the one already set.
+      locExtra = button(locating ? 'Cancel' : 'Clear place', 'rcv-link', function () {
+        // Cancel abandons the re-scan; only Clear place drops the one already set.
         if (!locating) { setup.location = null; }
         locating = false;
         renderSetup();
       });
     }
-    box.appendChild(row('Location (optional)', locText, function () {
+    box.appendChild(row('Where it\'s going (optional)', locText, function () {
       locating = true;
       S.showMessage('', 'info');
       renderSetup();
@@ -291,7 +291,7 @@
   }
 
   function chooseItem() {
-    S.askText('Item type: part of the name', function (text) {
+    S.askText('Item: part of the name', function (text) {
       if (text === null) { renderSetup(); refocus(); return; }
       S.read(cfg.itemsUrl, {q: text}).then(function (answer) {
         if (answer.need_name) { return; }
@@ -310,7 +310,7 @@
         S.showMessage('', 'info');
         S.choose(answer.items.map(function (item) { return {label: item.name, value: item}; }),
           function (item) {
-            // The count and target belong to one item type; a new type starts both over.
+            // The count and target belong to one item; a new item starts both over.
             if (!setup.item || setup.item.id !== item.id) { done = 0; setup.target = null; }
             setup.item = item;
             renderSetup();
