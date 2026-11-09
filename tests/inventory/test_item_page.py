@@ -286,3 +286,66 @@ def test_ordering_tab_shows_the_form_to_supply_admin(client, inv, supply_admin):
     login(client, "test:supplyadmin")
     page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=ordering").get_data(as_text=True)
     assert f"/inv/admin/items/{inv.pens.id}/ordering" in page
+
+
+def test_inventory_admin_saves_pack_size_on_the_on_hand_tab(client, inv):
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/items/{inv.pens.id}/on-hand", data={"pack_size": "12", "barcode": "PEN-12"})
+    db.session.expire_all()
+    pens = db.session.get(SupplyItem, inv.pens.id)
+    assert pens.pack_size == 12 and pens.barcode == "PEN-12"
+
+
+def test_inventory_admin_saves_asset_tag_and_barcode_on_the_inventory_tab(client, inv):
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/items/{inv.laptop.id}/inventory",
+                data={"needs_asset_tag": "1", "barcode": "LAP-1"})
+    db.session.expire_all()
+    laptop = db.session.get(SupplyItem, inv.laptop.id)
+    assert laptop.needs_asset_tag and laptop.barcode == "LAP-1"
+    assert ConfigAuditEvent.query.filter_by(entity_type="supply_item", entity_id=laptop.id).count()
+
+
+def test_bad_pack_size_changes_nothing(client, inv):
+    login(client, "test:invadmin")
+    client.post(f"/inv/admin/items/{inv.pens.id}/on-hand", data={"pack_size": "x", "barcode": "PEN-9"})
+    db.session.expire_all()
+    assert db.session.get(SupplyItem, inv.pens.id).barcode is None
+
+
+def test_supply_admin_cannot_post_inventory(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    assert client.post(f"/inv/admin/items/{inv.laptop.id}/inventory",
+                       data={"needs_asset_tag": "1"}).status_code == 403
+    assert client.post(f"/inv/admin/items/{inv.pens.id}/on-hand",
+                       data={"pack_size": "3"}).status_code == 403
+
+
+def test_operator_sees_inventory_without_forms(client, inv):
+    login(client, "test:operator")
+    page = client.get(f"/inv/admin/items/{inv.laptop.id}?tab=inventory").get_data(as_text=True)
+    assert f'/inv/admin/items/{inv.laptop.id}/inventory"' not in page
+    page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=on_hand").get_data(as_text=True)
+    assert f'/inv/admin/items/{inv.pens.id}/on-hand"' not in page
+
+
+def test_assets_tab_lists_assets_with_links(client, inv):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/items/{inv.laptop.id}?tab=assets").get_data(as_text=True)
+    assert "No assets yet." in page
+    unit = InvUnit(item_id=inv.laptop.id, name="Front desk laptop")
+    db.session.add(unit)
+    db.session.commit()
+    page = client.get(f"/inv/admin/items/{inv.laptop.id}?tab=assets").get_data(as_text=True)
+    assert f'/inv/admin/units/{unit.id}"' in page and "Front desk laptop" in page
+
+
+def test_on_hand_tab_shows_this_items_stock(client, inv):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=on_hand").get_data(as_text=True)
+    assert "None on hand." in page
+    pallet = make_container(inv, "P-1")
+    add_stock(inv.pens, pallet, 7, Actor(user_id="test:invadmin"))
+    db.session.commit()
+    page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=on_hand").get_data(as_text=True)
+    assert "P-1" in page and "None on hand." not in page

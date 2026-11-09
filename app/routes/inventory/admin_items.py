@@ -137,16 +137,16 @@ def set_gear_kind(item_id: int):
         abort(404)
     if not item.is_serialized:
         flash("Only serialized items have an asset type.", "error")
-        return redirect(url_for("inventory.items"))
+        return redirect(url_for("inventory.item_page", item_id=item.id, tab="inventory"))
     raw = request.form.get("gear_kind_id", type=int)
     kind = db.session.get(InvGearKind, raw) if raw else None
     if raw and kind is None:
         flash("Pick an asset type from the list.", "error")
-        return redirect(url_for("inventory.items"))
+        return redirect(url_for("inventory.item_page", item_id=item.id, tab="inventory"))
     item.gear_kind_id = kind.id if kind else None
     db.session.commit()
     flash(f"Saved the asset type for {item.item_name}.", "success")
-    return redirect(url_for("inventory.items"))
+    return redirect(url_for("inventory.item_page", item_id=item.id, tab="inventory"))
 
 
 @inventory_bp.post("/admin/items/<int:item_id>/defaults")
@@ -157,7 +157,7 @@ def set_model_defaults(item_id: int):
         abort(404)
     if not item.is_serialized or item.gear_kind is None:
         flash("Defaults need a serialized item with an asset type.", "error")
-        return redirect(url_for("inventory.items"))
+        return redirect(url_for("inventory.item_page", item_id=item.id, tab="inventory"))
     fields = [f for f in active_fields(item.gear_kind) if f"field_{f.id}" in request.form]
     try:
         for field in fields:
@@ -168,4 +168,4 @@ def set_model_defaults(item_id: int):
     else:
         db.session.commit()
         flash(f"Saved the defaults for {item.item_name}. New assets start with them.", "success")
-    return redirect(url_for("inventory.items"))
+    return redirect(url_for("inventory.item_page", item_id=item.id, tab="inventory"))

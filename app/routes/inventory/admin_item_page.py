@@ -7,16 +7,21 @@ from decimal import Decimal, InvalidOperation
 from flask import abort, flash, redirect, request, url_for
 
 from app import db
+from app.inventory.checks import unit_code
+from app.inventory.codes import normalize_code
 from app.inventory.item_rights import item_rights
 from app.inventory.stock_report import supplies_on_hand
+from app.inventory.unit_fields import active_fields, display_value
 from app.models import (
-    CONFIG_AUDIT_UPDATE, InvStock, InvUnit, SupplyCategory, SupplyItem,
+    CONFIG_AUDIT_UPDATE, InvCheckItem, InvGearKind, InvModelDefault, InvStock, InvUnit,
+    SupplyCategory, SupplyItem,
 )
 from app.routes import get_user_ctx
 
 from . import inventory_bp
 from .helpers import (
-    render_inventory_page, require_item_viewer, require_ordering_editor, require_shared_editor,
+    render_inventory_page, require_inventory_admin, require_item_viewer,
+    require_ordering_editor, require_shared_editor,
 )
 
 
@@ -34,7 +39,7 @@ def _status_line(item, rights) -> str:
 
 
 def item_state(item) -> dict:
-    """Return every field the About and Ordering tabs write, for the config audit diff."""
+    """Return every field the item page tabs write, for the config audit diff."""
     return {
         "category_id": item.category_id, "item_name": item.item_name, "unit": item.unit,
         "image_url": item.image_url, "is_active": item.is_active,
@@ -43,8 +48,18 @@ def item_state(item) -> dict:
         "notes": item.notes, "notes_required": item.notes_required,
         "is_popular": item.is_popular, "is_limited": item.is_limited,
         "is_expendable": item.is_expendable, "sort_order": item.sort_order,
-        "internal_type": item.internal_type,
+        "internal_type": item.internal_type, "needs_asset_tag": item.needs_asset_tag,
+        "barcode": item.barcode, "pack_size": item.pack_size,
     }
+
+
+def _defaults(item) -> list:
+    """Return (field, shown value, choice labels) per field of the item's asset type."""
+    if item.gear_kind is None:
+        return []
+    held = {d.field_id: d for d in db.session.query(InvModelDefault).filter_by(item_id=item.id)}
+    return [(f, display_value(f, held.get(f.id)), [c.label for c in f.choices if c.is_active])
+            for f in active_fields(item.gear_kind)]
 
 
 @inventory_bp.get("/admin/items/<int:item_id>")
@@ -66,8 +81,21 @@ def item_page(item_id: int):
         {"id": "on_hand", "label": "On hand",
          "when": rights.sees_stock and not tracked},
     ]
+    extra = {}
+    if rights.sees_inventory and tracked:
+        extra["gear_kinds"] = db.session.query(InvGearKind).order_by(InvGearKind.name).all()
+        extra["defaults"] = _defaults(item)
+        extra["prompt_max"] = InvCheckItem.prompt.type.length
+        extra["lines"] = (db.session.query(InvCheckItem).filter_by(item_id=item.id)
+                          .order_by(InvCheckItem.position, InvCheckItem.id).all())
+        units = (db.session.query(InvUnit).filter_by(item_id=item.id).all())
+        extra["assets"] = sorted(
+            ({"unit": u, "number": unit_code(u)} for u in units),
+            key=lambda a: ((a["unit"].name or a["number"] or "").lower(), a["unit"].id))
+    if rights.sees_stock and not tracked:
+        extra["stock"] = next((r for r in supplies_on_hand() if r["item_id"] == item.id), None)
     return render_inventory_page(
-        "inventory/item.html", item=item, rights=rights, tabs=tabs,
+        "inventory/item.html", item=item, rights=rights, tabs=tabs, **extra,
         status_line=_status_line(item, rights), active_tab=request.args.get("tab"),
         categories=(db.session.query(SupplyCategory).filter_by(is_active=True)
                     .order_by(SupplyCategory.name).all()
@@ -187,3 +215,50 @@ def save_item_ordering(item_id: int):
     db.session.commit()
     flash(f"Saved {item.item_name}.", "success")
     return back
+
+
+def _save_stock_fields(item, back, needs_asset_tag=None, pack_size_raw=None):
+    """Validate and write the inventory-side fields one tab shows, then audit and commit."""
+    # Imported here: admin_items imports item_state from this module.
+    from .admin_items import _barcode_error, _parse_pack_size
+    barcode = normalize_code(request.form.get("barcode")) or None
+    pack_size, error = (_parse_pack_size(pack_size_raw) if pack_size_raw is not None
+                        else (item.pack_size, None))
+    error = error or _barcode_error(item.id, barcode)
+    if error:
+        flash(error, "error")
+        return back
+    # Imported here: app.routes.admin.helpers is circular at module level.
+    from app.routes.admin.helpers import log_config_change, track_changes
+    old_state = item_state(item)
+    item.barcode = barcode
+    item.pack_size = pack_size
+    if needs_asset_tag is not None:
+        item.needs_asset_tag = needs_asset_tag
+    item.updated_by_user_id = get_user_ctx().user_id
+    changes = track_changes(old_state, item_state(item))
+    if changes:
+        log_config_change("supply_item", item.id, CONFIG_AUDIT_UPDATE, changes)
+    db.session.commit()
+    flash(f"Saved {item.item_name}.", "success")
+    return back
+
+
+@inventory_bp.post("/admin/items/<int:item_id>/inventory")
+@require_inventory_admin
+def save_item_inventory(item_id: int):
+    item = db.session.get(SupplyItem, item_id)
+    if item is None:
+        abort(404)
+    back = redirect(url_for("inventory.item_page", item_id=item.id, tab="inventory"))
+    return _save_stock_fields(item, back, needs_asset_tag=bool(request.form.get("needs_asset_tag")))
+
+
+@inventory_bp.post("/admin/items/<int:item_id>/on-hand")
+@require_inventory_admin
+def save_item_on_hand(item_id: int):
+    item = db.session.get(SupplyItem, item_id)
+    if item is None:
+        abort(404)
+    back = redirect(url_for("inventory.item_page", item_id=item.id, tab="on_hand"))
+    return _save_stock_fields(item, back, pack_size_raw=request.form.get("pack_size", ""))

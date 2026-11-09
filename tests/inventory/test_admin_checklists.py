@@ -91,3 +91,22 @@ def test_checklists_name_the_item(client, inv):
     login(client, "test:invadmin")
     page = client.get("/inv/admin/checklists").get_data(as_text=True)
     assert "<label>Item" in page and "Model" not in page
+
+
+def test_checklist_line_added_from_the_item_page_returns_there(client, inv):
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/checklists/{inv.laptop.id}/lines",
+                       data={"prompt": "Powers on", "missing_means": "FAIL", "back": "item"})
+    assert f"/inv/admin/items/{inv.laptop.id}" in resp.headers["Location"]
+    assert "tab=inventory" in resp.headers["Location"]
+    line = InvCheckItem.query.filter_by(item_id=inv.laptop.id).one()
+    resp = client.post(f"/inv/admin/checklists/lines/{line.id}/move",
+                       data={"direction": "up", "back": "item"})
+    assert f"/inv/admin/items/{inv.laptop.id}" in resp.headers["Location"]
+
+
+def test_checklist_line_without_back_returns_to_the_checklists_page(client, inv):
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/checklists/{inv.laptop.id}/lines",
+                       data={"prompt": "Powers on", "missing_means": "FAIL"})
+    assert "/inv/admin/checklists" in resp.headers["Location"]

@@ -18,7 +18,7 @@
   <button type="submit" class="btn btn-small">Show</button>
 </form>
 {% if item %}
-<h2>{{ item.item_name }}</h2>
+<h2><a href="{{ url_for('inventory.item_page', item_id=item.id, tab='inventory') }}">{{ item.item_name }}</a></h2>
 <ul class="muted mb-16">
   <li><strong>FAIL:</strong> A no fails the check.</li>
   <li><strong>NOTE:</strong> A no passes, and the prompt is kept as a note.</li>

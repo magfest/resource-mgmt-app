@@ -17,6 +17,9 @@ def _lines(item_id: int) -> list[InvCheckItem]:
 
 
 def _back(item_id: int):
+    # The item page posts these forms with back=item and expects to land on its own tab.
+    if request.form.get("back") == "item":
+        return redirect(url_for("inventory.item_page", item_id=item_id, tab="inventory"))
     return redirect(url_for("inventory.checklists", item_id=item_id))
 
 
