@@ -43,7 +43,9 @@ from app.models import (
 from app.inventory.history import CONDITION_WORDS
 from app.inventory.people import actor_name, names_for
 from app.inventory.history import unit_history
-from app.inventory.unit_about import detail_rows, find_by_rows, placed_line, status_card, where_sentence
+from app.inventory.unit_about import (
+    added_line, check_line, detail_rows, find_by_rows, open_flag_count, owner_line, placed_line, where_sentence,
+)
 from app.models.constants import (
     INV_CONDITION_RETIRED, INV_FIELD_BOOL, INV_FIELD_CHOICE, INV_FIELD_NUMBER,
     INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
@@ -52,10 +54,13 @@ from app.models.constants import (
 from . import inventory_bp
 from .admin_flags import flag_rows
 from .helpers import (
-    admin_actor, note_types_for, render_inventory_page, require_inventory_admin, require_inventory_operator,
+    admin_actor, is_inventory_admin, note_types_for, render_inventory_page,
+    require_inventory_admin, require_inventory_operator,
 )
 
 SEARCH_LIMIT = 50
+CONDITION_PILLS = {"IN_SERVICE": "pill-approved", "REPAIR": "pill-warning",
+                   "LOST": "pill-rejected", "RETIRED": "pill-draft"}
 IDENTIFIER_KINDS = ((INV_IDENT_MAGFEST_TAG, "MAGFest tag"), (INV_IDENT_FESTOPS_LABEL, "FestOps label"),
                     (INV_IDENT_VENDOR_TAG, "Vendor tag"), (INV_IDENT_SERIAL, "Serial"),
                     (INV_IDENT_MAC, "MAC address"))
@@ -251,22 +256,21 @@ def _selectable_items(unit: InvUnit) -> list[SupplyItem]:
 @require_inventory_operator
 def unit_page(unit_id: int):
     unit = _unit_or_404(unit_id)
-    editing = request.args.get("tab") == "edit"
     user_ctx = get_user_ctx()
-    context = {"unit": unit, "number": unit_code(unit), "editing": editing,
-               "note_types": note_types_for(user_ctx), "note_type_words": NOTE_TYPE_WORDS}
-    if editing:
-        options = reprint_options(unit)
+    context = {"unit": unit, "number": unit_code(unit), "active_tab": request.args.get("tab"),
+               "note_types": note_types_for(user_ctx), "note_type_words": NOTE_TYPE_WORDS,
+               "condition_pills": CONDITION_PILLS, "condition_words": CONDITION_WORDS}
+    options = reprint_options(unit)
+    context.update(print_modes=[(m, REPRINT_WORDS[m]) for m in _print_modes(options)],
+                   print_options=options)
+    if is_inventory_admin(user_ctx):
         context.update(
             model=model_number(unit),
             identifiers=sorted(unit.identifiers, key=lambda i: (i.retired_at is not None, i.id)),
             kind_words=KIND_WORDS, kinds=IDENTIFIER_KINDS, conditions=INV_CONDITIONS,
-            condition_words=CONDITION_WORDS, items=_selectable_items(unit),
-            print_modes=[(m, REPRINT_WORDS[m]) for m in _print_modes(options)],
-            print_options=options, retired_condition=INV_CONDITION_RETIRED,
+            items=_selectable_items(unit), retired_condition=INV_CONDITION_RETIRED,
             field_inputs=_field_inputs(unit), has_gear_kind=unit.item.gear_kind is not None,
             can_give_number=_can_give_number(unit))
-        return render_inventory_page("inventory/unit.html", **context)
 
     flags = (db.session.query(InvFlag).filter(InvFlag.unit_id == unit.id)
              .order_by(InvFlag.created_at.desc(), InvFlag.id.desc()).all())
@@ -284,8 +288,11 @@ def unit_page(unit_id: int):
     kind = unit.item.gear_kind
     subline = " \u00b7 ".join(part for part in (unit.item.item_name, kind.name if kind else "",
                                                details_line(unit)) if part)
+    seen = last_seen_dates([unit.id]).get(unit.id)
     context.update(
-        subline=subline, status=status_card(unit, default_event()),
+        subline=subline, check=check_line(unit), owner=owner_line(unit),
+        added=added_line(unit), last_seen=local_day(seen) if seen else None,
+        open_flags=len(open_rows),
         where=where_sentence(unit), placed=placed_line(unit),
         find_by=find_by_rows(unit), details=detail_rows(unit),
         notes=note_views, open_rows=open_rows, history=history)
@@ -313,9 +320,8 @@ def _field_inputs(unit: InvUnit) -> list[dict]:
     return inputs
 
 
-def _back(unit: InvUnit, tab: str | None = None, anchor: str | None = None):
-    url = url_for("inventory.unit_page", unit_id=unit.id, tab=tab)
-    return redirect(f"{url}#{anchor}" if anchor else url)
+def _back(unit: InvUnit, tab: str | None = None):
+    return redirect(url_for("inventory.unit_page", unit_id=unit.id, tab=tab))
 
 
 def _active_codes(unit: InvUnit) -> list[str]:
@@ -349,7 +355,7 @@ def _audited(action, unit: InvUnit, audit_action: str):
     return run
 
 
-def _commit_or_flash(action, success: str, unit: InvUnit, anchor: str | None = None):
+def _commit_or_flash(action, success: str, unit: InvUnit, tab: str | None = None):
     try:
         action()
     except InventoryError as error:
@@ -358,7 +364,7 @@ def _commit_or_flash(action, success: str, unit: InvUnit, anchor: str | None = N
         return _back(unit, tab="edit")
     db.session.commit()
     flash(success, "success")
-    return _back(unit, anchor=anchor)
+    return _back(unit, tab=tab)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/identifiers")
@@ -414,7 +420,7 @@ def unit_set_item(unit_id: int):
         unit.item_id = item.id
         db.session.flush()
 
-    return _commit_or_flash(_audited(change, unit, ACTION_ITEM), "Item type changed.", unit)
+    return _commit_or_flash(_audited(change, unit, ACTION_ITEM), "Inventory item group changed.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/details")
@@ -451,7 +457,7 @@ def unit_add_note(unit_id: int):
             raise InventoryError("You cannot add that kind of note.")
         add_note(unit, note_type, request.form.get("body"), user_ctx.user_id)
 
-    return _commit_or_flash(add, "Note added.", unit, anchor="notes")
+    return _commit_or_flash(add, "Note added.", unit, tab="notes")
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/give-number")

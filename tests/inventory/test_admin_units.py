@@ -991,21 +991,21 @@ def test_unit_page_status_says_works_with_local_time(client, inv):
     _prep(event, u, "CHECKED", datetime(2026, 12, 8, 15, 14))
     login(client, "test:operator")
     page = _page(client, u)
-    assert '<span class="works">Works</span>, checked Dec 8 at 10:14 AM' in page
-    assert page.index('id="status"') < page.index('id="where"')
+    assert '<span class="works">Works</span> checked Dec 8 at 10:14 AM' in page
+    assert page.index("Last checked") < page.index('id="where"')
 
 
 def test_unit_page_status_says_broken(client, inv):
     event, (u,) = _week_units(inv, 1)
     _prep(event, u, "FAILED_CHECK")
     login(client, "test:operator")
-    assert '<span class="broken">Broken</span>, checked' in _page(client, u)
+    assert '<span class="broken">Broken</span> checked' in _page(client, u)
 
 
 def test_unit_page_status_not_checked_has_no_time(client, inv):
     _, (u,) = _week_units(inv, 1)
     login(client, "test:operator")
-    assert "Not checked this week" in _page(client, u)
+    assert "Not checked yet" in _page(client, u)
 
 
 def test_unit_page_without_a_default_event_still_says_where(client, unit):
@@ -1047,7 +1047,7 @@ def test_unit_page_shows_where_for_a_placed_unit(client, inv):
 def test_unit_page_counts_open_flags(client, unit):
     login(client, "test:operator")
     page = _page(client, unit)
-    assert "No open flags" in page and 'id="flags"' not in page
+    assert "open flag" not in page and 'id="flags"' not in page
     raise_flag(ACTOR, "LOOKUP", "DAMAGED", unit=unit)
     db.session.commit()
     page = _page(client, unit)
@@ -1058,29 +1058,27 @@ def test_unit_page_counts_open_flags(client, unit):
 def test_page_opens_on_about(client, unit):
     login(client, "test:invadmin")
     page = _page(client, unit)
-    assert 'id="status"' in page and 'id="history"' in page
+    assert "Last checked" in page and 'id="where"' in page
     assert "Assigned to: not tracked yet" in page
-    assert 'name="condition"' not in page
 
 
 def test_edit_tab_for_admin(client, unit):
     login(client, "test:invadmin")
     page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
-    assert 'name="condition"' in page and 'name="note_type"' in page
-    assert "Internal database ID" in page
-    assert 'id="status"' not in page
+    assert 'name="condition"' in page and "Internal database ID" in page
 
 
 def test_unknown_tab_opens_about(client, unit):
     login(client, "test:invadmin")
     page = client.get(f"/inv/admin/units/{unit.id}?tab=bogus").get_data(as_text=True)
-    assert 'id="status"' in page and 'name="condition"' not in page
+    start = page.index('class="tab-btn active"')
+    assert 'data-tab="about"' in page[start:start + 200]
 
 
-def test_edit_tab_for_operator_has_notes_and_print_only(client, unit):
+def test_edit_tab_for_operator_has_print_only(client, unit):
     login(client, "test:operator")
     page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
-    assert 'name="note_type"' in page and "Internal database ID" in page
+    assert "Internal database ID" in page
     assert 'name="condition"' not in page and "unit_set_details" not in page
     assert f"/units/{unit.id}/details" not in page
     assert f"/units/{unit.id}/print" in page and 'name="mode"' in page
@@ -1103,25 +1101,24 @@ def test_success_returns_to_about(client, unit):
     assert "tab=" not in resp.headers["Location"]
 
 
-def test_note_success_returns_to_about_notes(client, unit):
+def test_note_success_returns_to_notes_tab(client, unit):
     login(client, "test:operator")
     resp = client.post(f"/inv/admin/units/{unit.id}/notes",
                        data={"note_type": "PICKER", "body": "Invented"})
-    assert resp.headers["Location"].endswith("#notes")
-    assert "tab=" not in resp.headers["Location"]
+    assert resp.headers["Location"].endswith("tab=notes")
 
 
-def test_more_than_three_notes_fold(client, unit):
+def test_notes_tab_shows_every_note_unfolded(client, unit):
     login(client, "test:operator")
     for i in range(3):
         client.post(f"/inv/admin/units/{unit.id}/notes",
                     data={"note_type": "PICKER", "body": f"Invented {i}"})
-    assert "Show all notes" not in _page(client, unit)
     client.post(f"/inv/admin/units/{unit.id}/notes",
                 data={"note_type": "PICKER", "body": "Invented 3"})
     page = _page(client, unit)
-    assert "Show all notes (4)" in page
-    assert "Picker" in page
+    assert "Show all notes" not in page
+    assert all(f"Invented {i}" in page for i in range(4))
+    assert '<span class="tab-count">4</span>' in page and "Picker" in page
 
 
 def test_this_week_line_is_gone(client, inv):
@@ -1169,3 +1166,110 @@ def test_about_tab_shows_migrated_notes_with_source_words_and_no_byline(client, 
     assert SOURCE_WORDS["IMPORT"] in page and SOURCE_WORDS["EARLIER"] in page
     assert earlier.created_by_user_id is None
     assert "Unknown" not in page
+
+
+def _named_unit(inv, name="MAG-TV-107", number="U-7001", container=None):
+    u = add_unit(inv.laptop, container, ACTOR, [("FESTOPS_LABEL", number)], name=name)
+    db.session.commit()
+    return u
+
+
+def test_unit_page_header_has_name_pill_and_number(client, inv):
+    u = _named_unit(inv)
+    login(client, "test:operator")
+    page = _page(client, u)
+    head = page[page.index("<h1"):page.index("</h1>")]
+    assert "MAG-TV-107" in head and "pill-approved" in head and "In service" in head
+    assert "U-7001" not in head and "U-7001" in page[page.index("</h1>"):page.index('class="request-tab-nav"')]
+
+
+def test_unit_page_has_four_tabs_and_opens_on_about(client, unit):
+    login(client, "test:invadmin")
+    page = _page(client, unit)
+    for tab in ("about", "notes", "history", "edit"):
+        assert f'data-tab="{tab}"' in page
+    assert 'class="tab-btn active"' in page
+    assert page.index('class="tab-btn active"') < page.index('data-tab="about"') < page.index('data-tab="notes"')
+
+
+def test_unit_page_opens_on_the_named_tab(client, unit):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
+    start = page.index('class="tab-btn active"')
+    assert 'data-tab="edit"' in page[start:start + 200]
+
+
+def test_open_flags_show_a_callout_and_none_shows_nothing(client, unit):
+    login(client, "test:operator")
+    assert 'class="callout' not in _page(client, unit)
+    raise_flag(ACTOR, "LOOKUP", "DAMAGED", unit=unit)
+    db.session.commit()
+    page = _page(client, unit)
+    box = page[page.index('<div class="callout callout-action'):]
+    assert "1 open flag</a>" in box[:200] and "1 open flags" not in page
+
+
+def test_last_checked_reads_a_check_under_another_event(client, inv):
+    from datetime import datetime
+    from app.inventory.printing import local_when
+    from app.models import EventCycle
+    other = EventCycle(code="MWEST2027", name="MAGWest", is_active=True, is_default=False)
+    db.session.add(other)
+    db.session.commit()
+    u = _named_unit(inv)
+    when = datetime(2026, 11, 7, 22, 53)
+    _prep(other, u, "CHECKED", when)
+    login(client, "test:operator")
+    page = _page(client, u)
+    assert "Last checked" in page and '<span class="works">Works</span>' in page
+    assert f"checked {local_when(when)}" in page
+
+
+def test_never_checked_unit_says_not_checked_yet(client, unit):
+    login(client, "test:operator")
+    assert "Not checked yet" in _page(client, unit)
+
+
+def test_add_note_lands_on_the_notes_tab(client, unit):
+    login(client, "test:operator")
+    resp = client.post(f"/inv/admin/units/{unit.id}/notes",
+                       data={"note_type": "PICKER", "body": "Invented"})
+    assert resp.headers["Location"].endswith("tab=notes")
+
+
+def test_operator_edit_tab_holds_only_print_label(client, unit):
+    login(client, "test:operator")
+    page = _page(client, unit)
+    assert '/print"' in page
+    for action in ("/details\"", "/identifiers\"", "/condition\""):
+        assert action not in page
+
+
+def test_edit_form_says_inventory_item_group(client, unit):
+    login(client, "test:invadmin")
+    page = _page(client, unit)
+    assert "Inventory item group" in page and "Change inventory item group" in page
+    assert "Item type" not in page
+
+
+def test_unit_page_query_count_does_not_grow_with_history(client, inv):
+    from app.inventory.ledger import move_unit
+    from app.inventory.notes import add_note
+    from tests.inventory.helpers import make_container
+    boxes = [make_container(inv, f"C-95{i:02d}") for i in range(2)]
+
+    def build(tag, n):
+        u = add_unit(inv.laptop, boxes[0], ACTOR, [("FESTOPS_LABEL", tag)])
+        for i in range(n):
+            add_note(u, "PICKER", f"Invented {i}", "test:invadmin")
+            move_unit(u, boxes[(i + 1) % 2], ACTOR)
+        db.session.commit()
+        return u
+
+    small, big = build("U-7101", 2), build("U-7102", 20)
+    login(client, "test:invadmin")
+    # The first load of each unit fills the session's identity map; measure the second.
+    _page(client, small)
+    _page(client, big)
+    few = _selects(lambda: _page(client, small))
+    assert _selects(lambda: _page(client, big)) == few

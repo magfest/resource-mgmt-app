@@ -1,11 +1,9 @@
 {% extends "layout/base.html" %}
 {% from "inventory/_flag_rows.html" import resolve_form %}
+{% from "components/_request_tabs.html" import request_tabs with context %}
 {% block title %}{{ unit.name or number or "No number yet" }} - Units - Inventory{% endblock %}
 {% block content %}
 <style nonce="{{ csp_nonce }}">
-  .unit-tabs { display: flex; gap: 16px; margin: 12px 0 16px; border-bottom: 1px solid #ddd; }
-  .unit-tabs a { padding: 8px 4px; text-decoration: none; color: inherit; border-bottom: 3px solid transparent; }
-  .unit-tabs a[aria-current="page"] { font-weight: 600; border-bottom-color: #333; }
   .unit-page h2 { margin: 24px 0 8px; font-size: 1.15em; }
   .unit-page, .unit-page td, .unit-page .note-body { overflow-wrap: anywhere; }
   .unit-page .pair { width: 100%; border-collapse: collapse; }
@@ -33,14 +31,93 @@
     {% if h.note %}<div class="muted history-note">{{ h.note }}</div>{% endif %}</div>
 {% endmacro %}
 <div class="unit-page">
-<h1>{% if unit.name or number %}{{ unit.name or number }}{% else %}<span class="muted">No number yet</span>{% endif %}</h1>
-{% if subline %}<div class="muted">{{ subline }}</div>{% endif %}
-<div class="muted"><a href="{{ url_for('inventory.units') }}">Units</a></div>
-<nav class="unit-tabs">
-  <a href="{{ url_for('inventory.unit_page', unit_id=unit.id) }}"{% if not editing %} aria-current="page"{% endif %}>About</a>
-  <a href="{{ url_for('inventory.unit_page', unit_id=unit.id, tab='edit') }}"{% if editing %} aria-current="page"{% endif %}>Edit</a>
-</nav>
-{% if editing %}
+<div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+  <div>
+    <h1 style="margin:0;">{% if unit.name or number %}{{ unit.name or number }}{% else %}<span class="muted">No number yet</span>{% endif %}
+      <span class="pill {{ condition_pills.get(unit.condition, 'pill-draft') }}" style="margin-left: 8px; font-weight: normal;">{{ condition_words.get(unit.condition, unit.condition) }}</span></h1>
+    {% if subline %}<div class="muted" style="margin-top:4px;">{{ subline }}</div>{% endif %}
+    <div class="muted" style="margin-top:4px;">{{ added }}{% if last_seen %} &middot; Last seen {{ last_seen }}{% endif %}</div>
+    <div class="muted" style="margin-top:4px;"><a href="{{ url_for('inventory.units') }}">Units</a></div>
+  </div>
+  {% if unit.name and number %}
+  <div style="text-align:right;">
+    <div style="font-size: 24px; font-weight:700;">{{ number }}</div>
+  </div>
+  {% endif %}
+</div>
+{% if open_flags %}
+<div class="callout callout-action mb-16"><a href="#flags">{{ open_flags }} open flag{{ '' if open_flags == 1 else 's' }}</a></div>
+{% endif %}
+
+{% call(tab) request_tabs([
+     {'id': 'about', 'label': 'About'},
+     {'id': 'notes', 'label': 'Notes', 'count': notes | length},
+     {'id': 'history', 'label': 'History'},
+     {'id': 'edit', 'label': 'Edit'},
+   ], active=active_tab) %}
+{% if tab == 'about' %}
+<h2>Last checked</h2>
+<div>{% if check.word == 'WORKS' %}<span class="works">Works</span> {% elif check.word == 'BROKEN' %}<span class="broken">Broken</span> {% endif %}{{ check.text }}</div>
+<div>{{ owner }}</div>
+
+<h2 id="where">Where it is</h2>
+<div>{{ where }}</div>
+{% if placed %}<div class="muted">{{ placed }}</div>{% endif %}
+
+<h2 id="who">Who has it</h2>
+<div class="muted">Assigned to: not tracked yet</div>
+<div class="muted">Allocated to: not tracked yet</div>
+<div class="muted">Checked out to: not tracked yet</div>
+
+<h2 id="find-by">Find it by</h2>
+{% if find_by %}
+<table class="pair">{% for label, value in find_by %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+{% else %}<div class="muted">No codes yet.</div>{% endif %}
+
+<h2 id="details">Details</h2>
+{% if details %}
+<table class="pair">{% for label, value in details %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+{% else %}<div class="muted">No details recorded.</div>{% endif %}
+
+{% if open_rows %}
+<h2 id="flags">Open flags</h2>
+<div class="scroll-x">
+<table>
+  <thead><tr><th>When</th><th>Reason</th><th>Raised by</th><th>Note</th><th>Resolve</th></tr></thead>
+  <tbody>
+  {% for r in open_rows %}
+    <tr><td class="muted">{{ r.when }}</td><td>{{ r.reason }}</td><td>{{ r.raised_by }}</td><td>{{ r.flag.note or '' }}</td>
+      <td>{{ resolve_form(r, url_for('inventory.unit_page', unit_id=unit.id)) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% elif tab == 'notes' %}
+{% if note_types %}
+<h2>Add a note</h2>
+<form method="post" action="{{ url_for('inventory.unit_add_note', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <select name="note_type" aria-label="Kind of note">
+    {% for t in note_types %}<option value="{{ t }}"{% if t == 'ADMIN' %} selected{% endif %}>{{ note_type_words[t] }}</option>{% endfor %}
+  </select>
+  <textarea name="body" rows="3" maxlength="2000" required aria-label="Note" style="width: 100%; max-width: 480px;"></textarea>
+  <button type="submit" class="btn btn-small">Add note</button>
+</form>
+{% endif %}
+
+<h2 id="notes">Notes</h2>
+{% for n in notes %}{{ note_row(n) }}{% else %}<div class="muted">No notes yet.</div>{% endfor %}
+{% elif tab == 'history' %}
+<h2 id="history">History</h2>
+{% for h in history[:10] %}{{ hist_row(h) }}{% else %}<div class="muted">Nothing recorded yet.</div>{% endfor %}
+{% if history|length > 10 %}
+<details><summary>Show all ({{ history|length }})</summary>
+  {% for h in history[10:] %}{{ hist_row(h) }}{% endfor %}
+</details>
+{% endif %}
+{% elif tab == 'edit' %}
 {% if is_inv_admin %}
 <h2>Details</h2>
 <form method="post" action="{{ url_for('inventory.unit_set_details', unit_id=unit.id) }}" class="card mb-16">
@@ -70,18 +147,6 @@
   {% endfor %}
   {% if not has_gear_kind %}<div class="muted">Set this model's gear kind on the Items page to add fields.</div>{% endif %}
   <button type="submit" class="btn btn-small">Save details</button>
-</form>
-{% endif %}
-
-{% if note_types %}
-<h2>Add a note</h2>
-<form method="post" action="{{ url_for('inventory.unit_add_note', unit_id=unit.id) }}" class="card mb-16">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <select name="note_type" aria-label="Kind of note">
-    {% for t in note_types %}<option value="{{ t }}"{% if t == 'ADMIN' %} selected{% endif %}>{{ note_type_words[t] }}</option>{% endfor %}
-  </select>
-  <textarea name="body" rows="3" maxlength="2000" required aria-label="Note" style="width: 100%; max-width: 480px;"></textarea>
-  <button type="submit" class="btn btn-small">Add note</button>
 </form>
 {% endif %}
 
@@ -141,12 +206,12 @@
 </form>
 <form method="post" action="{{ url_for('inventory.unit_set_item', unit_id=unit.id) }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Item type
+  <label>Inventory item group
     <select name="item_id">
       {% for i in items %}<option value="{{ i.id }}" {% if unit.item_id == i.id %}selected{% endif %}>{{ i.item_name }}</option>{% endfor %}
     </select>
   </label>
-  <button type="submit" class="btn btn-small">Change item type</button>
+  <button type="submit" class="btn btn-small">Change inventory item group</button>
 </form>
 
 {% endif %}
@@ -174,62 +239,7 @@
   });
 </script>
 {% endif %}
-{% else %}
-<div id="status" class="card mb-16">
-  {% if status.check %}<div>{% if status.check_word == 'WORKS' %}<span class="works">Works</span>{{ status.check[5:] }}{% elif status.check_word == 'BROKEN' %}<span class="broken">Broken</span>{{ status.check[6:] }}{% else %}{{ status.check }}{% endif %}</div>{% endif %}
-  <div>{{ status.standing }}</div>
-  <div>{% if status.open_flags %}<a href="#flags">{{ status.open_flags }} open flag{{ '' if status.open_flags == 1 else 's' }}</a>{% else %}No open flags{% endif %}</div>
-</div>
-
-<h2 id="where">Where it is</h2>
-<div>{{ where }}</div>
-{% if placed %}<div class="muted">{{ placed }}</div>{% endif %}
-
-<h2 id="who">Who has it</h2>
-<div class="muted">Assigned to: not tracked yet</div>
-<div class="muted">Allocated to: not tracked yet</div>
-<div class="muted">Checked out to: not tracked yet</div>
-
-<h2 id="find-by">Find it by</h2>
-{% if find_by %}
-<table class="pair">{% for label, value in find_by %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
-{% else %}<div class="muted">No codes yet.</div>{% endif %}
-
-<h2 id="details">Details</h2>
-{% if details %}
-<table class="pair">{% for label, value in details %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
-{% else %}<div class="muted">No details recorded.</div>{% endif %}
-
-<h2 id="notes">Notes</h2>
-{% for n in notes[:3] %}{{ note_row(n) }}{% else %}<div class="muted">No notes yet.</div>{% endfor %}
-{% if notes|length > 3 %}
-<details><summary>Show all notes ({{ notes|length }})</summary>
-  {% for n in notes[3:] %}{{ note_row(n) }}{% endfor %}
-</details>
 {% endif %}
-
-{% if open_rows %}
-<h2 id="flags">Open flags</h2>
-<div class="scroll-x">
-<table>
-  <thead><tr><th>When</th><th>Reason</th><th>Raised by</th><th>Note</th><th>Resolve</th></tr></thead>
-  <tbody>
-  {% for r in open_rows %}
-    <tr><td class="muted">{{ r.when }}</td><td>{{ r.reason }}</td><td>{{ r.raised_by }}</td><td>{{ r.flag.note or '' }}</td>
-      <td>{{ resolve_form(r, url_for('inventory.unit_page', unit_id=unit.id)) }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-{% endif %}
-
-<h2 id="history">What happened to it</h2>
-{% for h in history[:10] %}{{ hist_row(h) }}{% else %}<div class="muted">Nothing recorded yet.</div>{% endfor %}
-{% if history|length > 10 %}
-<details><summary>Show all ({{ history|length }})</summary>
-  {% for h in history[10:] %}{{ hist_row(h) }}{% endfor %}
-</details>
-{% endif %}
-{% endif %}
+{% endcall %}
 </div>
 {% endblock %}

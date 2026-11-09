@@ -5,8 +5,7 @@ from app import db
 from app.inventory.ledger import (
     Actor, add_identifier, add_unit, create_container, move_unit, retire_identifier,
 )
-from app.inventory.unit_about import find_by_rows, placed_line, status_card, where_sentence
-from app.models import EventCycle
+from app.inventory.unit_about import added_line, check_line, find_by_rows, owner_line, placed_line, where_sentence
 
 ACTOR = Actor(user_id="test:invadmin")
 
@@ -46,26 +45,22 @@ def test_where_in_an_unnamed_pallet(inv, places):
     assert where_sentence(unit).startswith("C-9013, in the Warehouse")
 
 
-def test_status_card_without_event(inv):
-    assert status_card(_unit(inv), None)["check"] is None
+def test_check_line_never_checked(inv):
+    assert check_line(_unit(inv)) == {"word": None, "text": "Not checked yet"}
 
 
-def test_status_card_not_checked(inv):
-    event = EventCycle(code="SMF2027", name="SMF 2027", is_active=True, is_default=True)
-    db.session.add(event)
-    db.session.commit()
-    card = status_card(_unit(inv), event)
-    assert card["check"] == "Not checked this week"
-    assert card["check_word"] is None
-    assert card["open_flags"] == 0
-
-
-def test_status_card_rented(inv):
+def test_owner_line_rented(inv):
     unit = _unit(inv)
+    assert owner_line(unit) == "Owned by FestOps"
     unit.ownership = "RENTED"
+    assert owner_line(unit) == "Rented"
     unit.vendor_name = "Invented AV Co"
-    db.session.commit()
-    assert status_card(unit, None)["standing"] == "In service · Rented from Invented AV Co"
+    assert owner_line(unit) == "Rented from Invented AV Co"
+
+
+def test_added_line_uses_the_oldest_movement(inv, places):
+    assert added_line(_unit(inv, places[1])).startswith("Added ")
+    assert " by " in added_line(_unit(inv, places[1], ids=(("FESTOPS_LABEL", "U-9002"),)))
 
 
 def test_find_by_rows_words_and_order(inv):
