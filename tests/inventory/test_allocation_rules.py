@@ -2,6 +2,7 @@
 import re
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 
 from app import db
@@ -206,9 +207,24 @@ def test_a_raced_insert_is_refused_not_raised(alloc, monkeypatch):
     assert db.session.query(InvAllocation).count() == 0
 
 
-def test_the_line_lock_is_for_update_on_postgres(app):
+def test_the_line_lock_is_no_key_update_on_postgres(app):
     sql = str(line_lock_query(1).statement.compile(dialect=postgresql.dialect()))
-    assert "FOR UPDATE" in sql
+    assert "FOR NO KEY UPDATE" in sql
+
+
+def test_the_cap_reads_the_line_fresh_under_the_lock(alloc):
+    line = supply_line(alloc, alloc.alpha, 2, notes="one 4K")
+    allocate([make_asset(alloc.tv, "U-0001")], line.id, "test:invadmin")
+    second = make_asset(alloc.tv, "U-0002")
+    # Held, as a route that read the line would; the session keeps only weak references.
+    detail = line.supply_detail
+    assert detail.quantity_requested == 2
+    # Another request cut the line; the ORM copy in this session still says 2.
+    db.session.execute(text("UPDATE supply_order_line_details SET quantity_requested = 1"
+                            " WHERE work_line_id = :id"), {"id": line.id})
+    with pytest.raises(InventoryError, match=re.escape(
+            "Alpha Team · one 4K has 0 left, and you picked 1.")):
+        allocate([second], line.id, "test:invadmin")
 
 
 def test_move_changes_the_line_and_appends_a_move_event(alloc):

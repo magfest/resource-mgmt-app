@@ -305,9 +305,16 @@ def demand_lines(event_cycle_id: int, selection: Selection) -> list[DemandLine]:
     return out
 
 
-def demand_line(work_line_id: int) -> DemandLine | None:
-    """Return one Supply or TechOps line in any state, or None for any other line."""
-    line = _line_query().filter(WorkLine.id == work_line_id).one_or_none()
+def demand_line(work_line_id: int, fresh: bool = False) -> DemandLine | None:
+    """Return one Supply or TechOps line in any state, or None for any other line.
+
+    `fresh` rereads the line, request and detail rows over any copies the
+    session already holds. The allocation rules pass it under the line lock.
+    """
+    query = _line_query().filter(WorkLine.id == work_line_id)
+    if fresh:
+        query = query.execution_options(populate_existing=True)
+    line = query.one_or_none()
     if line is None:
         return None
     rows = _allocation_query().filter(InvAllocation.work_line_id == work_line_id).all()

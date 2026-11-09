@@ -8,6 +8,7 @@ the transaction and rolls back after a refusal.
 from __future__ import annotations
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Query
 
 from app import db
 from app.inventory.checks import unit_phrase
@@ -36,16 +37,19 @@ def current_allocation(unit_id: int) -> InvAllocation | None:
     return db.session.query(InvAllocation).filter_by(unit_id=unit_id).first()
 
 
-def line_lock_query(work_line_id: int):
+def line_lock_query(work_line_id: int) -> Query:
     """Return the query that locks one work line until the transaction ends.
 
-    Every write here locks the line first, then allocation rows; one order in
-    every function keeps two moves from deadlocking. The query has no joins
-    because Postgres refuses FOR UPDATE on the nullable side of an outer join.
+    Every explicit lock here takes the line first, then allocation rows; one
+    order in every function keeps two moves from deadlocking. The query has no
+    joins because Postgres refuses a row lock on the nullable side of an outer join.
     """
+    # key_share emits FOR NO KEY UPDATE on Postgres; two allocators of one line still wait.
+    # Plain FOR UPDATE would also block foreign-key checks from rows that reference the line.
+    # A release's event insert would then wait on a line lock and could deadlock with a move.
     # populate_existing: a line already in the session would otherwise keep stale values.
     return (db.session.query(WorkLine).filter(WorkLine.id == work_line_id)
-            .with_for_update().populate_existing())
+            .with_for_update(key_share=True).populate_existing())
 
 
 def _allocation_lock_query(unit_id: int):
@@ -57,7 +61,8 @@ def _open_line(work_line_id: int) -> DemandLine:
     """Lock the line, then read it as demand; refuse a missing or unopen line."""
     if line_lock_query(work_line_id).one_or_none() is None:
         raise InventoryError(NOT_OPEN)
-    line = demand_line(work_line_id)
+    # fresh: a detail or request read earlier in this session could hold a stale cap or status.
+    line = demand_line(work_line_id, fresh=True)
     if line is None or line.state != LINE_OPEN:
         raise InventoryError(NOT_OPEN)
     return line
