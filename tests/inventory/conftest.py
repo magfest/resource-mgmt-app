@@ -34,7 +34,8 @@ def inv(app):
     kinds = {}
     for code, name, order in [("LOCATION", "Location", 10), ("PALLET", "Pallet", 50),
                               ("BIN", "Bin", 70)]:
-        kinds[code] = InvContainerKind(code=code, name=name, sort_order=order, is_active=True)
+        kinds[code] = InvContainerKind(code=code, name=name, sort_order=order, is_active=True,
+                                       is_fixed=code == "LOCATION")
         db.session.add(kinds[code])
 
     category = SupplyCategory(code="GENERAL", name="General", is_active=True)

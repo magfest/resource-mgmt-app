@@ -1,5 +1,4 @@
 """Container tree: create in batches, rename, re-kind, and move by label code."""
-from collections import defaultdict
 
 from flask import abort, flash, redirect, request, url_for
 from sqlalchemy import func
@@ -31,9 +30,8 @@ def _parent_from_form() -> tuple[InvContainer | None, str | None]:
 @require_inventory_admin
 def containers():
     rows = db.session.query(InvContainer).order_by(InvContainer.label_code).all()
-    children = defaultdict(list)
-    for c in rows:
-        children[c.parent_id].append(c)
+    locations = [c for c in rows if c.kind.is_fixed]
+    containers_ = [c for c in rows if not c.kind.is_fixed]
     stock_lines = dict(db.session.query(InvStock.container_id, func.count(InvStock.id))
                        .filter(InvStock.quantity > 0).group_by(InvStock.container_id).all())
     unit_counts = dict(db.session.query(InvUnit.current_container_id, func.count(InvUnit.id))
@@ -41,7 +39,7 @@ def containers():
     kinds = (db.session.query(InvContainerKind).filter_by(is_active=True)
              .order_by(InvContainerKind.sort_order.asc().nulls_last()).all())
     return render_inventory_page(
-        "inventory/containers.html", roots=children[None], children=children,
+        "inventory/containers.html", locations=locations, containers=containers_,
         stock_lines=stock_lines, unit_counts=unit_counts, kinds=kinds,
         edit_id=request.args.get("edit", type=int))
 

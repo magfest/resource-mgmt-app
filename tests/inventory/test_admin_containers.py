@@ -63,3 +63,15 @@ def test_batch_create_reports_a_code_that_is_already_a_container(client, inv, mo
     assert response.status_code == 200
     assert "C-0001 is already a container" in response.get_data(as_text=True)
     assert InvContainer.query.count() == 1
+
+
+def test_containers_page_lists_locations_then_containers(client, inv):
+    shelf = make_container(inv, "C-9101", kind="LOCATION", name="Shelf A")
+    make_container(inv, "C-9102", kind="PALLET", parent=shelf)
+    db.session.commit()
+    login(client, "test:invadmin")
+    page = client.get("/inv/admin/containers").get_data(as_text=True)
+    assert "<h1>Locations and containers</h1>" in page
+    locations, containers = page.split("<h2>Containers</h2>")
+    assert "<h2>Locations</h2>" in locations and "C-9101" in locations and "C-9102" not in locations
+    assert "C-9102" in containers

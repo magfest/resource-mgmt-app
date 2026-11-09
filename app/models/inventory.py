@@ -44,6 +44,9 @@ class InvContainerKind(db.Model):
     sort_order = db.Column(db.Integer, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True,
                           server_default=db.true())
+    # A fixed spot (shelf, dock) lists as a Location; other kinds list as Containers.
+    is_fixed = db.Column(db.Boolean, nullable=False, default=False,
+                         server_default=db.false())
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (

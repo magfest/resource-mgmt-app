@@ -1,10 +1,10 @@
 {% extends "layout/base.html" %}
-{% block title %}Containers - Inventory{% endblock %}
+{% block title %}Locations and containers - Inventory{% endblock %}
 {% block content %}
-<h1>Containers</h1>
+<h1>Locations and containers</h1>
 <div class="muted mb-16">
-  Create containers here in batches, then print their labels. Use Edit to rename a container or
-  move it inside another.
+  Create locations and containers here in batches, then print their labels. Use Edit to rename one
+  or move it inside another. Kinds marked Fixed spot list as Locations.
 </div>
 <form method="post" action="{{ url_for('inventory.create_containers') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -15,7 +15,7 @@
       </select>
     </label>
     <label>How many <input type="number" name="count" value="1" min="1" max="50" style="width: 80px;"></label>
-    <label>Inside (label) <input type="text" name="parent_code" maxlength="16" placeholder="C-0001" style="width: 110px;"></label>
+    <label>Inside (location or container label) <input type="text" name="parent_code" maxlength="16" placeholder="C-0001" style="width: 110px;"></label>
     <label>Name (one only) <input type="text" name="name" maxlength="128"></label>
   </div>
   <button type="submit" class="btn btn-primary">Create</button>
@@ -24,6 +24,7 @@
 {% macro node(c) %}
   <li id="container-{{ c.id }}">
     <code>{{ c.label_code }}</code> {{ c.kind.name }}{% if c.name %}: {{ c.name }}{% endif %}
+    {% if c.parent %}<span class="muted small">inside <code>{{ c.parent.label_code }}</code></span>{% endif %}
     <span class="muted small">
       {{ stock_lines.get(c.id, 0) }} stock lines, {{ unit_counts.get(c.id, 0) }} units
     </span>
@@ -40,18 +41,18 @@
           </select>
         </label>
         <label>Name <input type="text" name="name" value="{{ c.name or '' }}" maxlength="128"></label>
-        <label>Inside (label, blank for top level)
+        <label>Inside (location or container label, blank for top level)
           <input type="text" name="parent_code" value="{{ c.parent.label_code if c.parent else '' }}" maxlength="16" style="width: 110px;">
         </label>
       </div>
       <button type="submit" class="btn btn-small">Save</button>
     </form>
     {% endif %}
-    {% if children[c.id] %}
-    <ul>{% for child in children[c.id] %}{{ node(child) }}{% endfor %}</ul>
-    {% endif %}
   </li>
 {% endmacro %}
 
-<ul>{% for c in roots %}{{ node(c) }}{% else %}<li class="muted">No containers yet.</li>{% endfor %}</ul>
+<h2>Locations</h2>
+<ul>{% for c in locations %}{{ node(c) }}{% else %}<li class="muted">None yet.</li>{% endfor %}</ul>
+<h2>Containers</h2>
+<ul>{% for c in containers %}{{ node(c) }}{% else %}<li class="muted">None yet.</li>{% endfor %}</ul>
 {% endblock %}

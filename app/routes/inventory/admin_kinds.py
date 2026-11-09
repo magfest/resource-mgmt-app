@@ -57,6 +57,7 @@ def create_kind():
         flash(f"A kind with code {code} already exists.", "error")
     else:
         db.session.add(InvContainerKind(code=code, name=name, is_active=True,
+                                        is_fixed=request.form.get("is_fixed") == "1",
                                         sort_order=sort_order))
         db.session.commit()
         flash(f"Added {name}.", "success")
@@ -81,6 +82,7 @@ def update_kind(kind_id: int):
     kind.name = name
     kind.sort_order = sort_order
     kind.is_active = request.form.get("is_active") == "1"
+    kind.is_fixed = request.form.get("is_fixed") == "1"
     db.session.commit()
     flash(f"Saved {kind.name}.", "success")
     return redirect(url_for("inventory.kinds"))

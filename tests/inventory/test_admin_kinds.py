@@ -59,3 +59,14 @@ def test_kinds_page_bounds_the_sort_inputs(client, inv):
     login(client, "test:invadmin")
     html = client.get("/inv/admin/kinds").get_data(as_text=True)
     assert html.count('min="0" max="10000"') >= 2
+
+
+def test_fixed_spot_is_set_and_cleared_on_the_kinds_page(client, inv):
+    kind = inv.kinds["PALLET"]
+    login(client, "test:invadmin")
+    page = client.get("/inv/admin/kinds").get_data(as_text=True)
+    assert "<h1>Location and container kinds</h1>" in page and "Fixed spot" in page
+    client.post(f"/inv/admin/kinds/{kind.id}", data={"name": "Pallet", "is_active": "1", "is_fixed": "1"})
+    assert db.session.get(InvContainerKind, kind.id).is_fixed is True
+    client.post(f"/inv/admin/kinds/{kind.id}", data={"name": "Pallet", "is_active": "1"})
+    assert db.session.get(InvContainerKind, kind.id).is_fixed is False
