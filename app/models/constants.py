@@ -108,9 +108,11 @@ INV_IDENT_UNIQUE_KINDS = (INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG)
 INV_DISCARD_REASONS = ("DRIED_OUT", "BROKEN", "EXPIRED", "OTHER")
 
 # A scanner station. Look up shows what a scan is. Count records quantities in
-# a container. Unit runs a per-model checklist on one unit.
+# a container. Unit runs a per-model checklist on one unit. Move places
+# containers and assets by scan and moves loose supplies between places.
 INV_STATION_LOOKUP = "LOOKUP"
 INV_STATION_COUNT = "COUNT"
+INV_STATION_MOVE = "MOVE"
 # TV_CHECK, PRINTER_CHECK and TAG stations no longer exist. Old check and
 # movement rows keep their codes, so the names stay for history display.
 INV_STATION_TV_CHECK = "TV_CHECK"
@@ -136,6 +138,7 @@ INV_STATION_NAMES = {
     INV_STATION_RECEIVE: "Receive",
     INV_STATION_TAG: "Tag",
     INV_STATION_UNIT: "Check",
+    INV_STATION_MOVE: "Move",
 }
 
 # Typed fields a gear kind defines for its units. CHOICE values come from

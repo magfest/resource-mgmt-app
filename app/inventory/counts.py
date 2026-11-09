@@ -118,19 +118,26 @@ def count_payload(count: InvCount) -> dict:
             if last.get(r.item_id) is not None:
                 line["last_counted"] = local_stamp(last[r.item_id])
             lines.append(line)
+    return {
+        "count_id": count.id, "blind": blind, "lines": lines,
+        "held": [{"item_id": r.item_id, "name": r.item.item_name,
+                  "pack_size": r.item.pack_size, "prompt": count_prompt(r.item)} for r in rows],
+        "usual": usual_items(),
+    }
+
+
+def usual_items() -> list[dict]:
+    """List Count's usual items, active and not tracked as assets, in the lead's order.
+
+    Move offers the same list, so a lead keeps one list for both stations.
+    """
     usual = (db.session.query(InvStationItem).join(InvStationItem.item)
              .options(contains_eager(InvStationItem.item))
              .filter(InvStationItem.station_code == INV_STATION_COUNT,
                      SupplyItem.is_active.is_(True), SupplyItem.is_serialized.is_(False))
              .order_by(InvStationItem.position, InvStationItem.id).all())
-    return {
-        "count_id": count.id, "blind": blind, "lines": lines,
-        "held": [{"item_id": r.item_id, "name": r.item.item_name,
-                  "pack_size": r.item.pack_size, "prompt": count_prompt(r.item)} for r in rows],
-        "usual": [{"item_id": u.item_id, "name": u.item.item_name,
-                   "pack_size": u.item.pack_size, "prompt": count_prompt(u.item)}
-                  for u in usual],
-    }
+    return [{"item_id": u.item_id, "name": u.item.item_name,
+             "pack_size": u.item.pack_size, "prompt": count_prompt(u.item)} for u in usual]
 
 
 def _whole(value, minimum=0) -> bool:
