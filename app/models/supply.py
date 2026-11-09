@@ -97,6 +97,16 @@ class SupplyItem(db.Model):
         db.ForeignKey("inv_gear_kinds.id", name="fk_supply_items_gear_kind_id"),
         nullable=True,
     )
+    # Leads reserve this item's assets for department order lines.
+    needs_pre_allocation = db.Column(db.Boolean, nullable=False, default=False,
+                                     server_default=db.false())
+    # Allocations of this item fill lines for this TechOps service; NULL fills Supply lines.
+    techops_service_type_id = db.Column(
+        db.Integer,
+        db.ForeignKey("techops_service_types.id",
+                      name="fk_supply_items_techops_service_type_id"),
+        nullable=True,
+    )
 
     unit_cost_cents = db.Column(db.Integer, nullable=True)
     qty_on_hand = db.Column(db.Integer, nullable=True)
@@ -112,6 +122,7 @@ class SupplyItem(db.Model):
 
     category = db.relationship("SupplyCategory", backref="items")
     gear_kind = db.relationship("InvGearKind")
+    techops_service_type = db.relationship("TechOpsServiceType")
 
 
 class SupplyOrderLineDetail(db.Model):

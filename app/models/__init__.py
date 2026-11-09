@@ -220,6 +220,7 @@ from .inventory import (
     InvScanRequest, InvLabelSequence,
     InvPrinter, InvPrintRoute, InvPrintJob, InvItemTotal,
     InvGearKind, InvField, InvFieldChoice, InvUnitValue, InvModelDefault, InvTagLink,
+    InvAllocation, InvAllocationEvent,
 )
 
 # Re-export telemetry models

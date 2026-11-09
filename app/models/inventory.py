@@ -919,3 +919,79 @@ class InvTagLink(db.Model):
     performed_by_user_id = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     undone_at = db.Column(db.DateTime, nullable=True)
+
+
+class InvAllocation(db.Model):
+    """An asset reserved for one department's order line.
+
+    A row exists only while the allocation is active, so the unique unit_id is
+    the rule that an asset is never allocated twice. work_line_id goes NULL when
+    the department's line is deleted; line_label then names the line.
+    """
+    __tablename__ = "inv_allocations"
+
+    id = _bigint_pk()
+    unit_id = db.Column(
+        db.Integer, db.ForeignKey("inv_units.id", name="fk_inv_allocations_unit_id"),
+        nullable=False)
+    # No backref on WorkLine: an ORM relationship there would null or delete this
+    # row itself and the database rule below would never run.
+    work_line_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_lines.id", name="fk_inv_allocations_work_line_id",
+                      ondelete="SET NULL"),
+        nullable=True, index=True)
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", name="fk_inv_allocations_event_cycle_id"),
+        nullable=False, index=True)
+    department_id = db.Column(
+        db.Integer,
+        db.ForeignKey("departments.id", name="fk_inv_allocations_department_id"),
+        nullable=False, index=True)
+    # The line's own words when the allocation was written; survives the line.
+    line_label = db.Column(db.String(255), nullable=False)
+    allocated_by_user_id = db.Column(db.String(64), nullable=True)
+    allocated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint("unit_id", name="uq_inv_allocations_unit_id"),)
+
+    unit = db.relationship("InvUnit")
+    work_line = db.relationship("WorkLine")
+    event_cycle = db.relationship("EventCycle")
+    department = db.relationship("Department")
+
+
+class InvAllocationEvent(db.Model):
+    """History of allocation changes: one append-only row per allocate, move or release.
+
+    Rows outlive the allocation and its line, so each carries its own
+    line_label and keeps work_line_id only while the line exists.
+    """
+    __tablename__ = "inv_allocation_events"
+
+    id = _bigint_pk()
+    unit_id = db.Column(
+        db.Integer, db.ForeignKey("inv_units.id", name="fk_inv_allocation_events_unit_id"),
+        nullable=False, index=True)
+    # INV_ALLOCATION_ALLOCATE, INV_ALLOCATION_MOVE or INV_ALLOCATION_RELEASE.
+    action = db.Column(db.String(16), nullable=False)
+    work_line_id = db.Column(
+        db.Integer,
+        db.ForeignKey("work_lines.id", name="fk_inv_allocation_events_work_line_id",
+                      ondelete="SET NULL"),
+        nullable=True)
+    event_cycle_id = db.Column(
+        db.Integer,
+        db.ForeignKey("event_cycles.id", name="fk_inv_allocation_events_event_cycle_id"),
+        nullable=False)
+    department_id = db.Column(
+        db.Integer,
+        db.ForeignKey("departments.id", name="fk_inv_allocation_events_department_id"),
+        nullable=False)
+    line_label = db.Column(db.String(255), nullable=False)
+    performed_by_user_id = db.Column(db.String(64), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    event_cycle = db.relationship("EventCycle")
+    department = db.relationship("Department")

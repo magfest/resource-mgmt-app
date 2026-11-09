@@ -96,6 +96,11 @@ INV_CONDITION_FOUND = "FOUND"
 INV_OWNERSHIP_OWNED = "OWNED"
 INV_OWNERSHIP_RENTED = "RENTED"
 
+# What an InvAllocationEvent row records.
+INV_ALLOCATION_ALLOCATE = "ALLOCATE"
+INV_ALLOCATION_MOVE = "MOVE"
+INV_ALLOCATION_RELEASE = "RELEASE"
+
 # FESTOPS_LABEL and MAGFEST_TAG are the kinds that must be unique among active
 # identifiers. A rental's vendor serial is a SERIAL on a unit whose ownership
 # is RENTED; serials repeat across vendors, so they are never unique.
