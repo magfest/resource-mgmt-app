@@ -875,7 +875,7 @@ def test_units_csv_headers(client, inv):
     _week_units(inv, 1)
     login(client, "test:operator")
     first = _list(client, format="csv").get_data(as_text=True).splitlines()[0]
-    assert first == ("Name,Number,Item,Model,Last checked,"
+    assert first == ("Name,Number,Item,Model number,Last checked,"
                      "Last checked at,Last seen,Condition,Where,Open flags")
 
 
@@ -1271,7 +1271,7 @@ def test_operator_edit_tab_holds_only_print_label(client, inv):
         assert action not in page
 
 
-def test_edit_form_says_inventory_item_group(client, unit):
+def test_edit_form_says_item(client, unit):
     login(client, "test:invadmin")
     page = _page(client, unit)
     assert "<label>Item" in page and "Change item" in page

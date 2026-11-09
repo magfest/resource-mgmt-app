@@ -9,13 +9,13 @@
     {value: 'EXPIRED', label: 'Expired'}, {value: 'OTHER', label: 'Other'}
   ];
   var MESSAGES = {
-    startFirst: 'Scan a location or container label to start counting.',
-    idle: 'Count: scan a location or container label to start.',
+    startFirst: 'Scan where you are counting to start.',
+    idle: 'Count: scan where you are counting to start.',
     finishFirst: 'Submit this count before starting another.',
     submitting: 'Submitting. Wait for it to finish.',
     nothingCounted: 'Count at least one item first.',
     noItems: 'No item matches that.',
-    alreadySaved: 'This count was already saved. Scan a location or container to count again.',
+    alreadySaved: 'This count was already saved. Scan where you are counting to count again.',
     cancelAsk: 'Discard this count? Nothing in it has been sent.'
   };
   var KEEPALIVE_MS = 5 * 60 * 1000;
@@ -246,7 +246,7 @@
 
     var open = count.untouched();
     if (open.length) {
-      box.appendChild(el('div', 'cnt-section', 'In this location or container (' + open.length + ')'));
+      box.appendChild(el('div', 'cnt-section', 'In here (' + open.length + ')'));
       open.forEach(function (h) { box.appendChild(openRow(h)); });
       if (count.canMatchRest()) {
         box.appendChild(button('Everything else matches', 'cnt-small', function () {

@@ -232,11 +232,11 @@
     box.appendChild(modes);
     var locText = locating ? 'Scan where it\'s going'
       : setup.location ? setup.location.code + (setup.location.name ? ' ' + setup.location.name : '')
-      : 'Skip: no place';
+      : 'Not set';
     var locExtra = null;
     if (locating || setup.location) {
-      locExtra = button(locating ? 'Cancel' : 'Clear place', 'rcv-link', function () {
-        // Cancel abandons the re-scan; only Clear place drops the one already set.
+      locExtra = button(locating ? 'Cancel' : 'Clear', 'rcv-link', function () {
+        // Cancel abandons the re-scan; only Clear drops the one already set.
         if (!locating) { setup.location = null; }
         locating = false;
         renderSetup();

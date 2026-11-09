@@ -423,7 +423,7 @@ def scan_label_new_tag():
     return jsonify(run_once(data.get("client_request_id"), create))
 
 
-START_A_COUNT = "Scan a location or container label to start counting."
+START_A_COUNT = "Scan where you are counting to start."
 FINISH_FIRST = "Submit this count before starting another."
 UNKNOWN_CODE = "Not a MAGFest number: scan the asset tag"
 

@@ -97,7 +97,7 @@ def test_number_refusal_messages(inv):
     unit = _units(inv, "TV-X-007")[0]
     assert number_refusal(unit) is None
     unit.ownership = INV_OWNERSHIP_RENTED
-    assert number_refusal(unit) == "A rented asset cannot be given a label."
+    assert number_refusal(unit) == "A rented asset cannot be given a U- number."
     unit.ownership = "OWNED"
     add_identifier(unit, INV_IDENT_MAGFEST_TAG, "FEST90007")
     assert number_refusal(unit) == "This asset already has a number."

@@ -25,7 +25,8 @@ RETIRED = re.compile(
 # reason on every entry.
 ALLOWED: set[tuple[str, str]] = set()
 
-VISIBLE_ATTRS = ("placeholder", "title", "aria-label", "alt")
+VISIBLE_ATTRS = ("placeholder", "title", "aria-label", "alt",
+                 "data-confirm", "data-retire-confirm", "data-label")
 
 
 def _sources():

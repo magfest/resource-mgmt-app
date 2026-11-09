@@ -227,7 +227,7 @@
     if (held.tagRequired) {
       box.appendChild(el('div', 'chk-step', MESSAGES.tagRequired));
     } else {
-      box.appendChild(button('Give it a label number', 'chk-big', giveNumber));
+      box.appendChild(button('Give it a U- number', 'chk-big', giveNumber));
       box.appendChild(el('div', 'chk-step', MESSAGES.orTag));
     }
     box.appendChild(button('Cancel', 'chk-small', cancelHeld));

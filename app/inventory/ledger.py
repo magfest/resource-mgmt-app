@@ -253,7 +253,7 @@ def add_identifier(unit: InvUnit, kind: str, value: str) -> InvUnitIdentifier:
     except ValueError as error:
         raise InventoryError(str(error)) from error
     if not normalized:
-        raise InventoryError("That code is blank.")
+        raise InventoryError("That number is blank.")
     if (kind in INV_IDENT_UNIQUE_KINDS or kind == INV_IDENT_VENDOR_TAG) \
             and _is_taken(unit, kind, normalized):
         raise _already_taken(normalized)

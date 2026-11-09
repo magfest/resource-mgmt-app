@@ -74,7 +74,7 @@ def number_refusal(unit: InvUnit) -> str | None:
     if unit.condition == INV_CONDITION_RETIRED:
         return "A retired asset cannot be given a number."
     if unit.ownership != INV_OWNERSHIP_OWNED:
-        return "A rented asset cannot be given a label."
+        return "A rented asset cannot be given a U- number."
     # Queried, not read from unit.identifiers, which may be loaded and stale.
     if (db.session.query(InvUnitIdentifier.id)
             .filter(InvUnitIdentifier.unit_id == unit.id,

@@ -399,7 +399,7 @@ def reprint(unit, mode, actor: Actor, client_request_id=None) -> InvPrintJob:
 def print_container(container, actor: Actor, client_request_id=None) -> InvPrintJob:
     """Queue a container label from its current name and kind. It carries no date."""
     if not can_print_code(container.label_code):
-        raise InventoryError("This code cannot be printed as a barcode.")
+        raise InventoryError("This number cannot be printed as a barcode.")
     return request_label(INV_JOB_CONTAINER, container.label_code, fields_for_container(container),
                          actor, INV_JOB_SOURCE_SCAN, container=container,
                          client_request_id=client_request_id)
@@ -410,7 +410,7 @@ def print_item(item, actor: Actor, client_request_id=None) -> InvPrintJob:
     if not item.barcode:
         raise InventoryError("This item has no barcode to print.")
     if not can_print_code(item.barcode):
-        raise InventoryError("This code cannot be printed as a barcode.")
+        raise InventoryError("This number cannot be printed as a barcode.")
     return request_label(INV_JOB_ITEM, item.barcode, fields_for_item(item), actor,
                          INV_JOB_SOURCE_SCAN, client_request_id=client_request_id)
 

@@ -89,7 +89,7 @@ def _item_card(item: SupplyItem) -> dict:
     if not item.is_active:
         lines.append("Inactive")
     if item.is_serialized:
-        lines.append("Tracked by asset; scan an asset's tag")
+        lines.append("Tracked by asset; scan its label or asset tag")
     else:
         lines.append("Counted by quantity")
         stock = (db.session.query(InvStock).filter(InvStock.item_id == item.id,

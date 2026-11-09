@@ -70,3 +70,9 @@ def test_fixed_spot_is_set_and_cleared_on_the_kinds_page(client, inv):
     assert db.session.get(InvContainerKind, kind.id).is_fixed is True
     client.post(f"/inv/admin/kinds/{kind.id}", data={"name": "Pallet", "is_active": "1"})
     assert db.session.get(InvContainerKind, kind.id).is_fixed is False
+
+
+def test_a_kind_created_with_fixed_spot_saves_it(client, inv):
+    login(client, "test:invadmin")
+    client.post("/inv/admin/kinds", data={"name": "Cage Bay", "is_fixed": "1"})
+    assert InvContainerKind.query.filter_by(code="CAGE_BAY").one().is_fixed is True

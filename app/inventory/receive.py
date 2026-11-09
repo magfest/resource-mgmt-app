@@ -52,8 +52,8 @@ def container_for_code(raw: str | None) -> InvContainer:
     """Return the active container a scanned code names, or refuse."""
     resolution = resolve(raw)
     if resolution.kind != KIND_CONTAINER:
-        raise InventoryError(f"{resolution.code or 'That'} is not a location or container. "
-                             "Scan a location or container label.")
+        raise InventoryError(f"{resolution.code or 'That'} is not somewhere to put things. "
+                             "Scan where it's going.")
     if not resolution.container.is_active:
         raise InventoryError(f"{resolution.code} is not in use.")
     return resolution.container

@@ -210,7 +210,7 @@ def units():
                                 .selectinload(InvUnitValue.field)).all()
         return csv_response(
             f"assets-{local_today():%Y-%m-%d}.csv",
-            ["Name", "Number", "Item", "Model", "Last checked",
+            ["Name", "Number", "Item", "Model number", "Last checked",
              "Last checked at", "Last seen", "Condition", "Where", "Open flags"],
             _csv_rows(_unit_rows(found)))
     total = query.count()

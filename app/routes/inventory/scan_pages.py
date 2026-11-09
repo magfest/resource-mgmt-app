@@ -30,7 +30,7 @@ def home_container_from_form() -> InvContainer | None:
         return None
     container = db.session.query(InvContainer).filter_by(label_code=code).first()
     if container is None:
-        raise InventoryError(f"No container has the label {code}.")
+        raise InventoryError(f"No location or container has the label {code}.")
     return container
 
 

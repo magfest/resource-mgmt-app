@@ -26,7 +26,7 @@
     <code>{{ c.label_code }}</code> {{ c.kind.name }}{% if c.name %}: {{ c.name }}{% endif %}
     {% if c.parent %}<span class="muted small">inside <code>{{ c.parent.label_code }}</code></span>{% endif %}
     <span class="muted small">
-      {{ stock_lines.get(c.id, 0) }} stock lines, {{ unit_counts.get(c.id, 0) }} assets
+      {{ stock_lines.get(c.id, 0) }} supplies on hand, {{ unit_counts.get(c.id, 0) }} assets
     </span>
     <a class="btn btn-small" href="{{ url_for('inventory.containers', edit=c.id) }}#container-{{ c.id }}">Edit</a>
     <a class="btn btn-small" href="{{ url_for('inventory.labels', codes=c.label_code) }}">Label</a>

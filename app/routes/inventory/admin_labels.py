@@ -148,7 +148,7 @@ def new_labels():
     prefix = request.form.get("prefix")
     count = request.form.get("count", type=int) or 0
     if prefix not in (PREFIX_CONTAINER, PREFIX_UNIT, PREFIX_ITEM) or not 1 <= count <= MAX_BATCH:
-        flash(f"Choose a label type and 1 to {MAX_BATCH} labels.", "error")
+        flash(f"Choose what the label is for and 1 to {MAX_BATCH} labels.", "error")
         return redirect(url_for("inventory.labels"))
     codes = allocate(prefix, count)
     db.session.commit()

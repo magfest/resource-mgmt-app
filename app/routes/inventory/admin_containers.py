@@ -1,4 +1,4 @@
-"""Container tree: create in batches, rename, re-kind, and move by label code."""
+"""Locations and containers lists: create in batches, rename, re-kind, and move by label code."""
 
 from flask import abort, flash, redirect, request, url_for
 from sqlalchemy import func
@@ -22,7 +22,7 @@ def _parent_from_form() -> tuple[InvContainer | None, str | None]:
         return None, None
     parent = db.session.query(InvContainer).filter_by(label_code=code).first()
     if parent is None:
-        return None, f"No container has the label {code}."
+        return None, f"No location or container has the label {code}."
     return parent, None
 
 
@@ -71,7 +71,7 @@ def create_containers():
         flash(str(exc), "error")
         return redirect(url_for("inventory.containers"))
     db.session.commit()
-    flash(f"Created {', '.join(codes)}. Their codes are filled in under Reprint.", "success")
+    flash(f"Created {', '.join(codes)}. Their numbers are filled in under Reprint.", "success")
     return redirect(url_for("inventory.labels", codes="\n".join(codes)))
 
 
