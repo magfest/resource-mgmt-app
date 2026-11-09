@@ -130,7 +130,7 @@
 {% endif %}
 
 <h2>Condition and model</h2>
-<form method="post" action="{{ url_for('inventory.unit_set_condition', unit_id=unit.id) }}" class="card mb-16" data-confirm-value="{{ retired_condition }}" data-confirm="Retire this unit? Every identifier on it stops finding it.">
+<form method="post" action="{{ url_for('inventory.unit_set_condition', unit_id=unit.id) }}" class="card mb-16" data-retire-value="{{ retired_condition }}" data-retire-confirm="Retire this unit? Every identifier on it stops finding it.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Condition
     <select name="condition">
@@ -165,12 +165,12 @@
 {% if is_inv_admin %}
 <script nonce="{{ csp_nonce }}">
   document.addEventListener('submit', function (e) {
-    var form = e.target.closest('form[data-confirm]');
+    var form = e.target.closest('form[data-retire-confirm]');
     if (!form) return;
-    var only = form.getAttribute('data-confirm-value');
+    var only = form.getAttribute('data-retire-value');
     var select = form.querySelector('select[name="condition"]');
     if (only && select && select.value !== only) return;
-    if (!window.confirm(form.getAttribute('data-confirm'))) e.preventDefault();
+    if (!window.confirm(form.getAttribute('data-retire-confirm'))) e.preventDefault();
   });
 </script>
 {% endif %}

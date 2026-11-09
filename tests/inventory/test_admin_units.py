@@ -96,6 +96,15 @@ def test_condition_needs_confirm_wording_and_retires_identifiers(client, unit):
     assert db.session.get(InvUnit, unit.id).condition == "RETIRED"
 
 
+def test_condition_form_does_not_carry_the_app_wide_confirm(client, unit):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
+    action = page.index('/condition"')
+    tag = page[page.rindex("<form", 0, action):page.index(">", action)]
+    assert "data-confirm=" not in tag
+    assert 'data-retire-confirm="Retire this unit? Every identifier on it stops finding it."' in tag
+
+
 def test_operator_prints_but_cannot_correct(client, inv, unit, printer):
     login(client, "test:operator")
     base = f"/inv/admin/units/{unit.id}"
