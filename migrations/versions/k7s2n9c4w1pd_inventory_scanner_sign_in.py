@@ -70,13 +70,18 @@ def downgrade():
             batch.drop_column("pin_locked_until")
             batch.drop_column("pin_failures")
 
-    # Shifts without a typed name cannot satisfy NOT NULL. Every table
-    # that references a shift is detached first.
-    for table in ("inv_counts", "inv_movements", "inv_checks", "inv_prep_status", "inv_flags"):
-        if "shift_id" in _columns(table):
-            bind.execute(sa.text(
-                f"UPDATE {table} SET shift_id = NULL WHERE shift_id IN "
-                "(SELECT id FROM inv_shifts WHERE person_name IS NULL)"))
+    # Shifts without a typed name cannot satisfy NOT NULL. Every table with a
+    # foreign key to inv_shifts is detached first; this accepts losing scanner
+    # attribution on those rows.
+    inspector = sa.inspect(bind)
+    for table in inspector.get_table_names():
+        for fk in inspector.get_foreign_keys(table):
+            if fk["referred_table"] != "inv_shifts":
+                continue
+            for column in fk["constrained_columns"]:
+                bind.execute(sa.text(
+                    f"UPDATE {table} SET {column} = NULL WHERE {column} IN "
+                    "(SELECT id FROM inv_shifts WHERE person_name IS NULL)"))
     bind.execute(sa.text("DELETE FROM inv_shifts WHERE person_name IS NULL"))
     with op.batch_alter_table("inv_shifts") as batch:
         batch.alter_column("person_name", existing_type=sa.String(64), nullable=False)
