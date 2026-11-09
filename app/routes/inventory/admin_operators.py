@@ -1,17 +1,25 @@
-"""Grant and revoke INVENTORY_OPERATOR without Users admin.
+"""Grant and revoke INVENTORY_OPERATOR, and show card and PIN status.
 
 Users admin requires SUPER_ADMIN. Warehouse leads sign up their own crews
-here, and this page grants nothing but INVENTORY_OPERATOR.
+here, and this page grants nothing but INVENTORY_OPERATOR. It lists everyone
+holding an inventory role with whether they have a PIN and a printed card.
+Leads print new cards; only super admins reset a PIN.
 """
-from flask import flash, redirect, request, url_for
+from flask import abort, flash, redirect, request, url_for
 from sqlalchemy import func
 
 from app import db
-from app.models import ROLE_INVENTORY_OPERATOR, User, UserRole
+from app.inventory.ledger import Actor, InventoryError
+from app.inventory.printing import local_day
+from app.inventory.shifts import end_user_shifts
+from app.inventory.sign_in import clear_pin, credentials_for, issue_card
+from app.models import ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR, User, UserRole
+from app.routes import get_user_ctx
 from app.security_audit import CATEGORY_ADMIN, EVENT_USER_MODIFY, log_security_event
 
 from . import inventory_bp
 from .helpers import render_inventory_page, require_inventory_admin
+from .my_sign_in import log_sign_in_event
 
 
 def _log(user: User, change: str) -> None:
@@ -26,11 +34,28 @@ def _log(user: User, change: str) -> None:
 @inventory_bp.get("/admin/operators")
 @require_inventory_admin
 def operators():
-    rows = (db.session.query(User)
-            .join(UserRole, UserRole.user_id == User.id)
-            .filter(UserRole.role_code == ROLE_INVENTORY_OPERATOR)
-            .order_by(User.display_name).all())
-    return render_inventory_page("inventory/operators.html", operators=rows)
+    users = (db.session.query(User)
+             .filter(User.is_active.is_(True),
+                     User.id.in_(db.session.query(UserRole.user_id).filter(
+                         UserRole.role_code.in_(
+                             [ROLE_INVENTORY_OPERATOR, ROLE_INVENTORY_ADMIN]))))
+             .order_by(User.display_name).all())
+    admin_ids = {r.user_id for r in db.session.query(UserRole).filter_by(
+        role_code=ROLE_INVENTORY_ADMIN)}
+    creds = credentials_for([u.id for u in users])
+    rows = []
+    for u in users:
+        cred = creds.get(u.id)
+        pin_at = cred.pin_set_at if cred and cred.pin_digest else None
+        card_at = cred.card_printed_at if cred and cred.card_digest else None
+        rows.append({
+            "user": u,
+            "role": "Admin" if u.id in admin_ids else "Operator",
+            "pin": f"Yes, {local_day(pin_at)}" if pin_at else "No",
+            "card": local_day(card_at) if card_at else "Never",
+        })
+    return render_inventory_page(
+        "inventory/operators.html", rows=rows, can_reset=get_user_ctx().is_super_admin)
 
 
 @inventory_bp.post("/admin/operators")
@@ -60,7 +85,43 @@ def revoke_operator(user_id: str):
         deleted = db.session.query(UserRole).filter_by(
             user_id=user.id, role_code=ROLE_INVENTORY_OPERATOR).delete()
         if deleted:
+            end_user_shifts(user.id)
             _log(user, "revoked")
             db.session.commit()
             flash(f"Removed Operator from {user.display_name}.", "success")
+    return redirect(url_for("inventory.operators"))
+
+
+@inventory_bp.post("/admin/operators/<user_id>/card")
+@require_inventory_admin
+def operator_new_card(user_id: str):
+    user = db.session.get(User, user_id)
+    if user is None:
+        abort(404)
+    try:
+        job = issue_card(user, Actor(user_id=get_user_ctx().user_id))
+    except InventoryError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return redirect(url_for("inventory.operators"))
+    log_sign_in_event(user, "card_printed")
+    db.session.commit()
+    flash(f"{user.display_name}'s card is printing on {job.printer.name}.", "success")
+    return redirect(url_for("inventory.operators"))
+
+
+@inventory_bp.post("/admin/operators/<user_id>/reset-pin")
+@require_inventory_admin
+def operator_reset_pin(user_id: str):
+    if not get_user_ctx().is_super_admin:
+        abort(403)
+    user = db.session.get(User, user_id)
+    if user is None:
+        abort(404)
+    clear_pin(user.id)
+    end_user_shifts(user.id)
+    log_sign_in_event(user, "pin_reset")
+    db.session.commit()
+    flash(f"{user.display_name}'s PIN is reset. "
+          "They can get a new one on My scanner sign-in.", "success")
     return redirect(url_for("inventory.operators"))

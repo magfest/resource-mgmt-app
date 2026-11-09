@@ -3,31 +3,48 @@
 {% block content %}
 <h1>Scanner operators</h1>
 <div class="muted mb-16">
-  Operators use the scanner under their own name. Volunteers on shared
-  scanners pick their name at the start of a shift and need no account.
+  Operators use the scanner under their own name. On a shared scanner they
+  sign in by scanning a printed card or typing a 6-digit PIN. Each person gets
+  their own PIN and card on My scanner sign-in.
 </div>
 <form method="post" action="{{ url_for('inventory.grant_operator') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Email <input type="email" name="email" required maxlength="256"></label>
   <button type="submit" class="btn btn-primary">Add operator</button>
 </form>
+<div style="overflow-x: auto;">
 <table>
-  <thead><tr><th>Name</th><th>Email</th><th style="width: 100px;"></th></tr></thead>
+  <thead><tr><th>Name</th><th>Role</th><th>Has a PIN</th><th>Card printed</th><th></th></tr></thead>
   <tbody>
-  {% for u in operators %}
+  {% for r in rows %}
     <tr>
-      <td>{{ u.display_name }}</td>
-      <td class="muted">{{ u.email }}</td>
-      <td>
-        <form method="post" action="{{ url_for('inventory.revoke_operator', user_id=u.id) }}">
+      <td>{{ r.user.display_name }}<div class="muted">{{ r.user.email }}</div></td>
+      <td>{{ r.role }}</td>
+      <td>{{ r.pin }}</td>
+      <td>{{ r.card }}</td>
+      <td style="white-space: nowrap;">
+        <form method="post" action="{{ url_for('inventory.operator_new_card', user_id=r.user.id) }}" style="display: inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Print new card</button>
+        </form>
+        {% if can_reset %}
+        <form method="post" action="{{ url_for('inventory.operator_reset_pin', user_id=r.user.id) }}" style="display: inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Reset PIN</button>
+        </form>
+        {% endif %}
+        {% if r.role == 'Operator' %}
+        <form method="post" action="{{ url_for('inventory.revoke_operator', user_id=r.user.id) }}" style="display: inline;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-small">Remove</button>
         </form>
+        {% endif %}
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="3" class="muted">No operators yet.</td></tr>
+    <tr><td colspan="5" class="muted">No operators yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}
