@@ -1,0 +1,49 @@
+{% extends "layout/base.html" %}
+{% block title %}Deployment report - Inventory{% endblock %}
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .scroll-x { overflow-x: auto; max-width: 100%; margin-bottom: 16px; }
+  .deploy-form label { display: block; margin-bottom: 8px; }
+  .deploy-form select { max-width: 100%; }
+  .deploy-table td, .deploy-table th { vertical-align: top; padding: 4px 8px; text-align: left; }
+</style>
+<h1>Deployment report</h1>
+{% if not events %}
+<p class="muted">No event has submitted requests or allocations yet.</p>
+{% else %}
+<form method="get" class="card mb-16 deploy-form">
+  <label>Event
+    <select name="event">
+      {% for e in events %}<option value="{{ e.id }}"{% if e.id == event.id %} selected{% endif %}>{{ e.code }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Group by
+    <select name="group">
+      {% for key, label in group_names.items() %}<option value="{{ key }}"{% if key == group %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Show</button>
+</form>
+<p><a href="{{ url_for('inventory.deployment_csv', event=event.id, group=group) }}">Download CSV</a></p>
+{% for name, rows in groups %}
+<h2>{{ name }}</h2>
+<div class="scroll-x">
+  <table class="deploy-table">
+    <thead><tr><th>Department</th><th>Room</th><th>Item or service</th><th>Request</th><th>Line</th><th>What they asked for</th><th>Requested</th><th>Approved</th><th>Allocated</th><th>Short</th><th>Assets</th><th>Warnings</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.department }}</td><td>{{ r.room }}</td><td>{{ r.what }}</td><td>{{ r.public_id }}</td><td>{{ r.line_number }}</td><td>{{ r.words }}</td>
+      <td>{{ r.requested }}</td><td>{{ r.approved }}</td><td>{{ r.allocated }}</td>
+      <td>{% if r.short %}{{ r.short }} short{% endif %}</td>
+      <td>{{ r.assets|join('; ') }}</td><td>{{ r.warnings|join('; ') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="muted">No department lines for {{ event.code }}.</p>
+{% endfor %}
+{% endif %}
+{% endblock %}
