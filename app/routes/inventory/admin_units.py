@@ -18,7 +18,6 @@ from app.inventory.ledger import (
     INV_CONDITIONS, NUMBER_KINDS, InventoryError, add_identifier, replace_number,
     retire_identifier, set_condition,
 )
-from app.inventory.cards import default_event
 from app.inventory.csv_export import csv_response
 from app.inventory.notes import NOTE_TYPE_WORDS, SOURCE_WORDS, add_note, unit_notes
 from app.inventory.names import name_key, set_unit_name
@@ -44,9 +43,10 @@ from app.inventory.history import CONDITION_WORDS
 from app.inventory.people import actor_name, names_for
 from app.inventory.history import unit_history
 from app.inventory.unit_about import (
-    added_line, check_line, detail_rows, find_by_rows, open_flag_count, owner_line, placed_line, where_sentence,
+    added_line, check_line, detail_rows, find_by_rows, owner_line, placed_line, where_sentence,
 )
 from app.models.constants import (
+    INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
     INV_CONDITION_RETIRED, INV_FIELD_BOOL, INV_FIELD_CHOICE, INV_FIELD_NUMBER,
     INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
     INV_IDENT_VENDOR_TAG,
@@ -59,8 +59,8 @@ from .helpers import (
 )
 
 SEARCH_LIMIT = 50
-CONDITION_PILLS = {"IN_SERVICE": "pill-approved", "REPAIR": "pill-warning",
-                   "LOST": "pill-rejected", "RETIRED": "pill-draft"}
+CONDITION_PILLS = {INV_CONDITION_IN_SERVICE: "pill-approved", INV_CONDITION_REPAIR: "pill-warning",
+                   INV_CONDITION_LOST: "pill-rejected", INV_CONDITION_RETIRED: "pill-draft"}
 IDENTIFIER_KINDS = ((INV_IDENT_MAGFEST_TAG, "MAGFest tag"), (INV_IDENT_FESTOPS_LABEL, "FestOps label"),
                     (INV_IDENT_VENDOR_TAG, "Vendor tag"), (INV_IDENT_SERIAL, "Serial"),
                     (INV_IDENT_MAC, "MAC address"))

@@ -8,7 +8,7 @@ from app.inventory.people import actor_name, names_for
 from app.inventory.printing import local_when
 from app.inventory.tree import place_name, top_of, unplaced_text
 from app.inventory.unit_fields import unit_field_rows
-from app.models import InvFlag, InvMovement
+from app.models import InvMovement
 from app.models.constants import (
     INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
     INV_IDENT_VENDOR_TAG, INV_OWNERSHIP_RENTED,
@@ -69,11 +69,6 @@ def added_line(unit) -> str:
     names = names_for([movement.performed_by_user_id])
     who = actor_name(movement.performed_by_user_id, movement.shift, names)
     return f"Added {local_when(movement.created_at)} by {who}"
-
-
-def open_flag_count(unit) -> int:
-    return (db.session.query(InvFlag)
-            .filter(InvFlag.unit_id == unit.id, InvFlag.resolved_at.is_(None)).count())
 
 
 def _identifier_word(kind: str, value: str) -> str:
