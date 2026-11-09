@@ -43,7 +43,7 @@ from app.inventory.history import CONDITION_WORDS
 from app.inventory.people import actor_name, names_for
 from app.inventory.history import unit_history
 from app.inventory.unit_about import (
-    added_line, check_line, detail_rows, find_by_rows, owner_line, placed_line, where_sentence,
+    added_line, check_line, detail_rows, find_by_rows, placed_line, where_sentence,
 )
 from app.models.constants import (
     INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
@@ -287,11 +287,15 @@ def unit_page(unit_id: int):
     history = [{"stamp": local_when(line.at), "who": line.who, "text": line.text, "note": line.note}
                for line in unit_history(unit)]
     kind = unit.item.gear_kind
-    subline = " \u00b7 ".join(part for part in (unit.item.item_name, kind.name if kind else "",
+    kind_name = kind.name if kind else ""
+    # A Supply item that holds one kind of gear often shares its gear type's name.
+    if kind_name.strip().casefold() == unit.item.item_name.strip().casefold():
+        kind_name = ""
+    subline = " \u00b7 ".join(part for part in (unit.item.item_name, kind_name,
                                                details_line(unit)) if part)
     seen = last_seen_dates([unit.id]).get(unit.id)
     context.update(
-        subline=subline, check=check_line(unit), owner=owner_line(unit),
+        subline=subline, check=check_line(unit),
         added=added_line(unit), last_seen=local_day(seen) if seen else None,
         open_flags=len(open_rows),
         where=where_sentence(unit), placed=placed_line(unit),

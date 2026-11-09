@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app import db
+from app.inventory.checks import active_check_items
 from app.inventory.describe import TAG_ORDER
 from app.inventory.last_check import check_word, latest_check_rows
 from app.inventory.people import actor_name, names_for
@@ -54,10 +55,13 @@ def check_line(unit) -> dict:
     return {"word": word, "text": f"checked {local_when(prep.created_at)} by {who}"}
 
 
-def owner_line(unit) -> str:
-    if unit.ownership == INV_OWNERSHIP_RENTED:
-        return f"Rented from {unit.vendor_name}" if unit.vendor_name else "Rented"
-    return "Owned by FestOps"
+def _owner_rows(unit) -> list[tuple[str, str]]:
+    if unit.ownership != INV_OWNERSHIP_RENTED:
+        return [("Owned by", "FestOps")]
+    rows = [("Rented from", unit.vendor_name or "Vendor not recorded")]
+    if unit.rental_reference:
+        rows.append(("Rental reference", unit.rental_reference))
+    return rows
 
 
 def added_line(unit) -> str:
@@ -95,4 +99,19 @@ def find_by_rows(unit) -> list[tuple[str, str]]:
 
 
 def detail_rows(unit) -> list[tuple[str, str]]:
-    return [(field.name, text) for field, text in unit_field_rows(unit) if text]
+    """The item settings that decide how this unit behaves, then its own field values.
+
+    The settings come from its Supply item: the gear type picks its fields, the
+    asset-tag rule and checklist decide what the Unit station asks. Ownership
+    decides whether it is counted on home.
+    """
+    item = unit.item
+    lines = len(active_check_items(item))
+    check = (f"{lines} checklist line{'' if lines == 1 else 's'}" if lines
+             else "Works or Broken")
+    rows = [("Inventory item group", item.item_name),
+            ("Gear type", item.gear_kind.name if item.gear_kind else "Not set"),
+            ("Needs an asset tag", "Yes" if item.needs_asset_tag else "No"),
+            ("Check", check)]
+    rows += _owner_rows(unit)
+    return rows + [(field.name, text) for field, text in unit_field_rows(unit) if text]

@@ -1184,6 +1184,26 @@ def test_unit_page_header_has_name_pill_and_number(client, inv):
     assert "U-7001" not in head and "U-7001" in page[page.index("</h1>"):page.index('class="request-tab-nav"')]
 
 
+def _subline(page):
+    head = page[page.index("</h1>"):page.index('class="request-tab-nav"')]
+    start = head.index('<div class="muted"')
+    return head[head.index(">", start) + 1:head.index("</div>", start)]
+
+
+def test_header_line_skips_a_gear_type_named_like_its_item(client, inv):
+    from tests.inventory.helpers import seed_gear_kind
+    inv.laptop.gear_kind_id = seed_gear_kind("LAPTOP", "laptop", []).id
+    db.session.commit()
+    login(client, "test:operator")
+    assert _subline(_page(client, _named_unit(inv))) == "Laptop"
+
+
+def test_header_line_keeps_a_gear_type_with_its_own_name(client, inv):
+    _tv_kind(inv)
+    login(client, "test:operator")
+    assert _subline(_page(client, _named_unit(inv))) == "Laptop · TV"
+
+
 def test_unit_page_has_four_tabs_and_opens_on_about(client, unit):
     login(client, "test:invadmin")
     page = _page(client, unit)

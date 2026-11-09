@@ -5,7 +5,9 @@ from app import db
 from app.inventory.ledger import (
     Actor, add_identifier, add_unit, create_container, move_unit, retire_identifier,
 )
-from app.inventory.unit_about import added_line, check_line, find_by_rows, owner_line, placed_line, where_sentence
+from app.inventory.unit_about import (
+    added_line, check_line, detail_rows, find_by_rows, placed_line, where_sentence,
+)
 
 ACTOR = Actor(user_id="test:invadmin")
 
@@ -49,13 +51,39 @@ def test_check_line_never_checked(inv):
     assert check_line(_unit(inv)) == {"word": None, "text": "Never"}
 
 
-def test_owner_line_rented(inv):
+def test_detail_rows_start_with_the_settings_that_drive_the_unit(inv):
     unit = _unit(inv)
-    assert owner_line(unit) == "Owned by FestOps"
+    assert detail_rows(unit) == [
+        ("Inventory item group", "Laptop"), ("Gear type", "Not set"),
+        ("Needs an asset tag", "No"), ("Check", "Works or Broken"), ("Owned by", "FestOps")]
+
+
+def test_detail_rows_name_the_gear_type_checklist_and_tag_rule(inv):
+    from app.models import InvCheckItem
+    from tests.inventory.helpers import seed_gear_kind
+    inv.laptop.gear_kind_id = seed_gear_kind("LAPTOP", "Laptop", [("MODEL", "Model", "TEXT", None)]).id
+    inv.laptop.needs_asset_tag = True
+    db.session.add_all([InvCheckItem(item_id=inv.laptop.id, position=1, prompt="Powers on?",
+                                     missing_means="FAIL"),
+                        InvCheckItem(item_id=inv.laptop.id, position=2, prompt="Charger?",
+                                     missing_means="NOTE"),
+                        InvCheckItem(item_id=inv.laptop.id, position=3, prompt="Old line",
+                                     missing_means="FAIL", is_active=False)])
+    db.session.commit()
+    rows = dict(detail_rows(_unit(inv)))
+    assert rows["Gear type"] == "Laptop"
+    assert rows["Needs an asset tag"] == "Yes"
+    assert rows["Check"] == "2 checklist lines"
+
+
+def test_detail_rows_for_a_rental(inv):
+    unit = _unit(inv)
     unit.ownership = "RENTED"
-    assert owner_line(unit) == "Rented"
+    assert detail_rows(unit)[-1] == ("Rented from", "Vendor not recorded")
     unit.vendor_name = "Invented AV Co"
-    assert owner_line(unit) == "Rented from Invented AV Co"
+    unit.rental_reference = "ORD-0001"
+    assert detail_rows(unit)[-2:] == [("Rented from", "Invented AV Co"),
+                                      ("Rental reference", "ORD-0001")]
 
 
 def test_added_line_uses_the_oldest_movement(inv, places):

@@ -65,7 +65,6 @@
 {% if tab == 'about' %}
 <h2>Last checked</h2>
 <div>{% if check.word == 'WORKS' %}<span class="works">Works</span> &middot; {% elif check.word == 'BROKEN' %}<span class="broken">Broken</span> &middot; {% endif %}{{ check.text }}</div>
-<div>{{ owner }}</div>
 
 <h2 id="where">Where it is</h2>
 <div>{{ where }}</div>
@@ -82,9 +81,7 @@
 {% else %}<div class="muted">No codes yet.</div>{% endif %}
 
 <h2 id="details">Details</h2>
-{% if details %}
 <table class="pair">{% for label, value in details %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
-{% else %}<div class="muted">No details recorded.</div>{% endif %}
 
 {% if open_rows %}
 <h2 id="flags">Open flags</h2>
