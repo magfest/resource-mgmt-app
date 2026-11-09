@@ -47,7 +47,7 @@ def test_a_second_unit_cannot_take_a_name_in_another_case(inv):
     assert set_unit_name(a, "MAG-PNTR-007") is True
     with pytest.raises(InventoryError) as error:
         set_unit_name(b, "mag-pntr-007 ")
-    assert str(error.value) == "MAG-PNTR-007 is already the name of another unit."
+    assert str(error.value) == "MAG-PNTR-007 is already the name of another asset."
     assert set_unit_name(a, " MAG-PNTR-007") is False
 
 

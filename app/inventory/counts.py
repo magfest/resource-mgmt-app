@@ -27,7 +27,7 @@ from app.models.constants import (
     INV_DISCARD_REASONS, INV_STATION_COUNT,
 )
 
-SERIALIZED_REFUSAL = "Count units at their own station."
+SERIALIZED_REFUSAL = "Count assets at their own station."
 ALREADY_FINISHED = "This count is already finished."
 NOTHING_COUNTED = "Count at least one item first."
 TOO_LARGE = "That number is too large."

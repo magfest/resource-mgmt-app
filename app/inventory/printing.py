@@ -299,8 +299,8 @@ REPRINT_ORIGINAL_DATE = "ORIGINAL_DATE"
 REPRINT_TODAY = "TODAY"
 REPRINT_CURRENT_DETAILS = "CURRENT_DETAILS"
 REPRINT_MODES = (REPRINT_ORIGINAL_DATE, REPRINT_TODAY, REPRINT_CURRENT_DETAILS)
-NUMBER_CHANGED = "The number on this unit changed. Print its current details."
-NO_HISTORY = "This unit has no earlier label. Print its current details."
+NUMBER_CHANGED = "The number on this asset changed. Print its current details."
+NO_HISTORY = "This asset has no earlier label. Print its current details."
 
 
 def _unit_jobs(unit=None, container=None):
@@ -373,10 +373,10 @@ def reprint(unit, mode, actor: Actor, client_request_id=None) -> InvPrintJob:
     if mode not in REPRINT_MODES:
         raise InventoryError("Pick how to print the label.")
     if unit is None or unit.condition == INV_CONDITION_RETIRED:
-        raise InventoryError("That unit is not in use, so it has no label to print.")
+        raise InventoryError("That asset is not in use, so it has no label to print.")
     number = unit_number(unit)
     if number is None:
-        raise InventoryError("This unit has no number to print.")
+        raise InventoryError("This asset has no number to print.")
     if mode == REPRINT_CURRENT_DETAILS:
         fields, code, printed = fields_for_unit(unit), number, local_today()
     else:

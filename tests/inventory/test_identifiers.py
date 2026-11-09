@@ -41,7 +41,7 @@ def test_unit_from_a_tag_alone_and_tag_reuse_refused(inv):
     bin_ = make_container(inv, "C-0001", kind="BIN")
     unit = add_unit(inv.laptop, bin_, ACTOR, [("MAGFEST_TAG", "tech00001")])
     assert unit_tag(unit) == "TECH00001"
-    with pytest.raises(InventoryError, match="already on another unit"):
+    with pytest.raises(InventoryError, match="already on another asset"):
         add_unit(inv.laptop, bin_, ACTOR, [("MAGFEST_TAG", "TECH00001")])
     with pytest.raises(InventoryError, match="at least one"):
         add_unit(inv.laptop, bin_, ACTOR, [])
@@ -94,7 +94,7 @@ def test_vendor_tag_is_unique_per_vendor_only(inv):
     db.session.flush()
     add_identifier(first, "VENDOR_TAG", "v-1")
     add_identifier(third, "VENDOR_TAG", "v-1")
-    with pytest.raises(InventoryError, match="V-1 is already on another unit"):
+    with pytest.raises(InventoryError, match="V-1 is already on another asset"):
         add_identifier(second, "VENDOR_TAG", "v-1")
 
 
@@ -124,7 +124,7 @@ def test_other_conditions_keep_identifiers_and_unknown_is_refused(inv):
 def test_refused_unit_leaves_nothing_behind(inv):
     add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
     db.session.commit()
-    with pytest.raises(InventoryError, match="already on another unit"):
+    with pytest.raises(InventoryError, match="already on another asset"):
         add_unit(inv.laptop, None, ACTOR, [("SERIAL", "x"), ("MAGFEST_TAG", "net1")])
     # SQLite has no savepoint here; the caller's rollback removes the half-built unit.
     db.session.rollback()
@@ -136,7 +136,7 @@ def test_losing_the_uniqueness_race_is_an_inventory_error(inv, monkeypatch):
     add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
     db.session.commit()
     monkeypatch.setattr(ledger, "_is_taken", lambda *args: False)
-    with pytest.raises(InventoryError, match="NET1 is already on another unit"):
+    with pytest.raises(InventoryError, match="NET1 is already on another asset"):
         add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net1")])
     # SQLite has no savepoint here, so the caller rolls back, as a route does.
     db.session.rollback()
@@ -153,7 +153,7 @@ def test_rollback_after_the_first_write_removes_the_unit(inv):
     assert InvUnit.query.count() == 0
 
 
-NUMBER_REFUSAL = "This unit already has a number. Replace it on the Units page."
+NUMBER_REFUSAL = "This asset already has a number. Replace it on the Assets page."
 
 
 def _active(unit):
@@ -201,14 +201,14 @@ def test_replacing_a_number_with_itself_changes_nothing(inv):
 def test_a_number_held_elsewhere_is_refused_and_the_unit_keeps_its_own(inv):
     add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "FEST00001")])
     unit = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "U-00002")])
-    with pytest.raises(InventoryError, match="FEST00001 is already on another unit"):
+    with pytest.raises(InventoryError, match="FEST00001 is already on another asset"):
         replace_number(unit, "MAGFEST_TAG", "FEST00001", ACTOR)
     assert _active(unit) == [("FESTOPS_LABEL", "U-00002")]
 
 
 def test_replace_number_refuses_a_kind_that_is_not_a_number(inv):
     unit = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "FEST00001")])
-    with pytest.raises(InventoryError, match="not a unit number"):
+    with pytest.raises(InventoryError, match="not an asset number"):
         replace_number(unit, "SERIAL", "sn-9", ACTOR)
     assert _active(unit) == [("MAGFEST_TAG", "FEST00001")]
 

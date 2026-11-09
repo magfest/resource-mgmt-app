@@ -106,7 +106,7 @@ def _require_positive(quantity: int) -> None:
 def _require_counted(item: SupplyItem) -> None:
     if item.is_serialized:
         raise InventoryError(
-            f"{item.item_name} is serialized; scan each unit's label instead.")
+            f"{item.item_name} is serialized; scan each asset's label instead.")
 
 
 def stock_quantity(item: SupplyItem, container: InvContainer) -> int:
@@ -214,7 +214,7 @@ def reverse_movement(movement: InvMovement, actor: Actor) -> InvMovement:
 
 
 def _already_taken(normalized: str) -> InventoryError:
-    return InventoryError(f"{normalized} is already on another unit.")
+    return InventoryError(f"{normalized} is already on another asset.")
 
 
 def _is_taken(unit: InvUnit, kind: str, normalized: str) -> bool:
@@ -247,7 +247,7 @@ def add_identifier(unit: InvUnit, kind: str, value: str) -> InvUnitIdentifier:
     if kind in NUMBER_KINDS and unit.ownership == INV_OWNERSHIP_OWNED:
         if _active_numbers(unit):
             raise InventoryError(
-                "This unit already has a number. Replace it on the Units page.")
+                "This asset already has a number. Replace it on the Assets page.")
     try:
         normalized = normalize_identifier(kind, value or "")
     except ValueError as error:
@@ -287,7 +287,7 @@ def replace_number(unit: InvUnit, kind: str, value: str, actor: Actor) -> InvUni
     another active unit is refused before anything is retired.
     """
     if kind not in NUMBER_KINDS:
-        raise InventoryError(f"{kind} is not a unit number.")
+        raise InventoryError(f"{kind} is not an asset number.")
     try:
         normalized = normalize_identifier(kind, value or "")
     except ValueError as error:
@@ -320,7 +320,7 @@ def set_condition(unit: InvUnit, condition: str) -> None:
                           InvUnit.condition != INV_CONDITION_RETIRED).first())
         if holder is not None:
             raise InventoryError(
-                f"{holder.name} is already the name of another unit. Rename one first.")
+                f"{holder.name} is already the name of another asset. Rename one first.")
     unit.condition = condition
     if condition == INV_CONDITION_RETIRED:
         for identifier in unit.identifiers:
@@ -348,7 +348,7 @@ def add_unit(item, container, actor, identifiers: list[tuple[str, str]],
         raise InventoryError(
             f"{item.item_name} is counted stock; scan the item and enter a quantity.")
     if not identifiers and not (name or "").strip():
-        raise InventoryError("A unit needs a name or at least one identifier.")
+        raise InventoryError("An asset needs a name or at least one number.")
     container_id = container.id if container else None
     with savepoint():
         unit = InvUnit(item_id=item.id, current_container_id=container_id,
@@ -369,7 +369,7 @@ def move_unit(unit, destination, actor, action=INV_ACTION_MOVE, count_id=None) -
     (db.session.query(InvUnit).filter_by(id=unit.id)
      .with_for_update().populate_existing().one())
     if unit.current_container_id == destination.id:
-        raise InventoryError(f"That unit is already in {destination.label_code}.")
+        raise InventoryError(f"That asset is already in {destination.label_code}.")
     source_id = unit.current_container_id
     unit.current_container_id = destination.id
     return _movement(action, actor, item_id=unit.item_id, unit_id=unit.id,

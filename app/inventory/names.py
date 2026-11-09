@@ -38,7 +38,7 @@ def set_unit_name(unit: InvUnit, raw: str | None) -> bool:
             query = query.filter(InvUnit.id != unit.id)
         holder = query.first()
         if holder is not None:
-            raise InventoryError(f"{holder.name} is already the name of another unit.")
+            raise InventoryError(f"{holder.name} is already the name of another asset.")
     unit.name = name
     unit.name_key = key
     return True

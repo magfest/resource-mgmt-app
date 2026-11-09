@@ -177,7 +177,7 @@ def _reactivation_refusal(unit: InvUnit, identifiers: list[InvUnitIdentifier]) -
                               InvUnit.condition != INV_CONDITION_RETIRED,
                               InvUnit.id != unit.id).first())
             if holder is not None:
-                return f"{identifier.value} is now on another unit; nothing was undone."
+                return f"{identifier.value} is now on another asset; nothing was undone."
         unique = identifier.kind in INV_IDENT_UNIQUE_KINDS or identifier.kind == INV_IDENT_VENDOR_TAG
         if unique and _is_taken(unit, identifier.kind, identifier.normalized_value):
             return CHANGED
@@ -213,7 +213,7 @@ def _stays_text(check: InvCheck, unit: InvUnit, actor: Actor) -> str:
         if earlier is not None:
             bound = None
         if created is not None:
-            parts.append("The new unit stays.")
+            parts.append("The new asset stays.")
         elif bound is not None:
             parts.append("The label stays on it.")
     return " ".join(parts)
@@ -224,7 +224,7 @@ def _undo_check(check: InvCheck, actor: Actor) -> dict:
             .with_for_update().populate_existing().one())
     prep = latest_check_rows([unit.id]).get(unit.id)
     if prep is not None and prep.check_id != check.id:
-        raise InventoryError("A newer check of this unit exists.")
+        raise InventoryError("A newer check of this asset exists.")
     own_prep = prep is not None and prep.check_id == check.id \
         and prep.status in (INV_PREP_CHECKED, INV_PREP_FAILED_CHECK)
     if not own_prep or check.previous_condition is None:

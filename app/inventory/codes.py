@@ -42,4 +42,4 @@ def normalize_identifier(kind: str, raw: str) -> str:
     if kind in (INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG,
                 INV_IDENT_VENDOR_TAG, INV_IDENT_SERIAL):
         return normalize_code(raw)
-    raise ValueError(f"{kind} is not an identifier kind.")
+    raise ValueError(f"{kind} is not a kind of number.")

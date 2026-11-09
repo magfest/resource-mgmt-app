@@ -314,7 +314,7 @@ def test_find_resolves_items_and_refuses_units_and_serialized(client, ct):
         {"id": ct.pens.id, "name": "Blue Pen", "pack_size": None,
          "prompt": "How many Blue Pen? Count each one."}]
     bad = client.post(FIND, json={"code": "999"}).get_json()
-    assert bad["ok"] is False and bad["message"] == "Count units at their own station."
+    assert bad["ok"] is False and bad["message"] == "Count assets at their own station."
     assert client.post(FIND, json={"code": "nope"}).get_json()["ok"] is False
     found = client.post(FIND, json={"q": "pen"}).get_json()
     assert [i["name"] for i in found["items"]] == ["Blue Pen"]

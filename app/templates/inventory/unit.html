@@ -188,13 +188,13 @@
     <label>Number <input type="text" name="value" required maxlength="128"></label>
   </div>
   <button type="submit" class="btn btn-small">Add</button>
-  <div class="muted">An asset tag or label replaces the asset's current number. To change a serial, add the new one, then retire the old one.</div>
+  <div class="muted">A new asset tag or U- number replaces the asset's current number. To change a serial, add the new one, then retire the old one.</div>
 </form>
 {% if can_give_number %}
 <form method="post" action="{{ url_for('inventory.unit_give_number', unit_id=unit.id) }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <button type="submit" class="btn btn-small">Give this asset a U- number and print</button>
-  <div class="muted">This asset has no asset tag or label to scan.</div>
+  <div class="muted">This asset has no number to scan.</div>
 </form>
 {% endif %}
 

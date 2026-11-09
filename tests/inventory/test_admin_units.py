@@ -447,7 +447,7 @@ def test_un_retiring_into_a_held_name_is_refused(client, inv, unit):
     resp = client.post(f"{base}/condition", data={"condition": "IN_SERVICE"},
                        follow_redirects=True)
     assert resp.status_code == 200
-    assert ("MAG-PNTR-007 is already the name of another unit. Rename one first."
+    assert ("MAG-PNTR-007 is already the name of another asset. Rename one first."
             in resp.get_data(as_text=True))
     db.session.expire_all()
     assert db.session.get(InvUnit, unit.id).condition == "RETIRED"

@@ -518,7 +518,7 @@ def test_undo_is_refused_when_another_unit_holds_the_serial_or_mac(
     db.session.commit()
     with pytest.raises(InventoryError) as refused:
         undo_last(shift, now=_later(check, 5))
-    assert str(refused.value) == f"{value} is now on another unit; nothing was undone."
+    assert str(refused.value) == f"{value} is now on another asset; nothing was undone."
     db.session.rollback()
     db.session.refresh(t.tv)
     assert t.tv.condition == "RETIRED" and InvCheck.query.get(check.id).status == "FAILED"
@@ -570,7 +570,7 @@ def test_undo_refuses_when_a_newer_check_exists(inv, tv_checklist, event, shift)
     db.session.commit()
     with pytest.raises(InventoryError) as refused:
         undo_last(shift, now=_later(first, 5))
-    assert str(refused.value) == "A newer check of this unit exists."
+    assert str(refused.value) == "A newer check of this asset exists."
 
 
 def test_undoing_the_only_check_leaves_the_unit_unchecked(inv, tv_checklist, event, shift):
