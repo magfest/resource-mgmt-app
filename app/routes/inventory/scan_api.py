@@ -36,7 +36,7 @@ from app.inventory.resolver import (
 )
 from app.inventory.zpl import can_print_code
 from app.inventory.people import shift_person
-from app.inventory.shifts import current_shift, end_shift, start_shift, touch
+from app.inventory.shifts import current_shift, end_shift, lock_device, start_shift, touch
 from app.inventory.sign_in import (
     can_sign_in, clear_pin_failures, keypad_locked, record_pin_failure, user_for_card,
     user_for_pin,
@@ -152,6 +152,9 @@ def scan_sign_in():
     # The idle close runs before the switch prompt; an idle scanner never asks to switch.
     current = current_shift(device)
     if _given(pin):
+        # Serialize keypad failure counting per device: lock, then re-read the count.
+        lock_device(device)
+        db.session.refresh(device)
         if keypad_locked(device):
             return jsonify(ok=False, locked=True,
                            message="Too many wrong PINs. Scan your card, or wait 5 minutes.")
@@ -592,14 +595,16 @@ def _line_in(raw) -> CountLineIn:
 def _own_count(count_id) -> InvCount:
     """The open count, only for the device or user that started it.
 
-    The row is locked so two submits with different request ids apply one after the other.
+    A scanner count also stores its shift's user, so a browser session owns only
+    counts started outside any device. The row is locked so two submits with
+    different request ids apply one after the other.
     """
     count = (db.session.query(InvCount).filter_by(id=count_id).with_for_update()
              .populate_existing().first()) if type(count_id) is int else None
     principal = g.scan_principal
     mine = count is not None and (
         count.device_id == principal.device.id if principal.is_device
-        else count.user_id == principal.user_id)
+        else count.user_id == principal.user_id and count.device_id is None)
     if not mine:
         raise InventoryError("That count is not open on this scanner. Start it again.")
     return count

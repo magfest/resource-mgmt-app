@@ -382,6 +382,20 @@ def test_another_device_cannot_submit_this_count(client, ct):
     assert answer["ok"] is False
 
 
+def test_the_same_user_in_a_browser_cannot_submit_a_scanner_count(app, client, ct):
+    from tests.inventory.helpers import login
+    make_container(ct, "C-0001", kind="BIN")
+    db.session.commit()
+    count_id = _start(client, "C-0001")["count_id"]
+    assert db.session.get(InvCount, count_id).user_id == "test:operator"
+    browser = app.test_client()
+    login(browser, "test:operator")
+    answer = _submit(browser, count_id, [{"item_id": ct.pens.id, "kept": 1}])
+    assert answer == {"ok": False,
+                      "message": "That count is not open on this scanner. Start it again."}
+    assert db.session.get(InvCount, count_id).submitted_at is None
+
+
 def test_submit_needs_a_name_first(client, inv):
     make_container(inv, "C-0001", kind="BIN")
     db.session.commit()

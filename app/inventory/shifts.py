@@ -52,8 +52,12 @@ def current_shift(device: InvDevice, now: datetime | None = None) -> InvShift | 
     return None
 
 
-def _lock_device(device: InvDevice) -> None:
-    """Serialize shift changes per device; SQLite ignores the row lock."""
+def lock_device(device: InvDevice) -> None:
+    """Serialize shift changes and keypad failure counting per device.
+
+    The lock does not refresh the loaded row; a caller that reads device columns
+    refreshes after locking. SQLite ignores the row lock.
+    """
     db.session.query(InvDevice).filter_by(id=device.id).with_for_update().one()
 
 
@@ -63,7 +67,7 @@ def start_shift(device: InvDevice, user_id: str, now: datetime | None = None) ->
     Shifts on other devices stay open; one person may work two scanners.
     """
     now = now or datetime.utcnow()
-    _lock_device(device)
+    lock_device(device)
     for old in db.session.query(InvShift).filter_by(device_id=device.id, ended_at=None):
         old.ended_at = now
         old.end_reason = INV_SHIFT_END_REPLACED
@@ -76,7 +80,7 @@ def start_shift(device: InvDevice, user_id: str, now: datetime | None = None) ->
 
 def end_shift(device: InvDevice, reason: str, now: datetime | None = None) -> None:
     now = now or datetime.utcnow()
-    _lock_device(device)
+    lock_device(device)
     for shift in db.session.query(InvShift).filter_by(device_id=device.id, ended_at=None):
         shift.ended_at = now
         shift.end_reason = reason
