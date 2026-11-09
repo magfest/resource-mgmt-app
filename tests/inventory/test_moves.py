@@ -326,3 +326,15 @@ def test_move_station_says_a_lost_asset_is_found(inv):
     assert lost.condition == "FOUND"
     assert "Found" not in move_scan("FEST10102", zone, ACTOR, None)["message"]
     assert fine.condition == "IN_SERVICE"
+
+
+def test_a_lost_asset_scanned_where_it_is_recorded_becomes_found(inv):
+    zone = _zone(inv)
+    unit = add_unit(inv.laptop, zone, ACTOR, [("MAGFEST_TAG", "FEST10201")])
+    unit.condition = "LOST"
+    before = InvMovement.query.count()
+    answer = move_scan("FEST10201", zone, ACTOR, None)
+    assert answer["message"] == ("FEST10201 is in C-0005 already. "
+                                 "It was marked lost and is now Found.")
+    assert unit.condition == "FOUND"
+    assert InvMovement.query.count() == before

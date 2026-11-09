@@ -403,8 +403,23 @@ def add_unit(item, container, actor, identifiers: list[tuple[str, str]],
     return unit
 
 
+def mark_found(unit, actor) -> bool:
+    """Turn a Lost unit into Found and record it; return whether anything changed."""
+    if unit.condition != INV_CONDITION_LOST:
+        return False
+    set_condition(unit, INV_CONDITION_FOUND)
+    # Same record the asset page writes for a condition change, so History reads it.
+    record_unit_change(unit.id, ACTION_CONDITION,
+                       {"condition": {"old": INV_CONDITION_LOST, "new": INV_CONDITION_FOUND}},
+                       audit_who(actor))
+    return True
+
+
 def move_unit(unit, destination, actor, action=INV_ACTION_MOVE, count_id=None) -> InvMovement:
-    """Move one unit. Counts pass action=ADJUST for a unit found elsewhere."""
+    """Move one unit. The Move and Unit stations and the check put-away call it.
+
+    A Lost unit becomes Found. No caller passes action or count_id today.
+    """
     (db.session.query(InvUnit).filter_by(id=unit.id)
      .with_for_update().populate_existing().one())
     if unit.current_container_id == destination.id:
@@ -414,12 +429,7 @@ def move_unit(unit, destination, actor, action=INV_ACTION_MOVE, count_id=None) -
     movement = _movement(action, actor, item_id=unit.item_id, unit_id=unit.id,
                          from_container_id=source_id, to_container_id=destination.id,
                          count_id=count_id)
-    if unit.condition == INV_CONDITION_LOST:
-        # Same record the asset page writes for a condition change, so History reads it.
-        set_condition(unit, INV_CONDITION_FOUND)
-        record_unit_change(unit.id, ACTION_CONDITION,
-                           {"condition": {"old": INV_CONDITION_LOST, "new": INV_CONDITION_FOUND}},
-                           audit_who(actor))
+    mark_found(unit, actor)
     return movement
 
 

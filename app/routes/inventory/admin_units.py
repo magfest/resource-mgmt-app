@@ -229,7 +229,8 @@ def units():
         since=day.isoformat(), since_word=local_day(start), fell_back=fell_back,
         keep=keep, filter_fields=fields, chosen=chosen, condition_words=CONDITION_WORDS,
         show_buttons=(("checked", "Checked"), ("not_checked", "Not checked"),
-                      ("broken", "Broken"), ("no_number", "No number yet")))
+                      ("broken", "Broken"), ("no_number", "No number yet"),
+                      ("found", "Found")))
 
 
 def _unit_or_404(unit_id: int) -> InvUnit:

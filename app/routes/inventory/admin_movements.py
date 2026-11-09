@@ -62,4 +62,4 @@ def movements():
         rows=[(m, describe_movement(m), describe_actor(m)) for m in rows],
         items=db.session.query(SupplyItem).filter_by(is_active=True).order_by(SupplyItem.item_name).all(),
         devices=db.session.query(InvDevice).order_by(InvDevice.name).all(),
-        args=request.args, page_size=PAGE_SIZE)
+        args=request.args, page_size=PAGE_SIZE, actions=ACTIONS)

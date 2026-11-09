@@ -16,7 +16,7 @@ from app.inventory.counts import MAX_QUANTITY, TOO_LARGE, usual_items
 from app.inventory.flags import raise_flag
 from app.inventory.ledger import (
     Actor, InventoryError, create_container, move_container, move_stock_covering_short,
-    move_unit,
+    mark_found, move_unit,
 )
 from app.inventory.resolver import (
     KIND_AMBIGUOUS, KIND_CARD, KIND_CONTAINER, KIND_ITEM, KIND_UNIT, KIND_UNUSED, resolve,
@@ -115,10 +115,12 @@ def _place_container(container: InvContainer, destination: InvContainer, actor: 
 def _place_unit(unit: InvUnit, destination: InvContainer, actor: Actor) -> dict:
     thing = unit_code(unit) or unit.item.item_name
     if unit.current_container_id == destination.id:
-        return _placed(thing, destination, moved=False)
-    was_lost = unit.condition == INV_CONDITION_LOST
-    move_unit(unit, destination, actor)
-    placed = _placed(thing, destination, moved=True)
+        placed = _placed(thing, destination, moved=False)
+        was_lost = mark_found(unit, actor)
+    else:
+        was_lost = unit.condition == INV_CONDITION_LOST
+        move_unit(unit, destination, actor)
+        placed = _placed(thing, destination, moved=True)
     if was_lost:
         placed["message"] += " It was marked lost and is now Found."
     return placed

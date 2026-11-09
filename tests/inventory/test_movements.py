@@ -114,3 +114,11 @@ def test_movements_filter_by_action(client, inv):
     junk = client.get("/inv/admin/movements?action=JUNK")
     text = junk.get_data(as_text=True)
     assert junk.status_code == 200 and moves["MOVE"] in text and moves["ADJUST"] in text
+
+
+def test_movements_form_keeps_the_chosen_action(client, inv):
+    login(client, "test:invadmin")
+    html = client.get("/inv/admin/movements?action=MOVE").get_data(as_text=True)
+    assert '<option value="MOVE" selected>' in html
+    assert '<option value="">All actions</option>' in html
+    assert 'value="ADJUST" selected' not in html

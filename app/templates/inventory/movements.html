@@ -15,6 +15,11 @@
         {% for d in devices %}<option value="{{ d.id }}" {% if args.get('device')|int == d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
       </select>
     </label>
+    <label>Action
+      <select name="action"><option value="">All actions</option>
+        {% for code in actions %}<option value="{{ code }}"{% if args.get('action') == code %} selected{% endif %}>{{ code }}</option>{% endfor %}
+      </select>
+    </label>
     <label>Since <input type="date" name="since" value="{{ args.get('since', '') }}"></label>
   </div>
   <button type="submit" class="btn btn-small">Filter</button>
