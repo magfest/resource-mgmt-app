@@ -23,7 +23,7 @@ from app.inventory.resolver import (
 )
 from app.inventory.tree import display_name
 from app.models import InvContainer, InvContainerKind, InvFlag, InvUnit, SupplyItem
-from app.models.constants import INV_STATION_MOVE
+from app.models.constants import INV_CONDITION_LOST, INV_STATION_MOVE
 
 SCAN_PLACE_FIRST = "Scan where it's going first: a pallet, a tote or a location."
 USE_SUPPLIES = "To move loose items, tap Move supplies."
@@ -116,8 +116,12 @@ def _place_unit(unit: InvUnit, destination: InvContainer, actor: Actor) -> dict:
     thing = unit_code(unit) or unit.item.item_name
     if unit.current_container_id == destination.id:
         return _placed(thing, destination, moved=False)
+    was_lost = unit.condition == INV_CONDITION_LOST
     move_unit(unit, destination, actor)
-    return _placed(thing, destination, moved=True)
+    placed = _placed(thing, destination, moved=True)
+    if was_lost:
+        placed["message"] += " It was marked lost and is now Found."
+    return placed
 
 
 def move_scan(code: str | None, destination: InvContainer | None, actor: Actor,

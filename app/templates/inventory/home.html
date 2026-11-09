@@ -19,6 +19,7 @@
   <a class="count-tile" href="{{ url_for('inventory.units', show='not_checked', since=since) }}">Not checked since {{ since_word }}<strong>{{ totals.not_checked }}</strong></a>
   <a class="count-tile" href="{{ url_for('inventory.units', show='broken', since=since) }}">Broken<strong>{{ totals.broken }}</strong></a>
   <a class="count-tile" href="{{ url_for('inventory.units', show='no_number', since=since) }}">No number yet<strong>{{ totals.no_number }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.units', show='found') }}">Found<strong>{{ totals.found }}</strong></a>
   <a class="count-tile" href="{{ url_for('inventory.flags') }}">Open flags<strong>{{ open_flags }}</strong></a>
   <a class="count-tile" href="{{ url_for('inventory.print_queue') }}">Print queue<strong>{{ queue.waiting }} waiting</strong>{% if not queue.station_online %}<span class="pill pill-warning">Print station offline</span>{% endif %}</a>
 </div>
@@ -57,6 +58,7 @@
 <h2>History</h2>
 <ul>
   <li><a href="{{ url_for('inventory.movements') }}">Movements</a></li>
+  <li><a href="{{ url_for('inventory.movements', action='MOVE', since=since) }}">Moved since {{ since_word }}</a></li>
 </ul>
 {% endif %}
 {% endblock %}

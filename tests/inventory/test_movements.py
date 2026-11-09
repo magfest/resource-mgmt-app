@@ -96,3 +96,21 @@ def test_a_discard_reads_as_a_discard_with_its_reason(inv):
     assert texts["BROKEN"] == "Discarded 1 Blue Pen from C-0001: broken"
     assert texts["EXPIRED"] == "Discarded 1 Blue Pen from C-0001: expired"
     assert texts["OTHER"] == "Discarded 1 Blue Pen from C-0001: other reason"
+
+
+def test_movements_filter_by_action(client, inv):
+    from app.inventory.ledger import add_unit, move_unit
+    from app.inventory.describe import describe_movement
+    a = make_container(inv, "C-0001", kind="BIN")
+    b = make_container(inv, "C-0002", kind="BIN")
+    unit = add_unit(inv.laptop, a, ACTOR, [("FESTOPS_LABEL", "U-0301")])
+    move_unit(unit, b, ACTOR)
+    move_unit(unit, a, ACTOR, action="ADJUST")
+    db.session.commit()
+    login(client, "test:invadmin")
+    moves = {m.action: describe_movement(m) for m in InvMovement.query.all() if m.action != "ADD"}
+    only = client.get("/inv/admin/movements?action=MOVE").get_data(as_text=True)
+    assert moves["MOVE"] in only and moves["ADJUST"] not in only
+    junk = client.get("/inv/admin/movements?action=JUNK")
+    text = junk.get_data(as_text=True)
+    assert junk.status_code == 200 and moves["MOVE"] in text and moves["ADJUST"] in text

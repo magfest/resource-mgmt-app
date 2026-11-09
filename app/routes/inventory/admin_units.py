@@ -46,7 +46,7 @@ from app.inventory.unit_about import (
     added_line, check_line, detail_rows, find_by_rows, placed_line, where_sentence,
 )
 from app.models.constants import (
-    INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
+    INV_CONDITION_FOUND, INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
     INV_CONDITION_RETIRED, INV_FIELD_BOOL, INV_FIELD_CHOICE, INV_FIELD_NUMBER,
     INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL,
     INV_IDENT_VENDOR_TAG,
@@ -60,7 +60,7 @@ from .helpers import (
 
 SEARCH_LIMIT = 50
 CONDITION_PILLS = {INV_CONDITION_IN_SERVICE: "pill-approved", INV_CONDITION_REPAIR: "pill-warning",
-                   INV_CONDITION_LOST: "pill-rejected", INV_CONDITION_RETIRED: "pill-draft"}
+                   INV_CONDITION_LOST: "pill-rejected", INV_CONDITION_FOUND: "pill-warning", INV_CONDITION_RETIRED: "pill-draft"}
 IDENTIFIER_KINDS = ((INV_IDENT_MAGFEST_TAG, "Asset tag"), (INV_IDENT_FESTOPS_LABEL, "Label"),
                     (INV_IDENT_VENDOR_TAG, "Vendor tag"), (INV_IDENT_SERIAL, "Serial number"),
                     (INV_IDENT_MAC, "MAC address"))

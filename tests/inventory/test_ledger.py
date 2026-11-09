@@ -213,3 +213,22 @@ def test_a_covered_move_keeps_the_other_refusals(inv):
         with pytest.raises(InventoryError):
             ledger.move_stock_covering_short(item, a, dest, qty, ACTOR)
     assert InvMovement.query.count() == 0
+
+
+def test_move_unit_marks_a_lost_asset_found(inv):
+    from app.inventory.history import unit_history
+    bin_ = make_container(inv, "C-0001", kind="BIN")
+    lost = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "U-0101")])
+    repair = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "U-0102")])
+    lost.condition, repair.condition = "LOST", "REPAIR"
+    db.session.commit()
+
+    move_unit(lost, bin_, ACTOR)
+    move_unit(repair, bin_, ACTOR)
+    db.session.commit()
+
+    assert lost.condition == "FOUND"
+    assert repair.condition == "REPAIR"
+    lines = [(line.who, line.text) for line in unit_history(lost)]
+    assert ("Invadmin", "changed the condition from Lost to Found") in lines
+    assert not any("condition" in line.text for line in unit_history(repair))

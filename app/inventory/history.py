@@ -22,7 +22,7 @@ from app.models.constants import (
 )
 
 CONDITION_WORDS = {"IN_SERVICE": "In service", "REPAIR": "In repair", "LOST": "Lost",
-                   "RETIRED": "Retired"}
+                   "FOUND": "Found", "RETIRED": "Retired"}
 
 _CHECK_TEXT = {INV_CHECK_PASSED: "checked it: Works", INV_CHECK_FAILED: "checked it: Broken",
                INV_CHECK_SET_ASIDE: "set it aside during a check"}

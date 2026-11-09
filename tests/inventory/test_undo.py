@@ -695,3 +695,15 @@ def test_movement_text_for_a_unit_with_no_number_never_uses_the_id(inv):
     db.session.commit()
     text = describe_movement(InvMovement.query.filter_by(unit_id=unit.id).one())
     assert text == "Added Laptop Lobby Laptop, not placed yet"
+
+
+def test_undoing_a_pass_on_a_found_asset_restores_found(inv, tv_checklist, event, shift):
+    t, actor = tv_checklist, _actor(shift)
+    t.tv.condition = "FOUND"
+    db.session.commit()
+    check = open_check(t.tv, "UNIT", actor, event)
+    finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, actor)
+    db.session.commit()
+    assert t.tv.condition == "IN_SERVICE"
+    undo_last(shift, now=_later(check, 5))
+    assert t.tv.condition == "FOUND" and check.status == "VOIDED"

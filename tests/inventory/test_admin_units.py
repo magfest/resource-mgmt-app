@@ -1391,3 +1391,13 @@ def test_add_number_with_an_unknown_kind_says_number(client, unit):
     resp = client.post(f"/inv/admin/units/{unit.id}/identifiers",
                        data={"kind": "BOGUS", "value": "X1"}, follow_redirects=True)
     assert "Pick what kind of number this is." in resp.get_data(as_text=True)
+
+
+def test_assets_list_filters_found(client, inv, unit):
+    other = add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "U-0777")])
+    unit.condition = "FOUND"
+    db.session.commit()
+    login(client, "test:invadmin")
+    html = client.get("/inv/admin/units?show=found").get_data(as_text=True)
+    assert "U-0001" in html and "U-0777" not in html
+    assert other.condition == "IN_SERVICE"

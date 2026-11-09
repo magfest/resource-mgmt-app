@@ -16,7 +16,8 @@ from app.inventory.ledger import NUMBER_KINDS
 from app.inventory.printing import INV_LOCAL_TZ, local_today
 from app.models import InvCheck, InvMovement, InvPrepStatus, InvUnit, InvUnitIdentifier
 from app.models.constants import (
-    INV_CHECK_OPEN, INV_CHECK_VOIDED, INV_CONDITION_IN_SERVICE, INV_CONDITION_REPAIR,
+    INV_CHECK_OPEN, INV_CHECK_VOIDED, INV_CONDITION_FOUND, INV_CONDITION_IN_SERVICE,
+    INV_CONDITION_REPAIR,
     INV_CONDITION_RETIRED, INV_OWNERSHIP_OWNED, INV_PREP_CHECKED, INV_PREP_FAILED_CHECK,
     INV_PREP_VOIDED,
 )
@@ -25,7 +26,7 @@ CHECK_WORKS = "WORKS"
 CHECK_BROKEN = "BROKEN"
 CHECK_WORDS = {CHECK_WORKS: "Works", CHECK_BROKEN: "Broken"}
 
-CHECK_FILTERS = ("checked", "not_checked", "broken", "no_number")
+CHECK_FILTERS = ("checked", "not_checked", "broken", "no_number", "found")
 
 
 def _latest_ids():
@@ -129,6 +130,8 @@ def check_filter(show: str, since: datetime):
         return true()
     if show == "no_number":
         return and_(InvUnit.ownership == INV_OWNERSHIP_OWNED, ~_has_number())
+    if show == "found":
+        return InvUnit.condition == INV_CONDITION_FOUND
     row = _latest_row_of_unit()
     if show == "checked":
         clause = row.filter(InvPrepStatus.created_at >= since).exists()
@@ -140,7 +143,10 @@ def check_filter(show: str, since: datetime):
 
 
 def check_totals(since: datetime) -> dict:
-    """Counts: counted, checked, not_checked, broken, no_number."""
+    """Counts: counted, checked, not_checked, broken, no_number, found.
+
+    found counts every Found asset whatever the date; it is not part of the checked tiles.
+    """
     def count(clause):
         return db.session.query(InvUnit).filter(clause).count()
 
@@ -152,4 +158,5 @@ def check_totals(since: datetime) -> dict:
         "not_checked": count(check_filter("not_checked", since)),
         "broken": count(check_filter("broken", since)),
         "no_number": count(and_(owned_unretired, check_filter("no_number", since))),
+        "found": count(check_filter("found", since)),
     }

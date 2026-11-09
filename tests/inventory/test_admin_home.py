@@ -148,3 +148,19 @@ def test_operator_does_not_see_admin_links(client, week):
         assert f'href="{href}"' not in page
     assert 'href="/inv/admin/items"' in page
     assert "Import old tech lists" not in page
+
+
+def test_home_shows_found_and_moved_since(client, week):
+    from app.models import InvUnit
+    units = db.session.query(InvUnit).limit(2).all()
+    for unit in units:
+        unit.condition = "FOUND"
+    db.session.commit()
+    login(client, "test:invadmin")
+    page = client.get("/inv/?since=2026-11-01").data.decode()
+    assert "show=found" in page and "Found<strong>2</strong>" in page
+    assert "Moved since" in page
+    assert "action=MOVE" in page and "since=2026-11-01" in page
+    login(client, "test:operator")
+    page = client.get("/inv/").data.decode()
+    assert "Found<strong>2</strong>" in page and "Moved since" not in page

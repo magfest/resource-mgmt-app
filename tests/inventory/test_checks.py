@@ -176,3 +176,11 @@ def test_a_unit_with_only_a_serial_is_named_by_its_serial(inv, event, tv_checkli
     bare = add_unit(tv_checklist.tv_item, tv_checklist.where, ACTOR, [("SERIAL", "SN7777")])
     db.session.commit()
     assert unit_code(bare) == "SN7777"
+
+
+def test_a_pass_returns_a_found_asset_to_service(inv, event, tv_checklist):
+    t = tv_checklist
+    t.tv.condition = "FOUND"
+    check = open_check(t.tv, "UNIT", ACTOR, event)
+    finish_check(check, {t.power.id: "YES", t.remote.id: "YES"}, ACTOR)
+    assert t.tv.condition == "IN_SERVICE" and check.previous_condition == "FOUND"

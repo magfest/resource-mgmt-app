@@ -314,3 +314,15 @@ def test_a_supplies_source_must_be_a_place_with_a_record(inv):
     answer = supplies_source("C-0005", pallet)
     assert answer["source"] == {"code": "C-0005", "title": "Location C-0005 Zone A"}
     assert answer["usual"] == []
+
+
+def test_move_station_says_a_lost_asset_is_found(inv):
+    zone = _zone(inv)
+    lost = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "FEST10101")])
+    fine = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "FEST10102")])
+    lost.condition = "LOST"
+    answer = move_scan("FEST10101", zone, ACTOR, None)
+    assert answer["message"] == "FEST10101 is in C-0005. It was marked lost and is now Found."
+    assert lost.condition == "FOUND"
+    assert "Found" not in move_scan("FEST10102", zone, ACTOR, None)["message"]
+    assert fine.condition == "IN_SERVICE"

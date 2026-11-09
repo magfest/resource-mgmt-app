@@ -196,3 +196,11 @@ def test_query_count_is_fixed(inv):
     db.session.commit()
     big = _measure()
     assert big == small
+
+
+def test_a_found_asset_is_placed_not_lost(inv, tree_parts):
+    warehouse, pallet, _ = tree_parts
+    unit = _unit(inv, pallet, condition="FOUND")
+    tree = build_where()
+    assert tree.lost == []
+    assert [u.unit_id for u in _find(tree.roots, pallet.id).units] == [unit.id]

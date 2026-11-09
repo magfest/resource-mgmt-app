@@ -17,6 +17,7 @@ from app import db
 from app.inventory.codes import (
     SIGN_IN_CARD, is_card_code, normalize_code, normalize_identifier,
 )
+from app.inventory.audit import ACTION_CONDITION, audit_who, record_unit_change
 from app.inventory.tree import would_cycle
 from app.models import (
     InvContainer, InvContainerKind, InvMovement, InvStock, InvUnit,
@@ -24,7 +25,7 @@ from app.models import (
 )
 from app.models.constants import (
     INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_DISCARD, INV_ACTION_MOVE,
-    INV_CONDITION_IN_SERVICE,
+    INV_CONDITION_FOUND, INV_CONDITION_IN_SERVICE,
     INV_CONDITION_LOST, INV_CONDITION_REPAIR, INV_CONDITION_RETIRED,
     INV_DISCARD_REASONS, INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG,
     INV_IDENT_UNIQUE_KINDS, INV_IDENT_VENDOR_TAG, INV_OWNERSHIP_OWNED,
@@ -37,7 +38,7 @@ NUMBER_KINDS = (INV_IDENT_MAGFEST_TAG, INV_IDENT_FESTOPS_LABEL)
 SHORT_MOVE_NOTE = "short move"
 
 INV_CONDITIONS = (INV_CONDITION_IN_SERVICE, INV_CONDITION_REPAIR,
-                  INV_CONDITION_RETIRED, INV_CONDITION_LOST)
+                  INV_CONDITION_RETIRED, INV_CONDITION_LOST, INV_CONDITION_FOUND)
 
 
 class InventoryError(Exception):
@@ -410,9 +411,16 @@ def move_unit(unit, destination, actor, action=INV_ACTION_MOVE, count_id=None) -
         raise InventoryError(f"That asset is already in {destination.label_code}.")
     source_id = unit.current_container_id
     unit.current_container_id = destination.id
-    return _movement(action, actor, item_id=unit.item_id, unit_id=unit.id,
-                     from_container_id=source_id, to_container_id=destination.id,
-                     count_id=count_id)
+    movement = _movement(action, actor, item_id=unit.item_id, unit_id=unit.id,
+                         from_container_id=source_id, to_container_id=destination.id,
+                         count_id=count_id)
+    if unit.condition == INV_CONDITION_LOST:
+        # Same record the asset page writes for a condition change, so History reads it.
+        set_condition(unit, INV_CONDITION_FOUND)
+        record_unit_change(unit.id, ACTION_CONDITION,
+                           {"condition": {"old": INV_CONDITION_LOST, "new": INV_CONDITION_FOUND}},
+                           audit_who(actor))
+    return movement
 
 
 def _container_exists(code: str) -> bool:

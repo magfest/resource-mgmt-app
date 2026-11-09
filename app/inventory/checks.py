@@ -32,7 +32,8 @@ from app.models import (
 )
 from app.models.constants import (
     INV_CHECK_FAILED, INV_CHECK_OPEN, INV_CHECK_PASSED, INV_CHECK_SET_ASIDE,
-    INV_CHECK_STATIONS, INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
+    INV_CHECK_STATIONS, INV_CONDITION_FOUND, INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST,
+    INV_CONDITION_REPAIR,
     INV_CONDITION_RETIRED, INV_IDENT_SERIAL, INV_PREP_CHECKED, INV_PREP_FAILED_CHECK,
 )
 
@@ -316,7 +317,8 @@ def finish_check(check: InvCheck, answers: dict, actor: Actor,
     check.previous_condition = unit.condition
     if failed:
         set_condition(unit, failed_condition)
-    elif unit.condition in (INV_CONDITION_REPAIR, INV_CONDITION_LOST):
+    elif unit.condition in (INV_CONDITION_REPAIR, INV_CONDITION_LOST,
+                            INV_CONDITION_FOUND):
         set_condition(unit, INV_CONDITION_IN_SERVICE)
     db.session.add(InvPrepStatus(
         unit_id=unit.id, event_cycle_id=check.event_cycle_id,

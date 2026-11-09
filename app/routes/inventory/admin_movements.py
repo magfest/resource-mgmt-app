@@ -8,12 +8,16 @@ from sqlalchemy.orm import selectinload
 from app import db
 from app.inventory.codes import normalize_code
 from app.inventory.describe import describe_actor, describe_movement
+from app.models.constants import (
+    INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_DISCARD, INV_ACTION_MOVE,
+)
 from app.models import InvContainer, InvDevice, InvMovement, InvUnit, SupplyItem
 
 from . import inventory_bp
 from .helpers import render_inventory_page, require_inventory_admin
 
 PAGE_SIZE = 200
+ACTIONS = (INV_ACTION_ADD, INV_ACTION_MOVE, INV_ACTION_ADJUST, INV_ACTION_DISCARD)
 
 
 @inventory_bp.get("/admin/movements")
@@ -35,6 +39,9 @@ def movements():
     device_id = request.args.get("device", type=int)
     if device_id:
         query = query.filter(InvMovement.device_id == device_id)
+    action = request.args.get("action")
+    if action in ACTIONS:
+        query = query.filter(InvMovement.action == action)
     since = request.args.get("since")
     if since:
         try:
