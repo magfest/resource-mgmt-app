@@ -80,7 +80,7 @@ def test_admin_corrects_serial_and_item_then_prints_new_text(client, inv, unit, 
     jobs = db.session.query(InvPrintJob).all()
     assert len(jobs) == 1
     rows = dict(map(tuple, jobs[0].fields["rows"]))
-    assert rows["Serial"] == "SN-NEW999" and rows["Type"] == "Wireless Access Point"
+    assert rows["Serial"] == "SN-NEW999" and rows["Item"] == "Wireless Access Point"
     assert jobs[0].unit_id == unit.id
 
 

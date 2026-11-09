@@ -32,7 +32,7 @@ NO_REPORT = "No report from the print station."
 _ERROR_MAX = 200
 
 FOOTER_OWNED = "Return to MAGFest FestOps"
-FOOTER_RENTED = "Rented unit. Return to MAGFest FestOps"
+FOOTER_RENTED = "Rented asset. Return to MAGFest FestOps"
 # The printed date is the event's local date; the server clock is UTC.
 INV_LOCAL_TZ = "America/New_York"
 
@@ -97,7 +97,7 @@ def fields_for_unit(unit) -> dict:
         if model:
             rows.append(["Model", model])
     else:
-        rows.append(["Type", unit.item.item_name])
+        rows.append(["Item", unit.item.item_name])
         details = details_line(unit)
         if details:
             rows.append(["Details", details])
@@ -123,7 +123,7 @@ def fields_for_container(container) -> dict:
 
 
 def fields_for_item(item) -> dict:
-    return {"rows": [["Type", item.item_name]], "footer": None}
+    return {"rows": [["Item", item.item_name]], "footer": None}
 
 
 def label_spec(code: str, fields: dict, printed_date: date | None) -> LabelSpec:

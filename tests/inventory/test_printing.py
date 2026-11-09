@@ -201,15 +201,28 @@ def test_unit_number_prefers_the_active_tag_and_skips_a_retired_one(inv):
 def test_unit_fields_leave_out_blanks_and_pick_the_footer(inv):
     from app.inventory.printing import FOOTER_OWNED, FOOTER_RENTED, fields_for_unit
     owned = _unit(inv, [("FESTOPS_LABEL", "U-00001")])
-    assert fields_for_unit(owned) == {"rows": [["Type", "Laptop"]], "footer": FOOTER_OWNED}
+    assert fields_for_unit(owned) == {"rows": [["Item", "Laptop"]], "footer": FOOTER_OWNED}
     rented = _unit(inv, [("FESTOPS_LABEL", "R-00038"), ("VENDOR_TAG", "A0038"),
                          ("SERIAL", "SN1")], ownership="RENTED", vendor_name="Vendor A")
     fields = fields_for_unit(rented)
-    assert fields["rows"] == [["Type", "Laptop"], ["Vendor tag", "Vendor A: A0038"],
+    assert fields["rows"] == [["Item", "Laptop"], ["Vendor tag", "Vendor A: A0038"],
                               ["Serial", "SN1"]]
     assert fields["footer"] == FOOTER_RENTED
     rented.vendor_name = None
     assert ["Vendor tag", "A0038"] in fields_for_unit(rented)["rows"]
+
+
+def test_unnamed_asset_row_says_item_and_rented_footer_says_asset(inv):
+    from app.inventory.printing import fields_for_unit
+    unit = _unit(inv, [("FESTOPS_LABEL", "R-9301")], ownership="RENTED")
+    fields = fields_for_unit(unit)
+    assert fields["rows"][0] == ["Item", "Laptop"]
+    assert fields["footer"] == "Rented asset. Return to MAGFest FestOps"
+
+
+def test_item_rows_say_item(inv):
+    from app.inventory.printing import fields_for_item
+    assert fields_for_item(inv.laptop)["rows"] == [["Item", "Laptop"]]
 
 
 def test_container_and_item_fields_carry_no_footer(inv):
@@ -220,7 +233,7 @@ def test_container_and_item_fields_carry_no_footer(inv):
     assert fields_for_container(named) == {"rows": [["Kind", "Pallet"], ["Name", "Main"]],
                                            "footer": None}
     assert fields_for_container(plain)["rows"] == [["Kind", "Pallet"]]
-    assert fields_for_item(inv.laptop) == {"rows": [["Type", "Laptop"]], "footer": None}
+    assert fields_for_item(inv.laptop) == {"rows": [["Item", "Laptop"]], "footer": None}
 
 
 def test_render_job_adds_the_printed_date_row_only_when_the_job_has_one(inv):
@@ -271,7 +284,7 @@ def test_unit_fields_for_an_unnamed_unit_have_no_title_key(inv):
     from app.inventory.printing import fields_for_unit
     fields = fields_for_unit(_gear_unit(inv))
     assert "title" not in fields
-    assert fields["rows"] == [["Type", "Laptop"], ["Details", "Sony"]]
+    assert fields["rows"] == [["Item", "Laptop"], ["Details", "Sony"]]
     assert "spec" not in fields
 
 
@@ -371,7 +384,7 @@ def test_named_printer_label_matches_the_approved_layout(inv, printer):
     z, texts = _printed_rows(job)
     assert {"MAG-PNTR-007", "Model", "MFC-L2820DW", "Serial", "PF04CKVR", SPEC_LINE,
             "2026/11/07"} <= texts
-    assert "Printed" not in texts and "Type" not in texts and "2026-11-07" not in texts
+    assert "Printed" not in texts and "Item" not in texts and "2026-11-07" not in texts
     order = [z.index("^FDMAG-PNTR-007^FS"), z.index("^FDModel^FS"),
              z.index("^FDSerial^FS"), z.index("^FD2026/11/07^FS"), z.index(f"^FD{SPEC_LINE}^FS")]
     assert order == sorted(order)
@@ -398,12 +411,12 @@ def test_unnamed_label_is_unchanged(inv, printer):
     from app.inventory.printing import fields_for_unit
     unit = _unit(inv, [("FESTOPS_LABEL", "U-00001"), ("SERIAL", "SN1")])
     fields = fields_for_unit(unit)
-    assert fields == {"rows": [["Type", "Laptop"], ["Serial", "SN1"]],
+    assert fields == {"rows": [["Item", "Laptop"], ["Serial", "SN1"]],
                       "footer": "Return to MAGFest FestOps"}
     job = request_label(INV_JOB_OWNED_UNIT, "U-00001", fields, NO_ONE,
                         INV_JOB_SOURCE_SCAN, printed_date=date(2026, 11, 7))
     _, texts = _printed_rows(job)
-    assert {"Type", "Laptop", "Serial", "SN1", "Printed", "2026-11-07"} <= texts
+    assert {"Item", "Laptop", "Serial", "SN1", "Printed", "2026-11-07"} <= texts
 
 
 def test_label_has_no_middle_dot(inv, printer):

@@ -25,7 +25,7 @@ def test_the_fullest_label_stays_inside_the_printable_area():
     spec = LabelSpec("R-00038", (("Type", "Laptop"), ("Details", "55 in, 4k, HDMI"),
                                  ("Vendor tag", "Vendor A: A0038"),
                                  ("Serial", SERIAL_22), ("Printed", "2026-11-07")),
-                     "Rented unit. Return to MAGFest FestOps", "MAG-PNTR-007")
+                     "Rented asset. Return to MAGFest FestOps", "MAG-PNTR-007")
     for dpi, pw, ll in ((300, 600, 900), (203, 406, 609)):
         for line in render_label(spec, dpi).splitlines():
             origin = re.match(r"\^FO(\d+),(\d+)", line)
@@ -55,6 +55,14 @@ def test_a_longer_serial_is_smaller_and_never_cut(dpi):
     long = render_label(LabelSpec("R-00038", (("Serial", long_serial),), None), dpi)
     assert "^FD" + long_serial + "^FS" in long
     assert _value_height(long, long_serial) < _value_height(normal, SERIAL_22)
+
+
+@pytest.mark.parametrize("dpi", [203, 300])
+def test_rented_footer_prints_on_one_line(dpi):
+    footer = "Rented asset. Return to MAGFest FestOps"
+    zpl_text = render_label(LabelSpec("R-00038", (("Item", "Laptop"),), footer), dpi)
+    assert zpl_text.count(f"^FD{footer}^FS") == 1
+    assert ",1,0,C^FDRented asset" in zpl_text
 
 
 def test_a_row_without_a_footer_prints_no_rule():
@@ -161,6 +169,13 @@ def test_titled_label_keeps_serial_and_printed_and_drops_type_then_vendor_tag():
     five = rows + (("Extra", "x"),)
     z = render_label(LabelSpec("R-00038", five, "Return", "MAG-TV-009"), 300)
     assert "^FDVendor tag^FS" not in z and "^FDSerial^FS" in z and "^FDPrinted^FS" in z
+
+
+def test_titled_label_drops_item_row_first_like_type():
+    rows = (("Item", "Laptop"), ("Vendor tag", "Vendor A: A0038"),
+            ("Serial", SERIAL_22), ("Printed", "2026-11-07"))
+    z = render_label(LabelSpec("R-00038", rows, "Return", "MAG-TV-009"), 300)
+    assert "^FDItem^FS" not in z and "^FDVendor tag^FS" in z
 
 
 SPEC = "Laser Printer (BW, USB, DUPLEX)"

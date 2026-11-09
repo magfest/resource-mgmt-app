@@ -102,13 +102,14 @@ def _fitted(height: int, text: str, full_chars: int) -> int:
 
 
 def _fit_rows(rows, keep: int):
-    """Trim rows to `keep`. Serial and Printed stay; Model and Type go first, then Vendor tag.
+    """Trim rows to `keep`. Serial and Printed stay; Model and Item go first, then Vendor tag.
 
     Other rows go from the end. A scanned serial and the print date identify the unit.
-    Type and Printed appear only on jobs stored before labels carried a spec line.
+    Type is the pre-rename name of Item, kept so queued jobs drop the same row first.
+    Printed appears only on jobs stored before labels carried a spec line.
     """
     rows = list(rows)
-    for label in ("Model", "Type", "Vendor tag"):
+    for label in ("Model", "Item", "Type", "Vendor tag"):
         if len(rows) <= keep:
             break
         for row in rows:
