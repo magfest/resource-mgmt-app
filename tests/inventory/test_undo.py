@@ -223,6 +223,38 @@ def test_undo_refuses_when_the_unit_changed_since(inv, tv_checklist, event, shif
 
 # ---- counts ----
 
+def test_a_count_started_after_a_save_leaves_its_undo_open(inv, shift):
+    actor = _actor(shift)
+    first = make_container(inv, "C-0010", kind="BIN")
+    second = make_container(inv, "C-0011", kind="BIN")
+    db.session.commit()
+    count = start_count(first, actor)
+    submit_count(count, [CountLineIn(inv.pens.id, kept=20)], actor)
+    db.session.commit()
+    start_count(second, actor)
+    db.session.commit()
+    assert undo_last(shift, now=_later(count, 5))["undone"] == "count"
+    assert stock_quantity(inv.pens, first) == 0
+
+
+def test_a_count_submitted_after_a_save_still_closes_its_undo(inv, shift):
+    actor = _actor(shift)
+    first = make_container(inv, "C-0010", kind="BIN")
+    second = make_container(inv, "C-0011", kind="BIN")
+    db.session.commit()
+    count = start_count(first, actor)
+    submit_count(count, [CountLineIn(inv.pens.id, kept=20)], actor)
+    db.session.commit()
+    later = start_count(second, actor)
+    submit_count(later, [CountLineIn(inv.pens.id, kept=3)], actor)
+    db.session.commit()
+    # The newest count owns the undo; the saved one stays put.
+    assert undo_last(shift, now=_later(later, 5))["message"] == "Count of C-0011 undone."
+    assert stock_quantity(inv.pens, first) == 20
+    with pytest.raises(InventoryError):
+        undo_last(shift, now=_later(later, 6))
+
+
 def test_undo_a_count_writes_the_inverse(inv, shift):
     actor = _actor(shift)
     tote = make_container(inv, "C-0010", kind="BIN")

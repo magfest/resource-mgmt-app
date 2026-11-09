@@ -924,6 +924,102 @@ console.log('keepalive ok');
 """
 
 
+SWITCH_HEAD = r"""
+let chose = null;
+globalThis.InvScan.choose = (opts, pick, note) => {
+  panel.textContent = '';
+  chose = {labels: opts.map((o) => o.label), pick, note};
+};
+const counted = async (code, id) => {   // opens a count on `code` and counts one line
+  const s = onScan(code); await tick();
+  writes[writes.length - 1].resolve({...startAnswer, count_id: id, code});
+  await s;
+  await onScan('I-1'); padCb({quantity: 3, about: false});
+};
+"""
+
+SWITCH_SCRIPT = PAGE_PRELUDE + SWITCH_HEAD + r"""
+(async () => {
+  const opened = onScan('C-0001'); await tick();
+  writes[0].resolve({...startAnswer, count_id: 5, code: 'C-0001'});
+  await opened;
+  const empty = onScan('C-0002'); await tick();
+  assert.equal(writes.length, 2);
+  assert.equal(writes[1].path, '/start');
+  assert.equal(writes[1].body.container_code, 'C-0002');
+  assert.equal(chose, null, 'an empty count is dropped without asking');
+  writes[1].resolve({...startAnswer, count_id: 6, code: 'C-0002'});
+  await empty;
+  await onScan('I-1'); padCb({quantity: 3, about: false});
+
+  const before = writes.length;
+  assert.equal((await onScan('C-0002')).ok, false);
+  assert.equal(writes.length, before);
+  assert.equal(messages[messages.length - 1], 'You are counting C-0002 now.');
+
+  assert.equal((await onScan('C-0003')).ok, false);
+  assert.equal(writes.length, before);
+  assert.deepEqual(chose.labels, ['Save and start C-0003', 'Keep counting C-0002']);
+  assert.equal(chose.note, 'Save this count of C-0002 and start C-0003?');
+  chose.pick('stay');
+  assert.equal(writes.length, before);
+  assert.ok(texts(panel).includes('First count: C-0002'));
+
+  await onScan('C-0003');
+  chose.pick('go'); await tick();
+  assert.equal(writes[before].path, '/submit');
+  assert.equal(writes[before].body.count_id, 6);
+  globalThis.offered = undefined;
+  writes[before].resolve({ok: true, applied: 1, stale: []});
+  await tick();
+  assert.equal(writes[before + 1].path, '/start');
+  assert.equal(writes[before + 1].body.container_code, 'C-0003');
+  assert.equal(globalThis.offered, undefined, 'the undo waits for the start');
+  writes[before + 1].resolve({...startAnswer, count_id: 7, code: 'C-0003'});
+  await tick(); await tick();
+  assert.equal(globalThis.offered.kind, 'count');
+  assert.equal(globalThis.offered.name, 'C-0002');
+  assert.ok(texts(panel).includes('First count: C-0003'));
+  globalThis.offered.onUndone();
+  assert.ok(texts(panel).includes('First count: C-0003'));
+  console.log('switch ok');
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+SWITCH_STALE_SCRIPT = PAGE_PRELUDE + SWITCH_HEAD + r"""
+(async () => {
+  await counted('C-0002', 6);
+  await onScan('C-0003');
+  chose.pick('go'); await tick();
+  const n = writes.length;
+  writes[n - 1].resolve({ok: true, applied: 0, stale: ['Pens']});
+  await tick(); await tick();
+  assert.equal(writes.length, n, 'a stale save starts nothing');
+  const last = messages[messages.length - 1];
+  assert.ok(last.indexOf('Pens changed while you counted. Count it again.') >= 0);
+  assert.ok(last.indexOf('Scan C-0003 again to start it.') >= 0);
+  assert.equal(globalThis.offered.name, 'C-0002');
+
+  globalThis.offered = undefined;
+  await counted('C-0004', 8);
+  await onScan('C-0005');
+  chose.pick('go'); await tick();
+  const m = writes.length;
+  writes[m - 1].resolve({ok: true, applied: 1, stale: []});
+  await tick();
+  writes[m].resolve({ok: true, unused: true, code: 'C-0005', home: 'C-0100 Warehouse',
+    kinds: [{id: 2, name: 'Pallet'}]});
+  await tick(); await tick();
+  assert.deepEqual(chose.labels, ['Pallet']);
+  assert.ok(chose.note.startsWith('C-0005 is a new label. Pick what it is.'));
+  assert.equal(globalThis.offered.name, 'C-0004');
+  console.log('switch stale ok');
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+
 def _node(tmp_path, script, name):
     path = tmp_path / name
     path.write_text(script)
@@ -986,3 +1082,13 @@ def test_the_header_and_held_note_text_under_node(tmp_path):
     result = _node(tmp_path, HEADER_SCRIPT, "header_check.js")
     assert result.returncode == 0, result.stderr
     assert "header ok" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_another_label_mid_count_saves_and_switches_under_node(tmp_path):
+    """Runs the page script on a stub DOM under node; it does not drive a browser."""
+    for script, name, ok in ((SWITCH_SCRIPT, "switch_check.js", "switch ok"),
+                             (SWITCH_STALE_SCRIPT, "switch_stale_check.js", "switch stale ok")):
+        result = _node(tmp_path, script, name)
+        assert result.returncode == 0, result.stderr
+        assert ok in result.stdout

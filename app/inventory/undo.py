@@ -84,8 +84,13 @@ def _other_write_since(actor: Actor, stamp: datetime, own_unit_id=None, own_coun
                                  InvMovement.count_id != own_count_id))
     checks = db.session.query(InvCheck.id).filter(
         _mine(InvCheck, actor), or_(InvCheck.started_at > stamp, InvCheck.finished_at > stamp))
-    counts = db.session.query(InvCount.id).filter(
-        _mine(InvCount, actor), or_(InvCount.started_at > stamp, InvCount.submitted_at > stamp))
+    if own_count_id is not None:
+        # A started count changes no stock, and the stale check marks its lines
+        # stale if the undo touches their container.
+        count_moved = InvCount.submitted_at > stamp
+    else:
+        count_moved = or_(InvCount.started_at > stamp, InvCount.submitted_at > stamp)
+    counts = db.session.query(InvCount.id).filter(_mine(InvCount, actor), count_moved)
     jobs = db.session.query(InvPrintJob.id).filter(_mine(InvPrintJob, actor),
                                                    InvPrintJob.created_at > stamp)
     if own_unit_id is not None:

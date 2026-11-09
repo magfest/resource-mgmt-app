@@ -16,7 +16,12 @@
     nothingCounted: 'Count at least one item first.',
     noItems: 'No item matches that.',
     alreadySaved: 'This count was already saved. Scan where you are counting to count again.',
-    cancelAsk: 'Discard this count? Nothing in it has been sent.'
+    cancelAsk: 'Discard this count? Nothing in it has been sent.',
+    same: function (code) { return 'You are counting ' + code + ' now.'; },
+    switchAsk: function (from, to) { return 'Save this count of ' + from + ' and start ' + to + '?'; },
+    switchGo: function (to) { return 'Save and start ' + to; },
+    switchStay: function (from) { return 'Keep counting ' + from; },
+    rescan: function (to) { return 'Scan ' + to + ' again to start it.'; }
   };
   var KEEPALIVE_MS = 5 * 60 * 1000;
   var CONTAINER_CODE = /^\s*C-?\d+\s*$/i;
@@ -486,6 +491,7 @@
   // An item scan opens the pad and finishes nothing, so it never reports ok. That keeps
   // the shell's repeat guard empty and lets the same item be counted twice in a row.
   function scanInCount(code) {
+    if (CONTAINER_CODE.test(code)) { return switchTo(code); }
     return S.read(cfg.findUrl, {code: code}).then(function (answer) {
       if (answer.need_name || answer.fatal) { return {ok: false}; }
       if (!answer.ok) { fail(answer.message); return {ok: false}; }
@@ -498,6 +504,36 @@
     });
   }
 
+  function containerCode(code) { return code.trim().toUpperCase().replace(/^C-?/, 'C-'); }
+
+  // Another label mid-count saves this count and starts the next one. An empty count is
+  // dropped instead; the unused-label path then offers Pick what it is as usual.
+  function switchTo(code) {
+    var to = containerCode(code);
+    if (to === containerCode(count.code)) {
+      fail(MESSAGES.same(count.code));
+      return Promise.resolve({ok: false});
+    }
+    if (submitting) { fail(MESSAGES.submitting); return Promise.resolve({ok: false}); }
+    if (!count.lineCount()) {
+      count = null;
+      submitId = null;
+      render();
+      return startWrite(to);
+    }
+    var from = count.code;
+    S.choose([{label: MESSAGES.switchGo(to), value: 'go'},
+              {label: MESSAGES.switchStay(from), value: 'stay'}],
+      function (pick) {
+        if (pick === 'go') { send(to); return; }
+        render();
+        refocus();
+      }, MESSAGES.switchAsk(from, to));
+    withHead();
+    refocus();
+    return Promise.resolve({ok: false});
+  }
+
   function onScan(code) {
     return gate.run(function () {
       return count ? scanInCount(code) : scanStart(code);
@@ -507,7 +543,11 @@
     });
   }
 
-  function submit() {
+  // The Submit button passes its click event, so submit() takes no argument.
+  function submit() { send(null); }
+
+  // `next` is the label to start once the save lands, or null for a plain Submit.
+  function send(next) {
     if (!count || submitting) { if (submitting) { S.showMessage(MESSAGES.submitting, 'info'); } return; }
     if (!count.lineCount()) { fail(MESSAGES.nothingCounted); return; }
     submitting = true;
@@ -518,13 +558,13 @@
     }
     gate.run(function () {
       return S.write(cfg.submitUrl, {count_id: mine.id, lines: lines}, submitId.id).then(
-        function (answer) { submitting = false; finish(answer); });
+        function (answer) { submitting = false; return finish(answer, next); });
     }).catch(function () { submitting = false; });
     refocus();
   }
 
-  function finish(answer) {
-    if (answer.need_name || answer.fatal || answer.cancelled) { return; }
+  function finish(answer, next) {
+    if (answer.need_name || answer.fatal || answer.cancelled) { return Promise.resolve(); }
     submitId = null;
     if (!answer.ok && answer.finished) {
       count = null;
@@ -533,22 +573,36 @@
       S.showMessage(MESSAGES.alreadySaved, 'info');
       render();
       refocus();
-      return;
+      return Promise.resolve();
     }
-    if (!answer.ok) { fail(answer.message); return; }
+    if (!answer.ok) { fail(answer.message); return Promise.resolve(); }
     var counted = count.code;
     count = null;
     result = {applied: answer.applied, stale: answer.stale || []};
-    if (result.stale.length) { fail(staleText(result.stale)); } else {
+    // S.write closes the undo window on every write, so the undo is offered only
+    // after the follow-on start has answered.
+    function offer() {
+      S.offerUndo({kind: 'count', name: counted, onUndone: function () {
+        result = null;
+        if (!count) { render(); }
+      }});
+    }
+    if (result.stale.length) {
+      fail(staleText(result.stale) + (next ? ' ' + MESSAGES.rescan(next) : ''));
+    } else {
       S.feedback('ok');
       S.showMessage('', 'info');
     }
-    S.offerUndo({kind: 'count', name: counted, onUndone: function () {
-      result = null;
-      render();
-    }});
     render();
     refocus();
+    if (next && !result.stale.length) {
+      return startWrite(next).then(offer, function () {
+        offer();
+        fail('That scan failed. Scan it again.');
+      });
+    }
+    offer();
+    return Promise.resolve();
   }
 
   panel.addEventListener('click', function () { if (count) { keepAlive.tap(); } });
