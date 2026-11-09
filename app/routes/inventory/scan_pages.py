@@ -11,7 +11,7 @@ from app.inventory.ledger import InventoryError
 from app.inventory.shifts import current_shift
 from app.models import InvContainer
 from app.models.constants import (
-    INV_STATION_COUNT, INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_PRINT,
+    INV_STATION_COUNT, INV_STATION_LOOKUP, INV_STATION_MOVE, INV_STATION_NAMES, INV_STATION_PRINT,
     INV_STATION_RECEIVE, INV_STATION_UNIT,
 )
 
@@ -51,6 +51,8 @@ def scan_home():
             return redirect(url_for("inventory.scan_count_page"))
         if principal.device.station_code == INV_STATION_UNIT:
             return redirect(url_for("inventory.scan_unit_page"))
+        if principal.device.station_code == INV_STATION_MOVE:
+            return redirect(url_for("inventory.scan_move_page"))
     if not principal.is_device or principal.device.station_code == INV_STATION_LOOKUP:
         # Look up needs no name, so a device with no open shift shows none.
         has_name = not principal.is_device or current_shift(principal.device) is not None
@@ -102,6 +104,26 @@ def scan_count_page():
     return render_template(
         "inventory/scan/count.html", station=INV_STATION_COUNT,
         station_name=INV_STATION_NAMES[INV_STATION_COUNT], is_device=principal.is_device,
+        who=who)
+
+
+@inventory_bp.get("/scan/move")
+@require_scanner
+def scan_move_page():
+    """Move station. A device needs the MOVE station and an open shift; an operator may open it."""
+    principal = g.scan_principal
+    if principal.is_device:
+        if principal.device.station_code != INV_STATION_MOVE:
+            return redirect(url_for("inventory.scan_home"))
+        shift = current_shift(principal.device)
+        db.session.commit()  # keeps an IDLE close
+        if shift is None:
+            return redirect(url_for("inventory.scan_who"))
+    who = who_text()
+    db.session.commit()  # keeps an IDLE close
+    return render_template(
+        "inventory/scan/move.html", station=INV_STATION_MOVE,
+        station_name=INV_STATION_NAMES[INV_STATION_MOVE], is_device=principal.is_device,
         who=who)
 
 

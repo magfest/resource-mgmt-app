@@ -1,0 +1,11 @@
+{% extends "inventory/scan/layout.html" %}
+{% block content %}{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/station_move.js') }}"
+        data-scan-url="{{ url_for('inventory.scan_move_scan') }}"
+        data-create-url="{{ url_for('inventory.scan_move_create') }}"
+        data-source-url="{{ url_for('inventory.scan_move_source') }}"
+        data-find-url="{{ url_for('inventory.scan_move_find') }}"
+        data-browse-url="{{ url_for('inventory.scan_count_browse') }}"
+        data-supplies-url="{{ url_for('inventory.scan_move_supplies') }}"></script>
+{% endblock %}
