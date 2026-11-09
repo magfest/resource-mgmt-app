@@ -136,7 +136,7 @@ def set_gear_kind(item_id: int):
     if item is None:
         abort(404)
     if not item.is_serialized:
-        flash("Only serialized items have an asset type.", "error")
+        flash("Only items tracked as assets have an asset type.", "error")
         return redirect(url_for("inventory.item_page", item_id=item.id, tab="inventory"))
     raw = request.form.get("gear_kind_id", type=int)
     kind = db.session.get(InvGearKind, raw) if raw else None
@@ -156,7 +156,7 @@ def set_model_defaults(item_id: int):
     if item is None:
         abort(404)
     if not item.is_serialized or item.gear_kind is None:
-        flash("Defaults need a serialized item with an asset type.", "error")
+        flash("Defaults need an item tracked as assets with an asset type.", "error")
         return redirect(url_for("inventory.item_page", item_id=item.id, tab="inventory"))
     fields = [f for f in active_fields(item.gear_kind) if f"field_{f.id}" in request.form]
     try:

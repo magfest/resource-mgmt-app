@@ -349,3 +349,16 @@ def test_on_hand_tab_shows_this_items_stock(client, inv):
     db.session.commit()
     page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=on_hand").get_data(as_text=True)
     assert "P-1" in page and "None on hand." not in page
+
+
+def test_on_hand_tab_shows_the_last_count_in_local_time(client, inv, monkeypatch):
+    from datetime import datetime
+    from app.routes.inventory import admin_item_page
+    # 03:30 UTC on Nov 8 is the evening of Nov 7 in the local zone.
+    row = {"item_id": inv.pens.id, "name": "Blue Pen", "unit": "each", "total": 5,
+           "approximate": False, "last_counted": datetime(2026, 11, 8, 3, 30),
+           "places": [("P-1", 5, False)]}
+    monkeypatch.setattr(admin_item_page, "supplies_on_hand", lambda: [row])
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=on_hand").get_data(as_text=True)
+    assert "Nov 7, " in page and "Nov 8, " not in page

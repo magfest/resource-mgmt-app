@@ -10,6 +10,7 @@ from app import db
 from app.inventory.checks import unit_code
 from app.inventory.codes import normalize_code
 from app.inventory.item_rights import item_rights
+from app.inventory.printing import local_stamp
 from app.inventory.stock_report import supplies_on_hand
 from app.inventory.unit_fields import active_fields, display_value
 from app.models import (
@@ -93,7 +94,11 @@ def item_page(item_id: int):
             ({"unit": u, "number": unit_code(u)} for u in units),
             key=lambda a: ((a["unit"].name or a["number"] or "").lower(), a["unit"].id))
     if rights.sees_stock and not tracked:
-        extra["stock"] = next((r for r in supplies_on_hand() if r["item_id"] == item.id), None)
+        stock = next((r for r in supplies_on_hand() if r["item_id"] == item.id), None)
+        if stock:
+            stock["counted_text"] = (local_stamp(stock["last_counted"])
+                                     if stock["last_counted"] else "Never counted")
+        extra["stock"] = stock
     return render_inventory_page(
         "inventory/item.html", item=item, rights=rights, tabs=tabs, **extra,
         status_line=_status_line(item, rights), active_tab=request.args.get("tab"),

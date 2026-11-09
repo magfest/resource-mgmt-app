@@ -189,7 +189,7 @@
   {% if stock %}
   <table class="pair">
     <tr><th>Total</th><td>{{ stock.total }}{% if stock.approximate %} (approximate){% endif %} {{ stock.unit }}</td></tr>
-    <tr><th>Last counted</th><td>{{ stock.last_counted.strftime('%Y-%m-%d') if stock.last_counted else 'Never' }}</td></tr>
+    <tr><th>Last counted</th><td>{{ stock.counted_text }}</td></tr>
     <tr><th>Where</th><td>{% for name, qty, approx in stock.places %}{{ name }}: {{ qty }}{% if approx %} (approximate){% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
   </table>
   {% else %}

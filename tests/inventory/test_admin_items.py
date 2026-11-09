@@ -92,7 +92,7 @@ def test_counted_item_has_no_gear_kind(client, inv):
     login(client, "test:invadmin")
     resp = client.post(f"/inv/admin/items/{inv.pens.id}/gear-kind",
                        data={"gear_kind_id": str(kind.id)}, follow_redirects=True)
-    assert "Only serialized items have an asset type." in resp.get_data(as_text=True)
+    assert "Only items tracked as assets have an asset type." in resp.get_data(as_text=True)
     assert db.session.get(SupplyItem, inv.pens.id).gear_kind_id is None
 
 
