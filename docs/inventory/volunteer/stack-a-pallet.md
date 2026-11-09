@@ -20,4 +20,4 @@ Scan a label the system has not seen. The screen says it is a new label and wher
 
 ## A wrong move
 
-There is no undo. For totes and assets, scan the right place, then scan the thing again. If loose items moved by mistake, move them back with **Move supplies**.
+There is no undo. For totes and assets, tap **New destination**, scan the right place, then scan the thing again. If loose items moved by mistake, move them back with **Move supplies**.

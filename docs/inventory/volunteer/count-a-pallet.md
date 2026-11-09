@@ -3,12 +3,15 @@
 Counting records what is on a pallet or in a tote. It never moves anything.
 
 1. Scan the pallet's label. The screen shows the pallet and anything already recorded in it.
-2. Tap an item and enter how many are loose on the pallet, then confirm the number with **OK**. The count appears under Counted.
-3. Scan a gray tote's label when you reach it. The scanner asks "Save this count of ... and start ...?"
-4. Tap **Save and start** to count the tote next. Tap **Keep counting** to stay on the pallet.
-5. Count what is loose in the tote the same way as the pallet.
-6. Tap **Submit count** when you are done. The screen shows "Count saved".
-7. Tap **Undo** right after a save if the count is wrong. Undo is offered for 30 seconds.
+2. Scan each gray tote's label as you reach it. Totes come off the top first.
+3. Count what is in the tote: tap an item, enter how many, then confirm with **OK**.
+4. Scan the next tote. The scanner asks "Save this count of ... and start ...?" Tap **Save and start**.
+5. Tap **Keep counting** if you scanned a tote by mistake and want to stay on the current one.
+6. When the totes are off, scan the pallet's label and tap **Save and start**. Count everything loose on it.
+7. Tap **Submit count**. The screen shows "Count saved".
+8. Tap **Undo** before you scan anything else if the count is wrong.
+
+A pallet count is a full count of what is loose on it, not just what you found.
 
 ## Totes, boxes and bins
 
