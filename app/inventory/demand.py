@@ -115,17 +115,34 @@ class Shortfall:
     free: int
 
 
-def selections() -> list[Selection]:
+def _items_with_supply_demand(event_cycle_id: int, item_ids: list[int]) -> set[int]:
+    """Return the items with a Supply line `demand_lines` would show for the event."""
+    lines = (_line_query()
+             .filter(WorkPortfolio.event_cycle_id == event_cycle_id,
+                     SupplyOrderLineDetail.item_id.in_(item_ids)).all())
+    held = {line_id for (line_id,) in db.session.query(InvAllocation.work_line_id).filter(
+        InvAllocation.work_line_id.in_([line.id for line in lines]))}
+    return {line.supply_detail.item_id for line in lines
+            if _state(line) == LINE_OPEN or line.id in held}
+
+
+def selections(event_cycle_id: int | None) -> list[Selection]:
     """List allocatable items by name, then the TechOps services they fill.
 
-    A service appears only when at least one such item names it.
+    A service appears only when at least one such item names it. An item that
+    names a service is listed itself only when the event has Supply demand for it;
+    otherwise its lines show under the service.
     """
     items = (db.session.query(SupplyItem)
              .filter(SupplyItem.is_active.is_(True), SupplyItem.is_serialized.is_(True),
                      SupplyItem.needs_pre_allocation.is_(True))
              .all())
     items.sort(key=lambda i: (i.item_name.casefold(), i.id))
-    out = [Selection("item", i.id, i.item_name, (i.id,)) for i in items]
+    linked = [i.id for i in items if i.techops_service_type_id is not None]
+    with_demand = (_items_with_supply_demand(event_cycle_id, linked)
+                   if linked and event_cycle_id is not None else set())
+    out = [Selection("item", i.id, i.item_name, (i.id,)) for i in items
+           if i.techops_service_type_id is None or i.id in with_demand]
     by_service: dict[int, list[int]] = {}
     for item in items:
         if item.techops_service_type_id is not None:
@@ -141,9 +158,10 @@ def selections() -> list[Selection]:
     return out
 
 
-def find_selection(kind: str | None, selection_id: int | None) -> Selection | None:
+def find_selection(kind: str | None, selection_id: int | None,
+                   event_cycle_id: int | None) -> Selection | None:
     """Return the selection asked for, or the first one when no kind is given."""
-    listed = selections()
+    listed = selections(event_cycle_id)
     if kind is None:
         return listed[0] if listed else None
     return next((s for s in listed if s.kind == kind and s.id == selection_id), None)

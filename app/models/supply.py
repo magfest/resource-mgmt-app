@@ -100,7 +100,7 @@ class SupplyItem(db.Model):
     # Leads reserve this item's assets for department order lines.
     needs_pre_allocation = db.Column(db.Boolean, nullable=False, default=False,
                                      server_default=db.false())
-    # Allocations of this item fill lines for this TechOps service; NULL fills Supply lines.
+    # Allocations of this item also fill TechOps lines for this service; Supply lines accept it either way.
     techops_service_type_id = db.Column(
         db.Integer,
         db.ForeignKey("techops_service_types.id",

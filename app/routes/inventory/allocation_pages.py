@@ -26,17 +26,19 @@ def _int(value):
         return None
 
 
-def _requested_selection():
+def _requested_selection(event):
     """Read `item`, `service` or `pick`; an absent or stale key falls back to the first selection."""
     # The form's select posts `pick`; redirects from the action routes carry `item` or `service`.
+    event_id = event.id if event else None
     pick = request.args.get("pick", "")
     kind, _, raw = pick.partition(":")
     if kind in ("item", "service"):
-        return find_selection(kind, _int(raw)) or find_selection(None, None)
+        return find_selection(kind, _int(raw), event_id) or find_selection(None, None, event_id)
     for kind in ("item", "service"):
         if kind in request.args:
-            return find_selection(kind, _int(request.args.get(kind))) or find_selection(None, None)
-    return find_selection(None, None)
+            return find_selection(kind, _int(request.args.get(kind)), event_id) or find_selection(
+                None, None, event_id)
+    return find_selection(None, None, event_id)
 
 
 def _asset_rows(assets, lines, event):
@@ -67,8 +69,8 @@ def _asset_rows(assets, lines, event):
 def allocation():
     events = allocation_events()
     event = pick_event(events, _int(request.args.get("event")))
-    options = selections()
-    selection = _requested_selection()
+    options = selections(event.id if event else None)
+    selection = _requested_selection(event)
     ctx = dict(line_label=line_label, events=events, event=event, options=options, selection=selection,
                can_allocate=can_allocate(get_user_ctx()),
                unallocated_only=request.args.get("show") == "unallocated")
@@ -107,7 +109,7 @@ def allocation_pick():
         flash("Tick at least one asset.", "error")
         return redirect(url_for("inventory.allocation", **carried))
     event = pick_event(allocation_events(), _int(request.args.get("event")))
-    selection = _requested_selection()
+    selection = _requested_selection(event)
     if event is None or selection is None:
         return redirect(url_for("inventory.allocation", **carried))
     is_move = request.args.get("move") == "1" and len(units) == 1

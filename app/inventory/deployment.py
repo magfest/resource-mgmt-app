@@ -59,7 +59,7 @@ def _rooms(lines, event_cycle_id: int) -> dict[int, dict]:
 def deployment_rows(event_cycle_id: int) -> list[ReportRow]:
     """Return one row per demand line of every selection, REMOVED rows once each."""
     pairs, seen_removed = [], set()
-    for selection in selections():
+    for selection in selections(event_cycle_id):
         for line in demand_lines(event_cycle_id, selection):
             if line.work_line_id is None:
                 key = line.allocations[0].id

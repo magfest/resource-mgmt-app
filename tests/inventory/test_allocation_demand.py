@@ -12,28 +12,36 @@ from tests.inventory.helpers import make_allocation, make_asset, supply_line, te
 
 
 def test_a_service_with_no_linked_item_is_not_a_selection(alloc):
-    names = [s.name for s in selections()]
-    assert names == ["Test Printer", "Test TV", "TechOps: Printer"]
+    names = [s.name for s in selections(alloc.event.id)]
+    assert names == ["Test TV", "TechOps: Printer"]
+
+
+def test_a_linked_item_is_listed_only_with_supply_demand(alloc):
+    techops_line(alloc, alloc.alpha)
+    assert "Test Printer" not in [s.name for s in selections(alloc.event.id)]
+    supply_line(alloc, alloc.alpha, 1, item=alloc.printer)
+    assert "Test Printer" in [s.name for s in selections(alloc.event.id)]
+    assert "Test Printer" not in [s.name for s in selections(alloc.other_event.id)]
 
 
 def test_find_selection_defaults_to_the_first(alloc):
-    assert find_selection(None, None).name == "Test Printer"
-    service = find_selection("service", alloc.printer_service.id)
+    assert find_selection(None, None, alloc.event.id).name == "Test TV"
+    service = find_selection("service", alloc.printer_service.id, alloc.event.id)
     assert (service.kind, service.item_ids) == ("service", (alloc.printer.id,))
-    assert find_selection("service", alloc.radio_service.id) is None
+    assert find_selection("service", alloc.radio_service.id, alloc.event.id) is None
 
 
 def test_only_submitted_lines_count_and_drafts_stay_hidden(alloc):
     supply_line(alloc, alloc.alpha, 3, status="DRAFT")
     supply_line(alloc, alloc.beta, 4)
-    lines = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id))
+    lines = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id, alloc.event.id))
     assert [(l.department_name, l.requested, l.approved) for l in lines] == [("Beta Team", 4, None)]
 
 
 def test_techops_lines_count_one_each_and_only_approved_is_approved(alloc):
     for status in ("APPROVED", "APPROVED_NEEDS_REVIEW", "PENDING"):
         techops_line(alloc, alloc.alpha, line_status=status)
-    sel = find_selection("service", alloc.printer_service.id)
+    sel = find_selection("service", alloc.printer_service.id, alloc.event.id)
     lines = demand_lines(alloc.event.id, sel)
     assert sorted(l.approved for l in lines if l.approved) == [1]
     assert shortfall(sel, lines) == Shortfall(requested=3, approved=1, allocated=0, free=0)
@@ -41,7 +49,7 @@ def test_techops_lines_count_one_each_and_only_approved_is_approved(alloc):
 
 def test_a_rejected_line_shows_only_while_something_is_allocated(alloc):
     line = supply_line(alloc, alloc.alpha, 2, line_status="REJECTED")
-    sel = find_selection("item", alloc.tv.id)
+    sel = find_selection("item", alloc.tv.id, alloc.event.id)
     assert demand_lines(alloc.event.id, sel) == []
     make_allocation(make_asset(alloc.tv, "U-0001"), line)
     assert demand_lines(alloc.event.id, sel)[0].warnings == ["Line changed: rejected"]
@@ -54,7 +62,7 @@ def test_draft_and_archived_lines_with_allocations_warn(alloc):
     make_allocation(make_asset(alloc.tv, "U-0002"), archived)
     db.session.get(WorkItem, archived.work_item_id).is_archived = True
     db.session.flush()
-    rows = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id))
+    rows = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id, alloc.event.id))
     assert [(r.state, r.warnings, r.left) for r in rows] == [
         (LINE_DRAFT, ["Line changed: back in draft"], 0),
         (LINE_ARCHIVED, ["Line changed: archived"], 0)]
@@ -75,7 +83,7 @@ def test_a_cut_line_warns_and_keeps_its_allocations(alloc):
         make_allocation(make_asset(alloc.tv, label), line)
     line.supply_detail.quantity_requested = 2
     db.session.commit()
-    row = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id))[0]
+    row = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id, alloc.event.id))[0]
     assert row.allocated == 3 and row.left == 0
     assert row.warnings == ["Line changed: now asks for 2"]
 
@@ -86,7 +94,7 @@ def test_over_approved_warns_only_when_an_approval_exists(alloc):
     for i in range(1, 4):
         make_allocation(make_asset(alloc.tv, f"U-000{i}"), approved)
         make_allocation(make_asset(alloc.tv, f"U-001{i}"), unreviewed)
-    rows = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id))
+    rows = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id, alloc.event.id))
     assert [(r.department_name, r.approved, r.warnings, r.left) for r in rows] == [
         ("Alpha Team", 2, ["Over the approved 2"], 1),
         ("Beta Team", None, [], 1)]
@@ -98,7 +106,7 @@ def test_a_deleted_line_shows_as_removed_and_still_counts(alloc):
     db.session.commit()
     db.session.delete(line)
     db.session.commit()
-    sel = find_selection("service", alloc.printer_service.id)
+    sel = find_selection("service", alloc.printer_service.id, alloc.event.id)
     lines = demand_lines(alloc.event.id, sel)
     assert [(l.state, l.words, l.department_name, l.warnings) for l in lines] == [
         ("REMOVED", "front desk", "Alpha Team", ["Line changed: removed"])]
@@ -109,7 +117,7 @@ def test_full_lines_sort_last(alloc):
     alpha = supply_line(alloc, alloc.alpha, 1)
     supply_line(alloc, alloc.beta, 2)
     make_allocation(make_asset(alloc.tv, "U-0001"), alpha)
-    rows = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id))
+    rows = demand_lines(alloc.event.id, find_selection("item", alloc.tv.id, alloc.event.id))
     assert [(r.department_name, r.is_full) for r in rows] == [
         ("Beta Team", False), ("Alpha Team", True)]
 
@@ -122,7 +130,7 @@ def test_free_counts_in_service_unallocated_assets_of_any_event(alloc):
     rented.ownership = "RENTED"
     make_asset(alloc.tv, "U-0004")
     db.session.flush()
-    sel = find_selection("item", alloc.tv.id)
+    sel = find_selection("item", alloc.tv.id, alloc.event.id)
     assert shortfall(sel, demand_lines(alloc.event.id, sel)).free == 2
 
 
@@ -132,7 +140,7 @@ def test_assets_list_in_service_or_allocated(alloc):
     make_allocation(held, elsewhere)
     make_asset(alloc.tv, "U-0002", condition="LOST")
     make_asset(alloc.tv, "U-0001")
-    sel = find_selection("item", alloc.tv.id)
+    sel = find_selection("item", alloc.tv.id, alloc.event.id)
     assert [u.identifiers[0].value for u in selection_assets(sel, False)] == [
         "U-0001", "U-0003"]
     assert [u.identifiers[0].value for u in selection_assets(sel, True)] == ["U-0001"]
@@ -176,7 +184,7 @@ def test_asset_warning(alloc):
 
 
 def test_demand_lines_run_in_a_fixed_number_of_selects(alloc):
-    sel = find_selection("item", alloc.tv.id)
+    sel = find_selection("item", alloc.tv.id, alloc.event.id)
 
     def selects_for(n):
         for i in range(n):

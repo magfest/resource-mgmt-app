@@ -126,4 +126,18 @@ def test_a_stale_pick_falls_back_to_the_first_selection(client, alloc):
     login(client, "test:admin")
     for args in ({"pick": "item:999999"}, {"item": 999999}, {"service": 999999}):
         page = _page(client, alloc, event=alloc.event.id, **args)
-        assert "Test Printer: 0 requested · 0 approved · 0 allocated · 0 free" in page
+        assert "Test TV: 3 requested · 0 approved · 0 allocated · 0 free" in page
+
+
+def test_a_printer_item_without_supply_lines_shows_only_its_service(client, alloc):
+    from tests.inventory.helpers import techops_line
+    techops_line(alloc, alloc.alpha, usage="front desk")
+    db.session.commit()
+    login(client, "test:admin")
+    page = _page(client, alloc, event=alloc.event.id)
+    assert ">TechOps: Printer<" in page and ">Test Printer<" not in page
+    assert "front desk" in _page(client, alloc, event=alloc.event.id,
+                                 pick=f"service:{alloc.printer_service.id}")
+    supply_line(alloc, alloc.alpha, 1, item=alloc.printer)
+    db.session.commit()
+    assert ">Test Printer<" in _page(client, alloc, event=alloc.event.id)
