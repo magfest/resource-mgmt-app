@@ -823,6 +823,15 @@ def test_units_list_summary_line(client, inv):
     assert f"2 units, 2 checked since {day}, 1 broken" in page
 
 
+def test_units_list_says_so_when_the_date_cannot_be_used(client, inv):
+    _week_units(inv, 1)
+    login(client, "test:operator")
+    sentence = "That date could not be used, so this shows the last 30 days."
+    assert sentence in _list(client, since="nope").get_data(as_text=True)
+    assert sentence not in _list(client, since=_since(10)).get_data(as_text=True)
+    assert sentence not in _list(client).get_data(as_text=True)
+
+
 def test_units_list_query_count_is_fixed(client, inv):
     login(client, "test:operator")
     _week_units(inv, 3)

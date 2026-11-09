@@ -192,7 +192,7 @@ def units():
             if kind_code else None)
     fields = _filter_fields(kind)
     chosen = _selected_filters(fields)
-    day, _ = parse_since(request.args.get("since"))
+    day, fell_back = parse_since(request.args.get("since"))
     start = since_start(day)
     show = request.args.get("show", "")
     if show not in CHECK_FILTERS:
@@ -220,7 +220,7 @@ def units():
     return render_inventory_page(
         "inventory/units.html", q=q, rows=_unit_rows(found), kinds=kinds, kind=kind,
         total=total, checked=checked, broken=broken, show=show, page=page, pages=pages,
-        since=day.isoformat(), since_word=local_day(start),
+        since=day.isoformat(), since_word=local_day(start), fell_back=fell_back,
         keep=keep, filter_fields=fields, chosen=chosen, condition_words=CONDITION_WORDS,
         show_buttons=(("checked", "Checked"), ("not_checked", "Not checked"),
                       ("broken", "Broken"), ("no_number", "No number yet")))
