@@ -121,3 +121,9 @@ def test_page_does_not_query_per_item(inv):
     _items_each_in_own_container(inv, 12, 100)
     db.session.expire_all()
     assert _selects(supplies_on_hand) == few
+
+
+def test_item_names_link_to_the_item_page(client, pens):
+    login(client, "test:operator")
+    page = client.get(URL).get_data(as_text=True)
+    assert f'href="/inv/admin/items/{pens.id}"' in page

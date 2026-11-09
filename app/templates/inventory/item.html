@@ -1,0 +1,38 @@
+{% extends "layout/base.html" %}
+{% from "components/_request_tabs.html" import request_tabs with context %}
+{% block title %}{{ item.item_name }} - Items - Inventory{% endblock %}
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .item-page, .item-page td { overflow-wrap: anywhere; }
+  .item-page .pair { width: 100%; border-collapse: collapse; }
+  .item-page .pair th { text-align: left; font-weight: normal; color: #666; padding: 4px 12px 4px 0; vertical-align: top; }
+  .item-page .pair td { padding: 4px 0; }
+</style>
+<div class="item-page">
+<div style="margin-bottom: 16px;">
+  <h1 style="margin: 0;">{{ item.item_name }} <span class="muted" style="font-weight: normal; font-size: 0.6em;">{{ item.category.name }}</span></h1>
+  <div class="muted" style="margin-top: 4px;">{{ status_line }}</div>
+  <div class="muted" style="margin-top: 4px;"><a href="{{ url_for('inventory.items') }}">Items</a></div>
+</div>
+{% call(tab) request_tabs(tabs, active=active_tab) %}
+  {% if tab == 'about' %}
+  <table class="pair">
+    <tr><th>Name</th><td>{{ item.item_name }}</td></tr>
+    <tr><th>Category</th><td>{{ item.category.name }}</td></tr>
+    <tr><th>Unit of measure</th><td>{{ item.unit }}</td></tr>
+    <tr><th>Departments can order this</th><td>{{ 'Yes' if item.is_orderable else 'No' }}</td></tr>
+    <tr><th>Track each piece as an asset</th><td>{{ 'Yes' if item.is_serialized else 'No' }}</td></tr>
+    <tr><th>Active</th><td>{{ 'Yes' if item.is_active else 'No' }}</td></tr>
+  </table>
+  {% elif tab == 'ordering' %}
+  <div class="muted">Ordering settings.</div>
+  {% elif tab == 'inventory' %}
+  <div class="muted">Inventory settings.</div>
+  {% elif tab == 'assets' %}
+  <div class="muted">Assets of this item.</div>
+  {% elif tab == 'on_hand' %}
+  <div class="muted">Counted stock of this item.</div>
+  {% endif %}
+{% endcall %}
+</div>
+{% endblock %}

@@ -5,38 +5,32 @@ get their own page. Items that are not orderable are created here because they
 never belong in the Supply catalog.
 """
 from flask import abort, flash, redirect, request, url_for
+from sqlalchemy.orm import joinedload
 
 from app import db
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import InventoryError
-from app.inventory.unit_fields import active_fields, display_value, set_model_default
+from app.inventory.unit_fields import active_fields, set_model_default
 from app.models import (
-    InvGearKind, InvModelDefault, InvStock, InvUnit, SupplyCategory, SupplyItem,
+    InvGearKind, InvStock, InvUnit, SupplyCategory, SupplyItem,
 )
 
 from . import inventory_bp
-from .helpers import render_inventory_page, require_inventory_admin
+from .helpers import render_inventory_page, require_inventory_admin, require_item_viewer
 
 
 @inventory_bp.get("/admin/items")
-@require_inventory_admin
+@require_item_viewer
 def items():
+    show_inactive = request.args.get("show") == "inactive"
     rows = (db.session.query(SupplyItem).join(SupplyCategory)
-            .filter(SupplyItem.is_active.is_(True))
+            .options(joinedload(SupplyItem.gear_kind))
+            .filter(SupplyItem.is_active.is_(not show_inactive))
             .order_by(SupplyCategory.name, SupplyItem.item_name).all())
     categories = (db.session.query(SupplyCategory).filter_by(is_active=True)
                   .order_by(SupplyCategory.name).all())
-    gear_kinds = db.session.query(InvGearKind).order_by(InvGearKind.name).all()
-    defaults = {}
-    for item in rows:
-        if item.is_serialized and item.gear_kind is not None:
-            held = {d.field_id: d for d in db.session.query(InvModelDefault)
-                    .filter_by(item_id=item.id)}
-            defaults[item.id] = [(f, display_value(f, held.get(f.id)),
-                                  [c.label for c in f.choices if c.is_active])
-                                 for f in active_fields(item.gear_kind)]
     return render_inventory_page("inventory/items.html", items=rows, categories=categories,
-                                 gear_kinds=gear_kinds, defaults=defaults)
+                                 show_inactive=show_inactive)
 
 
 def _barcode_error(item_id: int | None, barcode: str | None) -> str | None:

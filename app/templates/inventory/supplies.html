@@ -10,7 +10,7 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td>{{ r.name }}</td>
+      <td><a href="{{ url_for('inventory.item_page', item_id=r.item_id) }}">{{ r.name }}</a></td>
       <td>{% if r.approximate %}about {% endif %}{{ r.total }} {{ r.unit }}</td>
       <td>{% if r.counted_text %}{{ r.counted_text }}{% else %}<span class="muted">Never counted</span>{% endif %}</td>
       <td>{{ r.where }}</td>

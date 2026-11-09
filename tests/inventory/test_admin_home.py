@@ -143,7 +143,8 @@ def test_operator_does_not_see_admin_links(client, week):
     login(client, "test:operator")
     page = client.get("/inv/").data.decode()
     assert "Day to day" in page
-    for href in ("/inv/admin/items", "/inv/admin/devices", "/inv/admin/printers",
+    for href in ("/inv/admin/devices", "/inv/admin/printers",
                  "/inv/admin/operators", "/inv/admin/movements"):
         assert f'href="{href}"' not in page
+    assert 'href="/inv/admin/items"' in page
     assert "Import old tech lists" not in page

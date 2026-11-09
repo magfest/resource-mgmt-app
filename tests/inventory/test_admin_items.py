@@ -66,14 +66,6 @@ def test_items_page_refuses_bad_pack_size_and_saves_nothing(client, inv):
     assert any("pack size" in m.lower() for m in flashes)
 
 
-def test_items_page_offers_the_asset_tag_checkbox_not_a_station(client, inv):
-    login(client, "test:invadmin")
-    html = client.get("/inv/admin/items").get_data(as_text=True)
-    assert 'name="needs_asset_tag"' in html and "Needs an asset tag" in html
-    assert 'name="check_station"' not in html and "TV check" not in html
-    assert 'name="pack_size"' in html
-
-
 def test_admin_sets_gear_kind_and_model_defaults(client, inv):
     from tests.inventory.helpers import seed_gear_kind
     from app.models import InvModelDefault
@@ -82,9 +74,6 @@ def test_admin_sets_gear_kind_and_model_defaults(client, inv):
     login(client, "test:invadmin")
     client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": str(kind.id)})
     assert db.session.get(SupplyItem, inv.laptop.id).gear_kind_id == kind.id
-    page = client.get("/inv/admin/items").get_data(as_text=True)
-    assert f"/inv/admin/items/{inv.laptop.id}/defaults" in page
-    assert f"/inv/admin/items/{inv.pens.id}/defaults" not in page
     client.post(f"/inv/admin/items/{inv.laptop.id}/defaults",
                 data={f"field_{kind.fields[0].id}": "55"})
     default = db.session.query(InvModelDefault).one()
@@ -105,9 +94,6 @@ def test_counted_item_has_no_gear_kind(client, inv):
                        data={"gear_kind_id": str(kind.id)}, follow_redirects=True)
     assert "Only serialized items have an asset type." in resp.get_data(as_text=True)
     assert db.session.get(SupplyItem, inv.pens.id).gear_kind_id is None
-    page = client.get("/inv/admin/items").get_data(as_text=True)
-    assert f"/inv/admin/items/{inv.pens.id}/gear-kind" not in page
-    assert f"/inv/admin/items/{inv.laptop.id}/gear-kind" in page
 
 
 class _LabelAudit(HTMLParser):
@@ -140,11 +126,6 @@ def _items_page(client):
 
 
 def test_items_page_labels_every_visible_control(client, inv):
-    from tests.inventory.helpers import seed_gear_kind
-    kind = seed_gear_kind("TV", "TV", [("SIZE", "Size", "NUMBER", "in")])
-    db.session.commit()
-    login(client, "test:invadmin")
-    client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": str(kind.id)})
     audit = _LabelAudit()
     audit.feed(_items_page(client))
     assert audit.controls
@@ -153,17 +134,14 @@ def test_items_page_labels_every_visible_control(client, inv):
     assert bare == []
 
 
-def test_items_page_folds_defaults_closed(client, inv):
+def test_items_list_shows_tracking_and_asset_type(client, inv):
     from tests.inventory.helpers import seed_gear_kind
-    kind = seed_gear_kind("TV", "TV", [("SIZE", "Size", "NUMBER", "in")])
+    kind = seed_gear_kind("TV", "TV", [])
+    inv.laptop.gear_kind_id = kind.id
     db.session.commit()
-    login(client, "test:invadmin")
-    client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": str(kind.id)})
-    html = _items_page(client)
-    assert "<summary>Defaults for new assets</summary>" in html
-    audit = _LabelAudit()
-    audit.feed(html)
-    assert audit.details and all("open" not in d for d in audit.details)
+    page = _items_page(client)
+    assert "Tracked as assets" in page and "Counted" in page and ">TV<" in page
+    assert "Serialized" not in page
 
 
 def test_items_page_words(client, inv):

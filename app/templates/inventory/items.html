@@ -3,11 +3,12 @@
 {% block content %}
 <h1>Items</h1>
 <div class="muted mb-16">
-  Serialized items are tracked one asset at a time. Items that are not orderable
-  never appear in the Supply catalog. Barcode holds a manufacturer UPC or an I-
-  label. Pack size is the number of pieces in one pack. Needs an asset tag makes
-  the Check station ask for one before it finishes an asset.
+  Items tracked as assets are followed one piece at a time. Items that are not
+  orderable never appear in the Supply catalog.
+  {% if show_inactive %}<a href="{{ url_for('inventory.items') }}">Show active items</a>
+  {% else %}<a href="{{ url_for('inventory.items', show='inactive') }}">Show inactive items</a>{% endif %}
 </div>
+{% if is_inv_admin %}
 <form method="post" action="{{ url_for('inventory.create_deploy_item') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <strong>Add an item that is not orderable</strong>
@@ -19,68 +20,27 @@
       </select>
     </label>
     <label>Unit of measure <input type="text" name="unit" value="each" maxlength="32" style="width: 90px;"></label>
-    <label><input type="checkbox" name="is_serialized" value="1" checked> Serialized</label>
+    <label><input type="checkbox" name="is_serialized" value="1" checked> Track each piece as an asset</label>
   </div>
   <button type="submit" class="btn btn-primary">Add item</button>
 </form>
-{% for i in items %}
-<div class="card mb-16">
-  <div><strong>{{ i.item_name }}</strong> <span class="muted">{{ i.category.name }}</span></div>
-  <form id="item-{{ i.id }}" method="post" action="{{ url_for('inventory.update_item', item_id=i.id) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  </form>
-  <div class="row" style="flex-wrap: wrap; align-items: flex-end;">
-    <label><input type="checkbox" form="item-{{ i.id }}" name="is_serialized" value="1" {% if i.is_serialized %}checked{% endif %}> Serialized</label>
-    <label><input type="checkbox" form="item-{{ i.id }}" name="is_orderable" value="1" {% if i.is_orderable %}checked{% endif %}> Orderable</label>
-    <label><input type="checkbox" form="item-{{ i.id }}" name="needs_asset_tag" value="1" {% if i.needs_asset_tag %}checked{% endif %}> Needs an asset tag</label>
-  </div>
-  <div class="row" style="flex-wrap: wrap; align-items: flex-end;">
-    <label>Barcode <input type="text" form="item-{{ i.id }}" name="barcode" value="{{ i.barcode or '' }}" maxlength="64" style="width: 140px; max-width: 100%;"></label>
-    <label>Pack size <input type="number" form="item-{{ i.id }}" name="pack_size" value="{{ i.pack_size if i.pack_size is not none else '' }}" min="1" step="1" style="width: 80px;"></label>
-    <button type="submit" form="item-{{ i.id }}" class="btn btn-small">Save</button>
-  </div>
-  {% if i.is_serialized %}
-  <form method="post" action="{{ url_for('inventory.set_gear_kind', item_id=i.id) }}" class="row" style="flex-wrap: wrap; align-items: flex-end;">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Asset type
-      <select name="gear_kind_id">
-        <option value=""></option>
-        {% for k in gear_kinds %}<option value="{{ k.id }}" {% if i.gear_kind_id == k.id %}selected{% endif %}>{{ k.name }}</option>{% endfor %}
-      </select>
-    </label>
-    <button type="submit" class="btn btn-small">Save asset type</button>
-  </form>
-  {% endif %}
-  {% if defaults.get(i.id) %}
-  <details>
-    <summary>Defaults for new assets</summary>
-    <form method="post" action="{{ url_for('inventory.set_model_defaults', item_id=i.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      {% for field, text, choices in defaults[i.id] %}
-      <label style="display: block;">{{ field.name }}
-        {% if field.field_type == 'CHOICE' %}
-        <select name="field_{{ field.id }}"><option value=""></option>
-          {% for label in choices %}<option value="{{ label }}" {% if text == label %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-        {% elif field.field_type == 'BOOL' %}
-        <select name="field_{{ field.id }}"><option value=""></option>
-          <option value="Yes" {% if text == 'Yes' %}selected{% endif %}>Yes</option>
-          <option value="No" {% if text == 'No' %}selected{% endif %}>No</option>
-        </select>
-        {% elif field.field_type == 'NUMBER' %}
-        <input type="text" inputmode="decimal" name="field_{{ field.id }}" value="{{ text[:-(field.unit_label|length + 1)] if field.unit_label and text.endswith(' ' ~ field.unit_label) else text }}" maxlength="16" style="width: 8em;">{% if field.unit_label %} {{ field.unit_label }}{% endif %}
-        {% else %}
-        <input type="text" name="field_{{ field.id }}" value="{{ text }}" maxlength="128" style="width: 100%; max-width: 360px;">
-        {% endif %}
-      </label>
-      {% endfor %}
-      <button type="submit" class="btn btn-small">Save defaults</button>
-      <div class="muted">New assets copy these once. Changing them later does not change existing assets.</div>
-    </form>
-  </details>
-  {% endif %}
+{% endif %}
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>Item</th><th>Category</th><th>Orderable</th><th>Tracking</th><th>Asset type</th></tr></thead>
+  <tbody>
+  {% for i in items %}
+    <tr>
+      <td><a href="{{ url_for('inventory.item_page', item_id=i.id) }}">{{ i.item_name }}</a></td>
+      <td>{{ i.category.name }}</td>
+      <td>{{ 'Yes' if i.is_orderable else 'No' }}</td>
+      <td>{{ 'Tracked as assets' if i.is_serialized else 'Counted' }}</td>
+      <td>{{ i.gear_kind.name if i.gear_kind else '' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">No items here.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
 </div>
-{% else %}
-<div class="muted">No items yet.</div>
-{% endfor %}
 {% endblock %}

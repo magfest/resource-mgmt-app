@@ -35,8 +35,8 @@
 
 <h2>Set up</h2>
 <ul>
-  {% if is_inv_admin %}
   <li><a href="{{ url_for('inventory.items') }}">Items</a></li>
+  {% if is_inv_admin %}
   <li><a href="{{ url_for('inventory.checklists') }}">Checklists</a></li>
   <li><a href="{{ url_for('inventory.containers') }}">Locations and containers</a></li>
   <li><a href="{{ url_for('inventory.kinds') }}">Location and container kinds</a></li>
