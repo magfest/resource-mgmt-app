@@ -1,4 +1,4 @@
-"""Movement log, newest first, filterable by container, item, device, and date."""
+"""Movement log, newest first, filterable by location or container, item, device, and date."""
 from datetime import datetime
 
 from flask import flash, request
@@ -24,7 +24,7 @@ def movements():
     if container_code:
         container = db.session.query(InvContainer).filter_by(label_code=container_code).first()
         if container is None:
-            flash(f"No container has the label {container_code}.", "error")
+            flash(f"No location or container has the label {container_code}.", "error")
         cid = container.id if container else -1
         query = query.filter(or_(InvMovement.subject_container_id == cid,
                                  InvMovement.from_container_id == cid,

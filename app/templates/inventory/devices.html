@@ -25,14 +25,14 @@
       {% endfor %}
     </select>
   </label>
-  <label>Home container label (optional)
+  <label>Home location label (optional)
     <input type="text" name="home_container_code" maxlength="32" autocapitalize="characters">
-    <span class="muted">Needed for a Unit station: scan or type the warehouse label.</span>
+    <span class="muted">Needed for a Check station: scan or type the warehouse label.</span>
   </label>
   <button type="submit" class="btn btn-primary">Create enrollment code</button>
 </form>
 <table class="devices-table">
-  <thead><tr><th>Name</th><th>Station</th><th>Who</th><th>Last seen</th><th>Home container</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Station</th><th>Who</th><th>Last seen</th><th>Home location</th><th></th></tr></thead>
   <tbody>
   {% for r in active %}
     {% set d = r.device %}
@@ -49,7 +49,7 @@
               {% endfor %}
             </select>
             <input type="text" name="home_container_code" maxlength="32" placeholder="Home label"
-                   value="{{ d.home_container.label_code if d.home_container else '' }}" aria-label="Home container for {{ d.name }}">
+                   value="{{ d.home_container.label_code if d.home_container else '' }}" aria-label="Home location for {{ d.name }}">
             <button type="submit" class="btn btn-small">Save</button>
           </form>
         </details>
@@ -61,7 +61,7 @@
         {% else %}<span class="muted">Nobody signed in</span>{% endif %}
       </td>
       <td data-label="Last seen">{% if r.stale %}<span class="pill pill-warning">{{ r.seen_text }}</span>{% else %}{{ r.seen_text }}{% endif %}</td>
-      <td data-label="Home container" class="muted">{{ d.home_container.label_code if d.home_container else 'Top level' }}</td>
+      <td data-label="Home location" class="muted">{{ d.home_container.label_code if d.home_container else 'Top level' }}</td>
       <td>
         <form method="post" action="{{ url_for('inventory.revoke_device_route', device_id=d.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

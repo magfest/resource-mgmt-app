@@ -337,3 +337,11 @@ def test_a_station_needs_a_device_name_and_two_printers_cannot_share_one(client,
     assert db.session.query(InvPrinter).count() == 1
     client.post(PRINTERS, data=_form(device, name="Zebra D", device_name="Other"))
     assert db.session.query(InvPrinter).count() == 2
+
+
+def test_label_routes_use_asset_and_item(client, inv):
+    login(client, "test:invadmin")
+    page = client.get(PRINTERS).get_data(as_text=True)
+    for word in ("Owned asset", "Rented asset", "<label>Item", "Location or container"):
+        assert word in page
+    assert "Owned unit" not in page and "Item type" not in page

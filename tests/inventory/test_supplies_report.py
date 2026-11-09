@@ -77,7 +77,7 @@ def test_csv_where_cell_and_columns(client, pens):
     login(client, "test:operator")
     response = client.get(URL, query_string={"format": "csv"})
     lines = response.get_data(as_text=True).splitlines()
-    assert lines[0] == "Item,Unit,Total,Exact,Last counted,Where"
+    assert lines[0] == "Item,Unit of measure,Total,Exact,Last counted,Where"
     assert lines[1] == 'Blue Pen,each,25,no,,C-P4 Pallet 4: 20; C-T2 Tote 2: about 5'
     assert "supplies-" in response.headers["Content-Disposition"]
 

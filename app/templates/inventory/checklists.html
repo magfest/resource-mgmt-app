@@ -3,13 +3,13 @@
 {% block content %}
 <h1>Checklists</h1>
 <div class="muted mb-16">
-  Each line is a yes/no question a volunteer answers for every unit of the model.
+  Each line is a yes/no question a volunteer answers for every asset of the item.
   Lines turned off stay listed so past checks still read.
 </div>
 <form method="get" action="{{ url_for('inventory.checklists') }}" class="card mb-16">
-  <label>Model
+  <label>Item
     <select name="item_id">
-      <option value="">Choose a model</option>
+      <option value="">Choose an item</option>
       {% for i in items %}
       <option value="{{ i.id }}" {% if item and item.id == i.id %}selected{% endif %}>{{ i.item_name }}</option>
       {% endfor %}
@@ -55,7 +55,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="6" class="muted">No lines yet. This model gets the pass-or-fail check.</td></tr>
+    <tr><td colspan="6" class="muted">No lines yet. This item gets the pass-or-fail check.</td></tr>
   {% endfor %}
   </tbody>
 </table>

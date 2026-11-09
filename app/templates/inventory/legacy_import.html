@@ -4,8 +4,8 @@
 <h1>Import old tech lists</h1>
 <div class="muted mb-16">
   Upload a CSV export of TVs, monitors, printers, label printers, laminators, projectors, barcode scanners or cameras.
-  Each row becomes a named unit. Rows that need a person are listed for review
-  and are not imported. Names already on a unit are skipped.
+  Each row becomes a named asset. Rows that need a person are listed for review
+  and are not imported. Names already on an asset are skipped.
 </div>
 {% if error %}<p class="card mb-16"><strong>{{ error }}</strong></p>{% endif %}
 <form method="post" enctype="multipart/form-data" class="card mb-16">
@@ -28,7 +28,7 @@
   <textarea name="file_text" hidden aria-hidden="true">{{ file_text }}</textarea>
   <div style="overflow-x: auto;">
   <table>
-    <thead><tr><th>Gear kind</th><th>Model text</th><th>Rows</th><th>Type</th></tr></thead>
+    <thead><tr><th>Asset type</th><th>Model text</th><th>Rows</th><th>Item</th></tr></thead>
     <tbody>
     {% for m in result.models %}
       {% set kind = kinds.get(m.gear_kind_code) %}
@@ -40,15 +40,15 @@
         <td>{{ m.count }}</td>
         <td>
           <input type="hidden" name="key-{{ loop.index0 }}" value="{{ m.key }}">
-          <select name="type-{{ loop.index0 }}" class="type-select" aria-label="Type for {{ kind.name }} {{ m.text }}">
-            <option value="">Choose a type</option>
+          <select name="type-{{ loop.index0 }}" class="type-select" aria-label="Item for {{ kind.name }} {{ m.text }}">
+            <option value="">Choose an item</option>
             {% for item in types_by_kind.get(kind.id, []) %}
             <option value="{{ item.id }}"{% if chosen == item.id|string %} selected{% endif %}>{{ item.item_name }}</option>
             {% endfor %}
-            <option value="new"{% if is_new %} selected{% endif %}>Create new type</option>
+            <option value="new"{% if is_new %} selected{% endif %}>Create new item</option>
           </select>
           <input type="text" name="new-{{ loop.index0 }}" class="new-name" maxlength="256"
-                 placeholder="New type name" aria-label="New type name"
+                 placeholder="New item name" aria-label="New item name"
                  value="{{ chosen[new_prefix|length:] if is_new else '' }}"{% if not is_new %} hidden{% endif %}>
         </td>
       </tr>
@@ -56,7 +56,7 @@
     </tbody>
   </table>
   </div>
-  <label id="category-row"{% if not any_new %} hidden{% endif %}>Category for new types
+  <label id="category-row"{% if not any_new %} hidden{% endif %}>Category for new items
     <select name="category_id">
       <option value="">Choose a category</option>
       {% for c in categories %}<option value="{{ c.id }}"{% if category_id == c.id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
@@ -65,7 +65,7 @@
   <div class="row">
     <button type="submit" name="action" value="preview" class="btn btn-small">Preview again</button>
     {% if result.ready and not applied %}
-    <button type="submit" name="action" value="apply" class="btn btn-primary" id="apply-button">Import {{ result.ready|length }} units</button>
+    <button type="submit" name="action" value="apply" class="btn btn-primary" id="apply-button">Import {{ result.ready|length }} assets</button>
     <span class="muted" id="preview-first" hidden>Preview again to import.</span>
     {% endif %}
   </div>

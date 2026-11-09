@@ -45,7 +45,7 @@ NOT_CSV = "This file could not be read as a CSV."
 APPLY_FAILED = "Nothing was imported. The error was logged."
 # Wider ids are refused before they reach an integer column.
 MAX_ID_DIGITS = 9
-NOT_TECH = ("No rows in this file look like tech units. "
+NOT_TECH = ("No rows in this file look like tech assets. "
             "Power bins and other stock import separately.")
 MAX_TYPE_NAME = 256
 # The TV export's Model column holds brands, so every TV shares one key.
@@ -201,7 +201,7 @@ def _name_problem(row: LegacyRow, name_counts: Counter) -> str | None:
     if not row.name:
         return "The ID is blank."
     if row.name == "???":
-        return "The ID is ???, so the unit has no name."
+        return "The ID is ???, so the asset has no name."
     if kind_code_for(row.name) is None:
         return "The ID does not start with a known prefix."
     if name_counts[name_key(row.name)] > 1:
@@ -215,13 +215,13 @@ def _tag_problem(row: LegacyRow, tag_counts: Counter) -> str | None:
     if not row.tag:
         return None
     if tag_counts[normalize_code(row.tag)] > 1:
-        return f"Tag {row.tag} appears more than once in this file."
+        return f"Asset tag {row.tag} appears more than once in this file."
     try:
         check_tag(row.tag)
     except AlreadyReceived:
-        return f"Tag {row.tag} is already on another unit."
+        return f"Asset tag {row.tag} is already on another asset."
     except InventoryError:
-        return f"Tag {row.tag} cannot be used as a MAGFest tag."
+        return f"Asset tag {row.tag} cannot be used as an asset tag."
     return None
 
 
@@ -251,13 +251,13 @@ class _Resolver:
     def _resolve(self, key, kind, text):
         value = (self.mapping.get(key) or "").strip()
         if not value:
-            return None, f"Choose a type for {_describe(kind, text)}."
+            return None, f"Choose an item for {_describe(kind, text)}."
         if value.startswith(NEW_PREFIX):
             return self._new(_type_name(value), kind)
         item_id = parse_id(value)
         item = db.session.get(SupplyItem, item_id) if item_id is not None else None
         if item is None or not item.is_serialized or item.gear_kind_id != kind.id:
-            return None, f"The chosen type is not a {kind.name} type."
+            return None, f"The chosen item is not a {kind.name} item."
         return item, None
 
     def _new(self, name: str, kind: InvGearKind):
@@ -277,7 +277,7 @@ class _Resolver:
         if len(self.kinds_for_new.get(name.casefold(), ())) > 1:
             return None, f"{name} is chosen for more than one gear kind."
         if self.category is None:
-            return None, "Choose a category for new types."
+            return None, "Choose a category for new items."
         new = self.new_types.setdefault(name.casefold(), _NewType(name, kind.id))
         return new, None
 
@@ -336,7 +336,7 @@ def _plan(data: bytes, mapping: dict[str, str],
             continue
         kind = kinds.get(kind_code_for(row.name) or "")
         if problem is None and kind is None:
-            problem = f"No gear kind {kind_code_for(row.name)} exists."
+            problem = f"No asset type {kind_code_for(row.name)} exists."
         if problem is not None:
             review.append((row.line, f"{_label(row)}: {problem}"))
             continue

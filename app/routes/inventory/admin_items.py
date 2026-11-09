@@ -1,7 +1,7 @@
 """Inventory flags on SupplyItem, editable by inventory admins.
 
 The Supply item form is gated to Supply admins, so the inventory columns
-get their own page. Deploy-only items are created here because they
+get their own page. Items that are not orderable are created here because they
 never belong in the Supply catalog.
 """
 from flask import abort, flash, redirect, request, url_for
@@ -78,7 +78,7 @@ def update_item(item_id: int):
         return redirect(url_for("inventory.items"))
     if not serialized and item.is_serialized and db.session.query(InvUnit).filter_by(
             item_id=item.id).first():
-        flash(f"{item.item_name} has serialized units and must stay serialized.", "error")
+        flash(f"{item.item_name} has serialized assets and must stay serialized.", "error")
         return redirect(url_for("inventory.items"))
     pack_size, error = _parse_pack_size(request.form.get("pack_size"))
     error = error or _barcode_error(item.id, barcode)
@@ -103,7 +103,7 @@ def create_deploy_item():
     unit = (request.form.get("unit") or "each").strip()
     category = db.session.get(SupplyCategory, request.form.get("category_id", type=int) or 0)
     if not name or len(name) > 256 or category is None or not unit or len(unit) > 32:
-        flash("A deploy-only item needs a name, a category, and a unit.", "error")
+        flash("An item that is not orderable needs a name, a category, and a unit of measure.", "error")
         return redirect(url_for("inventory.items"))
     serialized = request.form.get("is_serialized") == "1"
     db.session.add(SupplyItem(
@@ -122,16 +122,16 @@ def set_gear_kind(item_id: int):
     if item is None:
         abort(404)
     if not item.is_serialized:
-        flash("Only serialized items have a gear kind.", "error")
+        flash("Only serialized items have an asset type.", "error")
         return redirect(url_for("inventory.items"))
     raw = request.form.get("gear_kind_id", type=int)
     kind = db.session.get(InvGearKind, raw) if raw else None
     if raw and kind is None:
-        flash("Pick a gear kind from the list.", "error")
+        flash("Pick an asset type from the list.", "error")
         return redirect(url_for("inventory.items"))
     item.gear_kind_id = kind.id if kind else None
     db.session.commit()
-    flash(f"Saved the gear kind for {item.item_name}.", "success")
+    flash(f"Saved the asset type for {item.item_name}.", "success")
     return redirect(url_for("inventory.items"))
 
 
@@ -142,7 +142,7 @@ def set_model_defaults(item_id: int):
     if item is None:
         abort(404)
     if not item.is_serialized or item.gear_kind is None:
-        flash("Defaults need a serialized item with a gear kind.", "error")
+        flash("Defaults need a serialized item with an asset type.", "error")
         return redirect(url_for("inventory.items"))
     fields = [f for f in active_fields(item.gear_kind) if f"field_{f.id}" in request.form]
     try:
@@ -153,5 +153,5 @@ def set_model_defaults(item_id: int):
         flash(str(error), "error")
     else:
         db.session.commit()
-        flash(f"Saved the defaults for {item.item_name}. New units start with them.", "success")
+        flash(f"Saved the defaults for {item.item_name}. New assets start with them.", "success")
     return redirect(url_for("inventory.items"))

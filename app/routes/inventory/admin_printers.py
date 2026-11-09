@@ -24,8 +24,8 @@ from .helpers import (
 )
 
 ROUTE_TYPES = (
-    (INV_JOB_OWNED_UNIT, "Owned unit"), (INV_JOB_RENTED_UNIT, "Rented unit"),
-    (INV_JOB_CONTAINER, "Container"), (INV_JOB_ITEM, "Item type"),
+    (INV_JOB_OWNED_UNIT, "Owned asset"), (INV_JOB_RENTED_UNIT, "Rented asset"),
+    (INV_JOB_CONTAINER, "Location or container"), (INV_JOB_ITEM, "Item"),
 )
 QUEUE_LIMIT = 200
 # "reprint-<job id>-<token>" must fit InvPrintJob.client_request_id, a String(64).

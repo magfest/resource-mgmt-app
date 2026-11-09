@@ -408,7 +408,7 @@ def test_page_is_renamed_and_folds_revoked(app, scanner):
     page = admin.get("/inv/admin/devices").get_data(as_text=True)
     assert "<h1>Scanners and print stations</h1>" in page
     assert "<summary>Revoked (1)</summary>" in page
-    assert "Needed for a Unit station: scan or type the warehouse label." in page
+    assert "Needed for a Check station: scan or type the warehouse label." in page
 
 
 def test_active_row_keeps_its_forms_and_change_is_folded(app, scanner):

@@ -178,7 +178,7 @@ def test_blank_unknown_and_duplicate_names_go_to_review(kinds, inv):
     result = preview(data, {"TV|": "new:TV"}, inv.category.id)
     assert [r.name for r in result.ready] == ["MAG-TV-041"]
     assert result.review == [
-        "Row 2 (???): The ID is ???, so the unit has no name.",
+        "Row 2 (???): The ID is ???, so the asset has no name.",
         "Row 3 (no ID): The ID is blank.",
         "Row 4 (Spare TV): The ID does not start with a known prefix.",
         "Row 5 (MAG-TV-040): The ID appears more than once in this file.",
@@ -190,9 +190,9 @@ def test_unmapped_held_tag_and_missing_category_go_to_review(kinds, inv):
     add_unit(inv.laptop, None, ACTOR, [(INV_IDENT_MAGFEST_TAG, "MT900002")])
     db.session.commit()
     result = preview(TV_FILE, {"TV|": "new:TV"}, None)
-    assert "Row 2 (MAG-TV-107): Choose a category for new types." in result.review
-    assert "Row 4 (MAG-MON-001): Tag MT900002 is already on another unit." in result.review
-    assert "Row 6 (MAG-MON-003): Choose a type for Monitor Dell U2713HMT." in result.review
+    assert "Row 2 (MAG-TV-107): Choose a category for new items." in result.review
+    assert "Row 4 (MAG-MON-001): Asset tag MT900002 is already on another asset." in result.review
+    assert "Row 6 (MAG-MON-003): Choose an item for Monitor Dell U2713HMT." in result.review
 
 
 def test_a_non_serialized_item_of_the_new_name_sends_rows_to_review(kinds, inv):
@@ -264,7 +264,7 @@ def test_barcode_scanner_prefix_without_mag_is_recognised(inv, kinds):
     result = preview(data, {})
     assert result.not_tech is False
     assert [m.gear_kind_code for m in result.models] == ["BARCODE_SCANNER"]
-    assert result.review == ["Row 2 (BRC-001): Choose a type for Barcode scanner Zebra DS2208."]
+    assert result.review == ["Row 2 (BRC-001): Choose an item for Barcode scanner Zebra DS2208."]
 
 
 def test_doc_cam_and_mag_cam_are_cameras(inv, kinds):
@@ -288,7 +288,7 @@ def test_dead_is_in_repair_and_disposed_is_skipped(inv, kinds):
                 "2,MAG-CAM-011,,Logitech C920,,  DISPOSED ", "3,MAG-CAM-012,,Logitech C920,,Dead")
     result = preview(data, {"CAMERA|Logitech C920": "new:Camera C920"}, None)
     assert result.skipped == 2 and result.review == [
-        "Row 4 (MAG-CAM-012): Choose a category for new types."]
+        "Row 4 (MAG-CAM-012): Choose a category for new items."]
     assert [m.count for m in result.models] == [1]
 
 
@@ -368,8 +368,8 @@ def test_a_crlf_note_from_the_page_is_stored_with_lf(client, kinds, inv):
 
 def test_an_odd_digit_mapping_id_goes_to_review(client, kinds, inv):
     result = preview(TV_FILE, {"TV|": "²", "MONITOR|Dell U2412M": "9" * 30}, None)
-    assert "Row 2 (MAG-TV-107): The chosen type is not a TV type." in result.review
-    assert "Row 4 (MAG-MON-001): The chosen type is not a Monitor type." in result.review
+    assert "Row 2 (MAG-TV-107): The chosen item is not a TV item." in result.review
+    assert "Row 4 (MAG-MON-001): The chosen item is not a Monitor item." in result.review
     login(client, "test:invadmin")
     response = client.post("/inv/admin/import/legacy", data={
         "action": "preview", "file_text": TV_FILE.decode("utf-8-sig"),

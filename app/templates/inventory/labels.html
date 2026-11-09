@@ -3,10 +3,10 @@
 {% block content %}
 <h1>Labels</h1>
 <div class="muted mb-16">
-  New labels reserve the next codes and are bound when first scanned.
-  Reprint replaces a faded label with the same code.
-  To print a label for an existing container, use Reprint. Use removable stock for
-  rental and smooth gear, and permanent stock for containers; removable stock does not hold on recycled cardboard.
+  New labels reserve the next numbers and are bound when first scanned.
+  Reprint replaces a faded label with the same number.
+  To print a label for an existing location or container, use Reprint. Use removable stock for
+  rental and smooth assets, and permanent stock for containers; removable stock does not hold on recycled cardboard.
 </div>
 {% set new_form %}{% if is_inv_admin %}
 <form method="post" action="{{ url_for('inventory.new_labels') }}" class="card mb-16">
@@ -15,9 +15,9 @@
   <div class="row">
     <label>Type
       <select name="prefix">
-        <option value="C">C- container</option>
-        <option value="U">U- unit</option>
-        <option value="I">I- item type</option>
+        <option value="C">C- location or container</option>
+        <option value="U">U- asset</option>
+        <option value="I">I- item</option>
       </select>
     </label>
     <label>How many <input type="number" name="count" min="1" max="{{ max_batch }}" value="10" style="width: 90px;"></label>
@@ -32,7 +32,7 @@
 <form method="post" action="{{ url_for('inventory.reprint_labels') }}" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <strong>Reprint</strong>
-  <label>Codes, one per line<br>
+  <label>Numbers, one per line<br>
     <textarea name="codes" rows="6" cols="30">{{ prefill }}</textarea></label>
   <label>Printer <select name="dpi" class="dpi-select">
     <option value="300">GX430t (300 dpi)</option><option value="203">GX420 (203 dpi)</option>

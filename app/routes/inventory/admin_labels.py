@@ -174,10 +174,10 @@ def queue_labels():
 
     def flash_skipped():
         if unknown:
-            flash(f"Not queued, these codes were never issued or no record holds them: "
+            flash(f"Not queued, these numbers were never issued or no record holds them: "
                   f"{', '.join(unknown)}", "warning")
         if unprintable:
-            flash(f"Not queued, a barcode cannot hold these codes: {', '.join(unprintable)}",
+            flash(f"Not queued, a barcode cannot hold these numbers: {', '.join(unprintable)}",
                   "warning")
         if overflow:
             flash(f"Not queued, over the limit of {MAX_BATCH}: {', '.join(overflow)}", "warning")

@@ -85,3 +85,9 @@ def test_only_serialized_models_are_offered(client, inv):
     page = client.get("/inv/admin/checklists").get_data(as_text=True)
     assert "Laptop" in page and "Blue Pen" not in page
     assert client.get(f"/inv/admin/checklists?item_id={inv.pens.id}").status_code == 404
+
+
+def test_checklists_name_the_item(client, inv):
+    login(client, "test:invadmin")
+    page = client.get("/inv/admin/checklists").get_data(as_text=True)
+    assert "<label>Item" in page and "Model" not in page

@@ -1,4 +1,4 @@
-"""Check lines for each serialized model; a line says what a missing answer means."""
+"""Check lines for each serialized item; a line says what a missing answer means."""
 from flask import abort, flash, redirect, request, url_for
 
 from app import db
@@ -34,7 +34,7 @@ def _read_line_form() -> tuple[str, str, str | None]:
 @inventory_bp.get("/admin/checklists")
 @require_inventory_admin
 def checklists():
-    # Checks run on units, and only serialized models have units.
+    # Checks run on assets, and only serialized items have assets.
     items = (db.session.query(SupplyItem).filter_by(is_serialized=True)
              .order_by(SupplyItem.item_name).all())
     item = None

@@ -4,7 +4,7 @@
 <h1>Movements</h1>
 <form method="get" class="card mb-16">
   <div class="row">
-    <label>Container <input type="text" name="container" value="{{ args.get('container', '') }}" style="width: 110px;"></label>
+    <label>Location or container <input type="text" name="container" value="{{ args.get('container', '') }}" style="width: 110px;"></label>
     <label>Item
       <select name="item"><option value="">Any</option>
         {% for i in items %}<option value="{{ i.id }}" {% if args.get('item')|int == i.id %}selected{% endif %}>{{ i.item_name }}</option>{% endfor %}

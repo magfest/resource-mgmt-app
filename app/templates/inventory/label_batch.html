@@ -3,10 +3,10 @@
 {% block content %}
 <h1>{{ specs|length }} label{{ '' if specs|length == 1 else 's' }} at {{ dpi }} dpi</h1>
 {% if unknown %}
-<div class="card mb-16"><strong>Not printed, no record holds these codes:</strong> {{ unknown|join(', ') }}</div>
+<div class="card mb-16"><strong>Not printed, no record holds these numbers:</strong> {{ unknown|join(', ') }}</div>
 {% endif %}
 {% if unprintable %}
-<div class="card mb-16"><strong>Not printed, a barcode cannot hold these codes:</strong> {{ unprintable|join(', ') }}</div>
+<div class="card mb-16"><strong>Not printed, a barcode cannot hold these numbers:</strong> {{ unprintable|join(', ') }}</div>
 {% endif %}
 {% if overflow %}
 <div class="card mb-16"><strong>Not printed, over the limit of {{ max_batch }}:</strong> {{ overflow|join(', ') }}</div>

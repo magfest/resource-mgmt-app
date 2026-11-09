@@ -103,7 +103,7 @@ def test_counted_item_has_no_gear_kind(client, inv):
     login(client, "test:invadmin")
     resp = client.post(f"/inv/admin/items/{inv.pens.id}/gear-kind",
                        data={"gear_kind_id": str(kind.id)}, follow_redirects=True)
-    assert "Only serialized items have a gear kind." in resp.get_data(as_text=True)
+    assert "Only serialized items have an asset type." in resp.get_data(as_text=True)
     assert db.session.get(SupplyItem, inv.pens.id).gear_kind_id is None
     page = client.get("/inv/admin/items").get_data(as_text=True)
     assert f"/inv/admin/items/{inv.pens.id}/gear-kind" not in page
@@ -160,7 +160,15 @@ def test_items_page_folds_defaults_closed(client, inv):
     login(client, "test:invadmin")
     client.post(f"/inv/admin/items/{inv.laptop.id}/gear-kind", data={"gear_kind_id": str(kind.id)})
     html = _items_page(client)
-    assert "<summary>Defaults for new units</summary>" in html
+    assert "<summary>Defaults for new assets</summary>" in html
     audit = _LabelAudit()
     audit.feed(html)
     assert audit.details and all("open" not in d for d in audit.details)
+
+
+def test_items_page_words(client, inv):
+    login(client, "test:invadmin")
+    page = client.get("/inv/admin/items").get_data(as_text=True)
+    assert "Asset type" in page and "Unit of measure" in page
+    assert "Add an item that is not orderable" in page
+    assert "Gear kind" not in page and "deploy-only" not in page

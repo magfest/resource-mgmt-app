@@ -19,7 +19,7 @@ def supplies():
     if request.args.get("format") == "csv":
         return csv_response(
             f"supplies-{local_today():%Y-%m-%d}.csv",
-            ["Item", "Unit", "Total", "Exact", "Last counted", "Where"],
+            ["Item", "Unit of measure", "Total", "Exact", "Last counted", "Where"],
             [[r["name"], r["unit"], r["total"], "no" if r["approximate"] else "yes",
               local_iso(r["last_counted"]) if r["last_counted"] else "",
               _place_words(r["places"])] for r in rows])

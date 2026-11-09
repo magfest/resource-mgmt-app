@@ -3,14 +3,14 @@
 {% block content %}
 <h1>Items</h1>
 <div class="muted mb-16">
-  Serialized items are tracked one unit at a time. Unorderable items are
-  inventory-only and never appear in the Supply catalog. Barcode holds a
-  manufacturer UPC or a FestOps I- label. Pack size is the number of units in
-  one pack. Needs an asset tag makes the Unit station ask for one before it finishes a unit.
+  Serialized items are tracked one asset at a time. Items that are not orderable
+  never appear in the Supply catalog. Barcode holds a manufacturer UPC or an I-
+  label. Pack size is the number of pieces in one pack. Needs an asset tag makes
+  the Check station ask for one before it finishes an asset.
 </div>
 <form method="post" action="{{ url_for('inventory.create_deploy_item') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <strong>Add a deploy-only item</strong>
+  <strong>Add an item that is not orderable</strong>
   <div class="row">
     <label>Name <input type="text" name="item_name" required maxlength="256"></label>
     <label>Category
@@ -18,7 +18,7 @@
         {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
       </select>
     </label>
-    <label>Unit <input type="text" name="unit" value="each" maxlength="32" style="width: 90px;"></label>
+    <label>Unit of measure <input type="text" name="unit" value="each" maxlength="32" style="width: 90px;"></label>
     <label><input type="checkbox" name="is_serialized" value="1" checked> Serialized</label>
   </div>
   <button type="submit" class="btn btn-primary">Add item</button>
@@ -42,18 +42,18 @@
   {% if i.is_serialized %}
   <form method="post" action="{{ url_for('inventory.set_gear_kind', item_id=i.id) }}" class="row" style="flex-wrap: wrap; align-items: flex-end;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Gear kind
+    <label>Asset type
       <select name="gear_kind_id">
         <option value=""></option>
         {% for k in gear_kinds %}<option value="{{ k.id }}" {% if i.gear_kind_id == k.id %}selected{% endif %}>{{ k.name }}</option>{% endfor %}
       </select>
     </label>
-    <button type="submit" class="btn btn-small">Save kind</button>
+    <button type="submit" class="btn btn-small">Save asset type</button>
   </form>
   {% endif %}
   {% if defaults.get(i.id) %}
   <details>
-    <summary>Defaults for new units</summary>
+    <summary>Defaults for new assets</summary>
     <form method="post" action="{{ url_for('inventory.set_model_defaults', item_id=i.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       {% for field, text, choices in defaults[i.id] %}
@@ -75,7 +75,7 @@
       </label>
       {% endfor %}
       <button type="submit" class="btn btn-small">Save defaults</button>
-      <div class="muted">New units copy these once. Changing them later does not change existing units.</div>
+      <div class="muted">New assets copy these once. Changing them later does not change existing assets.</div>
     </form>
   </details>
   {% endif %}

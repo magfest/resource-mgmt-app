@@ -106,7 +106,7 @@ def test_a_tag_no_barcode_can_hold_does_not_stop_the_batch(client, inv):
     html = response.get_data(as_text=True)
     assert response.status_code == 200
     assert "^FDGOOD1^FS" in html
-    assert "a barcode cannot hold these codes" in html
+    assert "a barcode cannot hold these numbers" in html
     assert "A" * 21 in html and f"^FD{'A' * 21}" not in html
 
 

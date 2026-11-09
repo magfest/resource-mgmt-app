@@ -58,7 +58,7 @@ def test_unparseable_since_flashes_an_error(client, inv):
 def test_unknown_container_label_is_reported(client, inv):
     login(client, "test:invadmin")
     html = client.get("/inv/admin/movements?container=C-9999").get_data(as_text=True)
-    assert "No container has the label C-9999." in html
+    assert "No location or container has the label C-9999." in html
 
 
 def test_log_page_loads_related_rows_in_bulk(client, inv):
