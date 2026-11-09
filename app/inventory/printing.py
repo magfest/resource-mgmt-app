@@ -14,12 +14,12 @@ from sqlalchemy.exc import IntegrityError
 from app import db
 from app.inventory.ledger import Actor, InventoryError, savepoint
 from app.inventory.unit_fields import details_line, model_number, spec_line
-from app.inventory.zpl import LabelSpec, can_print_code, render_label
+from app.inventory.zpl import LabelSpec, can_print_code, render_card, render_label
 from app.models import InvPrinter, InvPrintJob, InvPrintRoute
 from app.models.constants import (
     INV_CONDITION_RETIRED, INV_JOB_CANCELLED, INV_JOB_CLAIMED, INV_JOB_CONTAINER,
     INV_JOB_FAILED, INV_JOB_ITEM, INV_JOB_OWNED_UNIT, INV_JOB_QUEUED,
-    INV_JOB_RENTED_UNIT, INV_JOB_SENT, INV_JOB_SOURCE_SCAN, INV_JOB_TYPES,
+    INV_JOB_RENTED_UNIT, INV_JOB_SENT, INV_JOB_SIGNIN_CARD, INV_JOB_SOURCE_SCAN, INV_JOB_TYPES,
     INV_IDENT_FESTOPS_LABEL,
     INV_IDENT_MAGFEST_TAG, INV_IDENT_SERIAL, INV_IDENT_VENDOR_TAG,
     INV_OWNERSHIP_RENTED,
@@ -143,6 +143,10 @@ def label_spec(code: str, fields: dict, printed_date: date | None) -> LabelSpec:
 def render_job(job: InvPrintJob) -> str:
     """Render a queued job as ZPL for its printer."""
     printer = job.printer
+    if job.job_type == INV_JOB_SIGNIN_CARD:
+        return render_card(job.fields.get("name", ""), job.code,
+                           job.printed_date or local_today(), printer.dpi,
+                           float(printer.width_in), float(printer.height_in))
     spec = label_spec(job.code, job.fields, job.printed_date)
     return render_label(spec, printer.dpi, float(printer.width_in), float(printer.height_in))
 
@@ -215,6 +219,7 @@ def collect_jobs(device, now: datetime | None = None,
                      InvPrintJob.claimed_at <= now - CLAIM_TIMEOUT)
              .with_for_update().all())
     for job in stale:
+        _forget_card_value(job)
         job.status = INV_JOB_FAILED
         job.error = NO_REPORT
         job.finished_at = now
@@ -237,11 +242,22 @@ def collect_jobs(device, now: datetime | None = None,
     return jobs
 
 
+def _forget_card_value(job: InvPrintJob) -> None:
+    """Blank the stored value of a sign-in card job.
+
+    The value is a live credential. A card job holds it only until the station
+    has the label; the code column is NOT NULL, so it becomes an empty string.
+    """
+    if job.job_type == INV_JOB_SIGNIN_CARD:
+        job.code = ""
+
+
 def report_job(job: InvPrintJob, ok: bool, error: str | None = None,
                now: datetime | None = None) -> None:
     """Record the station's result. A job that is not CLAIMED is left alone."""
     if job.status != INV_JOB_CLAIMED:
         return
+    _forget_card_value(job)
     job.status = INV_JOB_SENT if ok else INV_JOB_FAILED
     job.error = None if ok else (error or "The printer refused the label.")[:_ERROR_MAX]
     job.finished_at = now or datetime.utcnow()
@@ -252,6 +268,7 @@ def cancel_job(job: InvPrintJob) -> None:
     """Cancel a queued job. Anything already collected cannot be recalled."""
     if job.status != INV_JOB_QUEUED:
         raise InventoryError("Only a waiting label can be cancelled.")
+    _forget_card_value(job)
     job.status = INV_JOB_CANCELLED
     job.finished_at = datetime.utcnow()
     db.session.flush()

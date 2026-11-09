@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import date
 
 SUPPORTED_DPI = (203, 300)
 SUPPORTED_SIZES = {(2.0, 3.0)}
@@ -43,6 +44,11 @@ _ROW_PITCH = 0.2
 _FOOTER_H = 0.12
 _RULE_H = 0.02
 _GAP = 0.05
+# Sign-in card bands. The name is the largest type on the card.
+_CARD_CAPTION_H = 0.15
+_CARD_NAME_H = 0.4
+_CARD_NAME_FULL_CHARS = 12
+CARD_CAPTION = "FestOps inventory sign-in"
 
 
 @dataclass(frozen=True)
@@ -213,6 +219,50 @@ def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
         lines.append(f"^FO{x_for(rule_top, _RULE_H)},{margin}^GB{rule},{span},{rule}^FS")
         lines.append(f"^FO{x_for(footer_top, _FOOTER_H)},{margin}^A0R,{footer_h},{footer_h}"
                      f"^FB{span},1,0,C^FD{footer}^FS")
+    lines.append("^XZ")
+    return "\n".join(lines)
+
+
+def render_card(name: str, code: str, printed: date, dpi: int, width_in: float = 2.0,
+                height_in: float = 3.0) -> str:
+    """Render a sign-in card: barcode, caption, name, print date.
+
+    The code appears only as barcode data. Printing it as text would let anyone
+    who sees the card read the credential.
+    """
+    if dpi not in SUPPORTED_DPI:
+        raise ValueError(f"Unsupported dpi {dpi}; expected one of {SUPPORTED_DPI}")
+    if (float(width_in), float(height_in)) not in SUPPORTED_SIZES:
+        raise ValueError(f"Unsupported label size {width_in} x {height_in} in.")
+    code = _barcode_data(code)
+    pw, ll = _dots(width_in, dpi), _dots(height_in, dpi)
+    margin = _dots(_MARGIN, dpi)
+    span = ll - 2 * margin
+    module = _MODULE_DOTS[dpi]
+
+    def x_for(top_in: float, band_in: float) -> int:
+        return pw - _dots(top_in + band_in, dpi)
+
+    bar_h = _dots(_BAR_H, dpi)
+    bar_y = (ll - (11 * len(code) + 35) * module) // 2
+    lines = ["^XA", "^CI28", f"^PW{pw}", f"^LL{ll}", "^LH0,0",
+             f"^FO{x_for(_MARGIN, _BAR_H)},{bar_y}^BY{module},3,{bar_h}"
+             f"^BCR,{bar_h},N,N,N^FD{code}^FS"]
+
+    top = _MARGIN + _BAR_H + _GAP
+    cap_h = _dots(_CARD_CAPTION_H, dpi)
+    lines.append(f"^FO{x_for(top, _CARD_CAPTION_H)},{margin}^A0R,{cap_h},{cap_h}"
+                 f"^FB{span},1,0,C^FD{CARD_CAPTION}^FS")
+    top += _CARD_CAPTION_H + _GAP
+
+    text = _field(name)
+    name_h = _fitted(_dots(_CARD_NAME_H, dpi), text, _CARD_NAME_FULL_CHARS)
+    lines.append(f"^FO{x_for(top, _CARD_NAME_H)},{margin}^A0R,{name_h},{name_h}"
+                 f"^FB{span},1,0,C^FD{text}^FS")
+    top += _CARD_NAME_H + _GAP
+
+    lines.append(f"^FO{x_for(top, _CARD_CAPTION_H)},{margin}^A0R,{cap_h},{cap_h}"
+                 f"^FB{span},1,0,C^FDPrinted {printed.isoformat()}^FS")
     lines.append("^XZ")
     return "\n".join(lines)
 

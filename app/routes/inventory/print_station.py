@@ -11,7 +11,7 @@ from flask import g, jsonify, render_template, request
 from app import db
 from app.inventory.printing import collect_jobs, render_job, report_job
 from app.models import InvPrinter, InvPrintJob
-from app.models.constants import INV_JOB_FAILED
+from app.models.constants import INV_JOB_FAILED, INV_JOB_SIGNIN_CARD
 
 from . import inventory_bp
 from .scan_auth import device_api, require_print_station
@@ -57,7 +57,8 @@ def _printer_rows(device) -> list[dict]:
                           InvPrintJob.finished_at >= cutoff).count())
         rows.append({
             "id": printer.id, "name": printer.name, "device_name": printer.device_name,
-            "last_job": {"code": last.code, "status": last.status,
+            "last_job": {"code": ("Sign-in card" if last.job_type == INV_JOB_SIGNIN_CARD
+                                  else last.code), "status": last.status,
                          "error": last.error} if last else None,
             "failed": failed,
         })

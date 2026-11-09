@@ -20,13 +20,13 @@
   {% for j in jobs %}
     <tr>
       <td>{{ j.printer.name }}{{ ' (inactive)' if not j.printer.is_active }}</td>
-      <td><code>{{ j.code }}</code></td>
+      <td>{% if j.job_type == signin_card %}Sign-in card for {{ j.fields.name }}{% else %}<code>{{ j.code }}</code>{% endif %}</td>
       <td>{{ j.status|capitalize }}</td>
       <td>{{ j.error or '' }}</td>
       <td class="muted">{{ users.get(j.performed_by_user_id) or ('Scanner' if j.device_id else '') }}</td>
       <td class="muted">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
       <td>
-        {% if j.status == failed %}
+        {% if j.status == failed and j.job_type != signin_card %}
         <form method="post" action="{{ url_for('inventory.reprint_job', job_id=j.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="page_token" value="{{ page_token }}">

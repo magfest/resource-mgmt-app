@@ -8,8 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from app import db
+from app.models.constants import INV_JOB_SIGNIN_CARD
 from app.models import (
-    InvContainerKind, ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR,
+    InvContainerKind, InvPrinter, InvPrintRoute, ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR,
     ROLE_SUPER_ADMIN, ROLE_WORKTYPE_ADMIN, SupplyCategory, SupplyItem, User, UserRole,
     WorkType,
 )
@@ -67,3 +68,15 @@ def supply_admin(inv):
                             work_type_id=supply.id))
     db.session.commit()
     return supply
+
+
+@pytest.fixture
+def card_route(inv):
+    """An active printer routed for sign-in cards."""
+    printer = InvPrinter(name="Card printer", dpi=203, width_in=2, height_in=3,
+                         device_name="Card printer")
+    db.session.add(printer)
+    db.session.flush()
+    db.session.add(InvPrintRoute(job_type=INV_JOB_SIGNIN_CARD, printer_id=printer.id))
+    db.session.commit()
+    return printer

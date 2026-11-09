@@ -178,7 +178,7 @@ def print_queue():
     return render_inventory_page(
         "inventory/print_queue.html", jobs=jobs, users=users,
         statuses=[(p, printer_status(p)) for p in printers_ if p.is_active],
-        queued=INV_JOB_QUEUED, failed=INV_JOB_FAILED, page_token=secrets.token_hex(8))
+        queued=INV_JOB_QUEUED, failed=INV_JOB_FAILED, signin_card=INV_JOB_SIGNIN_CARD, page_token=secrets.token_hex(8))
 
 
 @inventory_bp.post("/admin/print-queue/<int:job_id>/reprint")
@@ -188,6 +188,9 @@ def reprint_job(job_id: int):
     job = db.session.get(InvPrintJob, job_id)
     if job is None:
         flash("That label does not exist.", "error")
+        return redirect(url_for("inventory.print_queue"))
+    if job.job_type == INV_JOB_SIGNIN_CARD:
+        flash("Print a new card from the Operators page.", "error")
         return redirect(url_for("inventory.print_queue"))
     if job.status not in (INV_JOB_FAILED, INV_JOB_SENT):
         flash("Only a failed or sent label can be printed again.", "error")
