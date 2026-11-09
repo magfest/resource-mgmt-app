@@ -46,7 +46,7 @@
   {% endif %}
 </div>
 {% if open_flags %}
-<div class="callout callout-action mb-16"><a href="#flags">{{ open_flags }} open flag{{ '' if open_flags == 1 else 's' }}</a></div>
+<div class="callout callout-action mb-16"><a href="{{ url_for('inventory.unit_page', unit_id=unit.id) }}#flags">{{ open_flags }} open flag{{ '' if open_flags == 1 else 's' }}</a></div>
 {% endif %}
 
 {% call(tab) request_tabs([

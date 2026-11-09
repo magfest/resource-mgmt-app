@@ -1051,7 +1051,8 @@ def test_unit_page_counts_open_flags(client, unit):
     raise_flag(ACTOR, "LOOKUP", "DAMAGED", unit=unit)
     db.session.commit()
     page = _page(client, unit)
-    assert '<a href="#flags">1 open flag</a>' in page and 'id="flags"' in page
+    href = f"/inv/admin/units/{unit.id}#flags"
+    assert f'<a href="{href}">1 open flag</a>' in page and 'id="flags"' in page
     assert "1 open flags" not in page
 
 
@@ -1237,11 +1238,16 @@ def test_add_note_lands_on_the_notes_tab(client, unit):
     assert resp.headers["Location"].endswith("tab=notes")
 
 
-def test_operator_edit_tab_holds_only_print_label(client, unit):
+def test_operator_edit_tab_holds_only_print_label(client, inv):
+    bare = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-OPR1")], name="No number unit")
+    db.session.commit()
+    login(client, "test:invadmin")
+    assert "/give-number" in _page(client, bare)
     login(client, "test:operator")
-    page = _page(client, unit)
+    page = _page(client, bare)
     assert '/print"' in page
-    for action in ("/details\"", "/identifiers\"", "/condition\""):
+    for action in ("/details\"", "/identifiers\"", "/condition\"", "/give-number",
+                   "/item\"", "/retire"):
         assert action not in page
 
 
@@ -1253,9 +1259,15 @@ def test_edit_form_says_inventory_item_group(client, unit):
 
 
 def test_unit_page_query_count_does_not_grow_with_history(client, inv):
+    from datetime import datetime
+    from app.inventory.audit import ACTION_CONDITION, record_unit_change
+    from app.inventory.flags import resolve_flag
     from app.inventory.ledger import move_unit
     from app.inventory.notes import add_note
+    from app.models import EventCycle, InvCheck
     from tests.inventory.helpers import make_container
+    event = EventCycle(code="SMF2027", name="SMF 2027", is_active=True, is_default=True)
+    db.session.add(event)
     boxes = [make_container(inv, f"C-95{i:02d}") for i in range(2)]
 
     def build(tag, n):
@@ -1263,13 +1275,31 @@ def test_unit_page_query_count_does_not_grow_with_history(client, inv):
         for i in range(n):
             add_note(u, "PICKER", f"Invented {i}", "test:invadmin")
             move_unit(u, boxes[(i + 1) % 2], ACTOR)
+            resolve_flag(raise_flag(ACTOR, "LOOKUP", "DAMAGED", unit=u), "test:invadmin", "Fixed")
+            db.session.add(InvCheck(unit_id=u.id, event_cycle_id=event.id, station_code="UNIT",
+                                    status="PASSED", finished_at=datetime(2026, 11, 7, 12, i)))
+            record_unit_change(u.id, ACTION_CONDITION,
+                               {"condition": {"old": "A", "new": "B"}}, "test:invadmin")
+        raise_flag(ACTOR, "LOOKUP", "WRONG_DATA", unit=u)
         db.session.commit()
-        return u
+        return u.id
 
-    small, big = build("U-7101", 2), build("U-7102", 20)
+    small_id, big_id = build("U-7101", 2), build("U-7102", 20)
     login(client, "test:invadmin")
-    # The first load of each unit fills the session's identity map; measure the second.
-    _page(client, small)
-    _page(client, big)
-    few = _selects(lambda: _page(client, small))
-    assert _selects(lambda: _page(client, big)) == few
+
+    def measured(unit_id):
+        # Warm one-time lookups on this unit, then drop every loaded object so lazy loads count.
+        _page(client, db.session.get(InvUnit, unit_id))
+        db.session.expire_all()
+        db.session.expunge_all()
+        return _selects(lambda: _page(client, db.session.get(InvUnit, unit_id)))
+
+    few = measured(small_id)
+    assert measured(big_id) == few
+
+
+def test_refused_note_returns_to_the_notes_tab(client, unit):
+    login(client, "test:operator")
+    resp = client.post(f"/inv/admin/units/{unit.id}/notes",
+                       data={"note_type": "PICKER", "body": ""})
+    assert resp.headers["Location"].endswith("tab=notes")

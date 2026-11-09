@@ -355,13 +355,14 @@ def _audited(action, unit: InvUnit, audit_action: str):
     return run
 
 
-def _commit_or_flash(action, success: str, unit: InvUnit, tab: str | None = None):
+def _commit_or_flash(action, success: str, unit: InvUnit, tab: str | None = None,
+                     error_tab: str = "edit"):
     try:
         action()
     except InventoryError as error:
         db.session.rollback()
         flash(str(error), "error")
-        return _back(unit, tab="edit")
+        return _back(unit, tab=error_tab)
     db.session.commit()
     flash(success, "success")
     return _back(unit, tab=tab)
@@ -457,7 +458,7 @@ def unit_add_note(unit_id: int):
             raise InventoryError("You cannot add that kind of note.")
         add_note(unit, note_type, request.form.get("body"), user_ctx.user_id)
 
-    return _commit_or_flash(add, "Note added.", unit, tab="notes")
+    return _commit_or_flash(add, "Note added.", unit, tab="notes", error_tab="notes")
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/give-number")
