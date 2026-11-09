@@ -18,12 +18,12 @@ def env():
     return create_app().jinja_env
 
 
-def _render(env, tabs, body="{% if tab %}panel:{{ tab }}{% endif %}"):
+def _render(env, tabs, body="{% if tab %}panel:{{ tab }}{% endif %}", active=None):
     template = env.from_string(
         '{% from "components/_request_tabs.html" import request_tabs with context %}'
-        "{% call(tab) request_tabs(TABS) %}" + body + "{% endcall %}"
+        "{% call(tab) request_tabs(TABS, active=ACTIVE) %}" + body + "{% endcall %}"
     )
-    return template.render(TABS=tabs, csp_nonce="test")
+    return template.render(TABS=tabs, ACTIVE=active, csp_nonce="test")
 
 
 def test_each_declared_tab_gets_a_button_and_a_panel(env):
@@ -70,3 +70,29 @@ def test_a_count_renders_only_when_given(env):
     # The comments tab declared no count, so it gets no badge.
     comments = html[html.index('data-tab="comments"'):]
     assert "badge" not in comments.split("</button>")[0]
+
+
+def _panel_tag(html, tab_id):
+    start = html.index(f'id="panel-{tab_id}"')
+    return html[start:html.index(">", start)]
+
+
+def test_active_names_the_open_tab(env):
+    html = _render(env, [{"id": "lines", "label": "Lines"},
+                         {"id": "comments", "label": "Comments"}],
+                   active="comments")
+    assert html.count("tab-btn active") == 1
+    button = html[html.index("tab-btn active"):]
+    assert 'data-tab="comments"' in button.split("</button>")[0]
+    assert "hidden" in _panel_tag(html, "lines")
+    assert "hidden" not in _panel_tag(html, "comments")
+
+
+def test_an_active_tab_that_is_not_shown_falls_back_to_the_first(env):
+    html = _render(env, [{"id": "lines", "label": "Lines"},
+                         {"id": "audit", "label": "Audit", "when": False}],
+                   active="audit")
+    assert html.count("tab-btn active") == 1
+    button = html[html.index("tab-btn active"):]
+    assert 'data-tab="lines"' in button.split("</button>")[0]
+    assert "hidden" not in _panel_tag(html, "lines")
