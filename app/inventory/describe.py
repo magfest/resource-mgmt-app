@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app import db
+from app.inventory.ledger import SHORT_MOVE_NOTE
 from app.inventory.people import shift_person
 from app.models import InvMovement, User
 from app.models.constants import (
@@ -60,6 +61,9 @@ def describe_movement(m: InvMovement) -> str:
         reason = _DISCARD_REASON_WORDS.get(m.reason, m.reason or "no reason recorded")
         return f"Discarded {what} from {_where(m.from_container)}: {reason}"
     if m.action == INV_ACTION_ADJUST:
+        if m.note == SHORT_MOVE_NOTE:
+            return (f"Move added {what} in {m.to_container.label_code}: "
+                    "more was moved out than was recorded")
         # A count writes the gain as to-only and the loss as from-only.
         prefix = "Undo: count" if m.note == "undo" else "Count"
         if m.to_container is not None:

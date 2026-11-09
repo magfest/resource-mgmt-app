@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from app import db
 from app.inventory.checks import find_balance_mismatches
+from app.inventory.describe import describe_movement
 from app.inventory import ledger
 from app.inventory.ledger import (
     Actor, InventoryError, add_stock, add_unit, create_container, discard_stock,
@@ -162,3 +163,53 @@ def test_a_new_container_is_created_and_logged(inv):
     container = create_container("c-0009", inv.kinds["BIN"], ACTOR)
     assert container.label_code == "C-0009"
     assert InvMovement.query.filter_by(subject_container_id=container.id).count() == 1
+
+
+def _rows(inv):
+    return InvMovement.query.filter_by(item_id=inv.pens.id).order_by(InvMovement.id).all()
+
+
+def test_a_short_move_tops_up_the_source_then_moves_the_full_amount(inv):
+    a = make_container(inv, "C-0001")
+    b = make_container(inv, "C-0002")
+    ledger.add_stock(inv.pens, a, 3, ACTOR)
+    move, short = ledger.move_stock_covering_short(inv.pens, a, b, 10, ACTOR)
+    assert short == 7 and move.quantity == 10
+    assert stock_quantity(inv.pens, a) == 0 and stock_quantity(inv.pens, b) == 10
+    rows = _rows(inv)
+    assert [(m.action, m.quantity, m.from_container_id, m.to_container_id, m.note)
+            for m in rows] == [("ADD", 3, None, a.id, None),
+                               ("ADJUST", 7, None, a.id, "short move"),
+                               ("MOVE", 10, a.id, b.id, None)]
+    assert find_balance_mismatches() == []
+    assert describe_movement(rows[1]) == \
+        "Move added 7 Blue Pen in C-0001: more was moved out than was recorded"
+
+
+def test_a_covered_move_with_enough_stock_writes_no_adjustment(inv):
+    a = make_container(inv, "C-0001")
+    b = make_container(inv, "C-0002")
+    ledger.add_stock(inv.pens, a, 12, ACTOR)
+    move, short = ledger.move_stock_covering_short(inv.pens, a, b, 5, ACTOR)
+    assert short == 0
+    assert [m.action for m in _rows(inv)] == ["ADD", "MOVE"]
+    assert stock_quantity(inv.pens, a) == 7 and stock_quantity(inv.pens, b) == 5
+    assert find_balance_mismatches() == []
+
+
+def test_a_never_counted_source_ends_at_zero(inv):
+    a = make_container(inv, "C-0001")
+    b = make_container(inv, "C-0002")
+    move, short = ledger.move_stock_covering_short(inv.pens, a, b, 4, ACTOR)
+    assert short == 4
+    assert stock_quantity(inv.pens, a) == 0 and stock_quantity(inv.pens, b) == 4
+    assert find_balance_mismatches() == []
+
+
+def test_a_covered_move_keeps_the_other_refusals(inv):
+    a = make_container(inv, "C-0001")
+    b = make_container(inv, "C-0002")
+    for item, dest, qty in [(inv.pens, a, 1), (inv.laptop, b, 1), (inv.pens, b, 0)]:
+        with pytest.raises(InventoryError):
+            ledger.move_stock_covering_short(item, a, dest, qty, ACTOR)
+    assert InvMovement.query.count() == 0

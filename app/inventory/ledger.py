@@ -33,6 +33,9 @@ from app.models.constants import (
 # The kinds that serve as a unit's number and its barcode.
 NUMBER_KINDS = (INV_IDENT_MAGFEST_TAG, INV_IDENT_FESTOPS_LABEL)
 
+# Marks the ADJUST written when a move takes more than the app thinks is there.
+SHORT_MOVE_NOTE = "short move"
+
 INV_CONDITIONS = (INV_CONDITION_IN_SERVICE, INV_CONDITION_REPAIR,
                   INV_CONDITION_RETIRED, INV_CONDITION_LOST)
 
@@ -143,6 +146,32 @@ def move_stock(item, source, destination, quantity, actor) -> InvMovement:
     rows[destination.id].quantity += quantity
     return _movement(INV_ACTION_MOVE, actor, item_id=item.id, quantity=quantity,
                      from_container_id=source.id, to_container_id=destination.id)
+
+
+def move_stock_covering_short(item, source, destination, quantity, actor):
+    """Move stock, first adding any shortfall to the source.
+
+    Returns the MOVE row and the shortfall, which is 0 or more. A shortfall is
+    written as an ADJUST credited to the actor and noted SHORT_MOVE_NOTE, so the
+    source never goes negative and find_balance_mismatches() still matches.
+    Every refusal in move_stock applies except a short source.
+    """
+    _require_positive(quantity)
+    _require_counted(item)
+    if source.id == destination.id:
+        raise InventoryError("Source and destination are the same container.")
+    rows = {c.id: _locked_stock(item.id, c.id)
+            for c in sorted([source, destination], key=lambda c: c.id)}
+    shortfall = max(0, quantity - rows[source.id].quantity)
+    if shortfall:
+        rows[source.id].quantity += shortfall
+        _movement(INV_ACTION_ADJUST, actor, item_id=item.id, quantity=shortfall,
+                  to_container_id=source.id, note=SHORT_MOVE_NOTE)
+    rows[source.id].quantity -= quantity
+    rows[destination.id].quantity += quantity
+    move = _movement(INV_ACTION_MOVE, actor, item_id=item.id, quantity=quantity,
+                     from_container_id=source.id, to_container_id=destination.id)
+    return move, shortfall
 
 
 def discard_stock(item, container, quantity, reason, actor, count_id=None) -> InvMovement:
