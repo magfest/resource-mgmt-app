@@ -90,7 +90,13 @@
       S.showMessage(answer.message, 'error');
       return;
     }
-    if (answer.kind === 'UNKNOWN') {
+    if (answer.kind === 'CARD') {
+      // The shell signs a scanned card in; only a value that skipped it, such as typed text, lands here.
+      S.feedback('error');
+      S.setFlagSubject(null);
+      S.showPanel('');
+      S.showMessage(S.messages.signInCard, 'info');
+    } else if (answer.kind === 'UNKNOWN') {
       S.feedback('error');
       unknownTag(answer);
     } else if (answer.kind === 'UNUSED') {

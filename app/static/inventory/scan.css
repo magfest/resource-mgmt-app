@@ -9,7 +9,7 @@ body.not-saved-on { background: #f9c9c9; }
 .station-COUNT .band { background: #1565c0; }
 .station-RECEIVE .band { background: #e65100; }
 .station-UNIT .band { background: #6a1b9a; }
-/* At 390 px the band holds the station name, the volunteer's name, Flag and Done on one row.
+/* At 390 px the band holds the station name, the volunteer's name, Flag and Sign out on one row.
    The station name keeps its width; a long volunteer name gives way with an ellipsis. */
 .band-station { font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
 .band-who { opacity: 0.9; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -132,3 +132,17 @@ body.not-saved-on { background: #f9c9c9; }
 .tag-step { font-size: 1.4rem; font-weight: 700; margin: 12px 0; }
 .tag-done { font-weight: 600; color: #1b5e20; }
 .tag-wait { font-weight: 700; color: #e65100; }
+/* Sign-in. The PIN field is filled only by the keypad below it. */
+.sign-title { margin: 4px 0 12px; font-size: 1.8rem; }
+.pin-label { display: block; margin-bottom: 6px; font-weight: 600; }
+.pin-field { width: 100%; margin-bottom: 10px; padding: 10px; font-size: 2rem; text-align: center; letter-spacing: 0.4em; border: 2px solid #90a4ae; border-radius: 8px; }
+.pin-pad .keys button { min-height: 64px; font-size: 1.6rem; }
+.pin-pad .keys .pin-go { font-size: 1.2rem; font-weight: 700; background: #455a64; border-color: #455a64; color: #fff; }
+/* The name is the largest type on any scanner screen, so the right person is easy to confirm. */
+.signed-label { margin: 8px 0 0; font-size: 1.2rem; color: #455a64; }
+.signed-name { margin: 4px 0 20px; font-size: 2.8rem; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
+.signed-go { text-decoration: none; text-align: center; }
+/* Covers the station, so nothing under it is tapped and Keep finds the screen unchanged. */
+.switch-ask { position: fixed; inset: 0; z-index: 30; padding: 24px 14px; background: #fff; }
+.switch-ask[hidden] { display: none; }
+.switch-text { margin: 0 0 20px; font-size: 1.6rem; font-weight: 700; overflow-wrap: anywhere; }

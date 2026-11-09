@@ -104,13 +104,13 @@ def scan_actor() -> Actor:
 
 
 def who_text() -> str:
-    """Short label for the page header: the volunteer's name, or the signed-in user."""
+    """Short label for the page header: who is signed in on the scanner, or the RMS user."""
     principal = g.scan_principal
     if not principal.is_device:
         user = get_user_ctx().user
         return (user.display_name if user else None) or principal.user_id
     shift = current_shift(principal.device)
-    return shift_person(shift) if shift else "No name picked"
+    return shift_person(shift) if shift else "Not signed in"
 
 
 def device_api(f):

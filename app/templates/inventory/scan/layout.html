@@ -10,14 +10,16 @@
       data-end-url="{{ url_for('inventory.scan_shift_end') }}"
       data-home-url="{{ url_for('inventory.scan_home') }}"
       data-who-url="{{ url_for('inventory.scan_who') }}"
+      data-sign-in-url="{{ url_for('inventory.scan_sign_in') }}"
+      data-signed-in-url="{{ url_for('inventory.scan_signed_in') }}"
       data-resolve-url="{{ url_for('inventory.scan_resolve') }}"
       data-flag-url="{{ url_for('inventory.scan_flag') }}"
       data-undo-url="{{ url_for('inventory.scan_undo') }}">
   <header class="band">
     <span class="band-station">{{ station_name }}</span>
     {% if who %}<span class="band-who" id="band-who">{{ who }}</span>{% endif %}
-    {% if station != 'PRINT' %}<button type="button" class="band-flag" id="flag-btn">Flag</button>{% endif %}
-    {% if is_device %}<button type="button" class="band-done" id="done-btn">Done for now</button>{% endif %}
+    {% if station != 'PRINT' and not sign_in_screen %}<button type="button" class="band-flag" id="flag-btn">Flag</button>{% endif %}
+    {% if is_device and not sign_in_screen %}<button type="button" class="band-done" id="done-btn">Sign out</button>{% endif %}
   </header>
   <div id="paused" class="paused" role="status" hidden>Scanner paused: tap here</div>
   <p id="msg" class="msg" role="alert"></p>
@@ -26,6 +28,12 @@
     <p>Could not reach the server. This was not saved. Try again before scanning more.</p>
     <button type="button" id="not-saved-again" class="choice">Try again</button>
     <button type="button" id="not-saved-cancel" class="choice">Cancel</button>
+  </section>
+  {# scan.js fills the words; it covers the station so a mid-count screen survives Keep. #}
+  <section id="switch-ask" class="switch-ask" role="alertdialog" aria-labelledby="switch-text" hidden>
+    <p id="switch-text" class="switch-text"></p>
+    <button type="button" id="switch-go" class="choice primary"></button>
+    <button type="button" id="switch-keep" class="choice"></button>
   </section>
   <main id="panel" class="panel">{% block content %}{% endblock %}</main>
   <div id="undo-slot" class="undo" hidden></div>

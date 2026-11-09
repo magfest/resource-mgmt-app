@@ -1,8 +1,8 @@
 """Scan resolver: turn one scanned value into a container, unit, item, or a question.
 
-Ranks, first match wins: FestOps label, MAGFest tag, vendor tag, serial or
-MAC, then item barcode. A value that matches more than one unit at its rank
-is ambiguous; the resolver never picks one.
+Ranks, first match wins: sign-in card, FestOps label, MAGFest tag, vendor tag,
+serial or MAC, then item barcode. A value that matches more than one unit at
+its rank is ambiguous; the resolver never picks one.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from app import db
 from app.inventory import labels
 from app.inventory.codes import normalize_code, normalize_mac
+from app.inventory.sign_in import is_card_code
 from app.models import InvContainer, InvUnit, InvUnitIdentifier, SupplyItem
 from app.models.constants import (
     INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAC, INV_IDENT_MAGFEST_TAG,
@@ -23,6 +24,7 @@ KIND_ITEM = "ITEM"
 KIND_UNUSED = "UNUSED"
 KIND_AMBIGUOUS = "AMBIGUOUS"
 KIND_UNKNOWN = "UNKNOWN"
+KIND_CARD = "CARD"
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,10 @@ def resolve(raw: str | None) -> Resolution:
     code = normalize_code(raw)
     if not code:
         return Resolution(KIND_UNKNOWN, code)
+    # The scan shell sends a card to sign-in before any station sees it. A card
+    # typed into a field lands here, and must never become an asset tag.
+    if is_card_code(code):
+        return Resolution(KIND_CARD, code)
     parsed = labels.parse(code)
     if parsed is not None:
         # A typed C-1 means C-0001; without this a station could bind a second label.

@@ -1,0 +1,25 @@
+{% extends "inventory/scan/layout.html" %}
+{% block content %}
+  <p class="signed-label">Signed in as</p>
+  <p class="signed-name">{{ who }}</p>
+  <a id="signed-go" class="choice primary signed-go" href="{{ url_for('inventory.scan_home') }}">Continue</a>
+  <button type="button" id="signed-out" class="choice">Not me? Sign out</button>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  var S = window.InvScan;
+  var body = document.getElementById('scan-body');
+  var home = document.getElementById('signed-go').href;
+  var timer = setTimeout(function () { window.location.href = home; }, 3000);
+  document.getElementById('signed-out').addEventListener('click', function () {
+    clearTimeout(timer);
+    S.read(body.dataset.endUrl, {}).then(function (answer) {
+      if (answer.ok) { window.location.href = body.dataset.whoUrl; }
+      else if (!answer.fatal) { S.showMessage(answer.message, 'error'); }
+    });
+  });
+})();
+</script>
+{% endblock %}

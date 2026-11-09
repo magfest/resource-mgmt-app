@@ -33,8 +33,29 @@
     blockedDone: 'A scan is not saved yet. Try again or cancel it first.',
     finishField: 'Finish or cancel the open field first.',
     lastScan: 'Wait for the last scan to finish.',
-    leaveUnsent: 'Your work on this screen is not submitted. Leave and lose it?'
+    leaveUnsent: 'Your work on this screen is not submitted. Leave and lose it?',
+    signedInAlready: 'You are signed in already.',
+    scanCard: 'Scan your sign-in card, or type your PIN.',
+    pinLength: 'Type all 6 digits of your PIN.',
+    signInCard: 'That is a sign-in card.'
   };
+
+  // Mirrors is_card_code in app/inventory/sign_in.py: OP- and 12 Crockford base32 characters.
+  var CARD_PATTERN = /^OP-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{12}$/;
+
+  function isCardCode(raw) {
+    return CARD_PATTERN.test(String(raw == null ? '' : raw).trim().toUpperCase());
+  }
+
+  // Words for the switch prompt. The server's message names a card on both paths,
+  // so the PIN path builds its own question.
+  function switchPromptText(answer, byPin) {
+    return {
+      text: byPin ? 'Switch to ' + answer.switch_to + '?' : 'This is ' + answer.switch_to + "'s card.",
+      go: 'Switch to ' + answer.switch_first,
+      keep: 'Keep ' + answer.current_first + ' signed in'
+    };
+  }
 
   function esc(text) {
     return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
@@ -346,6 +367,7 @@
               flagScanSound: flagScanSound, flagLookup: flagLookup, createCapture: createCapture, createRepeatGuard: createRepeatGuard,
               createScanQueue: createScanQueue, createWriteQueue: createWriteQueue,
               createPauseWatch: createPauseWatch, interpretResponse: interpretResponse,
+              isCardCode: isCardCode, switchPromptText: switchPromptText,
               MESSAGES: MESSAGES, esc: esc, IDLE_MS: IDLE_MS, REPEAT_MS: REPEAT_MS};
   if (typeof module !== 'undefined' && module.exports) { module.exports = pure; }
   if (typeof document === 'undefined') { return; }
@@ -361,11 +383,13 @@
   var undoSlot = document.getElementById('undo-slot');
   var host = panel;         // where choose, askText and numberPad draw; the flag flow borrows it
   var notSaved = document.getElementById('not-saved');
+  var switchAsk = document.getElementById('switch-ask');
   var asking = false;       // an askText field owns focus
   var closeAsk = null;      // closes the open askText with no answer
   var blocked = false;      // a write failed; scanning waits for Try again or Cancel
   var stopped = null;       // message shown once the server refuses this scanner
   var leaving = false;      // the page is navigating on purpose; skip the unload prompt
+  var signing = false;      // a sign-in request or the switch prompt is open; scans wait
   var leaveHolds = [];      // station callbacks: true while the page holds work not yet sent
   var audio = null;
   var gate = createPromptGate();   // holds station prompts while the flag flow is open
@@ -796,6 +820,74 @@
   // A station registers a function that returns true while it holds unsent work.
   function holdLeave(fn) { leaveHolds.push(fn); }
 
+  // Sign out and Switch both leave the station: send queued writes, ask before dropping
+  // unsent station work, post, then go to `next`. Resolves true only when the page leaves.
+  // It navigates with the unload prompt off, so unsent work needs its own question.
+  function leaveWith(path, payload, next) {
+    if (writes.isBlocked()) { showMessage(MESSAGES.blockedDone, 'error'); return Promise.resolve(false); }
+    if (holdsWork() && !root.confirm(MESSAGES.leaveUnsent)) { return Promise.resolve(false); }
+    return writes.drain().then(function (clear) {
+      if (!clear) { showMessage(MESSAGES.blockedDone, 'error'); return null; }
+      return read(path, payload);
+    }).then(function (answer) {
+      if (!answer) { return false; }
+      if (answer.ok) { leaving = true; root.location.href = next; return true; }
+      if (!answer.need_name) { showMessage(answer.message, 'error'); }
+      return false;
+    });
+  }
+
+  function closeSwitch() {
+    switchAsk.hidden = true;
+    signing = false;
+  }
+
+  // Keep leaves the station exactly as it was, an open count included.
+  function askSwitch(answer, payload) {
+    var words = switchPromptText(answer, payload.pin != null);
+    var go = document.getElementById('switch-go');
+    var keep = document.getElementById('switch-keep');
+    document.getElementById('switch-text').textContent = words.text;
+    go.textContent = words.go;
+    keep.textContent = words.keep;
+    go.onclick = function () {
+      switchAsk.hidden = true;
+      var url = body.dataset.signedInUrl;
+      leaveWith(body.dataset.signInUrl, Object.assign({}, payload, {switch: true}), url)
+        .then(function (left) { if (!left) { signing = false; } });
+    };
+    keep.onclick = closeSwitch;
+    switchAsk.hidden = false;
+  }
+
+  // Sends {card} or {pin}. Only one sign-in runs at a time; a second scan meanwhile is refused.
+  function signIn(payload) {
+    if (signing) { feedback('error'); return Promise.resolve(null); }
+    signing = true;
+    return read(body.dataset.signInUrl, payload).then(function (answer) {
+      if (answer.ok && !answer.already) {
+        feedback('ok');
+        leaving = true;
+        root.location.href = body.dataset.signedInUrl;
+        return answer;
+      }
+      if (answer.switch_to) {
+        feedback('ok');
+        askSwitch(answer, payload);
+        return answer;
+      }
+      signing = false;
+      if (answer.ok) {
+        feedback('ok');
+        showMessage(MESSAGES.signedInAlready, 'ok');
+      } else if (!answer.fatal) {
+        feedback('error');
+        showMessage(answer.message, 'error');
+      }
+      return answer;
+    });
+  }
+
   function start(config) {
     var scans = createScanQueue({
       onScan: config.onScan, guard: createRepeatGuard(REPEAT_MS), now: Date.now
@@ -820,6 +912,9 @@
       deliver: function (code) {
         if (stopped) { feedback('error'); showMessage(stopped, 'error'); return; }
         if (blocked) { feedback('error'); return; }
+        if (signing) { feedback('error'); return; }
+        // A card signs in from any screen. No station, flag step or undo ever sees one.
+        if (isCardCode(code)) { signIn({card: code}); return; }
         // While the flag flow is open the station sees no scans, so its promise never starts.
         if (flagFlow && flagFlow.isOpen()) {
           var before = flagFlow.step();
@@ -869,17 +964,7 @@
     });
     if (doneBtn) {
       doneBtn.addEventListener('click', function () {
-        // Done navigates with the unload prompt off, so unsent work needs its own question.
-        if (writes.isBlocked()) { showMessage(MESSAGES.blockedDone, 'error'); return; }
-        if (holdsWork() && !root.confirm(MESSAGES.leaveUnsent)) { return; }
-        writes.drain().then(function (clear) {
-          if (!clear) { showMessage(MESSAGES.blockedDone, 'error'); return null; }
-          return read(body.dataset.endUrl, {});
-        }).then(function (answer) {
-          if (!answer) { return; }
-          if (answer.ok) { leaving = true; root.location.href = body.dataset.homeUrl; }
-          else if (!answer.need_name) { showMessage(answer.message, 'error'); }
-        });
+        leaveWith(body.dataset.endUrl, {}, body.dataset.homeUrl);
       });
     }
     field.focus();
@@ -888,7 +973,7 @@
   root.InvScan = {
     start: start, write: write, read: read, feedback: feedback, showMessage: showMessage,
     showPanel: showPanel, choose: choose, numberPad: numberPad, askText: askText, esc: esc,
-    messages: MESSAGES, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave, onActivity: onActivity, offerUndo: offerUndo, setFlagSubject: setFlagSubject,
+    messages: MESSAGES, signIn: signIn, printerWaiting: printerWaiting, requestId: requestId, holdLeave: holdLeave, onActivity: onActivity, offerUndo: offerUndo, setFlagSubject: setFlagSubject,
     currentMessage: function () { return msg.textContent; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

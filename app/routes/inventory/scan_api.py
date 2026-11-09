@@ -31,15 +31,15 @@ from app.inventory.printing import (
 )
 from app.inventory.receipts import refusal, run_once
 from app.inventory.resolver import (
-    KIND_AMBIGUOUS, KIND_CONTAINER, KIND_ITEM, KIND_UNIT, KIND_UNKNOWN, KIND_UNUSED,
-    Resolution, resolve,
+    KIND_AMBIGUOUS, KIND_CARD, KIND_CONTAINER, KIND_ITEM, KIND_UNIT, KIND_UNKNOWN,
+    KIND_UNUSED, Resolution, resolve,
 )
 from app.inventory.zpl import can_print_code
 from app.inventory.people import shift_person
 from app.inventory.shifts import current_shift, end_shift, lock_device, start_shift, touch
 from app.inventory.sign_in import (
-    can_sign_in, clear_pin_failures, keypad_locked, record_pin_failure, user_for_card,
-    user_for_pin,
+    can_sign_in, clear_pin_failures, is_card_code, keypad_locked, record_pin_failure,
+    user_for_card, user_for_pin,
 )
 from app.models import InvCheck, InvContainerKind, InvCount, InvUnit, SupplyItem
 from app.models.constants import INV_SHIFT_END_ENDED, INV_STATION_COUNT, INV_STATION_LOOKUP
@@ -49,6 +49,7 @@ from .scan_auth import device_api, require_scanner, scan_actor
 
 
 MAX_CANDIDATES = 10
+SIGN_IN_CARD = "That is a sign-in card."
 
 
 def api(f):
@@ -198,8 +199,9 @@ def _json_body() -> dict:
 
 
 def _can_create_tag(code: str) -> bool:
-    """Only a printable code that is not a label can become an owned asset's asset tag."""
-    return bool(code) and labels.parse(code) is None and can_print_code(code)
+    """Only a printable code that is not a label or a sign-in card can become an asset tag."""
+    return (bool(code) and labels.parse(code) is None and not is_card_code(code)
+            and can_print_code(code))
 
 
 def _with_names(raw: str | None, resolution: Resolution) -> Resolution:
@@ -384,6 +386,8 @@ def _label_target(data: dict) -> Resolution:
     if unit_id is not None:
         resolution = _with_names(raw, resolution)
     kind = resolution.kind
+    if kind == KIND_CARD:
+        raise InventoryError(SIGN_IN_CARD)
     if kind == KIND_UNIT:
         if unit_id is not None and unit_id != resolution.unit.id:
             raise InventoryError(PICK_ONE)
@@ -553,6 +557,8 @@ def scan_count_find():
         raise InventoryError(NOTHING_ATTACHED)
     if kind == KIND_UNKNOWN:
         raise InventoryError(UNKNOWN_CODE)
+    if kind == KIND_CARD:
+        raise InventoryError(SIGN_IN_CARD)
     if kind == KIND_UNIT:
         raise InventoryError(SERIALIZED_REFUSAL)
     items = [resolution.item] if kind == KIND_ITEM else \

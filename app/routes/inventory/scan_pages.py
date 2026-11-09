@@ -132,15 +132,39 @@ def scan_unit_page():
         blocked=blocked)
 
 
+def _station(principal) -> str:
+    return principal.device.station_code if principal.is_device else INV_STATION_LOOKUP
+
+
 @inventory_bp.get("/scan/who")
 @require_scanner
 def scan_who():
-    """Ask who is scanning. Never errors; a signed-in operator needs no shift."""
+    """Ask for a card or a PIN. Never errors; a signed-in operator needs no shift."""
     principal = g.scan_principal
     who = who_text()
     db.session.commit()  # keeps an IDLE or REVOKED close that who_text made
-    return render_template("inventory/scan/who.html",
-                           is_device=principal.is_device, who=who)
+    station = _station(principal)
+    return render_template("inventory/scan/who.html", station=station,
+                           station_name=INV_STATION_NAMES[station],
+                           is_device=principal.is_device, who=who, sign_in_screen=True)
+
+
+@inventory_bp.get("/scan/signed-in")
+@require_scanner
+def scan_signed_in():
+    """Name the person a sign-in just started a shift for, before the station opens."""
+    principal = g.scan_principal
+    if not principal.is_device:
+        return redirect(url_for("inventory.scan_home"))
+    shift = current_shift(principal.device)
+    who = who_text() if shift else None
+    db.session.commit()  # keeps an IDLE close
+    if shift is None:
+        return redirect(url_for("inventory.scan_who"))
+    station = _station(principal)
+    return render_template("inventory/scan/signed_in.html", station=station,
+                           station_name=INV_STATION_NAMES[station], is_device=True,
+                           who=who, sign_in_screen=True)
 
 
 @inventory_bp.get("/scan/enroll")

@@ -1,16 +1,63 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in</title>
-<link rel="manifest" href="{{ url_for('static', filename='inventory/scan.webmanifest') }}">
-<style>
-  body { font-family: system-ui, sans-serif; padding: 16px; }
-</style></head>
-<body>
-  <h1>Sign in</h1>
-  {% if not is_device %}
-    <p>You are signed in as {{ who }}. Shared scanners ask people to sign in; you do not need to.</p>
-    <p><a href="{{ url_for('inventory.scan_home') }}">Back to the scanner</a></p>
-  {% else %}
-    <script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/fullscreen.js') }}"></script>
-  {% endif %}
-</body></html>
+{% extends "inventory/scan/layout.html" %}
+{% block content %}
+{% if is_device %}
+  <h1 class="sign-title">Scan your card</h1>
+  {# Read-only: the hidden scan field keeps focus, so a card scanned now is never typed in here. #}
+  <label class="pin-label" for="pin-field">No card? Type your PIN</label>
+  <input id="pin-field" class="pin-field" type="password" inputmode="numeric" autocomplete="off"
+         maxlength="6" readonly>
+  <div class="pad pin-pad">
+    <div class="keys">
+      {% for digit in "123456789" %}<button type="button" data-digit="{{ digit }}">{{ digit }}</button>{% endfor %}
+      <button type="button" id="pin-clear">Clear</button>
+      <button type="button" data-digit="0">0</button>
+      <button type="button" id="pin-go" class="pin-go">Sign in</button>
+    </div>
+  </div>
+{% else %}
+  <p>You are signed in as {{ who }}. Shared scanners ask people to sign in; you do not need to.</p>
+  <p><a href="{{ url_for('inventory.scan_home') }}">Back to the scanner</a></p>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if is_device %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  var S = window.InvScan;
+  var field = document.getElementById('pin-field');
+  var digits = '';
+  function show() { field.value = digits; }
+  document.querySelectorAll('[data-digit]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      if (digits.length < 6) { digits += button.dataset.digit; show(); }
+    });
+  });
+  document.getElementById('pin-clear').addEventListener('click', function () {
+    digits = '';
+    show();
+  });
+  document.getElementById('pin-go').addEventListener('click', function () {
+    if (digits.length !== 6) {
+      S.feedback('error');
+      S.showMessage(S.messages.pinLength, 'error');
+      return;
+    }
+    var pin = digits;
+    digits = '';
+    show();
+    S.signIn({pin: pin});
+  });
+  // The shell sends a card to sign-in before this runs, so anything here is not a card.
+  S.start({
+    station: 'SIGNIN',
+    onScan: function () {
+      S.feedback('error');
+      S.showMessage(S.messages.scanCard, 'error');
+      return Promise.resolve({ok: false});
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
