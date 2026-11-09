@@ -7,6 +7,8 @@ the transaction and rolls back after a refusal.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query
 
@@ -206,3 +208,68 @@ def release(unit: InvUnit, user_id: str) -> InvAllocation:
     db.session.delete(row)
     db.session.flush()
     return row
+
+
+@dataclass(frozen=True)
+class RowChange:
+    """One page row: the line it showed and the line chosen; None means Not allocated."""
+
+    unit: InvUnit
+    was_line_id: int | None
+    to_line_id: int | None
+
+
+@dataclass
+class SaveResult:
+    saved: int
+    stale: list[InvUnit]
+
+
+def save_changes(changes: list[RowChange], user_id: str) -> SaveResult:
+    """Apply a batch of row changes through allocate, move and release.
+
+    Releases run first, then moves in passes, then fills, so a change that
+    frees room can serve a later one. A row whose current line is neither the
+    one the page showed nor the one chosen is stale and skipped. Never commits.
+
+    Raises:
+        InventoryError: The first refusal; the caller rolls back.
+    """
+    stale: list[InvUnit] = []
+    pending: list[RowChange] = []
+    for change in changes:
+        if change.was_line_id == change.to_line_id:
+            continue
+        row = current_allocation(change.unit.id)
+        current = row.work_line_id if row else None
+        if current == change.was_line_id:
+            pending.append(change)
+        elif current != change.to_line_id:
+            stale.append(change.unit)
+    saved = 0
+    for change in [c for c in pending if c.to_line_id is None]:
+        release(change.unit, user_id)
+        saved += 1
+    moves = [c for c in pending if c.was_line_id is not None and c.to_line_id is not None]
+    while moves:
+        # A refused move writes nothing, so it can be retried after another move frees room.
+        remaining, refusal = [], None
+        for change in moves:
+            try:
+                move(change.unit, change.to_line_id, user_id)
+            except InventoryError as error:
+                remaining.append(change)
+                refusal = refusal or error
+            else:
+                saved += 1
+        if len(remaining) == len(moves):
+            raise refusal
+        moves = remaining
+    fills: dict[int, list[InvUnit]] = {}
+    for change in pending:
+        if change.was_line_id is None and change.to_line_id is not None:
+            fills.setdefault(change.to_line_id, []).append(change.unit)
+    for line_id, units in fills.items():
+        allocate(units, line_id, user_id)
+        saved += len(units)
+    return SaveResult(saved=saved, stale=stale)

@@ -3,7 +3,7 @@ from flask import abort, flash, redirect, request, url_for
 from sqlalchemy.orm import joinedload
 
 from app.inventory.allocation_rights import can_allocate
-from app.inventory.allocation import allocate, move, release
+from app.inventory.allocation import RowChange, allocate, move, release, save_changes
 from app.inventory.checks import unit_code, unit_phrase
 from app.inventory.demand import (
     LINE_OPEN, allocation_events, asset_warning, demand_lines, find_selection, line_label, pick_event,
@@ -30,13 +30,13 @@ def _requested_selection(event):
     """Read `item`, `service` or `pick`; an absent or stale key falls back to the first selection."""
     # The form's select posts `pick`; redirects from the action routes carry `item` or `service`.
     event_id = event.id if event else None
-    pick = request.args.get("pick", "")
+    pick = request.values.get("pick", "")
     kind, _, raw = pick.partition(":")
     if kind in ("item", "service"):
         return find_selection(kind, _int(raw), event_id) or find_selection(None, None, event_id)
     for kind in ("item", "service"):
-        if kind in request.args:
-            return find_selection(kind, _int(request.args.get(kind)), event_id) or find_selection(
+        if kind in request.values:
+            return find_selection(kind, _int(request.values.get(kind)), event_id) or find_selection(
                 None, None, event_id)
     return find_selection(None, None, event_id)
 
@@ -64,16 +64,16 @@ def _asset_rows(assets, lines, event):
     return rows
 
 
-@inventory_bp.get("/allocation")
-@require_allocation_reader
-def allocation():
+def _render_allocation(error=None, picked=None, was=None):
+    """Build the page from `request.values`; `error` shows above the lists."""
     events = allocation_events()
-    event = pick_event(events, _int(request.args.get("event")))
+    event = pick_event(events, _int(request.values.get("event")))
     options = selections(event.id if event else None)
     selection = _requested_selection(event)
     ctx = dict(line_label=line_label, unit_code=unit_code, events=events, event=event, options=options, selection=selection,
                can_allocate=can_allocate(get_user_ctx()),
-               unallocated_only=request.args.get("show") == "unallocated")
+               unallocated_only=request.values.get("show") == "unallocated",
+               error=error, picked=picked, was=was)
     if event is None or selection is None:
         return render_inventory_page("inventory/allocation.html", lines=[], rows=[],
                                      totals=None, **ctx)
@@ -84,9 +84,15 @@ def allocation():
         rows=_asset_rows(assets, lines, event), **ctx)
 
 
+@inventory_bp.get("/allocation")
+@require_allocation_reader
+def allocation():
+    return _render_allocation()
+
+
 def _carried() -> dict:
     """Event, selection and filter that every write route hands back to the page."""
-    return {key: request.values[key] for key in ("event", "item", "service", "show")
+    return {key: request.values[key] for key in ("event", "item", "service", "tab", "dept", "show", "lines")
             if request.values.get(key)}
 
 
@@ -180,3 +186,27 @@ def allocation_release():
         release(unit, user_id)
         return f"Released {unit_phrase(unit)}."
     return _finish(work)
+
+
+@inventory_bp.post("/allocation/save")
+@require_allocator
+def allocation_save():
+    """Apply every changed row in one transaction; a refusal re-renders the page with nothing saved."""
+    ids = sorted({key.partition("_")[2] for key in request.form if key.startswith(("was_", "to_"))})
+    units = {unit.id: unit for unit in _units_from(ids)}
+    was = {uid: request.form.get(f"was_{uid}", "") for uid in units}
+    picked = {uid: _int(request.form.get(f"to_{uid}")) for uid in units}
+    changes = [RowChange(units[uid], _int(was[uid]), picked[uid]) for uid in units]
+    try:
+        result = save_changes(changes, get_user_ctx().user_id)
+    except InventoryError as error:
+        db.session.rollback()
+        return _render_allocation(error=str(error), picked=picked, was=was)
+    db.session.commit()
+    if result.saved:
+        flash(f"Saved {result.saved} change{'' if result.saved == 1 else 's'}.", "success")
+    elif not result.stale:
+        flash("Nothing to save.", "success")
+    for unit in result.stale:
+        flash(f"{unit_phrase(unit)} was changed by someone else; it was not saved.", "warning")
+    return redirect(url_for("inventory.allocation", **_carried()))

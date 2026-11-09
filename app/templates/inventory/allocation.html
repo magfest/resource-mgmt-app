@@ -13,6 +13,9 @@
   .alloc-tick input { width: 22px; height: 22px; margin: 0; }
 </style>
 <h1>Allocation</h1>
+{% if error %}
+<div class="callout callout-danger" role="alert" style="padding: 10px 14px; margin: 12px 0;"><strong style="font-size: 13px;">Error</strong> <span class="muted" style="font-size: 13px; margin-left: 6px;">{{ error }}</span></div>
+{% endif %}
 {% if not events %}
 <p class="muted">No event has submitted requests or allocations yet.</p>
 {% endif %}
