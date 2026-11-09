@@ -6,7 +6,7 @@ from app.inventory.devices import enroll_device
 from app.models import InvPrinter, InvPrintJob
 from app.models.constants import (
     INV_JOB_CLAIMED, INV_JOB_FAILED, INV_JOB_OWNED_UNIT, INV_JOB_QUEUED,
-    INV_JOB_SENT, INV_JOB_SOURCE_SCAN,
+    INV_JOB_SENT, INV_JOB_SIGNIN_CARD, INV_JOB_SOURCE_SCAN,
 )
 from tests.inventory.helpers import enrolled_client, login
 
@@ -84,6 +84,18 @@ def test_printers_report_last_job_and_recent_failures(client, inv):
     row = client.post(COLLECT, json={}).get_json()["printers"][0]
     assert row["failed"] == 1
     assert row["last_job"]["status"] == INV_JOB_FAILED
+
+
+def test_printer_status_names_a_card_job_without_its_value(client, inv):
+    device = enrolled_client(client, station_code="PRINT")
+    printer = _printer(device)
+    db.session.add(InvPrintJob(printer_id=printer.id, job_type=INV_JOB_SIGNIN_CARD,
+                               code="OP-ABCDEFGHJKMN", fields={"name": "Jamie Lee"},
+                               source=INV_JOB_SOURCE_SCAN, status=INV_JOB_QUEUED))
+    db.session.commit()
+    body = client.post(COLLECT, json={}).get_json()
+    assert body["printers"][0]["last_job"]["code"] == "Sign-in card"
+    assert "OP-ABCDEFGHJKMN" not in str(body["printers"])
 
 
 def test_report_finishes_only_this_stations_job(client, inv):
