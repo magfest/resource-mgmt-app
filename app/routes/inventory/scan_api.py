@@ -42,7 +42,9 @@ from app.inventory.sign_in import (
     record_pin_failure, user_for_card, user_for_pin,
 )
 from app.models import InvCheck, InvContainerKind, InvCount, InvUnit, SupplyItem
-from app.models.constants import INV_SHIFT_END_ENDED, INV_STATION_COUNT, INV_STATION_LOOKUP
+from app.models.constants import (
+    INV_SHIFT_END_ENDED, INV_STATION_COUNT, INV_STATION_LOOKUP, INV_STATION_MOVE,
+)
 
 from . import inventory_bp
 from .scan_auth import device_api, require_scanner, scan_actor
@@ -533,12 +535,12 @@ def scan_count_start():
     return jsonify(run_once(data.get("client_request_id"), start))
 
 
-@inventory_bp.post("/scan/api/count/find")
-@api
-def scan_count_find():
-    """Name the countable item a scan or a search text points at. Reads only."""
-    _count_device()
-    data = _json_body()
+def _countable_items(data: dict, container_refusal: str, asset_refusal: str) -> list[dict]:
+    """Name the loose-stock items a scan or a search text points at. Reads only.
+
+    The Count and Move stations share the lookup and differ only in the words
+    they refuse a container or an asset with.
+    """
     text = _optional_text(data, "q")
     if text is not None:
         escaped = text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -546,12 +548,12 @@ def scan_count_find():
                 .filter(SupplyItem.is_serialized.is_(False), SupplyItem.is_active.is_(True),
                         SupplyItem.item_name.ilike(f"%{escaped}%", escape="\\"))
                 .order_by(SupplyItem.item_name, SupplyItem.id).limit(MAX_ITEM_RESULTS).all())
-        return jsonify(ok=True, items=[item_choice(i) for i in rows])
+        return [item_choice(i) for i in rows]
     resolution = resolve(_optional_text(data, "code"))
     kind = resolution.kind
     if kind in (KIND_CONTAINER, KIND_UNUSED) and \
             (resolution.prefix in (None, labels.PREFIX_CONTAINER)):
-        raise InventoryError(FINISH_FIRST)
+        raise InventoryError(container_refusal)
     if kind == KIND_UNUSED:
         raise InventoryError(NOTHING_ATTACHED)
     if kind == KIND_UNKNOWN:
@@ -559,24 +561,38 @@ def scan_count_find():
     if kind == KIND_CARD:
         raise InventoryError(SIGN_IN_CARD)
     if kind == KIND_UNIT:
-        raise InventoryError(SERIALIZED_REFUSAL)
+        raise InventoryError(asset_refusal)
     items = [resolution.item] if kind == KIND_ITEM else \
         [c for c in resolution.candidates if isinstance(c, SupplyItem)]
     if not items:
-        raise InventoryError(SERIALIZED_REFUSAL)
+        raise InventoryError(asset_refusal)
     for item in items:
         if item.is_serialized:
-            raise InventoryError(SERIALIZED_REFUSAL)
+            raise InventoryError(asset_refusal)
         if not item.is_active:
             raise InventoryError(f"{item.item_name} is inactive.")
-    return jsonify(ok=True, items=[item_choice(i) for i in items])
+    return [item_choice(i) for i in items]
+
+
+@inventory_bp.post("/scan/api/count/find")
+@api
+def scan_count_find():
+    """Name the countable item a scan or a search text points at. Reads only."""
+    _count_device()
+    return jsonify(ok=True, items=_countable_items(_json_body(), FINISH_FIRST, SERIALIZED_REFUSAL))
 
 
 @inventory_bp.post("/scan/api/count/browse")
 @api
 def scan_count_browse():
-    """List countable categories, or one category's items with `category_id`. Reads only."""
-    _count_device()
+    """List countable categories, or one category's items with `category_id`. Reads only.
+
+    The Move station picks supplies from the same list.
+    """
+    principal = g.scan_principal
+    if principal.is_device and principal.device.station_code not in (
+            INV_STATION_COUNT, INV_STATION_LOOKUP, INV_STATION_MOVE):
+        raise InventoryError("This scanner is not set up for counting.")
     data = _json_body()
     category_id = data.get("category_id")
     if category_id is None:
