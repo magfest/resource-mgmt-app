@@ -8,6 +8,9 @@
   .alloc-form select { max-width: 100%; }
   .alloc-form label { display: block; margin-bottom: 8px; }
   .alloc-filters a[aria-current="true"] { font-weight: bold; }
+  /* A 44 px tap area: the bare checkbox and word are 18 px tall on a phone. */
+  .alloc-tick { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding-right: 12px; }
+  .alloc-tick input { width: 22px; height: 22px; margin: 0; }
 </style>
 <h1>Allocation</h1>
 {% if not events %}
@@ -74,7 +77,7 @@
     {% if can_allocate %}
     {% if not row.allocation and not row.warning %}
     <div>
-      <label><input type="checkbox" name="unit" value="{{ row.unit.id }}" form="alloc-pick"> Tick</label>
+      <label class="alloc-tick"><input type="checkbox" name="unit" value="{{ row.unit.id }}" form="alloc-pick"> Tick</label>
       <a class="btn btn-small" href="{{ url_for('inventory.allocation_pick', unit=row.unit.id, **carry) }}">Allocate to…</a>
     </div>
     {% elif row.allocation %}
