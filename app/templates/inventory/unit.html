@@ -1,7 +1,7 @@
 {% extends "layout/base.html" %}
 {% from "inventory/_flag_rows.html" import resolve_form %}
 {% from "components/_request_tabs.html" import request_tabs with context %}
-{% block title %}{{ unit.name or number or "No number yet" }} - Units - Inventory{% endblock %}
+{% block title %}{{ unit.name or number or "No number yet" }} - Assets - Inventory{% endblock %}
 {% block content %}
 <style nonce="{{ csp_nonce }}">
   .unit-page h2 { margin: 24px 0 8px; font-size: 1.15em; }
@@ -37,7 +37,7 @@
       <span class="pill {{ condition_pills.get(unit.condition, 'pill-draft') }}" style="margin-left: 8px; font-weight: normal;">{{ condition_words.get(unit.condition, unit.condition) }}</span></h1>
     {% if subline %}<div class="muted" style="margin-top:4px;">{{ subline }}</div>{% endif %}
     <div class="muted" style="margin-top:4px;">{{ added }}{% if last_seen %} &middot; Last seen {{ last_seen }}{% endif %}</div>
-    <div class="muted" style="margin-top:4px;"><a href="{{ url_for('inventory.units') }}">Units</a></div>
+    <div class="muted" style="margin-top:4px;"><a href="{{ url_for('inventory.units') }}">Assets</a></div>
   </div>
   {% if unit.name and number %}
   <div style="text-align:right;">
@@ -78,7 +78,7 @@
 <h2 id="find-by">Find it by</h2>
 {% if find_by %}
 <table class="pair">{% for label, value in find_by %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
-{% else %}<div class="muted">No codes yet.</div>{% endif %}
+{% else %}<div class="muted">No numbers yet.</div>{% endif %}
 
 <h2 id="details">Details</h2>
 <table class="pair">{% for label, value in details %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
@@ -149,16 +149,16 @@
     {% endif %}
   </label>
   {% endfor %}
-  {% if not has_gear_kind %}<div class="muted">Set this model's gear kind on the Items page to add fields.</div>{% endif %}
+  {% if not has_gear_kind %}<div class="muted">Set this item's asset type on the Items page to add fields.</div>{% endif %}
   <button type="submit" class="btn btn-small">Save details</button>
 </form>
 {% endif %}
 
 {% if is_inv_admin %}
-<h2>Codes</h2>
+<h2>Numbers</h2>
 <div class="scroll-x">
 <table>
-  <thead><tr><th>Kind</th><th>Code</th><th></th></tr></thead>
+  <thead><tr><th>Kind</th><th>Number</th><th></th></tr></thead>
   <tbody>
   {% for i in identifiers %}
     <tr {% if i.retired_at %}class="muted" style="opacity: 0.55;"{% endif %}>
@@ -166,7 +166,7 @@
       <td>{{ i.value }}</td>
       <td>
         {% if not i.retired_at %}
-        <form method="post" action="{{ url_for('inventory.unit_retire_identifier', unit_id=unit.id, identifier_id=i.id) }}" data-confirm="Retire {{ i.value }}? It stops finding this unit.">
+        <form method="post" action="{{ url_for('inventory.unit_retire_identifier', unit_id=unit.id, identifier_id=i.id) }}" data-confirm="Retire {{ i.value }}? It stops finding this asset.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-small">Retire</button>
         </form>
@@ -180,26 +180,26 @@
 
 <form method="post" action="{{ url_for('inventory.unit_add_identifier', unit_id=unit.id) }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <strong>Add an identifier</strong>
+  <strong>Add a number</strong>
   <div class="row">
     <label>Kind
       <select name="kind">{% for kind, words in kinds %}<option value="{{ kind }}">{{ words }}</option>{% endfor %}</select>
     </label>
-    <label>Code <input type="text" name="value" required maxlength="128"></label>
+    <label>Number <input type="text" name="value" required maxlength="128"></label>
   </div>
   <button type="submit" class="btn btn-small">Add</button>
-  <div class="muted">A MAGFest tag or FestOps label replaces the unit's current number. To change a serial, add the new one, then retire the old one.</div>
+  <div class="muted">An asset tag or label replaces the asset's current number. To change a serial, add the new one, then retire the old one.</div>
 </form>
 {% if can_give_number %}
 <form method="post" action="{{ url_for('inventory.unit_give_number', unit_id=unit.id) }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <button type="submit" class="btn btn-small">Give this unit a U- number and print</button>
-  <div class="muted">This unit has no MAGFest tag or FestOps label to scan.</div>
+  <button type="submit" class="btn btn-small">Give this asset a U- number and print</button>
+  <div class="muted">This asset has no asset tag or label to scan.</div>
 </form>
 {% endif %}
 
-<h2>Condition and model</h2>
-<form method="post" action="{{ url_for('inventory.unit_set_condition', unit_id=unit.id) }}" class="card mb-16" data-retire-value="{{ retired_condition }}" data-retire-confirm="Retire this unit? Every identifier on it stops finding it.">
+<h2>Condition and item</h2>
+<form method="post" action="{{ url_for('inventory.unit_set_condition', unit_id=unit.id) }}" class="card mb-16" data-retire-value="{{ retired_condition }}" data-retire-confirm="Retire this asset? Every number on it stops finding it.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>Condition
     <select name="condition">
@@ -210,12 +210,12 @@
 </form>
 <form method="post" action="{{ url_for('inventory.unit_set_item', unit_id=unit.id) }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Inventory item group
+  <label>Item
     <select name="item_id">
       {% for i in items %}<option value="{{ i.id }}" {% if unit.item_id == i.id %}selected{% endif %}>{{ i.item_name }}</option>{% endfor %}
     </select>
   </label>
-  <button type="submit" class="btn btn-small">Change inventory item group</button>
+  <button type="submit" class="btn btn-small">Change item</button>
 </form>
 
 {% endif %}

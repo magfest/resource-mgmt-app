@@ -25,13 +25,13 @@
 
 {% macro node(n, top) %}
 <details class="where-node" data-search="{{ n.search }}"{% if top %} data-top open{% endif %}>
-  <summary><strong>{{ n.name }}</strong> <span class="muted">{{ n.code }}{% if n.unit_total %} · {{ n.unit_total }} {{ 'unit' if n.unit_total == 1 else 'units' }}{% endif %}{% if n.supply_total %} · {{ n.supply_total }} {{ 'supply' if n.supply_total == 1 else 'supplies' }}{% endif %}</span></summary>
+  <summary><strong>{{ n.name }}</strong> <span class="muted">{{ n.code }}{% if n.unit_total %} · {{ n.unit_total }} {{ 'asset' if n.unit_total == 1 else 'assets' }}{% endif %}{% if n.supply_total %} · {{ n.supply_total }} {{ 'supply' if n.supply_total == 1 else 'supplies' }}{% endif %}</span></summary>
   {% for child in n.children %}{{ node(child, false) }}{% endfor %}
   {% if top and n.unplaced_units %}
   <details><summary>{{ n.unplaced_text }} ({{ n.unplaced_units|length }})</summary>{{ unit_rows(n.unplaced_units) }}</details>
   {% endif %}
   {% if n.units %}
-  <details><summary>Units here ({{ n.units|length }})</summary>{{ unit_rows(n.units) }}</details>
+  <details><summary>Assets here ({{ n.units|length }})</summary>{{ unit_rows(n.units) }}</details>
   {% endif %}
   {% if n.supplies %}
   <details><summary>Supplies here ({{ n.supplies|length }})</summary>
@@ -46,7 +46,7 @@
 {% endmacro %}
 
 <div class="where-controls">
-  <input type="search" id="where-search" placeholder="Find a container, unit or item">
+  <input type="search" id="where-search" placeholder="Find a location, container, asset or item">
   <button type="button" class="btn btn-small" id="where-open">Open all</button>
   <button type="button" class="btn btn-small" id="where-close">Close all</button>
 </div>

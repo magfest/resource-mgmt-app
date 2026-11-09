@@ -1,4 +1,4 @@
-"""Units page: find a unit by any identifier, then correct it or print its label."""
+"""Assets page: find an asset by any number, then correct it or print its label."""
 from datetime import datetime
 
 from flask import abort, flash, redirect, request, url_for
@@ -61,8 +61,8 @@ from .helpers import (
 SEARCH_LIMIT = 50
 CONDITION_PILLS = {INV_CONDITION_IN_SERVICE: "pill-approved", INV_CONDITION_REPAIR: "pill-warning",
                    INV_CONDITION_LOST: "pill-rejected", INV_CONDITION_RETIRED: "pill-draft"}
-IDENTIFIER_KINDS = ((INV_IDENT_MAGFEST_TAG, "MAGFest tag"), (INV_IDENT_FESTOPS_LABEL, "FestOps label"),
-                    (INV_IDENT_VENDOR_TAG, "Vendor tag"), (INV_IDENT_SERIAL, "Serial"),
+IDENTIFIER_KINDS = ((INV_IDENT_MAGFEST_TAG, "Asset tag"), (INV_IDENT_FESTOPS_LABEL, "Label"),
+                    (INV_IDENT_VENDOR_TAG, "Vendor tag"), (INV_IDENT_SERIAL, "Serial number"),
                     (INV_IDENT_MAC, "MAC address"))
 KIND_WORDS = dict(IDENTIFIER_KINDS)
 REPRINT_WORDS = {REPRINT_CURRENT_DETAILS: "Print the current details",
@@ -209,8 +209,8 @@ def units():
         found = ordered.options(*_ROW_LOADS, selectinload(InvUnit.values)
                                 .selectinload(InvUnitValue.field)).all()
         return csv_response(
-            f"units-{local_today():%Y-%m-%d}.csv",
-            ["Name", "Tag or label", "Inventory item group", "Model", "Last checked",
+            f"assets-{local_today():%Y-%m-%d}.csv",
+            ["Name", "Number", "Item", "Model", "Last checked",
              "Last checked at", "Last seen", "Condition", "Where", "Open flags"],
             _csv_rows(_unit_rows(found)))
     total = query.count()
@@ -288,7 +288,7 @@ def unit_page(unit_id: int):
                for line in unit_history(unit)]
     kind = unit.item.gear_kind
     kind_name = kind.name if kind else ""
-    # A Supply item that holds one kind of gear often shares its gear type's name.
+    # A Supply item that holds one kind of gear often shares its asset type's name.
     if kind_name.strip().casefold() == unit.item.item_name.strip().casefold():
         kind_name = ""
     subline = " \u00b7 ".join(part for part in (unit.item.item_name, kind_name,
@@ -384,14 +384,14 @@ def unit_add_identifier(unit_id: int):
         if kind not in KIND_WORDS:
             raise InventoryError("Pick what kind of code this is.")
         if kind in NUMBER_KINDS:
-            # An owned unit keeps one number, so a new tag or label retires the old one.
+            # An owned asset keeps one number, so a new asset tag or label retires the old one.
             replace_number(unit, kind, value, admin_actor())
         elif kind == INV_IDENT_SERIAL:
             add_identifier(unit, kind, checked_serial(unit, value))
         else:
             add_identifier(unit, kind, value.strip())
 
-    return _commit_or_flash(_audited(add, unit, ACTION_ADD_CODE), "Code saved.", unit)
+    return _commit_or_flash(_audited(add, unit, ACTION_ADD_CODE), "Number saved.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/identifiers/<int:identifier_id>/retire")
@@ -402,7 +402,7 @@ def unit_retire_identifier(unit_id: int, identifier_id: int):
     if identifier is None or identifier.unit_id != unit.id:
         abort(404)
     return _commit_or_flash(_audited(lambda: retire_identifier(identifier), unit, ACTION_RETIRE_CODE),
-                            "Code retired.", unit)
+                            "Number retired.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/condition")
@@ -426,7 +426,7 @@ def unit_set_item(unit_id: int):
         unit.item_id = item.id
         db.session.flush()
 
-    return _commit_or_flash(_audited(change, unit, ACTION_ITEM), "Inventory item group changed.", unit)
+    return _commit_or_flash(_audited(change, unit, ACTION_ITEM), "Item changed.", unit)
 
 
 @inventory_bp.post("/admin/units/<int:unit_id>/details")

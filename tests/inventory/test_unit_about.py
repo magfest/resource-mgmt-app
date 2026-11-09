@@ -54,7 +54,7 @@ def test_check_line_never_checked(inv):
 def test_detail_rows_start_with_the_settings_that_drive_the_unit(inv):
     unit = _unit(inv)
     assert detail_rows(unit) == [
-        ("Inventory item group", "Laptop"), ("Gear type", "Not set"),
+        ("Item", "Laptop"), ("Asset type", "Not set"),
         ("Needs an asset tag", "No"), ("Check", "Works or Broken"), ("Owned by", "FestOps")]
 
 
@@ -71,7 +71,7 @@ def test_detail_rows_name_the_gear_type_checklist_and_tag_rule(inv):
                                      missing_means="FAIL", is_active=False)])
     db.session.commit()
     rows = dict(detail_rows(_unit(inv)))
-    assert rows["Gear type"] == "Laptop"
+    assert rows["Asset type"] == "Laptop"
     assert rows["Needs an asset tag"] == "Yes"
     assert rows["Check"] == "2 checklist lines"
 
@@ -98,7 +98,7 @@ def test_find_by_rows_words_and_order(inv):
     retire_identifier(old)
     db.session.commit()
     assert find_by_rows(unit) == [
-        ("Name", "Invented TV"), ("FEST tag", "FEST90001"), ("Vendor tag", "VT-1"),
+        ("Name", "Invented TV"), ("Asset tag", "FEST90001"), ("Vendor tag", "VT-1"),
         ("Serial number", "SN0TEST1")]
 
 

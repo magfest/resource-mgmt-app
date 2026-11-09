@@ -1,4 +1,4 @@
-"""A unit's history as one list of sentences, newest first.
+"""An asset's history as one list of sentences, newest first.
 
 Merges movements, finished checks, audit rows, flags and typed notes. It reads
 only; nothing here writes. Notes copied from the old system produce no line.
@@ -60,7 +60,7 @@ def _audit_texts(action: str, changes: dict) -> list[str]:
     for key, change in changes.items():
         old, new = change.get("old"), change.get("new")
         if action == ACTION_TAG_LINK and key == "codes":
-            texts += [f"linked tag {c}" for c in new or []]
+            texts += [f"linked asset tag {c}" for c in new or []]
         elif key == "codes":
             old_codes, new_codes = list(old or []), list(new or [])
             texts += [f"added {c}" for c in new_codes if c not in old_codes]
@@ -79,7 +79,7 @@ def _audit_texts(action: str, changes: dict) -> list[str]:
 
 
 def unit_history(unit: InvUnit) -> list[HistoryLine]:
-    """Return every line of the unit's history, newest first, in a fixed number of queries."""
+    """Return every line of the asset's history, newest first, in a fixed number of queries."""
     movements = (db.session.query(InvMovement).filter(InvMovement.unit_id == unit.id)
                  .options(selectinload(InvMovement.to_container),
                           selectinload(InvMovement.from_container)).all())

@@ -102,7 +102,7 @@ def test_condition_form_does_not_carry_the_app_wide_confirm(client, unit):
     action = page.index('/condition"')
     tag = page[page.rindex("<form", 0, action):page.index(">", action)]
     assert "data-confirm=" not in tag
-    assert 'data-retire-confirm="Retire this unit? Every identifier on it stops finding it."' in tag
+    assert 'data-retire-confirm="Retire this asset? Every number on it stops finding it."' in tag
 
 
 def test_operator_prints_but_cannot_correct(client, inv, unit, printer):
@@ -201,8 +201,8 @@ def test_each_correction_records_who_and_what_changed(client, inv, unit):
     assert [(a, who) for a, who, _ in events] == [
         ("ADD_CODE", "test:invadmin"), ("ITEM", "test:invadmin"), ("CONDITION", "test:invadmin")]
     codes = events[0][2]["codes"]
-    assert "FestOps label U-0001" in codes["old"] and "FestOps label U-0001" not in codes["new"]
-    assert "MAGFest tag TECH412" in codes["new"]
+    assert "Label U-0001" in codes["old"] and "Label U-0001" not in codes["new"]
+    assert "Asset tag TECH412" in codes["new"]
     assert events[1][2] == {"item": {"old": "Laptop", "new": "Wireless Access Point"}}
     assert events[2][2] == {"condition": {"old": "IN_SERVICE", "new": "REPAIR"}}
     page = client.get(base).get_data(as_text=True)
@@ -285,7 +285,7 @@ def test_operator_sees_fields_but_cannot_save(client, inv, unit):
 def test_unit_without_gear_kind_points_to_items_page(client, unit):
     login(client, "test:invadmin")
     page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
-    assert "Set this model's gear kind on the Items page to add fields." in page
+    assert "Set this item's asset type on the Items page to add fields." in page
 
 
 def test_units_search_shows_name_before_number(client, unit):
@@ -430,9 +430,9 @@ def test_retired_units_are_hidden_until_searched_for_and_the_page_says_so(client
     db.session.commit()
     login(client, "test:operator")
     page = client.get("/inv/admin/units", query_string={"kind": "TV"}).get_data(as_text=True)
-    assert "Retired units are hidden." in page
+    assert "Retired assets are hidden." in page
     assert units[0].id not in _ids_in(page, units)
-    assert "Retired units are hidden." not in _search(client, "TV-1")
+    assert "Retired assets are hidden." not in _search(client, "TV-1")
 
 
 def test_un_retiring_into_a_held_name_is_refused(client, inv, unit):
@@ -512,7 +512,7 @@ def _numbers(unit):
         unit_id=unit.id, retired_at=None, kind="FESTOPS_LABEL")]
 
 
-GIVE = "Give this unit a U- number and print"
+GIVE = "Give this asset a U- number and print"
 
 
 def test_admin_gives_an_unnumbered_unit_a_u_number_and_prints(client, bare, printer):
@@ -527,7 +527,7 @@ def test_admin_gives_an_unnumbered_unit_a_u_number_and_prints(client, bare, prin
     assert job.unit_id == bare.id and job.code == code
     (action, who, changes), = _audit(bare)
     assert action == "ADD_CODE" and who == "test:invadmin"
-    assert f"FestOps label {code}" in changes["codes"]["new"]
+    assert f"Label {code}" in changes["codes"]["new"]
     assert GIVE not in client.get(f"{base}?tab=edit").get_data(as_text=True)
 
 
@@ -769,7 +769,7 @@ def test_units_list_has_the_new_columns(client, inv):
     login(client, "test:operator")
     page = _list(client).get_data(as_text=True)
     heads = re.findall(r"<th>(.*?)</th>", page)
-    assert heads == ["Name", "Tag or label", "Inventory item group", "Last checked",
+    assert heads == ["Name", "Number", "Item", "Last checked",
                      "Last seen", "Condition", "Where", "Flags"]
     assert "Number and name" not in page and "This week" not in page
 
@@ -820,7 +820,7 @@ def test_units_list_summary_line(client, inv):
     since = _since(10)
     page = _list(client, since=since).get_data(as_text=True)
     day = local_day(since_start(date.fromisoformat(since)))
-    assert f"2 units, 2 of 2 checked since {day}, 1 broken" in page
+    assert f"2 assets, 2 of 2 checked since {day}, 1 broken" in page
 
 
 def test_units_list_says_so_when_the_date_cannot_be_used(client, inv):
@@ -851,7 +851,7 @@ def test_page_shows_where_and_counts(client, inv):
     _check(units[0], 2)
     login(client, "test:operator")
     page = _list(client, since=_since(10)).get_data(as_text=True)
-    assert "2 units, 1 of 2 checked since" in page and ", 0 broken" in page
+    assert "2 assets, 1 of 2 checked since" in page and ", 0 broken" in page
     assert "C-7001 Back shelf" in page
     assert ">More filters<" in page
 
@@ -875,7 +875,7 @@ def test_units_csv_headers(client, inv):
     _week_units(inv, 1)
     login(client, "test:operator")
     first = _list(client, format="csv").get_data(as_text=True).splitlines()[0]
-    assert first == ("Name,Tag or label,Inventory item group,Model,Last checked,"
+    assert first == ("Name,Number,Item,Model,Last checked,"
                      "Last checked at,Last seen,Condition,Where,Open flags")
 
 
@@ -912,7 +912,7 @@ def test_csv_filename_uses_local_date(client, inv, monkeypatch):
     monkeypatch.setattr("app.routes.inventory.admin_units.local_today",
                         lambda: date(2026, 12, 4))
     login(client, "test:operator")
-    assert 'filename="units-2026-12-04.csv"' in _list(client, format="csv").headers[
+    assert 'filename="assets-2026-12-04.csv"' in _list(client, format="csv").headers[
         "Content-Disposition"]
 
 
@@ -1274,7 +1274,7 @@ def test_operator_edit_tab_holds_only_print_label(client, inv):
 def test_edit_form_says_inventory_item_group(client, unit):
     login(client, "test:invadmin")
     page = _page(client, unit)
-    assert "Inventory item group" in page and "Change inventory item group" in page
+    assert "<label>Item" in page and "Change item" in page
     assert "Item type" not in page
 
 
@@ -1359,3 +1359,12 @@ def test_csv_leaves_last_seen_empty_when_a_unit_was_never_seen(client, inv):
     login(client, "test:operator")
     row = _list(client, format="csv").get_data(as_text=True).splitlines()[1].split(",")
     assert row[6] == ""
+
+
+def test_assets_list_and_page_use_the_new_words(client, unit):
+    login(client, "test:invadmin")
+    listing = client.get("/inv/admin/units").get_data(as_text=True)
+    assert "<h1>Assets</h1>" in listing and "<th>Number</th>" in listing
+    assert "<th>Item</th>" in listing
+    page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
+    assert "<h2>Numbers</h2>" in page and "Change item" in page and "Add a number" in page

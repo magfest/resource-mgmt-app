@@ -1,4 +1,4 @@
-"""Read-only facts for the About tab of a unit page."""
+"""Read-only facts for the About tab of an asset page."""
 from __future__ import annotations
 
 from app import db
@@ -15,7 +15,8 @@ from app.models.constants import (
     INV_IDENT_VENDOR_TAG, INV_OWNERSHIP_RENTED,
 )
 
-_FIXED_WORDS = {INV_IDENT_SERIAL: "Serial number", INV_IDENT_VENDOR_TAG: "Vendor tag",
+_FIXED_WORDS = {INV_IDENT_MAGFEST_TAG: "Asset tag", INV_IDENT_FESTOPS_LABEL: "Label",
+                INV_IDENT_SERIAL: "Serial number", INV_IDENT_VENDOR_TAG: "Vendor tag",
                 INV_IDENT_MAC: "MAC address"}
 
 
@@ -45,7 +46,7 @@ def placed_line(unit) -> str | None:
 
 
 def check_line(unit) -> dict:
-    """The unit's latest check from any event: `word` is WORKS, BROKEN or None."""
+    """The asset's latest check from any event: `word` is WORKS, BROKEN or None."""
     prep = latest_check_rows([unit.id]).get(unit.id)
     word = check_word(prep)
     if word is None:
@@ -65,7 +66,7 @@ def _owner_rows(unit) -> list[tuple[str, str]]:
 
 
 def added_line(unit) -> str:
-    """When and by whom the unit was added, from its oldest movement."""
+    """When and by whom the asset was added, from its oldest movement."""
     movement = (db.session.query(InvMovement).filter(InvMovement.unit_id == unit.id)
                 .order_by(InvMovement.created_at, InvMovement.id).first())
     if movement is None:
@@ -75,13 +76,7 @@ def added_line(unit) -> str:
     return f"Added {local_when(movement.created_at)} by {who}"
 
 
-def _identifier_word(kind: str, value: str) -> str:
-    if kind == INV_IDENT_MAGFEST_TAG:
-        if value.startswith("FEST"):
-            return "FEST tag"
-        return "MT tag" if value.startswith("MT") else "Asset tag"
-    if kind == INV_IDENT_FESTOPS_LABEL:
-        return "U- label" if value.startswith("U-") else "FestOps label"
+def _identifier_word(kind: str) -> str:
     return _FIXED_WORDS[kind]
 
 
@@ -94,23 +89,23 @@ def find_by_rows(unit) -> list[tuple[str, str]]:
                 continue
             shown = (identifier.normalized_value if kind == INV_IDENT_MAGFEST_TAG
                      else identifier.value)
-            rows.append((_identifier_word(kind, identifier.normalized_value), shown))
+            rows.append((_identifier_word(kind), shown))
     return rows
 
 
 def detail_rows(unit) -> list[tuple[str, str]]:
-    """The item settings that decide how this unit behaves, then its own field values.
+    """The item settings that decide how this asset behaves, then its own field values.
 
-    The settings come from its Supply item: the gear type picks its fields, the
-    asset-tag rule and checklist decide what the Unit station asks. Ownership
+    The settings come from its Supply item: the asset type picks its fields, the
+    asset-tag rule and checklist decide what the Check station asks. Ownership
     decides whether it is counted on home.
     """
     item = unit.item
     lines = len(active_check_items(item))
     check = (f"{lines} checklist line{'' if lines == 1 else 's'}" if lines
              else "Works or Broken")
-    rows = [("Inventory item group", item.item_name),
-            ("Gear type", item.gear_kind.name if item.gear_kind else "Not set"),
+    rows = [("Item", item.item_name),
+            ("Asset type", item.gear_kind.name if item.gear_kind else "Not set"),
             ("Needs an asset tag", "Yes" if item.needs_asset_tag else "No"),
             ("Check", check)]
     rows += _owner_rows(unit)

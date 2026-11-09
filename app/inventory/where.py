@@ -99,7 +99,7 @@ def _unit_row(unit: InvUnit, word: str | None) -> UnitRow:
 
 def _word(unit: InvUnit, prep_rows) -> str:
     if unit.condition == INV_CONDITION_REPAIR:
-        return "Repair"
+        return "In repair"
     return CHECK_WORDS.get(check_word(prep_rows.get(unit.id)), "Not checked")
 
 

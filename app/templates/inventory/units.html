@@ -1,14 +1,14 @@
 {% extends "layout/base.html" %}
-{% block title %}Units - Inventory{% endblock %}
+{% block title %}Assets - Inventory{% endblock %}
 {% block content %}
-<h1>Units</h1>
+<h1>Assets</h1>
 {% macro page_link(n) %}{{ url_for('inventory.units', page=n, **keep) }}{% endmacro %}
 <form method="get" class="card mb-16">
   <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;">
-    <label style="flex: 2 1 220px;">Find a unit by name, tag, label, serial or MAC
+    <label style="flex: 2 1 220px;">Find an asset by name, number, serial number or MAC
       <input type="text" name="q" value="{{ q }}" maxlength="128" autofocus>
     </label>
-    <label style="flex: 1 1 140px;">Type
+    <label style="flex: 1 1 140px;">Asset type
       <select name="kind" id="kind-select">
         <option value="">Any</option>
         {% for k in kinds %}<option value="{{ k.code }}"{% if kind and kind.id == k.id %} selected{% endif %}>{{ k.name }}</option>{% endfor %}
@@ -42,7 +42,7 @@
   {% else %}
   <details class="mt-8">
     <summary>More filters</summary>
-    <p class="muted">Pick a type to filter on its fields.</p>
+    <p class="muted">Pick an asset type to filter on its fields.</p>
   </details>
   {% endif %}
 </form>
@@ -52,8 +52,8 @@
   });
 </script>
 {% if fell_back %}<p class="muted">That date could not be used, so this shows the last 30 days.</p>{% endif %}
-{% if not q %}<p class="muted">Retired units are hidden.</p>{% endif %}
-<p>{{ total }} unit{{ '' if total == 1 else 's' }}, {{ checked }} of {{ counted }} checked since {{ since_word }}, {{ broken }} broken
+{% if not q %}<p class="muted">Retired assets are hidden.</p>{% endif %}
+<p>{{ total }} asset{{ '' if total == 1 else 's' }}, {{ checked }} of {{ counted }} checked since {{ since_word }}, {{ broken }} broken
   &middot; <a href="{{ url_for('inventory.units', format='csv', **keep) }}">Download CSV</a></p>
 <style nonce="{{ csp_nonce }}">
   .units-table { table-layout: auto; width: max-content; min-width: 100%; }
@@ -62,7 +62,7 @@
 </style>
 <div style="overflow-x: auto;">
 <table class="units-table">
-  <thead><tr><th>Name</th><th>Tag or label</th><th>Inventory item group</th><th>Last checked</th><th>Last seen</th><th>Condition</th><th>Where</th><th>Flags</th></tr></thead>
+  <thead><tr><th>Name</th><th>Number</th><th>Item</th><th>Last checked</th><th>Last seen</th><th>Condition</th><th>Where</th><th>Flags</th></tr></thead>
   <tbody>
   {% for r in rows %}
     {% set page_url = url_for('inventory.unit_page', unit_id=r.unit.id) %}
@@ -77,7 +77,7 @@
       <td>{% if r.open_flags %}{{ r.open_flags }} open{% else %}<span class="muted">None</span>{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="8" class="muted">No unit matches.</td></tr>
+    <tr><td colspan="8" class="muted">No asset matches.</td></tr>
   {% endfor %}
   </tbody>
 </table>

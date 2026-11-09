@@ -81,7 +81,7 @@ def test_unit_with_no_container_is_not_placed(inv, tree_parts):
 def test_repair_unit_with_no_container(inv, tree_parts):
     _unit(inv, condition=INV_CONDITION_REPAIR)
     rows = build_where().not_placed
-    assert len(rows) == 1 and rows[0].word == "Repair"
+    assert len(rows) == 1 and rows[0].word == "In repair"
 
 
 def test_lost_unit_only_in_lost(inv, tree_parts):
@@ -149,7 +149,7 @@ def test_tree_word_reads_a_check_under_another_event(inv, tree_parts):
 
 def test_repair_unit_says_repair(inv, tree_parts):
     _unit(inv, tree_parts[1], condition=INV_CONDITION_REPAIR)
-    assert _find(build_where().roots, tree_parts[1].id).units[0].word == "Repair"
+    assert _find(build_where().roots, tree_parts[1].id).units[0].word == "In repair"
 
 
 def _selects(fn):
