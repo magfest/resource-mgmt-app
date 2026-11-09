@@ -10,8 +10,8 @@ from tests.inventory.helpers import login, make_allocation, make_asset, make_con
 
 
 def _has_tab(page, label):
-    """The tab macro puts the label on its own line inside the button."""
-    return re.search(rf">\s*{label}\s*<", page) is not None
+    """Match the label inside a tab button only; the top nav has an Inventory heading too."""
+    return re.search(rf'role="tab"[^>]*>\s*{label}\s*<', page) is not None
 
 
 def test_inventory_admin_sees_inventory_tabs_for_a_tracked_item(client, inv):
