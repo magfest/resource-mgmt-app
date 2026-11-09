@@ -2,8 +2,8 @@
 
 Counting records what is on a pallet or in a tote. It never moves anything.
 
-1. Scan the pallet's label. The screen shows the pallet and what it should hold.
-2. Tap an item and enter how many are loose on the pallet. The count appears under Counted.
+1. Scan the pallet's label. The screen shows the pallet and anything already recorded in it.
+2. Tap an item and enter how many are loose on the pallet, then confirm the number with **OK**. The count appears under Counted.
 3. Scan a gray tote's label when you reach it. The scanner asks "Save this count of ... and start ...?"
 4. Tap **Save and start** to count the tote next. Tap **Keep counting** to stay on the pallet.
 5. Count what is loose in the tote the same way as the pallet.
@@ -22,5 +22,5 @@ A tote counted at a table reads "In the Warehouse, exact location not assigned".
 
 | Button | Use it when |
 | --- | --- |
-| **Packs of** | The item comes in sealed packs. Enter how many packs. |
+| **Packs of** | The item comes in sealed packs. Tap **Packs of**, then enter the number of packs. |
 | **Estimate** | You cannot count exactly. Enter your best guess. |
