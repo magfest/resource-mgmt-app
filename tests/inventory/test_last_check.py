@@ -71,6 +71,13 @@ def test_an_undone_check_leaves_the_one_before_it(inv, smf, west):
     assert check_word(latest_check_rows([u.id])[u.id]) == CHECK_WORKS
 
 
+def test_a_unit_whose_only_check_was_undone_has_no_latest_row(inv, smf):
+    u = _unit(inv, "Undone only")
+    _prep(u, smf, "CHECKED", "VOIDED")
+    _prep(u, smf, "VOIDED", "VOIDED")
+    assert latest_check_rows([u.id]) == {}
+
+
 def test_a_unit_never_checked_is_absent(inv, smf):
     u = _unit(inv, "Never")
     assert latest_check_rows([u.id]) == {}
