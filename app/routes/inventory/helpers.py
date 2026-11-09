@@ -5,6 +5,7 @@ from functools import wraps
 
 from flask import abort, current_app, redirect, render_template, session, url_for
 
+from app.inventory.allocation_rights import can_allocate, can_read_allocations
 from app.inventory.item_rights import item_rights
 from app.inventory.ledger import Actor
 from app.models.constants import INV_NOTE_TYPES
@@ -49,6 +50,8 @@ require_inventory_operator = _guard(is_inventory_operator, "Inventory access req
 require_item_viewer = _guard(lambda u: item_rights(u).can_view, "Item access required")
 require_shared_editor = _guard(lambda u: item_rights(u).can_edit_shared, "Item edit access required")
 require_ordering_editor = _guard(lambda u: item_rights(u).can_edit_ordering, "Ordering edit access required")
+require_allocation_reader = _guard(can_read_allocations, "Allocation access required")
+require_allocator = _guard(can_allocate, "Allocation edit access required")
 
 
 def render_inventory_page(template: str, **ctx):

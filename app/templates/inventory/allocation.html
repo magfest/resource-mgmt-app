@@ -1,0 +1,75 @@
+{% extends "layout/base.html" %}
+{% block title %}Allocation - Inventory{% endblock %}
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .alloc-list { list-style: none; margin: 0 0 16px; padding: 0; }
+  .alloc-list > li { width: 100%; box-sizing: border-box; padding: 10px 0; border-bottom: 1px solid #e5e7eb; overflow-wrap: anywhere; }
+  .alloc-list .pill { display: inline-block; margin: 4px 4px 0 0; white-space: normal; }
+  .alloc-form select { max-width: 100%; }
+  .alloc-form label { display: block; margin-bottom: 8px; }
+  .alloc-filters a[aria-current="true"] { font-weight: bold; }
+</style>
+<h1>Allocation</h1>
+{% if not events %}
+<p class="muted">No event has submitted requests or allocations yet.</p>
+{% endif %}
+{% if not options %}
+<p class="muted">No item needs pre-allocation yet. Switch it on from an item's About tab.</p>
+{% endif %}
+{% if events and options %}
+<form method="get" class="card mb-16 alloc-form">
+  <label>Event
+    <select name="event">
+      {% for e in events %}<option value="{{ e.id }}"{% if e.id == event.id %} selected{% endif %}>{{ e.code }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Item or service
+    <select name="pick">
+      {% for s in options %}<option value="{{ s.kind }}:{{ s.id }}"{% if s.kind == selection.kind and s.id == selection.id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Show</button>
+</form>
+
+{% if selection %}
+<p><strong>{{ selection.name }}: {{ totals.requested }} requested · {{ totals.approved }} approved · {{ totals.allocated }} allocated · {{ totals.free }} free</strong></p>
+<p class="muted">Free means in service and allocated to nothing, for any event.</p>
+
+<h2>Department lines</h2>
+<ul class="alloc-list">
+  {% for line in lines %}
+  <li>
+    <div>{{ line_label(line) }}</div>
+    {% if line.state != 'REMOVED' %}
+    <div class="muted">Requested {{ line.requested }} · Approved {{ line.approved if line.approved is not none else 'not reviewed' }} · {{ line.allocated }} of {{ line.requested }} allocated</div>
+    {% endif %}
+    {% for w in line.warnings %}<span class="pill pill-warning">{{ w }}</span>{% endfor %}
+  </li>
+  {% else %}
+  <li class="muted">No department lines for {{ event.code }}.</li>
+  {% endfor %}
+</ul>
+
+{% set base = {'event': event.id, 'pick': selection.kind ~ ':' ~ selection.id} %}
+<h2>Assets</h2>
+<p class="alloc-filters">
+  <a href="{{ url_for('inventory.allocation', **base) }}"{% if not unallocated_only %} aria-current="true"{% endif %}>All assets</a>
+  ·
+  <a href="{{ url_for('inventory.allocation', show='unallocated', **base) }}"{% if unallocated_only %} aria-current="true"{% endif %}>Unallocated only</a>
+</p>
+<ul class="alloc-list">
+  {% for row in rows %}
+  <li>
+    <div><strong>{{ row.number or 'No number yet' }}</strong>{% if row.unit.name %} · {{ row.unit.name }}{% endif %}</div>
+    {% if row.details %}<div class="muted">{{ row.details }}</div>{% endif %}
+    <div>{{ row.text }}</div>
+    {% if row.warning %}<span class="pill pill-warning">{{ row.warning }}</span>{% endif %}
+    {# Per-asset actions render here when can_allocate is true. #}
+  </li>
+  {% else %}
+  <li class="muted">No assets to show.</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+{% endblock %}
