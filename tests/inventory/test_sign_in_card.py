@@ -10,7 +10,9 @@ from app.inventory.shifts import current_shift, start_shift
 from app.inventory.sign_in import issue_card, new_card, user_for_card
 from app.inventory.zpl import render_card
 from app.models import InvDevice, InvPrintJob, User
-from app.models.constants import INV_JOB_CLAIMED, INV_JOB_SIGNIN_CARD
+from app.models.constants import (
+    INV_JOB_CANCELLED, INV_JOB_CLAIMED, INV_JOB_QUEUED, INV_JOB_SIGNIN_CARD,
+)
 from tests.inventory.helpers import login
 
 
@@ -38,7 +40,7 @@ def test_card_label_shows_name_and_words_not_the_value(app_ctx):
 def test_issue_card_queues_a_job_and_ends_shifts(app_ctx, card_route, device):
     start_shift(device, "test:operator")
     job = issue_card(db.session.get(User, "test:operator"), Actor(user_id="test:invadmin"))
-    assert job.job_type == "SIGNIN_CARD" and job.fields == {"name": "Operator"}
+    assert job.job_type == "SIGNIN_CARD" and job.fields == {"name": "Operator", "user_id": "test:operator"}
     assert current_shift(device) is None
     assert user_for_card(job.code).id == "test:operator"
 
@@ -93,3 +95,23 @@ def test_card_job_cannot_be_reprinted(client, card_route):
     response = client.post(f"/inv/admin/print-queue/{job.id}/reprint", follow_redirects=True)
     assert "Print a new card from the Operators page." in response.get_data(as_text=True)
     assert db.session.query(InvPrintJob).count() == 1
+
+
+def test_a_second_card_cancels_the_waiting_first(app_ctx, card_route):
+    actor = Actor(user_id="test:invadmin")
+    other = issue_card(db.session.get(User, "test:invadmin"), actor)
+    first = issue_card(db.session.get(User, "test:operator"), actor)
+    second = issue_card(db.session.get(User, "test:operator"), actor)
+    assert first.status == INV_JOB_CANCELLED and first.code == ""
+    waiting = db.session.query(InvPrintJob).filter_by(
+        job_type=INV_JOB_SIGNIN_CARD, status=INV_JOB_QUEUED).all()
+    assert sorted(j.id for j in waiting) == sorted([other.id, second.id])
+    assert other.code != ""
+
+
+def test_a_collected_card_is_left_alone(app_ctx, card_route):
+    actor = Actor(user_id="test:invadmin")
+    first = issue_card(db.session.get(User, "test:operator"), actor)
+    first.status = INV_JOB_CLAIMED
+    issue_card(db.session.get(User, "test:operator"), actor)
+    assert first.status == INV_JOB_CLAIMED

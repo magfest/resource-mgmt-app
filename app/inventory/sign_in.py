@@ -17,8 +17,8 @@ from sqlalchemy.exc import IntegrityError
 from app import db
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import Actor, InventoryError, savepoint
-from app.inventory.printing import local_today, printer_for, request_label
-from app.models.constants import INV_JOB_SIGNIN_CARD, INV_JOB_SOURCE_SCAN
+from app.inventory.printing import cancel_job, local_today, printer_for, request_label
+from app.models.constants import INV_JOB_QUEUED, INV_JOB_SIGNIN_CARD, INV_JOB_SOURCE_SCAN
 from app.models import (
     InvCredential, InvDevice, InvPrintJob, ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR,
     ROLE_SUPER_ADMIN, User, UserRole,
@@ -178,11 +178,24 @@ def credentials_for(user_ids: Iterable[str]) -> dict[str, InvCredential]:
     return {row.user_id: row for row in rows}
 
 
+def _cancel_waiting_cards(user_id: str) -> None:
+    # Filtered in Python: JSON field queries differ between SQLite and PostgreSQL,
+    # and only a handful of card jobs wait at once.
+    waiting = (db.session.query(InvPrintJob)
+               .filter_by(job_type=INV_JOB_SIGNIN_CARD, status=INV_JOB_QUEUED)
+               .with_for_update().all())
+    for job in waiting:
+        if (job.fields or {}).get("user_id") == user_id:
+            cancel_job(job)
+
+
 def issue_card(user: User, actor: Actor, now: datetime | None = None) -> InvPrintJob:
     """Queue a new sign-in card for the user and end their open shifts.
 
     The printer is checked before the credential changes, so a refusal leaves
-    the old card working. The caller commits.
+    the old card working. A card of theirs still waiting to print is cancelled,
+    because it would print a dead card with the same name and date. A card a
+    station has already collected cannot be recalled. The caller commits.
     """
     # shifts.py imports can_sign_in from this module, so this import stays local.
     from app.inventory.shifts import end_user_shifts
@@ -192,8 +205,10 @@ def issue_card(user: User, actor: Actor, now: datetime | None = None) -> InvPrin
         raise InventoryError(
             "This account has no name to print. A super admin can set one in Users admin.")
     printer_for(INV_JOB_SIGNIN_CARD)
+    _cancel_waiting_cards(user.id)
     code = new_card(user, now)
-    job = request_label(INV_JOB_SIGNIN_CARD, code, {"name": name}, actor,
-                        INV_JOB_SOURCE_SCAN, printed_date=local_today())
+    # user_id in fields lets the next card for this person find this job.
+    job = request_label(INV_JOB_SIGNIN_CARD, code, {"name": name, "user_id": user.id},
+                        actor, INV_JOB_SOURCE_SCAN, printed_date=local_today())
     end_user_shifts(user.id, now=now)
     return job
