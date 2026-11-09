@@ -174,6 +174,18 @@ def test_download_template_is_valid_xlsx_with_expected_headers(app, client):
     assert header_row == EXPECTED_COLUMNS
 
 
+def test_template_download_has_no_retired_columns(app, client):
+    _seed_admin_and_category(app)
+    _login(client, "test:admin")
+
+    resp = client.get(TEMPLATE_URL)
+
+    sheet = openpyxl.load_workbook(io.BytesIO(resp.data)).active
+    header_row = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    for name in ("qty_on_hand", "location_zone", "bin_location"):
+        assert name not in header_row
+
+
 def test_data_upload_index_links_to_supply_items_import(app, client):
     """Part C: the catalog import entry point moved to the central Data
     Upload hub — its index page must advertise the supply-items import."""

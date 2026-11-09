@@ -27,8 +27,6 @@
         <th>Item Name</th>
         <th style="width: 80px;">Unit</th>
         <th style="width: 100px;">Cost</th>
-        <th style="width: 80px;">On Hand</th>
-        <th style="width: 100px;">Location</th>
         <th style="width: 70px;">Status</th>
         <th style="width: 80px;">Actions</th>
       </tr>
@@ -49,8 +47,6 @@
           </td>
           <td class="muted">{{ item.unit }}</td>
           <td class="num">{% if item.unit_cost_cents %}${{ '{:.2f}'.format(item.unit_cost_cents / 100) }}{% else %}—{% endif %}</td>
-          <td class="num">{{ item.qty_on_hand if item.qty_on_hand is not none else '—' }}</td>
-          <td class="muted small">{{ item.location_zone or '' }}{% if item.location_zone and item.bin_location %}/{% endif %}{{ item.bin_location or '' }}</td>
           <td>
             {% if item.is_active %}
               <span class="pill" style="background: #e9f7ef;">Active</span>

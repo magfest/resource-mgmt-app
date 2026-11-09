@@ -26,8 +26,7 @@ from .helpers import log_config_change
 
 EXPECTED_COLUMNS = [
     "category_code", "item_name", "unit", "notes", "order_guidance",
-    "unit_cost", "qty_on_hand", "location_zone", "bin_location",
-    "is_limited", "is_popular", "is_expendable", "notes_required",
+    "unit_cost", "is_limited", "is_popular", "is_expendable", "notes_required",
     "is_active", "is_orderable",
 ]
 
@@ -171,10 +170,6 @@ def _parse_row_fields(row: dict) -> tuple[dict, list[str]]:
         parsed["unit_cost_cents"] = _parse_cents(row.get("unit_cost"))
     except ValueError as exc:
         problems.append(str(exc))
-    try:
-        parsed["qty_on_hand"] = _parse_int(row.get("qty_on_hand"))
-    except ValueError as exc:
-        problems.append(str(exc))
 
     for flag, default in BOOLEAN_DEFAULTS.items():
         try:
@@ -192,8 +187,6 @@ def _parse_row_fields(row: dict) -> tuple[dict, list[str]]:
 
     parsed["notes"] = _clean_text(row.get("notes"))
     parsed["order_guidance"] = _clean_text(row.get("order_guidance"))
-    parsed["location_zone"] = _clean_text(row.get("location_zone"))
-    parsed["bin_location"] = _clean_text(row.get("bin_location"))
     return parsed, problems
 
 
@@ -284,8 +277,7 @@ def classify_rows(rows: list[dict]) -> ImportPreview:
 _WRITABLE_FIELDS = (
     "category_id", "item_name", "unit", "notes", "order_guidance",
     "is_limited", "is_popular", "is_expendable", "notes_required",
-    "is_active", "unit_cost_cents", "qty_on_hand", "location_zone",
-    "bin_location",
+    "is_active", "unit_cost_cents",
 )
 # Written only when the record carries the key; see _parse_row_fields.
 _OPTIONAL_FIELDS = ("is_orderable",)
