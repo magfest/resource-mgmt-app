@@ -6,6 +6,12 @@
   .deploy-form label { display: block; margin-bottom: 8px; }
   .deploy-form select { max-width: 100%; }
   .deploy-table td, .deploy-table th { vertical-align: top; padding: 4px 8px; text-align: left; }
+  /* base.html fixes table layout and breaks words anywhere, which crushes 12 columns
+     to one letter wide on a phone. This table scrolls inside .scroll-x instead. */
+  .deploy-table { table-layout: auto; width: auto; min-width: 100%; }
+  .deploy-table td { overflow-wrap: normal; }
+  .deploy-table th, .deploy-table .nowrap { white-space: nowrap; }
+  .deploy-table .text { min-width: 12em; }
 </style>
 <h1>Deployment report</h1>
 {% if not events %}
@@ -33,10 +39,10 @@
     <tbody>
     {% for r in rows %}
     <tr>
-      <td>{{ r.department }}</td><td>{{ r.room }}</td><td>{{ r.what }}</td><td>{{ r.public_id }}</td><td>{{ r.line_number }}</td><td>{{ r.words }}</td>
+      <td>{{ r.department }}</td><td>{{ r.room }}</td><td>{{ r.what }}</td><td class="nowrap">{{ r.public_id }}</td><td>{{ r.line_number }}</td><td class="text">{{ r.words }}</td>
       <td>{{ r.requested }}</td><td>{{ r.approved }}</td><td>{{ r.allocated }}</td>
       <td>{% if r.short %}{{ r.short }} short{% endif %}</td>
-      <td>{{ r.assets|join('; ') }}</td><td>{{ r.warnings|join('; ') }}</td>
+      <td class="nowrap">{% for a in r.assets %}<div>{{ a }}</div>{% endfor %}</td><td class="text">{{ r.warnings|join('; ') }}</td>
     </tr>
     {% endfor %}
     </tbody>
