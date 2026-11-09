@@ -81,3 +81,27 @@ def test_revoking_the_role_ends_shifts(client, inv):
     client.post("/inv/admin/operators/test:operator/revoke")
     shift = db.session.query(InvShift).one()
     assert shift.ended_at is not None and shift.end_reason == "REVOKED"
+
+
+def test_new_card_only_for_listed_users(client, card_route):
+    from app.models import InvCredential
+    login(client, "test:invadmin")
+    for user_id in ["test:admin", "test:nobody", "test:missing"]:
+        assert client.post(f"/inv/admin/operators/{user_id}/card").status_code == 404
+    db.session.get(User, "test:operator").is_active = False
+    db.session.commit()
+    assert client.post("/inv/admin/operators/test:operator/card").status_code == 404
+    assert db.session.query(InvPrintJob).count() == 0
+    assert db.session.query(InvCredential).count() == 0
+    assert _changes() == []
+
+
+def test_pin_reset_only_for_listed_users(client, inv):
+    from app.models import InvCredential
+    new_pin(db.session.get(User, "test:nobody"))
+    db.session.commit()
+    login(client, "test:admin")
+    for user_id in ["test:admin", "test:nobody"]:
+        assert client.post(f"/inv/admin/operators/{user_id}/reset-pin").status_code == 404
+    assert db.session.get(InvCredential, "test:nobody").pin_digest is not None
+    assert _changes() == []

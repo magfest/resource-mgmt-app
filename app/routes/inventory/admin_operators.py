@@ -31,15 +31,26 @@ def _log(user: User, change: str) -> None:
     })
 
 
+def _listed_users():
+    """Query active users holding an inventory role: the people this page lists."""
+    return db.session.query(User).filter(
+        User.is_active.is_(True),
+        User.id.in_(db.session.query(UserRole.user_id).filter(
+            UserRole.role_code.in_([ROLE_INVENTORY_OPERATOR, ROLE_INVENTORY_ADMIN]))))
+
+
+def _listed_user_or_404(user_id: str) -> User:
+    """Return a listed user, or abort. Cards and PIN resets serve listed users only."""
+    user = _listed_users().filter(User.id == user_id).first()
+    if user is None:
+        abort(404)
+    return user
+
+
 @inventory_bp.get("/admin/operators")
 @require_inventory_admin
 def operators():
-    users = (db.session.query(User)
-             .filter(User.is_active.is_(True),
-                     User.id.in_(db.session.query(UserRole.user_id).filter(
-                         UserRole.role_code.in_(
-                             [ROLE_INVENTORY_OPERATOR, ROLE_INVENTORY_ADMIN]))))
-             .order_by(User.display_name).all())
+    users = _listed_users().order_by(User.display_name).all()
     admin_ids = {r.user_id for r in db.session.query(UserRole).filter_by(
         role_code=ROLE_INVENTORY_ADMIN)}
     creds = credentials_for([u.id for u in users])
@@ -95,9 +106,7 @@ def revoke_operator(user_id: str):
 @inventory_bp.post("/admin/operators/<user_id>/card")
 @require_inventory_admin
 def operator_new_card(user_id: str):
-    user = db.session.get(User, user_id)
-    if user is None:
-        abort(404)
+    user = _listed_user_or_404(user_id)
     try:
         job = issue_card(user, Actor(user_id=get_user_ctx().user_id))
     except InventoryError as exc:
@@ -115,9 +124,7 @@ def operator_new_card(user_id: str):
 def operator_reset_pin(user_id: str):
     if not get_user_ctx().is_super_admin:
         abort(403)
-    user = db.session.get(User, user_id)
-    if user is None:
-        abort(404)
+    user = _listed_user_or_404(user_id)
     clear_pin(user.id)
     end_user_shifts(user.id)
     log_sign_in_event(user, "pin_reset")
