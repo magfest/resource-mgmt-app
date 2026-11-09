@@ -270,7 +270,7 @@ class _Resolver:
                     .order_by(SupplyItem.id).first())
         if existing is not None:
             if not existing.is_serialized:
-                return None, f"A non-serialized item is already named {existing.item_name}."
+                return None, f"An item that is not tracked as assets is already named {existing.item_name}."
             if existing.gear_kind_id != kind.id:
                 return None, f"{existing.item_name} is not a {kind.name} item."
             return existing, None

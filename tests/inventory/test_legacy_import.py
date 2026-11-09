@@ -200,7 +200,7 @@ def test_a_non_serialized_item_of_the_new_name_sends_rows_to_review(kinds, inv):
     result = preview(data, {"LAMINATOR|Amazon Basic Thermal Laminator": "new:Blue Pen"},
                      inv.category.id)
     assert result.review == [
-        "Row 2 (MAG-LAM-001): A non-serialized item is already named Blue Pen."]
+        "Row 2 (MAG-LAM-001): An item that is not tracked as assets is already named Blue Pen."]
 
 
 def test_a_second_run_skips_every_name_already_imported(kinds, inv):

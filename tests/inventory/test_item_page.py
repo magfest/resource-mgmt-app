@@ -1,6 +1,8 @@
 import io
 import re
 
+import pytest
+
 from app import db
 from app.models import ConfigAuditEvent, InvUnit, SupplyItem
 from app.inventory.ledger import Actor, add_stock
@@ -362,3 +364,46 @@ def test_on_hand_tab_shows_the_last_count_in_local_time(client, inv, monkeypatch
     login(client, "test:invadmin")
     page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=on_hand").get_data(as_text=True)
     assert "Nov 7, " in page and "Nov 8, " not in page
+
+
+@pytest.mark.parametrize("bad", ["Infinity", "-1", "3.999", "NaN"])
+def test_ordering_rejects_unusable_costs(client, inv, supply_admin, bad):
+    inv.pens.unit_cost_cents = 125
+    db.session.commit()
+    login(client, "test:supplyadmin")
+    resp = client.post(f"/inv/admin/items/{inv.pens.id}/ordering",
+                       data={"unit_cost": bad, "order_guidance": "Changed"}, follow_redirects=True)
+    assert resp.status_code == 200
+    assert "Invalid cost format." in resp.get_data(as_text=True)
+    pens = db.session.get(SupplyItem, inv.pens.id)
+    assert pens.unit_cost_cents == 125 and pens.order_guidance is None
+
+
+def test_on_hand_tab_shows_barcode_and_pack_size_to_viewers(client, inv):
+    inv.pens.barcode = "012345678905"
+    inv.pens.pack_size = 12
+    add_stock(inv.pens, make_container(inv, "P-2"), 7, Actor(user_id="test:invadmin"))
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=on_hand").get_data(as_text=True)
+    assert "012345678905" in page and "Pack size" in page and ">12<" in page.replace(" ", "")
+
+
+def test_picture_input_names_the_allowed_types(client, inv):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/items/{inv.pens.id}").get_data(as_text=True)
+    assert 'accept="image/jpeg,image/png,image/webp"' in page and "up to 5 MB" in page
+
+
+def test_saving_ordering_with_every_box_unticked_leaves_other_tabs_alone(client, inv, supply_admin):
+    inv.pens.needs_asset_tag = True
+    inv.pens.barcode = "012345678905"
+    inv.pens.pack_size = 12
+    db.session.commit()
+    before = {f: getattr(inv.pens, f) for f in (
+        "item_name", "category_id", "unit", "is_active", "is_orderable",
+        "needs_asset_tag", "barcode", "pack_size", "is_serialized")}
+    login(client, "test:supplyadmin")
+    client.post(f"/inv/admin/items/{inv.pens.id}/ordering", data={"order_guidance": "Box"})
+    pens = db.session.get(SupplyItem, inv.pens.id)
+    assert {f: getattr(pens, f) for f in before} == before

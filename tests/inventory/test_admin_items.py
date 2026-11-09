@@ -123,9 +123,7 @@ def test_old_supply_editor_posts_are_gone(client, inv, supply_admin):
 
 def test_old_supply_edit_url_still_needs_supply_admin(client, inv, supply_admin):
     login(client, "test:invadmin")
-    assert client.get(f"/admin/config/supply-items/{inv.pens.id}").status_code in (302, 403)
-    assert not client.get(f"/admin/config/supply-items/{inv.pens.id}").headers.get(
-        "Location", "").endswith(f"/inv/admin/items/{inv.pens.id}")
+    assert client.get(f"/admin/config/supply-items/{inv.pens.id}").status_code == 403
 
 
 def test_supply_list_links_rows_to_the_item_page(client, inv, supply_admin):

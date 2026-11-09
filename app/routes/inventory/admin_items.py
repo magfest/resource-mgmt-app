@@ -1,8 +1,8 @@
-"""Inventory flags on SupplyItem, editable by inventory admins.
+"""The Items list, Add an item, and item-page posts for assets.
 
-The Supply item form is gated to Supply admins, so the inventory columns
-get their own page. Items that are not orderable are created here because they
-never belong in the Supply catalog.
+Supply admins and inventory admins both use this module. New items default to
+orderable. The asset type and defaults posts here serve the Inventory tab of
+the item page in admin_item_page.
 """
 from flask import abort, flash, redirect, request, url_for
 from sqlalchemy.orm import joinedload

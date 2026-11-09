@@ -195,7 +195,11 @@ def save_item_ordering(item_id: int):
     unit_cost_cents = None
     if unit_cost:
         try:
-            unit_cost_cents = int(Decimal(unit_cost) * 100)
+            dollars = Decimal(unit_cost)
+            cents = dollars * 100
+            if not dollars.is_finite() or dollars < 0 or cents != cents.to_integral_value():
+                raise ValueError(unit_cost)
+            unit_cost_cents = int(cents)
         except (ValueError, InvalidOperation):
             flash("Invalid cost format.", "error")
             return back

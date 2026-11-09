@@ -106,7 +106,7 @@ def _require_positive(quantity: int) -> None:
 def _require_counted(item: SupplyItem) -> None:
     if item.is_serialized:
         raise InventoryError(
-            f"{item.item_name} is serialized; scan each asset's label instead.")
+            f"{item.item_name} is tracked as assets; scan each asset's label instead.")
 
 
 def stock_quantity(item: SupplyItem, container: InvContainer) -> int:

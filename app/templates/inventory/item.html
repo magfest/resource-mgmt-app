@@ -7,6 +7,11 @@
   .item-page .pair { width: 100%; border-collapse: collapse; }
   .item-page .pair th { text-align: left; font-weight: normal; color: #666; padding: 4px 12px 4px 0; vertical-align: top; }
   .item-page .pair td { padding: 4px 0; }
+  .item-page .stack > label, .item-page .stack > div { display: block; margin-bottom: 12px; }
+  .item-page .stack label:has(> input[type=checkbox]) { display: flex; align-items: center; gap: 8px; }
+  .item-page .stack input[type=text], .item-page .stack input[type=number],
+  .item-page .stack select, .item-page .stack textarea { display: block; max-width: 100%; margin-top: 4px; }
+  .item-page ul.plain { list-style: none; margin: 0; padding: 0; }
 </style>
 <div class="item-page">
 <div style="margin-bottom: 16px;">
@@ -30,7 +35,8 @@
     <div>
       {% if item.image_url %}<img src="{{ item.image_url }}" alt="" style="max-width: 120px; display: block;">
       <label><input type="checkbox" name="remove_image" value="1"> Remove picture</label>{% endif %}
-      <label>Picture <input type="file" name="image_file" accept="image/*"></label>
+      <label>Picture <input type="file" name="image_file" accept="image/jpeg,image/png,image/webp"></label>
+      <div class="muted">JPEG, PNG or WebP, up to 5 MB.</div>
     </div>
     <label><input type="checkbox" name="is_active" value="1" {% if item.is_active %}checked{% endif %}> Active</label>
     {% if rights.can_set_orderable %}
@@ -58,7 +64,7 @@
   {% elif tab == 'ordering' %}
   <form method="post" action="{{ url_for('inventory.save_item_ordering', item_id=item.id) }}" class="stack">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Cost each in dollars <input type="text" name="unit_cost" inputmode="decimal" value="{{ '%.2f' % (item.unit_cost_cents / 100) if item.unit_cost_cents is not none else '' }}"></label>
+    <label>Cost each in dollars <input type="number" name="unit_cost" min="0" step="0.01" inputmode="decimal" value="{{ '%.2f' % (item.unit_cost_cents / 100) if item.unit_cost_cents is not none else '' }}"></label>
     <label>Order guidance <input type="text" name="order_guidance" maxlength="160" value="{{ item.order_guidance or '' }}"></label>
     <label>Notes <textarea name="notes" rows="3">{{ item.notes or '' }}</textarea></label>
     <label><input type="checkbox" name="notes_required" value="1" {% if item.notes_required %}checked{% endif %}> Notes required</label>
@@ -195,7 +201,12 @@
   {% else %}
   <div class="muted mb-16">None on hand.</div>
   {% endif %}
-  {% if rights.can_edit_inventory %}
+  {% if not rights.can_edit_inventory %}
+  <table class="pair">
+    <tr><th>Barcode</th><td>{{ item.barcode or 'None' }}</td></tr>
+    <tr><th>Pack size</th><td>{{ item.pack_size if item.pack_size is not none else 'None' }}</td></tr>
+  </table>
+  {% else %}
   <form method="post" action="{{ url_for('inventory.save_item_on_hand', item_id=item.id) }}" class="stack mt-16">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Barcode <input type="text" name="barcode" value="{{ item.barcode or '' }}" maxlength="64"></label>

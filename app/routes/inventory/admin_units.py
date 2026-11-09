@@ -422,7 +422,7 @@ def unit_set_item(unit_id: int):
 
     def change():
         if item is None or not item.is_active or not item.is_serialized:
-            raise InventoryError("Pick an active serialized item.")
+            raise InventoryError("Pick an active item that is tracked as assets.")
         unit.item_id = item.id
         db.session.flush()
 
