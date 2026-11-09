@@ -2,6 +2,7 @@
 from dataclasses import fields
 
 from app.inventory.item_rights import ItemRights, is_supply_admin, item_rights
+from app import db
 from app.models import User, UserRole
 from app.routes import UserContext
 
@@ -9,7 +10,7 @@ from app.routes import UserContext
 def ctx_for(user_id):
     roles = tuple(r.role_code for r in UserRole.query.filter_by(user_id=user_id))
     return UserContext(
-        user_id=user_id, user=User.query.get(user_id), roles=roles,
+        user_id=user_id, user=db.session.get(User, user_id), roles=roles,
         is_super_admin="SUPER_ADMIN" in roles, approval_group_ids=set(),
     )
 
