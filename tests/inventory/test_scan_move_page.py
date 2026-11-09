@@ -189,3 +189,53 @@ def test_move_flow_under_node(tmp_path):
         env={**os.environ, "MOVE_JS": os.path.abspath(os.path.join(STATIC, "station_move.js"))})
     assert result.returncode == 0, result.stderr
     assert "move ok" in result.stdout
+
+
+REFUSED = PRELUDE + r"""
+(async () => {
+  let p = onScan('C-0040');
+  await tick();
+  writes[0].resolve({ok: true, destination: {code: 'C-0040', title: 'Pallet C-0040'},
+    message: 'Going to Pallet C-0040.'});
+  await p;
+  find(panel, 'Move supplies').handlers.click();
+  p = onScan('C-0041');
+  await tick();
+  reads[0].resolve({ok: true, source: {code: 'C-0041', title: 'Pallet C-0041'},
+    usual: [{item_id: 1, name: 'Pens', pack_size: 12, prompt: 'How many Pens?'}]});
+  await p;
+
+  find(panel, 'Pens').handlers.click();
+  padCb({quantity: 999999, entered: 999999, packs: false, about: false});
+  await tick();
+  assert.equal(writes[1].path, '/supplies');
+  writes[1].resolve({ok: false, message: 'That number is too large.'});
+  await tick();
+  assert.equal(messages[messages.length - 1], 'That number is too large.');
+  assert.ok(texts(panel).includes('From C-0041 to C-0040'), 'still on the item step');
+  assert.ok(find(panel, 'Pens') && find(panel, 'Browse') && find(panel, 'Search'));
+
+  find(panel, 'Pens').handlers.click();
+  padCb({quantity: 24, entered: 2, packs: true, about: false});
+  await tick();
+  assert.equal(writes[2].path, '/supplies');
+  assert.equal(writes[2].body.source_code, 'C-0041');
+  console.log('refused ok');
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+
+def _node(tmp_path, script, name):
+    path = tmp_path / name
+    path.write_text(script)
+    return subprocess.run(
+        ["node", str(path)], capture_output=True, text=True,
+        env={**os.environ, "MOVE_JS": os.path.abspath(os.path.join(STATIC, "station_move.js"))})
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_refused_supplies_move_keeps_the_item_step(tmp_path):
+    result = _node(tmp_path, REFUSED, "move_refused.js")
+    assert result.returncode == 0, result.stderr
+    assert "refused ok" in result.stdout

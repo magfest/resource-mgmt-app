@@ -157,12 +157,13 @@
                   item_id: item.id, quantity: quantity};
       return S.write(cfg.suppliesUrl, body).then(function (answer) {
         if (answer.need_name || answer.fatal) { return {ok: false}; }
+        // A refusal keeps the source so a mistyped quantity needs only another tap.
+        if (!answer.ok) { render(); fail(answer.message); refocus(); return {ok: false}; }
         source = null;
         picking = false;
         render();
-        if (answer.ok) { S.feedback('ok'); S.showMessage(answer.message, 'info'); } else {
-          fail(answer.message);
-        }
+        S.feedback('ok');
+        S.showMessage(answer.message, 'info');
         refocus();
         return {ok: false};
       });
