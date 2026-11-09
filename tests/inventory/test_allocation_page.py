@@ -1,4 +1,6 @@
 """The read-only allocation page: shortfall, department lines and assets."""
+from sqlalchemy import event as sa_event
+
 from app import db
 from tests.inventory.helpers import login, make_allocation, make_asset, supply_line
 
@@ -91,3 +93,37 @@ def test_person_text_is_escaped(client, alloc):
     page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
     assert "&lt;b&gt;" in page and "<b>x</b>" not in page
 
+
+
+def test_asset_rows_run_in_a_fixed_number_of_selects(client, alloc):
+    login(client, "test:admin")
+
+    def selects_for(n):
+        for i in range(n):
+            line = supply_line(alloc, alloc.alpha, 2, event=alloc.other_event)
+            make_allocation(make_asset(alloc.tv, f"U-{n}{i:03d}"), line)
+        db.session.commit()
+        seen = [0]
+
+        def count(conn, cursor, statement, *args):
+            if statement.lstrip().upper().startswith("SELECT"):
+                seen[0] += 1
+
+        sa_event.listen(db.engine, "before_cursor_execute", count)
+        try:
+            _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
+        finally:
+            sa_event.remove(db.engine, "before_cursor_execute", count)
+        db.session.expire_all()
+        return seen[0]
+
+    assert selects_for(1) == selects_for(5)
+
+
+def test_a_stale_pick_falls_back_to_the_first_selection(client, alloc):
+    supply_line(alloc, alloc.alpha, 3)
+    db.session.commit()
+    login(client, "test:admin")
+    for args in ({"pick": "item:999999"}, {"item": 999999}, {"service": 999999}):
+        page = _page(client, alloc, event=alloc.event.id, **args)
+        assert "Test Printer: 0 requested · 0 approved · 0 allocated · 0 free" in page
