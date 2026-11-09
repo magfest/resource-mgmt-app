@@ -526,3 +526,17 @@ def test_about_tab_shows_the_switch_as_text_to_a_reader(client, alloc):
     login(client, "test:supplyadmin")
     page = client.get(f"/inv/admin/items/{alloc.tv.id}").get_data(as_text=True)
     assert "Needs pre-allocation" in page and 'name="needs_pre_allocation"' not in page
+
+
+def test_deactivating_is_refused_while_assets_are_allocated(client, alloc):
+    make_allocation(make_asset(alloc.tv, "U-0001"), supply_line(alloc, alloc.alpha, 2))
+    db.session.commit()
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/items/{alloc.tv.id}/about", data={
+        "item_name": alloc.tv.item_name, "category_id": alloc.tv.category_id, "unit": "each",
+        "is_serialized": "1", "needs_pre_allocation": "1"},
+        content_type="multipart/form-data")
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert ("Test TV has 1 allocated asset. Release it before making the item inactive."
+            in page)
+    assert db.session.get(SupplyItem, alloc.tv.id).is_active is True

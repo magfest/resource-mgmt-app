@@ -141,6 +141,14 @@ def save_item_about(item_id: int):
         flash("An item name is at most 256 characters and a unit of measure at most 32.", "error")
         return back
 
+    if item.is_active and not form.get("is_active"):
+        held = active_allocation_count(item.id)
+        if held:
+            flash(f"{item.item_name} has {held} allocated asset{'' if held == 1 else 's'}. "
+                  f"Release {'it' if held == 1 else 'them'} before making the item inactive.",
+                  "error")
+            return back
+
     tracked = item.is_serialized
     if rights.can_set_tracked:
         tracked = form.get("is_serialized") == "1"
