@@ -119,6 +119,7 @@ def allocation_pick():
         current = held.work_line_id if held else None
     options = [line for line in demand_lines(event.id, selection)
                if line.state == LINE_OPEN and line.left > 0
+               and (is_move or line.left >= len(units))
                and not (is_move and line.work_line_id == current)]
     if is_move:
         heading = f"Move {unit_phrase(units[0])} to…"

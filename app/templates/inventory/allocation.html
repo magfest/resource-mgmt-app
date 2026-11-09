@@ -60,6 +60,9 @@
   ·
   <a href="{{ url_for('inventory.allocation', show='unallocated', **base) }}"{% if unallocated_only %} aria-current="true"{% endif %}>Unallocated only</a>
 </p>
+{% set tickable = rows|rejectattr('allocation')|rejectattr('warning')|list %}
+{% set ticked_button %}<button type="submit" class="btn btn-small" form="alloc-pick">Allocate ticked to…</button>{% endset %}
+{% if can_allocate and tickable %}<p>{{ ticked_button }}</p>{% endif %}
 <ul class="alloc-list">
   {% for row in rows %}
   <li>
@@ -91,10 +94,10 @@
   <li class="muted">No assets to show.</li>
   {% endfor %}
 </ul>
-{% if can_allocate %}
+{% if can_allocate and tickable %}
 <form id="alloc-pick" method="get" action="{{ url_for('inventory.allocation_pick') }}">
   {% for k, v in carry.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-  <button type="submit" class="btn btn-small">Allocate ticked to…</button>
+  {{ ticked_button }}
 </form>
 {% endif %}
 {% endif %}

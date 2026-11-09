@@ -171,3 +171,15 @@ def test_a_removed_line_marks_its_asset_row_and_a_live_line_does_not(client, all
     first, second = assets.split("U-0002")
     assert "Line changed: removed" in first.split("U-0001")[1]
     assert "Line changed: removed" not in second
+
+
+def test_ticked_button_shows_above_and_below_only_with_a_tickable_asset(client, alloc):
+    line = supply_line(alloc, alloc.alpha, 2)
+    make_allocation(make_asset(alloc.tv, "U-0001"), line)
+    db.session.commit()
+    login(client, "test:admin")
+    assert "Allocate ticked to…" not in _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
+    make_asset(alloc.tv, "U-0002")
+    db.session.commit()
+    page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
+    assert page.count("Allocate ticked to…") == 2

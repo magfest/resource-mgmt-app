@@ -38,6 +38,18 @@ def test_picker_lists_open_lines_with_what_is_left(client, alloc):
     assert "Beta Team · any" not in page
 
 
+def test_batch_picker_omits_lines_that_cannot_take_every_asset(client, alloc):
+    supply_line(alloc, alloc.alpha, 2, notes="small")
+    supply_line(alloc, alloc.beta, 4, notes="big")
+    units = [make_asset(alloc.tv, f"U-000{i}") for i in range(1, 5)]
+    db.session.commit()
+    login(client, "test:admin")
+    query = "&".join(f"unit={u.id}" for u in units)
+    page = client.get(f"/inv/allocation/pick?event={alloc.event.id}&item={alloc.tv.id}&{query}"
+                      ).get_data(as_text=True)
+    assert "Beta Team · big · 4 left" in page and "Alpha Team · small" not in page
+
+
 def test_picker_without_a_line_says_so(client, alloc):
     unit = make_asset(alloc.tv, "U-0001")
     full = supply_line(alloc, alloc.alpha, 1)
