@@ -6,7 +6,7 @@ import pytest
 from app import db
 from app.models import ConfigAuditEvent, InvUnit, SupplyItem
 from app.inventory.ledger import Actor, add_stock
-from tests.inventory.helpers import login, make_container
+from tests.inventory.helpers import login, make_allocation, make_asset, make_container, supply_line
 
 
 def _has_tab(page, label):
@@ -422,3 +422,89 @@ def test_saving_ordering_with_every_box_unticked_leaves_other_tabs_alone(client,
     client.post(f"/inv/admin/items/{inv.pens.id}/ordering", data={"order_guidance": "Box"})
     pens = db.session.get(SupplyItem, inv.pens.id)
     assert {f: getattr(pens, f) for f in before} == before
+
+
+def test_inventory_admin_turns_on_pre_allocation_and_picks_a_service(client, alloc):
+    login(client, "test:invadmin")
+    _about(client, alloc.tv, is_serialized="1", needs_pre_allocation="1",
+           techops_service_type_id=str(alloc.printer_service.id))
+    item = db.session.get(SupplyItem, alloc.tv.id)
+    assert item.needs_pre_allocation is True
+    assert item.techops_service_type_id == alloc.printer_service.id
+
+
+def test_pre_allocation_is_refused_on_a_counted_item(client, inv):
+    login(client, "test:invadmin")
+    resp = _about(client, inv.pens, needs_pre_allocation="1")
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "Needs pre-allocation is only for items tracked as assets." in page
+    assert db.session.get(SupplyItem, inv.pens.id).needs_pre_allocation is False
+
+
+def test_a_service_needs_the_switch_on(client, alloc):
+    login(client, "test:invadmin")
+    resp = _about(client, alloc.tv, is_serialized="1", item_name="Renamed TV",
+                  techops_service_type_id=str(alloc.printer_service.id))
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "Turn on Needs pre-allocation before picking a TechOps service." in page
+    item = db.session.get(SupplyItem, alloc.tv.id)
+    assert item.item_name == "Test TV" and item.techops_service_type_id is None
+
+
+def test_an_unknown_service_is_refused(client, alloc):
+    login(client, "test:invadmin")
+    resp = _about(client, alloc.tv, is_serialized="1", needs_pre_allocation="1",
+                  techops_service_type_id="999999")
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "Pick a TechOps service from the list." in page
+
+
+def test_switch_off_is_refused_while_assets_are_allocated(client, alloc):
+    for label in ("U-0001", "U-0002"):
+        make_allocation(make_asset(alloc.tv, label), supply_line(alloc, alloc.alpha, 2))
+    db.session.commit()
+    login(client, "test:invadmin")
+    resp = _about(client, alloc.tv, is_serialized="1")
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert ("Test TV has 2 allocated assets. Release them before turning off "
+            "pre-allocation or changing its TechOps service.") in page
+    assert db.session.get(SupplyItem, alloc.tv.id).needs_pre_allocation is True
+
+
+def test_service_change_is_refused_while_an_asset_is_allocated(client, alloc):
+    make_allocation(make_asset(alloc.printer, "U-0001"), supply_line(alloc, alloc.alpha, 1))
+    db.session.commit()
+    login(client, "test:invadmin")
+    resp = _about(client, alloc.printer, is_serialized="1", needs_pre_allocation="1",
+                  techops_service_type_id=str(alloc.radio_service.id))
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "Test Printer has 1 allocated asset. Release them" in page
+    assert (db.session.get(SupplyItem, alloc.printer.id).techops_service_type_id
+            == alloc.printer_service.id)
+
+
+def test_supply_admin_cannot_post_the_pre_allocation_switch(client, alloc):
+    login(client, "test:supplyadmin")
+    assert _about(client, alloc.tv, needs_pre_allocation="1").status_code == 403
+
+
+def test_about_audit_records_the_switch(client, alloc):
+    db.session.get(SupplyItem, alloc.tv.id).needs_pre_allocation = False
+    db.session.commit()
+    login(client, "test:invadmin")
+    _about(client, alloc.tv, is_serialized="1", needs_pre_allocation="1")
+    events = db.session.query(ConfigAuditEvent).filter_by(entity_id=alloc.tv.id).all()
+    assert any("needs_pre_allocation" in str(e.changes_json) for e in events)
+
+
+def test_about_tab_offers_the_switch_and_select(client, alloc):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/items/{alloc.tv.id}").get_data(as_text=True)
+    assert "Needs pre-allocation" in page and "Fills TechOps service" in page
+    assert "Printer" in page
+
+
+def test_about_tab_shows_the_switch_as_text_to_a_reader(client, alloc):
+    login(client, "test:supplyadmin")
+    page = client.get(f"/inv/admin/items/{alloc.tv.id}").get_data(as_text=True)
+    assert "Needs pre-allocation" in page and 'name="needs_pre_allocation"' not in page

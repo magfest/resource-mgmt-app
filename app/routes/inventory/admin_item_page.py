@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from flask import abort, flash, redirect, request, url_for
 
 from app import db
+from app.inventory.allocation import active_allocation_count
 from app.inventory.checks import unit_code
 from app.inventory.codes import normalize_code
 from app.inventory.item_rights import item_rights
@@ -15,7 +16,7 @@ from app.inventory.stock_report import supplies_on_hand
 from app.inventory.unit_fields import active_fields, display_value
 from app.models import (
     CONFIG_AUDIT_UPDATE, InvCheckItem, InvGearKind, InvModelDefault, InvStock, InvUnit,
-    SupplyCategory, SupplyItem,
+    SupplyCategory, SupplyItem, TechOpsServiceType,
 )
 from app.routes import get_user_ctx
 
@@ -51,6 +52,8 @@ def item_state(item) -> dict:
         "is_expendable": item.is_expendable, "sort_order": item.sort_order,
         "internal_type": item.internal_type, "needs_asset_tag": item.needs_asset_tag,
         "barcode": item.barcode, "pack_size": item.pack_size,
+        "needs_pre_allocation": item.needs_pre_allocation,
+        "techops_service_type_id": item.techops_service_type_id,
     }
 
 
@@ -99,6 +102,12 @@ def item_page(item_id: int):
             stock["counted_text"] = (local_stamp(stock["last_counted"])
                                      if stock["last_counted"] else "Never counted")
         extra["stock"] = stock
+    if rights.can_set_tracked:
+        # An inactive service stays listed only while this item points at it.
+        extra["techops_services"] = [
+            s for s in db.session.query(TechOpsServiceType)
+            .order_by(TechOpsServiceType.sort_order, TechOpsServiceType.name).all()
+            if s.is_active or s.id == item.techops_service_type_id]
     return render_inventory_page(
         "inventory/item.html", item=item, rights=rights, tabs=tabs, **extra,
         status_line=_status_line(item, rights), active_tab=request.args.get("tab"),
@@ -117,7 +126,8 @@ def save_item_about(item_id: int):
     form = request.form
     # A switch the user may not set is refused outright; it is never read as "off".
     if (("is_orderable" in form and not rights.can_set_orderable)
-            or ("is_serialized" in form and not rights.can_set_tracked)):
+            or (("is_serialized" in form or "needs_pre_allocation" in form
+                 or "techops_service_type_id" in form) and not rights.can_set_tracked)):
         abort(403, "You may not set that switch")
 
     back = redirect(url_for("inventory.item_page", item_id=item.id, tab="about"))
@@ -144,6 +154,29 @@ def save_item_about(item_id: int):
             flash(f"{item.item_name} has assets and must stay tracked as assets.", "error")
             return back
 
+    pre_allocation = item.needs_pre_allocation
+    service_id = item.techops_service_type_id
+    if rights.can_set_tracked:
+        pre_allocation = form.get("needs_pre_allocation") == "1"
+        service_id = form.get("techops_service_type_id", type=int) or None
+        if pre_allocation and not tracked:
+            flash("Needs pre-allocation is only for items tracked as assets.", "error")
+            return back
+        if service_id is not None and not pre_allocation:
+            flash("Turn on Needs pre-allocation before picking a TechOps service.", "error")
+            return back
+        if service_id is not None and db.session.get(TechOpsServiceType, service_id) is None:
+            flash("Pick a TechOps service from the list.", "error")
+            return back
+        if ((item.needs_pre_allocation and not pre_allocation)
+                or service_id != item.techops_service_type_id):
+            held = active_allocation_count(item.id)
+            if held:
+                flash(f"{item.item_name} has {held} allocated asset{'' if held == 1 else 's'}. "
+                      f"Release them before turning off pre-allocation or changing its "
+                      f"TechOps service.", "error")
+                return back
+
     # Imported here: app.routes.admin.helpers is circular at module level.
     from app.routes.admin.helpers import log_config_change, track_changes
     old_state = item_state(item)
@@ -152,6 +185,8 @@ def save_item_about(item_id: int):
     if rights.can_set_orderable:
         item.is_orderable = form.get("is_orderable") == "1"
     item.is_serialized = tracked
+    item.needs_pre_allocation = pre_allocation
+    item.techops_service_type_id = service_id
     item.updated_by_user_id = get_user_ctx().user_id
 
     # Imported here so the image service loads only when the form is used.

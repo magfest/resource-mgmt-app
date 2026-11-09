@@ -12,7 +12,8 @@ from app.inventory.audit import (
     ACTION_RETIRE_CODE,
     record_unit_change,
 )
-from app.inventory.checks import checked_serial, unit_code
+from app.inventory.allocation import current_allocation
+from app.inventory.checks import checked_serial, unit_code, unit_phrase
 from app.inventory.codes import normalize_code, normalize_identifier, normalize_mac
 from app.inventory.ledger import (
     INV_CONDITIONS, NUMBER_KINDS, InventoryError, add_identifier, replace_number,
@@ -424,6 +425,9 @@ def unit_set_item(unit_id: int):
     def change():
         if item is None or not item.is_active or not item.is_serialized:
             raise InventoryError("Pick an active item that is tracked as assets.")
+        if item.id != unit.item_id and current_allocation(unit.id) is not None:
+            raise InventoryError(f"{unit_phrase(unit)} is allocated. "
+                                 f"Release it before changing its item.")
         unit.item_id = item.id
         db.session.flush()
 

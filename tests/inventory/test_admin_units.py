@@ -1407,3 +1407,15 @@ def test_assets_page_marks_the_found_button_pressed(client, inv, unit):
     login(client, "test:invadmin")
     html = client.get("/inv/admin/units?show=found").get_data(as_text=True)
     assert 'value="found" class="btn btn-small" aria-pressed="true"' in html
+
+
+def test_an_allocated_asset_cannot_change_item(client, alloc):
+    from tests.inventory.helpers import make_allocation, make_asset, supply_line
+    unit = make_asset(alloc.tv, "U-0001")
+    make_allocation(unit, supply_line(alloc, alloc.alpha, 1))
+    db.session.commit()
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/units/{unit.id}/item", data={"item_id": str(alloc.printer.id)})
+    assert db.session.get(InvUnit, unit.id).item_id == alloc.tv.id
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "U-0001 is allocated. Release it before changing its item." in page

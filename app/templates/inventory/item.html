@@ -44,10 +44,19 @@
     {% endif %}
     {% if rights.can_set_tracked %}
     <label><input type="checkbox" name="is_serialized" value="1" {% if item.is_serialized %}checked{% endif %}> Track each piece as an asset</label>
+    <label><input type="checkbox" name="needs_pre_allocation" value="1" {% if item.needs_pre_allocation %}checked{% endif %}> Needs pre-allocation</label>
+    <label>Fills TechOps service
+      <select name="techops_service_type_id">
+        <option value="">None</option>
+        {% for s in techops_services %}<option value="{{ s.id }}" {% if s.id == item.techops_service_type_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
     {% endif %}
     <table class="pair">
       {% if not rights.can_set_orderable %}<tr><th>Departments can order this</th><td>{{ 'Yes' if item.is_orderable else 'No' }}</td></tr>{% endif %}
-      {% if not rights.can_set_tracked %}<tr><th>Track each piece as an asset</th><td>{{ 'Yes' if item.is_serialized else 'No' }}</td></tr>{% endif %}
+      {% if not rights.can_set_tracked %}<tr><th>Track each piece as an asset</th><td>{{ 'Yes' if item.is_serialized else 'No' }}</td></tr>
+      <tr><th>Needs pre-allocation</th><td>{{ 'Yes' if item.needs_pre_allocation else 'No' }}</td></tr>
+      <tr><th>Fills TechOps service</th><td>{{ item.techops_service_type.name if item.techops_service_type else 'None' }}</td></tr>{% endif %}
     </table>
     <button type="submit" class="btn btn-primary">Save</button>
   </form>
@@ -58,6 +67,8 @@
     <tr><th>Unit of measure</th><td>{{ item.unit }}</td></tr>
     <tr><th>Departments can order this</th><td>{{ 'Yes' if item.is_orderable else 'No' }}</td></tr>
     <tr><th>Track each piece as an asset</th><td>{{ 'Yes' if item.is_serialized else 'No' }}</td></tr>
+    <tr><th>Needs pre-allocation</th><td>{{ 'Yes' if item.needs_pre_allocation else 'No' }}</td></tr>
+    <tr><th>Fills TechOps service</th><td>{{ item.techops_service_type.name if item.techops_service_type else 'None' }}</td></tr>
     <tr><th>Active</th><td>{{ 'Yes' if item.is_active else 'No' }}</td></tr>
   </table>
   {% endif %}
