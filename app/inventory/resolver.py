@@ -112,8 +112,8 @@ def resolve(raw: str | None) -> Resolution:
     code = normalize_code(raw)
     if not code:
         return Resolution(KIND_UNKNOWN, code)
-    # The scan shell sends a card to sign-in before any station sees it. A card
-    # typed into a field lands here, and must never become an asset tag.
+    # The scan shell sends a scanned card to sign-in. A card typed into a field
+    # that is resolved lands here; tag and serial writes refuse cards themselves.
     if is_card_code(code):
         return Resolution(KIND_CARD, code)
     parsed = labels.parse(code)

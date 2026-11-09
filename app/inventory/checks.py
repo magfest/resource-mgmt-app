@@ -25,6 +25,7 @@ from app.inventory.ledger import (
 from app.inventory.printing import local_stamp, unit_number
 from app.inventory.receive import MAX_SERIAL, container_for_code
 from app.inventory.resolver import KIND_ITEM, resolve
+from app.inventory.sign_in import SIGN_IN_CARD, is_card_code
 from app.models import (
     InvCheck, InvCheckAnswer, InvCheckItem, InvMovement, InvPrepStatus, InvStock, InvUnit,
     InvUnitIdentifier,
@@ -227,8 +228,10 @@ def _is_a_number(normalized: str) -> bool:
 def _require_serial_shape(raw: str, normalized: str) -> None:
     """Refuse a scan that is an asset number or an item barcode before anything is written.
 
-    A mis-scan must not turn a tag or a UPC into a serial.
+    A mis-scan must not turn a tag, a UPC or a sign-in card into a serial.
     """
+    if is_card_code(normalized):
+        raise InventoryError(SIGN_IN_CARD)
     if labels.parse(normalized) is not None or _is_a_number(normalized):
         raise InventoryError(f"{raw} is an asset number, not a serial number. Scan the SERIAL.")
     if resolve(raw).kind == KIND_ITEM:

@@ -16,6 +16,7 @@ from app.inventory.printing import (
     request_label, unit_number,
 )
 from app.inventory.resolver import KIND_CONTAINER, resolve
+from app.inventory.sign_in import SIGN_IN_CARD, is_card_code
 from app.inventory.zpl import can_print_code
 from app.models import InvContainer, InvMovement, InvPrintJob, InvUnit, InvUnitIdentifier
 from app.models.constants import (
@@ -92,10 +93,12 @@ def label_answer(unit: InvUnit, job: InvPrintJob) -> dict:
 
 
 def check_tag(tag: str) -> None:
-    """Refuse a tag that cannot be received: label-shaped, unprintable, or already held.
+    """Refuse a tag that is a sign-in card, label-shaped, unprintable, or already held.
 
     Reads only. The check route and receive_unit share it so both give the same answer.
     """
+    if is_card_code(tag):
+        raise InventoryError(SIGN_IN_CARD)
     if labels.parse(tag) is not None:
         raise InventoryError(LABEL_SHAPED)
     if not can_print_code(tag):
@@ -129,6 +132,9 @@ def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
         raise InventoryError(SAME_CODE)
     if tag:
         check_tag(tag)
+    # A typed field skips the scan shell, so a card can arrive here as a serial.
+    if serial and is_card_code(serial):
+        raise InventoryError(SIGN_IN_CARD)
     if serial and len(serial) > MAX_SERIAL:
         raise InventoryError(f"That serial is longer than {MAX_SERIAL} characters.")
     if queue_label:

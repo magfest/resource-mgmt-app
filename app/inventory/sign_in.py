@@ -34,6 +34,7 @@ _CARD_BODY = 12
 _CARD_PATTERN = re.compile(
     rf"{re.escape(CARD_PREFIX)}[{_CARD_ALPHABET}]{{{_CARD_BODY}}}")
 _PIN_DRAWS = 20
+SIGN_IN_CARD = "That is a sign-in card."
 
 
 def _digest(kind: str, value: str) -> str:

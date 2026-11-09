@@ -166,6 +166,11 @@ def test_a_serial_over_the_length_limit_is_refused(client, unit):
     assert "That serial is longer than 64 characters." in _add_serial(client, unit, "S" * 65)
 
 
+def test_a_sign_in_card_is_refused_as_a_serial(client, unit):
+    login(client, "test:invadmin")
+    assert "That is a sign-in card." in _add_serial(client, unit, "OP-ABCDEFGHJKMN")
+
+
 def test_the_units_own_number_is_refused_as_a_serial(client, unit):
     login(client, "test:invadmin")
     assert "U-0001 is an asset number, not a serial number. Scan the SERIAL." in _add_serial(

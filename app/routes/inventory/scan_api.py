@@ -38,8 +38,8 @@ from app.inventory.zpl import can_print_code
 from app.inventory.people import shift_person
 from app.inventory.shifts import current_shift, end_shift, lock_device, start_shift, touch
 from app.inventory.sign_in import (
-    can_sign_in, clear_pin_failures, is_card_code, keypad_locked, record_pin_failure,
-    user_for_card, user_for_pin,
+    SIGN_IN_CARD, can_sign_in, clear_pin_failures, is_card_code, keypad_locked,
+    record_pin_failure, user_for_card, user_for_pin,
 )
 from app.models import InvCheck, InvContainerKind, InvCount, InvUnit, SupplyItem
 from app.models.constants import INV_SHIFT_END_ENDED, INV_STATION_COUNT, INV_STATION_LOOKUP
@@ -49,7 +49,6 @@ from .scan_auth import device_api, require_scanner, scan_actor
 
 
 MAX_CANDIDATES = 10
-SIGN_IN_CARD = "That is a sign-in card."
 
 
 def api(f):

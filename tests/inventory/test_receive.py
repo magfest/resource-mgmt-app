@@ -65,6 +65,14 @@ def test_tag_and_serial_create_the_unit_and_queue_its_label(client, rc):
     assert ["Serial", "S1"] in job.fields["rows"]
 
 
+def test_a_sign_in_card_is_refused_as_a_tag_or_a_serial(client, rc):
+    for kw in ({"tag": "OP-ABCDEFGHJKMN", "serial": "S1"}, {"serial": "op-abcdefghjkmn"}):
+        r = _post(client, rc, **kw)
+        assert r == {"ok": False, "message": "That is a sign-in card."}, kw
+    assert InvUnit.query.count() == 0 and InvUnitIdentifier.query.count() == 0
+    assert InvPrintJob.query.count() == 0
+
+
 def test_skipping_the_tag_generates_a_u_number(client, rc):
     r = _post(client, rc, serial="S1")
     assert r["code"] == "U-00001"

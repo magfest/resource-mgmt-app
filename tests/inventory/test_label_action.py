@@ -11,7 +11,7 @@ from app.inventory.printing import (
 )
 from app.inventory.shifts import start_shift
 from app.models import (
-    InvPrinter, InvPrintJob, InvPrintRoute, InvUnit,
+    InvPrinter, InvPrintJob, InvPrintRoute, InvUnit, InvUnitIdentifier,
 )
 from app.models.constants import (
     INV_JOB_CANCELLED, INV_JOB_CONTAINER, INV_JOB_ITEM, INV_JOB_OWNED_UNIT,
@@ -229,6 +229,15 @@ def test_a_missing_route_refuses_and_creates_nothing(client, inv):
     answer = client.post(f"{BASE}/label/new-tag", json=body).get_json()
     assert answer["ok"] is False and "No printer" in answer["message"]
     assert InvUnit.query.count() == 0 and InvPrintJob.query.count() == 0
+
+
+def test_new_tag_refuses_a_sign_in_card_as_the_serial(client, lab):
+    body = {"client_request_id": _rid(), "tag": "FEST00078", "item_id": lab.laptop.id,
+            "serial": "OP-ABCDEFGHJKMN"}
+    answer = client.post(f"{BASE}/label/new-tag", json=body).get_json()
+    assert answer == {"ok": False, "message": "That is a sign-in card."}
+    assert InvUnit.query.count() == 0 and InvPrintJob.query.count() == 0
+    assert InvUnitIdentifier.query.count() == 0
 
 
 def test_an_unused_label_is_not_a_tag(client, lab):
