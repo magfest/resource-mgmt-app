@@ -1,6 +1,7 @@
 """The deployment report and its CSV."""
 import csv
 import io
+import re
 
 from app import db
 from app.inventory.allocation import allocate
@@ -79,6 +80,30 @@ def test_removed_rows_are_not_repeated_across_selections(alloc):
     db.session.commit()
     rows = deployment_rows(alloc.event.id)
     assert [r.assets for r in rows] == [["U-0001"]]
+
+
+def test_a_removed_printer_row_groups_under_its_service(alloc):
+    supply_line(alloc, alloc.alpha, 1, item=alloc.printer)
+    line = techops_line(alloc, alloc.alpha)
+    make_allocation(make_asset(alloc.printer, "U-0001"), line)
+    db.session.delete(line)
+    db.session.commit()
+    for group in ("what", "department"):
+        groups = dict(group_rows(deployment_rows(alloc.event.id), group))
+        removed = [r for rows in groups.values() for r in rows if r.assets == ["U-0001"]]
+        assert [r.what for r in removed] == ["TechOps: Printer"]
+
+
+def test_an_unknown_group_renders_the_department_grouping(client, alloc):
+    supply_line(alloc, alloc.alpha, 1)
+    db.session.commit()
+    login(client, "test:operator")
+    page = client.get("/inv/allocation/report?group=bogus").get_data(as_text=True)
+    expected = client.get("/inv/allocation/report?group=department").get_data(as_text=True)
+    # Each render carries a fresh CSP nonce.
+    strip = lambda html: re.sub(r'nonce="[^"]*"', "", html)
+    assert strip(page) == strip(expected)
+    assert "Alpha Team" in page
 
 
 def _csv(client, alloc):

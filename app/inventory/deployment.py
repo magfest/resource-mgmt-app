@@ -57,15 +57,20 @@ def _rooms(lines, event_cycle_id: int) -> dict[int, dict]:
 
 
 def deployment_rows(event_cycle_id: int) -> list[ReportRow]:
-    """Return one row per demand line of every selection, REMOVED rows once each."""
-    pairs, seen_removed = [], set()
+    """Return one row per demand line of every selection, REMOVED rows once each.
+
+    A REMOVED row can match an item and its TechOps service; the service wins.
+    """
+    pairs, removed_at = [], {}
     for selection in selections(event_cycle_id):
         for line in demand_lines(event_cycle_id, selection):
             if line.work_line_id is None:
                 key = line.allocations[0].id
-                if key in seen_removed:
+                if key in removed_at:
+                    if selection.kind == "service":
+                        pairs[removed_at[key]] = (selection, line)
                     continue
-                seen_removed.add(key)
+                removed_at[key] = len(pairs)
             pairs.append((selection, line))
     rooms = _rooms([line for _, line in pairs], event_cycle_id)
     # A TechOps space the department does not hold falls back to the space's own name.
