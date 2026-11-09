@@ -1303,3 +1303,11 @@ def test_refused_note_returns_to_the_notes_tab(client, unit):
     resp = client.post(f"/inv/admin/units/{unit.id}/notes",
                        data={"note_type": "PICKER", "body": ""})
     assert resp.headers["Location"].endswith("tab=notes")
+
+
+def test_units_table_scrolls_instead_of_breaking_words(client, inv):
+    _week_units(inv, 1)
+    login(client, "test:operator")
+    page = _list(client).get_data(as_text=True)
+    assert '<table class="units-table">' in page
+    assert "table-layout: auto" in page and "width: max-content" in page
