@@ -54,6 +54,11 @@ def local_stamp(moment: datetime) -> str:
     return f"{local:%b} {local.day}, {local.hour % 12 or 12}:{local:%M} {local:%p}"
 
 
+def local_day(moment: datetime) -> str:
+    """Format a stored UTC time as `Nov 7` in INV_LOCAL_TZ."""
+    return local_stamp(moment).split(",", 1)[0]
+
+
 def local_when(moment: datetime) -> str:
     """Format a stored UTC time as `Nov 7 at 5:53 PM` in INV_LOCAL_TZ."""
     return local_stamp(moment).replace(", ", " at ", 1)
