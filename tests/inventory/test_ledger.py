@@ -51,7 +51,7 @@ def test_container_cannot_move_inside_its_own_descendant(inv):
 
 def test_serialized_item_is_refused_as_counted_stock(inv):
     pallet = make_container(inv, "C-0001")
-    with pytest.raises(InventoryError, match="serialized"):
+    with pytest.raises(InventoryError, match="tracked as assets"):
         add_stock(inv.laptop, pallet, 1, ACTOR)
     unit = add_unit(inv.laptop, pallet, ACTOR,
                     [("FESTOPS_LABEL", "U-00001"), ("SERIAL", "abc 123")])
@@ -115,7 +115,7 @@ def test_discard_refuses_a_bad_quantity_and_a_serialized_item(inv):
     add_stock(inv.pens, tote, 10, ACTOR)
     with pytest.raises(InventoryError, match="whole number"):
         discard_stock(inv.pens, tote, 0, "BROKEN", ACTOR)
-    with pytest.raises(InventoryError, match="serialized"):
+    with pytest.raises(InventoryError, match="tracked as assets"):
         discard_stock(inv.laptop, tote, 1, "BROKEN", ACTOR)
     assert stock_quantity(inv.pens, tote) == 10
 
