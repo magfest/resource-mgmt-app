@@ -11,9 +11,10 @@ from app.inventory.history import unit_history
 from app.inventory.ledger import Actor, add_unit, move_unit
 from app.inventory.notes import add_note
 from app.inventory.printing import local_when
-from app.models import ConfigAuditEvent, InvDevice, InvFlag, InvMovement, InvShift, InvUnitNote
+from app.models import (
+    ConfigAuditEvent, InvAllocationEvent, InvDevice, InvFlag, InvMovement, InvShift, InvUnitNote,
+)
 from app.inventory.allocation import allocate, move, release
-from app.models import InvAllocationEvent
 from tests.inventory.helpers import make_asset, make_container, supply_line
 
 T0 = datetime(2026, 11, 1, 12, 0)
