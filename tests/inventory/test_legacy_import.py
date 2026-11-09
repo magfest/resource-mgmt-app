@@ -418,3 +418,21 @@ def test_a_long_legacy_note_imports_whole(kinds, inv):
     result = apply(data, {"TV|": "new:TV"}, inv.category.id, ACTOR)
     assert len(result.ready) == 1
     assert _note_bodies(_unit("MAG-TV-200")) == [("IMPORT", long_note)]
+
+
+def test_new_item_name_problems_go_to_review(kinds, inv):
+    rows = ("1,MAG-LAM-001,,Amazon Basic Thermal Laminator,,,,,\n"
+            "2,MAG-PNTR-001,,Brother HL-6200DW,,,,,")
+    data = _csv(PRINTER_HEADER, *rows.split("\n"))
+    laminator, printer = "LAMINATOR|Amazon Basic Thermal Laminator", "PRINTER|Brother HL-6200DW"
+    blank = preview(data, {laminator: "new:", printer: "new:Laser"}, inv.category.id)
+    assert "Row 2 (MAG-LAM-001): Enter a name for the new item." in blank.review
+    long = preview(data, {laminator: "new:" + "x" * 257, printer: "new:Laser"}, inv.category.id)
+    assert "Row 2 (MAG-LAM-001): An item name can be at most 256 characters." in long.review
+    other = preview(data, {laminator: f"new:{inv.laptop.item_name}", printer: "new:Laser"},
+                    inv.category.id)
+    assert (f"Row 2 (MAG-LAM-001): {inv.laptop.item_name} is not a Laminator item."
+            in other.review)
+    shared = preview(data, {laminator: "new:Shared", printer: "new:Shared"}, inv.category.id)
+    assert ("Row 2 (MAG-LAM-001): Shared is chosen for more than one asset type."
+            in shared.review)

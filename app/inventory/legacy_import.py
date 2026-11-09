@@ -262,9 +262,9 @@ class _Resolver:
 
     def _new(self, name: str, kind: InvGearKind):
         if not name:
-            return None, "Enter a name for the new type."
+            return None, "Enter a name for the new item."
         if len(name) > MAX_TYPE_NAME:
-            return None, f"A type name can be at most {MAX_TYPE_NAME} characters."
+            return None, f"An item name can be at most {MAX_TYPE_NAME} characters."
         existing = (db.session.query(SupplyItem)
                     .filter(func.lower(SupplyItem.item_name) == name.lower())
                     .order_by(SupplyItem.id).first())
@@ -272,10 +272,10 @@ class _Resolver:
             if not existing.is_serialized:
                 return None, f"A non-serialized item is already named {existing.item_name}."
             if existing.gear_kind_id != kind.id:
-                return None, f"{existing.item_name} is not a {kind.name} type."
+                return None, f"{existing.item_name} is not a {kind.name} item."
             return existing, None
         if len(self.kinds_for_new.get(name.casefold(), ())) > 1:
-            return None, f"{name} is chosen for more than one gear kind."
+            return None, f"{name} is chosen for more than one asset type."
         if self.category is None:
             return None, "Choose a category for new items."
         new = self.new_types.setdefault(name.casefold(), _NewType(name, kind.id))
