@@ -2,6 +2,8 @@
 
 The rights live in app/inventory/item_rights.py; this module only reads them.
 """
+from decimal import Decimal, InvalidOperation
+
 from flask import abort, flash, redirect, request, url_for
 
 from app import db
@@ -13,7 +15,9 @@ from app.models import (
 from app.routes import get_user_ctx
 
 from . import inventory_bp
-from .helpers import render_inventory_page, require_item_viewer, require_shared_editor
+from .helpers import (
+    render_inventory_page, require_item_viewer, require_ordering_editor, require_shared_editor,
+)
 
 
 def _status_line(item, rights) -> str:
@@ -30,11 +34,16 @@ def _status_line(item, rights) -> str:
 
 
 def item_state(item) -> dict:
-    """Return every field the About tab writes, for the config audit diff."""
+    """Return every field the About and Ordering tabs write, for the config audit diff."""
     return {
         "category_id": item.category_id, "item_name": item.item_name, "unit": item.unit,
         "image_url": item.image_url, "is_active": item.is_active,
         "is_orderable": item.is_orderable, "is_serialized": item.is_serialized,
+        "unit_cost_cents": item.unit_cost_cents, "order_guidance": item.order_guidance,
+        "notes": item.notes, "notes_required": item.notes_required,
+        "is_popular": item.is_popular, "is_limited": item.is_limited,
+        "is_expendable": item.is_expendable, "sort_order": item.sort_order,
+        "internal_type": item.internal_type,
     }
 
 
@@ -131,6 +140,46 @@ def save_item_about(item_id: int):
         except (ImageValidationError, ImageStorageError) as exc:
             # The fields still save; a picture is never required.
             flash(f"Image not saved: {exc}", "error")
+
+    changes = track_changes(old_state, item_state(item))
+    if changes:
+        log_config_change("supply_item", item.id, CONFIG_AUDIT_UPDATE, changes)
+    db.session.commit()
+    flash(f"Saved {item.item_name}.", "success")
+    return back
+
+
+@inventory_bp.post("/admin/items/<int:item_id>/ordering")
+@require_ordering_editor
+def save_item_ordering(item_id: int):
+    item = db.session.get(SupplyItem, item_id)
+    if item is None:
+        abort(404)
+    form = request.form
+    back = redirect(url_for("inventory.item_page", item_id=item.id, tab="ordering"))
+
+    unit_cost = form.get("unit_cost", "").strip()
+    unit_cost_cents = None
+    if unit_cost:
+        try:
+            unit_cost_cents = int(Decimal(unit_cost) * 100)
+        except (ValueError, InvalidOperation):
+            flash("Invalid cost format.", "error")
+            return back
+
+    # Imported here: app.routes.admin.helpers is circular at module level.
+    from app.routes.admin.helpers import log_config_change, safe_int_or_none, track_changes
+    old_state = item_state(item)
+    item.unit_cost_cents = unit_cost_cents
+    item.order_guidance = form.get("order_guidance", "").strip() or None
+    item.notes = form.get("notes", "").strip() or None
+    item.notes_required = bool(form.get("notes_required"))
+    item.is_popular = bool(form.get("is_popular"))
+    item.is_limited = bool(form.get("is_limited"))
+    item.is_expendable = bool(form.get("is_expendable"))
+    item.sort_order = safe_int_or_none(form.get("sort_order"))
+    item.internal_type = form.get("internal_type", "").strip() or None
+    item.updated_by_user_id = get_user_ctx().user_id
 
     changes = track_changes(old_state, item_state(item))
     if changes:

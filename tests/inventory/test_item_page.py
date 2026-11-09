@@ -239,3 +239,50 @@ def test_supply_admin_cannot_add_a_tracked_item(client, inv, supply_admin):
                        data={"item_name": "X", "category_id": inv.category.id,
                              "unit": "each", "is_serialized": "1"})
     assert resp.status_code == 403
+
+
+def test_supply_admin_saves_ordering_fields(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    resp = client.post(f"/inv/admin/items/{inv.pens.id}/ordering",
+                       data={"unit_cost": "3.50", "order_guidance": "One box per desk",
+                             "is_popular": "1"})
+    pens = db.session.get(SupplyItem, inv.pens.id)
+    assert pens.unit_cost_cents == 350 and pens.order_guidance == "One box per desk"
+    assert pens.is_popular and not pens.is_limited and not pens.is_expendable
+    assert resp.headers["Location"].endswith(f"/inv/admin/items/{inv.pens.id}?tab=ordering")
+
+
+def test_ordering_rejects_a_bad_unit_cost_and_saves_nothing(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    resp = client.post(f"/inv/admin/items/{inv.pens.id}/ordering",
+                       data={"unit_cost": "abc", "order_guidance": "Changed"})
+    pens = db.session.get(SupplyItem, inv.pens.id)
+    assert pens.order_guidance is None and pens.unit_cost_cents is None
+    assert resp.headers["Location"].endswith("tab=ordering")
+
+
+def test_ordering_fields_survive_orderable_off_and_on(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    client.post(f"/inv/admin/items/{inv.pens.id}/ordering",
+                data={"unit_cost": "3.50", "order_guidance": "One box per desk"})
+    about = {"item_name": "Blue Pen", "category_id": inv.category.id, "unit": "each",
+             "is_active": "1"}
+    client.post(f"/inv/admin/items/{inv.pens.id}/about", data=about)
+    assert not db.session.get(SupplyItem, inv.pens.id).is_orderable
+    client.post(f"/inv/admin/items/{inv.pens.id}/about", data={**about, "is_orderable": "1"})
+    pens = db.session.get(SupplyItem, inv.pens.id)
+    assert pens.is_orderable and pens.unit_cost_cents == 350
+    assert pens.order_guidance == "One box per desk"
+
+
+def test_inventory_admin_cannot_post_ordering(client, inv):
+    login(client, "test:invadmin")
+    assert client.post(f"/inv/admin/items/{inv.pens.id}/ordering",
+                       data={"unit_cost": "9"}).status_code == 403
+    assert db.session.get(SupplyItem, inv.pens.id).unit_cost_cents is None
+
+
+def test_ordering_tab_shows_the_form_to_supply_admin(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    page = client.get(f"/inv/admin/items/{inv.pens.id}?tab=ordering").get_data(as_text=True)
+    assert f"/inv/admin/items/{inv.pens.id}/ordering" in page

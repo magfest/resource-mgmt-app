@@ -56,7 +56,19 @@
   </table>
   {% endif %}
   {% elif tab == 'ordering' %}
-  <div class="muted">Ordering settings.</div>
+  <form method="post" action="{{ url_for('inventory.save_item_ordering', item_id=item.id) }}" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Cost each in dollars <input type="text" name="unit_cost" inputmode="decimal" value="{{ '%.2f' % (item.unit_cost_cents / 100) if item.unit_cost_cents is not none else '' }}"></label>
+    <label>Order guidance <input type="text" name="order_guidance" maxlength="160" value="{{ item.order_guidance or '' }}"></label>
+    <label>Notes <textarea name="notes" rows="3">{{ item.notes or '' }}</textarea></label>
+    <label><input type="checkbox" name="notes_required" value="1" {% if item.notes_required %}checked{% endif %}> Notes required</label>
+    <label><input type="checkbox" name="is_popular" value="1" {% if item.is_popular %}checked{% endif %}> Popular (show first)</label>
+    <label><input type="checkbox" name="is_limited" value="1" {% if item.is_limited %}checked{% endif %}> Limited availability</label>
+    <label><input type="checkbox" name="is_expendable" value="1" {% if item.is_expendable %}checked{% endif %}> Expendable</label>
+    <label>Sort order <input type="number" name="sort_order" value="{{ item.sort_order if item.sort_order is not none else '' }}"></label>
+    <label>Internal type <input type="text" name="internal_type" maxlength="32" value="{{ item.internal_type or '' }}"></label>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
   {% elif tab == 'inventory' %}
   <div class="muted">Inventory settings.</div>
   {% elif tab == 'assets' %}
