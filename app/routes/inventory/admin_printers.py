@@ -15,7 +15,7 @@ from app.inventory.zpl import SUPPORTED_DPI, SUPPORTED_SIZES
 from app.models import InvDevice, InvPrinter, InvPrintJob, InvPrintRoute, User
 from app.models.constants import (
     INV_JOB_CLAIMED, INV_JOB_FAILED, INV_JOB_CONTAINER, INV_JOB_ITEM, INV_JOB_OWNED_UNIT,
-    INV_JOB_QUEUED, INV_JOB_RENTED_UNIT, INV_JOB_SENT, INV_JOB_SOURCE_SCAN, INV_STATION_PRINT,
+    INV_JOB_QUEUED, INV_JOB_RENTED_UNIT, INV_JOB_SENT, INV_JOB_SIGNIN_CARD, INV_JOB_SOURCE_SCAN, INV_STATION_PRINT,
 )
 
 from . import inventory_bp
@@ -26,6 +26,7 @@ from .helpers import (
 ROUTE_TYPES = (
     (INV_JOB_OWNED_UNIT, "Owned asset"), (INV_JOB_RENTED_UNIT, "Rented asset"),
     (INV_JOB_CONTAINER, "Location or container"), (INV_JOB_ITEM, "Item"),
+    (INV_JOB_SIGNIN_CARD, "Sign-in card"),
 )
 QUEUE_LIMIT = 200
 # "reprint-<job id>-<token>" must fit InvPrintJob.client_request_id, a String(64).

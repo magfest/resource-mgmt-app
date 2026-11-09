@@ -250,7 +250,31 @@ class InvDevice(db.Model):
         nullable=True,
     )
 
+    # Five wrong PINs in a row lock the keypad until pin_locked_until. Cards still work.
+    pin_failures = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    pin_locked_until = db.Column(db.DateTime, nullable=True)
+
     home_container = db.relationship("InvContainer")
+
+
+class InvCredential(db.Model):
+    """The sign-in card and PIN of one RMS user.
+
+    Boundary: both values are stored as HMAC-SHA256 digests keyed by SECRET_KEY,
+    never readable. Rotating SECRET_KEY voids every card and PIN.
+    """
+    __tablename__ = "inv_credentials"
+
+    user_id = db.Column(
+        db.String(64), db.ForeignKey("users.id", name="fk_inv_credentials_user_id"),
+        primary_key=True,
+    )
+    pin_digest = db.Column(db.String(64), unique=True, nullable=True)
+    pin_set_at = db.Column(db.DateTime, nullable=True)
+    card_digest = db.Column(db.String(64), unique=True, nullable=True)
+    card_printed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User")
 
 
 class InvEnrollCode(db.Model):
@@ -288,9 +312,10 @@ class InvEnrollCode(db.Model):
 class InvShift(db.Model):
     """One volunteer's shift on one shared device.
 
-    The volunteer picks a name; no badge code is read or stored. person_name
-    is personal data shown in the movement log; do not export it outside
-    inventory screens and reports.
+    A shift belongs to an RMS user, who signs in with a card or PIN. person_name
+    holds the typed name of shifts written before sign-in and is NULL on newer
+    ones. Names are personal data shown in the movement log; do not export them
+    outside inventory screens and reports.
     """
     __tablename__ = "inv_shifts"
 
@@ -299,13 +324,18 @@ class InvShift(db.Model):
         db.Integer, db.ForeignKey("inv_devices.id", name="fk_inv_shifts_device_id"),
         nullable=False, index=True,
     )
-    person_name = db.Column(db.String(64), nullable=False)
+    user_id = db.Column(
+        db.String(64), db.ForeignKey("users.id", name="fk_inv_shifts_user_id"),
+        nullable=True, index=True,
+    )
+    person_name = db.Column(db.String(64), nullable=True)
     started_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     last_activity_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     ended_at = db.Column(db.DateTime, nullable=True)
     end_reason = db.Column(db.String(16), nullable=True)
 
     device = db.relationship("InvDevice")
+    user = db.relationship("User")
 
 
 class InvCount(db.Model):

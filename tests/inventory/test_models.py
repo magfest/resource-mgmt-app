@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from app import db
 from app.models import (
     InvCheck, InvCheckAnswer, InvCheckItem, InvContainerKind, InvCount, InvCountLine,
-    InvDevice, InvFlag, InvPrepStatus, InvShift, InvStationItem, InvStock, InvUnit,
+    InvCredential, InvDevice, InvFlag, InvPrepStatus, InvShift, InvStationItem, InvStock, InvUnit,
     InvUnitIdentifier, SupplyItem,
 )
 from app.models.constants import (
@@ -220,3 +220,29 @@ def test_a_flag_names_exactly_one_subject(inv):
             with db.session.begin_nested():
                 db.session.add(InvFlag(station_code=INV_STATION_COUNT, reason="OTHER",
                                        **subject))
+
+
+def _device():
+    device = InvDevice(name="Scanner 1", token_hash="h" * 64, enrolled_by_user_id="test:admin")
+    db.session.add(device)
+    db.session.flush()
+    return device
+
+
+def test_credential_digests_are_unique(inv):
+    db.session.add_all([InvCredential(user_id="test:operator", pin_digest="a" * 64),
+                        InvCredential(user_id="test:invadmin", pin_digest="a" * 64)])
+    with pytest.raises(IntegrityError):
+        db.session.flush()
+
+
+def test_shift_may_have_a_user_and_no_typed_name(inv):
+    shift = InvShift(device_id=_device().id, user_id="test:operator")
+    db.session.add(shift)
+    db.session.flush()
+    assert shift.person_name is None and shift.user.id == "test:operator"
+
+
+def test_device_starts_with_no_pin_failures(inv):
+    device = _device()
+    assert device.pin_failures == 0 and device.pin_locked_until is None
