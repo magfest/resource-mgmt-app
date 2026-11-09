@@ -171,6 +171,17 @@ def test_a_sign_in_card_is_refused_as_a_serial(client, unit):
     assert "That is a sign-in card." in _add_serial(client, unit, "OP-ABCDEFGHJKMN")
 
 
+@pytest.mark.parametrize("kind", ["MAGFEST_TAG", "FESTOPS_LABEL", "VENDOR_TAG"])
+def test_a_sign_in_card_is_refused_as_a_tag_and_stores_nothing(client, unit, kind):
+    login(client, "test:invadmin")
+    before = {(i.kind, i.value, i.retired_at) for i in db.session.query(InvUnitIdentifier)}
+    resp = client.post(f"/inv/admin/units/{unit.id}/identifiers",
+                       data={"kind": kind, "value": "op-abcdefghjkmn"}, follow_redirects=True)
+    assert "That is a sign-in card." in resp.get_data(as_text=True)
+    after = {(i.kind, i.value, i.retired_at) for i in db.session.query(InvUnitIdentifier)}
+    assert after == before
+
+
 def test_the_units_own_number_is_refused_as_a_serial(client, unit):
     login(client, "test:invadmin")
     assert "U-0001 is an asset number, not a serial number. Scan the SERIAL." in _add_serial(

@@ -1,4 +1,8 @@
-"""Scanned-code normalization shared by labels, identifiers, and the resolver."""
+"""Scanned-code normalization shared by labels, identifiers, and the resolver.
+
+Also holds the shape of a sign-in card value, so the ledger can refuse one as a
+unit identifier without importing app.inventory.sign_in, which imports the ledger.
+"""
 import re
 
 from app.models.constants import (
@@ -9,6 +13,15 @@ from app.models.constants import (
 _MAC_SEPARATORS = re.compile(r"[:.\-\s]")
 _MAC_PATTERN = re.compile(r"[0-9A-F]{12}")
 
+CARD_PREFIX = "OP-"
+# Crockford base32 drops I, L and O, which misread as 1 and 0, and U to avoid
+# accidental words. A card never prints its value as text.
+CARD_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+CARD_BODY_LENGTH = 12
+_CARD_PATTERN = re.compile(
+    rf"{re.escape(CARD_PREFIX)}[{CARD_ALPHABET}]{{{CARD_BODY_LENGTH}}}")
+SIGN_IN_CARD = "That is a sign-in card."
+
 
 def normalize_code(raw: str | None) -> str:
     """Return the matching form of a scanned code: trimmed and uppercased.
@@ -17,6 +30,11 @@ def normalize_code(raw: str | None) -> str:
     reconciliation uses the vendor's exact serial.
     """
     return (raw or "").strip().upper()
+
+
+def is_card_code(raw: str | None) -> bool:
+    """Return True when the scanned value has the shape of a sign-in card."""
+    return _CARD_PATTERN.fullmatch(normalize_code(raw)) is not None
 
 
 def normalize_mac(raw: str | None) -> str | None:

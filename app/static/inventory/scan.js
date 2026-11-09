@@ -40,7 +40,7 @@
     signInCard: 'That is a sign-in card.'
   };
 
-  // Mirrors is_card_code in app/inventory/sign_in.py: OP- and 12 Crockford base32 characters.
+  // Mirrors is_card_code in app/inventory/codes.py: OP- and 12 Crockford base32 characters.
   var CARD_PATTERN = /^OP-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{12}$/;
 
   function isCardCode(raw) {

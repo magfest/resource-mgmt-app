@@ -14,7 +14,9 @@ from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 
 from app import db
-from app.inventory.codes import normalize_code, normalize_identifier
+from app.inventory.codes import (
+    SIGN_IN_CARD, is_card_code, normalize_code, normalize_identifier,
+)
 from app.inventory.tree import would_cycle
 from app.models import (
     InvContainer, InvContainerKind, InvMovement, InvStock, InvUnit,
@@ -244,6 +246,10 @@ def add_identifier(unit: InvUnit, kind: str, value: str) -> InvUnitIdentifier:
 
     Rented units are exempt: they carry an R- label and may also hold a tag.
     """
+    # Every write of an identifier passes here; a card value stored on a unit
+    # would make the resolver and the sign-in screen disagree about a scan.
+    if is_card_code(value):
+        raise InventoryError(SIGN_IN_CARD)
     if kind in NUMBER_KINDS and unit.ownership == INV_OWNERSHIP_OWNED:
         if _active_numbers(unit):
             raise InventoryError(
@@ -288,6 +294,9 @@ def replace_number(unit: InvUnit, kind: str, value: str, actor: Actor) -> InvUni
     """
     if kind not in NUMBER_KINDS:
         raise InventoryError(f"{kind} is not an asset number.")
+    # Refused before any retirement; on SQLite the savepoint below does not undo one.
+    if is_card_code(value):
+        raise InventoryError(SIGN_IN_CARD)
     try:
         normalized = normalize_identifier(kind, value or "")
     except ValueError as error:

@@ -6,7 +6,6 @@ keyed by SECRET_KEY. Functions flush and never commit; the caller commits.
 """
 import hashlib
 import hmac
-import re
 import secrets
 from datetime import datetime, timedelta
 from typing import Iterable
@@ -15,7 +14,11 @@ from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
 from app import db
-from app.inventory.codes import normalize_code
+# SIGN_IN_CARD and is_card_code live in codes.py so ledger.py can refuse card
+# values; they are re-exported here for callers that import them from this module.
+from app.inventory.codes import (  # noqa: F401
+    CARD_ALPHABET, CARD_BODY_LENGTH, CARD_PREFIX, SIGN_IN_CARD, is_card_code, normalize_code,
+)
 from app.inventory.ledger import Actor, InventoryError, savepoint
 from app.inventory.printing import cancel_job, local_today, printer_for, request_label
 from app.models.constants import INV_JOB_QUEUED, INV_JOB_SIGNIN_CARD, INV_JOB_SOURCE_SCAN
@@ -27,14 +30,7 @@ from app.models import (
 PIN_LENGTH = 6
 MAX_PIN_FAILURES = 5
 KEYPAD_LOCK = timedelta(minutes=5)
-CARD_PREFIX = "OP-"
-# Crockford base32 drops I, L, O and U so a printed value is hard to misread.
-_CARD_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-_CARD_BODY = 12
-_CARD_PATTERN = re.compile(
-    rf"{re.escape(CARD_PREFIX)}[{_CARD_ALPHABET}]{{{_CARD_BODY}}}")
 _PIN_DRAWS = 20
-SIGN_IN_CARD = "That is a sign-in card."
 
 
 def _digest(kind: str, value: str) -> str:
@@ -54,7 +50,8 @@ def _draw_pin() -> str:
 
 
 def _draw_card() -> str:
-    return CARD_PREFIX + "".join(secrets.choice(_CARD_ALPHABET) for _ in range(_CARD_BODY))
+    return CARD_PREFIX + "".join(
+        secrets.choice(CARD_ALPHABET) for _ in range(CARD_BODY_LENGTH))
 
 
 def _credential(user_id: str) -> InvCredential:
@@ -68,11 +65,6 @@ def _credential(user_id: str) -> InvCredential:
 def _digest_taken(column, digest: str, user_id: str) -> bool:
     return db.session.query(InvCredential).filter(
         column == digest, InvCredential.user_id != user_id).first() is not None
-
-
-def is_card_code(raw: str | None) -> bool:
-    """Return True when the scanned value has the shape of a sign-in card."""
-    return _CARD_PATTERN.fullmatch(normalize_code(raw)) is not None
 
 
 def can_sign_in(user: User | None) -> bool:
