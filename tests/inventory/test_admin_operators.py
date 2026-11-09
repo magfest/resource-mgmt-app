@@ -105,3 +105,9 @@ def test_pin_reset_only_for_listed_users(client, inv):
         assert client.post(f"/inv/admin/operators/{user_id}/reset-pin").status_code == 404
     assert db.session.get(InvCredential, "test:nobody").pin_digest is not None
     assert _changes() == []
+
+
+def test_print_new_card_asks_first(client, inv):
+    login(client, "test:invadmin")
+    page = client.get("/inv/admin/operators").get_data(as_text=True)
+    assert 'data-confirm="Print a new card for Operator? Their current card stops working."' in page

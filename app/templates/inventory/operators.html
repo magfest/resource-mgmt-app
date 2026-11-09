@@ -25,7 +25,8 @@
       <td style="white-space: nowrap;">
         <form method="post" action="{{ url_for('inventory.operator_new_card', user_id=r.user.id) }}" style="display: inline;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn btn-small">Print new card</button>
+          <button type="submit" class="btn btn-small"
+                  data-confirm="Print a new card for {{ r.user.display_name }}? Their current card stops working.">Print new card</button>
         </form>
         {% if can_reset %}
         <form method="post" action="{{ url_for('inventory.operator_reset_pin', user_id=r.user.id) }}" style="display: inline;">
