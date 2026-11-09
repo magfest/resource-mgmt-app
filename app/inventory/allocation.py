@@ -1,13 +1,28 @@
 """Allocation rules: which assets may fill which order lines.
 
-This module will hold the lookups and the allocate, move and release rules.
-It reads department demand and never writes it. Nothing here commits; the
-calling route owns the transaction.
+This module holds the lookups and the allocate, move and release rules. It
+reads department demand and never writes it. Every write appends an
+InvAllocationEvent for History. Nothing here commits; the calling route owns
+the transaction and rolls back after a refusal.
 """
 from __future__ import annotations
 
+from sqlalchemy.exc import IntegrityError
+
 from app import db
-from app.models import InvAllocation, InvUnit
+from app.inventory.checks import unit_phrase
+from app.inventory.demand import (
+    LINE_OPEN, SOURCE_SUPPLY, DemandLine, asset_warning, demand_line, line_label, line_words,
+)
+from app.inventory.ledger import InventoryError, savepoint
+from app.models import InvAllocation, InvAllocationEvent, InvUnit, WorkLine
+from app.models.constants import (
+    INV_ALLOCATION_ALLOCATE, INV_ALLOCATION_MOVE, INV_ALLOCATION_RELEASE,
+    INV_CONDITION_IN_SERVICE,
+)
+
+NOT_OPEN = "That line is not open for allocation. Reload the page."
+LOST_RACE = "Someone allocated one of those assets just now. Reload and try again."
 
 
 def active_allocation_count(item_id: int) -> int:
@@ -19,3 +34,161 @@ def active_allocation_count(item_id: int) -> int:
 def current_allocation(unit_id: int) -> InvAllocation | None:
     """Return the asset's allocation, or None when it is free."""
     return db.session.query(InvAllocation).filter_by(unit_id=unit_id).first()
+
+
+def line_lock_query(work_line_id: int):
+    """Return the query that locks one work line until the transaction ends.
+
+    Every write here locks the line first, then allocation rows; one order in
+    every function keeps two moves from deadlocking. The query has no joins
+    because Postgres refuses FOR UPDATE on the nullable side of an outer join.
+    """
+    # populate_existing: a line already in the session would otherwise keep stale values.
+    return (db.session.query(WorkLine).filter(WorkLine.id == work_line_id)
+            .with_for_update().populate_existing())
+
+
+def _allocation_lock_query(unit_id: int):
+    return (db.session.query(InvAllocation).filter_by(unit_id=unit_id)
+            .with_for_update().populate_existing())
+
+
+def _open_line(work_line_id: int) -> DemandLine:
+    """Lock the line, then read it as demand; refuse a missing or unopen line."""
+    if line_lock_query(work_line_id).one_or_none() is None:
+        raise InventoryError(NOT_OPEN)
+    line = demand_line(work_line_id)
+    if line is None or line.state != LINE_OPEN:
+        raise InventoryError(NOT_OPEN)
+    return line
+
+
+def _held_label(row: InvAllocation) -> str:
+    """Name the line an allocation sits on, from its snapshot once the line is gone."""
+    return f"{row.department.name} · {_live_words(row)}"
+
+
+def _live_words(row: InvAllocation) -> str:
+    if row.work_line_id is None:
+        return row.line_label
+    return line_words(db.session.get(WorkLine, row.work_line_id))
+
+
+def _check_unit(unit: InvUnit, line: DemandLine) -> None:
+    """Refuse an asset whose item is switched off, that misfits the line, or is out of service."""
+    item = unit.item
+    if not (item.is_serialized and item.needs_pre_allocation):
+        raise InventoryError(f"{item.item_name} is not set up for pre-allocation.")
+    if line.source == SOURCE_SUPPLY:
+        fills = line.item_id == unit.item_id
+    else:
+        fills = (line.service_type_id is not None
+                 and line.service_type_id == item.techops_service_type_id)
+    if not fills:
+        raise InventoryError(f"{unit_phrase(unit)} does not fill that line.")
+    if unit.condition != INV_CONDITION_IN_SERVICE:
+        # FOUND is refused too: a found asset needs a Check before it goes out again.
+        warning = asset_warning(unit) or f"{unit_phrase(unit)} is not in service"
+        raise InventoryError(f"{warning}, so it cannot be allocated.")
+
+
+def _check_room(line: DemandLine, count: int) -> None:
+    # A line cut below its allocations has 0 left, so it takes nothing more.
+    if line.allocated + count > line.requested:
+        raise InventoryError(
+            f"{line_label(line)} has {line.left} left, and you picked {count}.")
+
+
+def _point_at(row: InvAllocation, line: DemandLine) -> None:
+    row.work_line_id = line.work_line_id
+    row.event_cycle_id = line.event_cycle_id
+    row.department_id = line.department_id
+    row.line_label = line.words
+
+
+def _event(action: str, row: InvAllocation, words: str, user_id: str) -> None:
+    db.session.add(InvAllocationEvent(
+        unit_id=row.unit_id, action=action, work_line_id=row.work_line_id,
+        event_cycle_id=row.event_cycle_id, department_id=row.department_id,
+        line_label=words, performed_by_user_id=user_id))
+
+
+def _is_unit_unique_violation(exc: IntegrityError) -> bool:
+    # Postgres names the constraint; SQLite names only the table and column.
+    text = str(exc.orig)
+    return "uq_inv_allocations_unit_id" in text or "inv_allocations.unit_id" in text
+
+
+def allocate(units: list[InvUnit], work_line_id: int, user_id: str) -> DemandLine:
+    """Allocate every asset to one open line, or none of them.
+
+    The cap is checked under the line lock, so two allocators cannot overfill a
+    line. An asset ticked twice counts once. Returns the line with its new rows.
+
+    Raises:
+        InventoryError: Any check failed, or another allocator took one of the
+            assets after the check; nothing was written either way.
+    """
+    units = list({unit.id: unit for unit in units}.values())
+    if not units:
+        raise InventoryError("Tick at least one asset.")
+    line = _open_line(work_line_id)
+    for unit in units:
+        _check_unit(unit, line)
+        existing = current_allocation(unit.id)
+        if existing is not None:
+            raise InventoryError(
+                f"{unit_phrase(unit)} is already allocated to {_held_label(existing)}.")
+    _check_room(line, len(units))
+    # One savepoint holds the whole batch, so a raced insert undoes every row of it.
+    try:
+        with savepoint():
+            for unit in units:
+                row = InvAllocation(unit_id=unit.id, allocated_by_user_id=user_id)
+                _point_at(row, line)
+                db.session.add(row)
+                _event(INV_ALLOCATION_ALLOCATE, row, row.line_label, user_id)
+            db.session.flush()
+    except IntegrityError as exc:
+        if not _is_unit_unique_violation(exc):
+            raise
+        raise InventoryError(LOST_RACE) from exc
+    return demand_line(work_line_id)
+
+
+def move(unit: InvUnit, work_line_id: int, user_id: str) -> DemandLine:
+    """Move an allocated asset to another open line; returns the target line.
+
+    An asset out of service keeps its allocation but cannot be placed on
+    another line.
+
+    Raises:
+        InventoryError: Any check failed; nothing was written.
+    """
+    line = _open_line(work_line_id)
+    row = _allocation_lock_query(unit.id).one_or_none()
+    if row is None:
+        raise InventoryError(f"{unit_phrase(unit)} is not allocated.")
+    if row.work_line_id == work_line_id:
+        raise InventoryError(f"{unit_phrase(unit)} is already on that line.")
+    _check_unit(unit, line)
+    _check_room(line, 1)
+    _point_at(row, line)
+    _event(INV_ALLOCATION_MOVE, row, row.line_label, user_id)
+    db.session.flush()
+    return demand_line(work_line_id)
+
+
+def release(unit: InvUnit, user_id: str) -> InvAllocation:
+    """Delete the asset's allocation and return the deleted row for the flash text.
+
+    Raises:
+        InventoryError: The asset holds no allocation.
+    """
+    row = _allocation_lock_query(unit.id).one_or_none()
+    if row is None:
+        raise InventoryError(f"{unit_phrase(unit)} is not allocated.")
+    _event(INV_ALLOCATION_RELEASE, row, _live_words(row), user_id)
+    db.session.delete(row)
+    db.session.flush()
+    return row
