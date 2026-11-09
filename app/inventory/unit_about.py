@@ -48,7 +48,7 @@ def check_line(unit) -> dict:
     prep = latest_check_rows([unit.id]).get(unit.id)
     word = check_word(prep)
     if word is None:
-        return {"word": None, "text": "Not checked yet"}
+        return {"word": None, "text": "Never"}
     names = names_for([prep.performed_by_user_id])
     who = actor_name(prep.performed_by_user_id, prep.shift, names)
     return {"word": word, "text": f"checked {local_when(prep.created_at)} by {who}"}

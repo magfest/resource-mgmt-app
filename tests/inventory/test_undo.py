@@ -555,7 +555,7 @@ def test_undoing_a_recheck_keeps_the_earlier_pass(inv, tv_checklist, event, shif
     assert prep_status(t.tv) == "CHECKED"
     assert any(x.startswith("Works \u00b7 ") for x in card_for(resolve("TECH00412"), event)["lines"])
     from app.inventory.checks import last_result
-    assert last_result(t.tv)["result"] == "Passed"
+    assert last_result(t.tv)["result"] == "Works"
 
 
 def test_undo_refuses_when_a_newer_check_exists(inv, tv_checklist, event, shift):

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from app import db
 from app.inventory.flags import FLAG_WORDS
+from app.inventory.history import CONDITION_WORDS
 from app.inventory.last_check import CHECK_WORDS, check_word, latest_check_rows
 from app.inventory.notes import latest_note
 from app.inventory.describe import describe_actor, describe_movement, unit_tag
@@ -15,18 +16,10 @@ from app.inventory.tree import display_name, path_text
 from app.models import (
     EventCycle, InvContainer, InvFlag, InvMovement, InvStock, InvUnit, SupplyItem,
 )
-from app.models.constants import (
-    INV_CONDITION_IN_SERVICE, INV_CONDITION_LOST, INV_CONDITION_REPAIR,
-    INV_CONDITION_RETIRED, INV_OWNERSHIP_RENTED,
-)
+from app.models.constants import INV_OWNERSHIP_RENTED
 
 HISTORY_LIMIT = 10
 STOCK_LIMIT = 5
-
-_CONDITION_WORDS = {
-    INV_CONDITION_IN_SERVICE: "In service", INV_CONDITION_REPAIR: "Needs repair",
-    INV_CONDITION_RETIRED: "Retired", INV_CONDITION_LOST: "Lost",
-}
 
 
 def default_event() -> EventCycle | None:
@@ -77,7 +70,7 @@ def _container_card(container: InvContainer) -> dict:
 
 
 def _unit_card(unit: InvUnit) -> dict:
-    lines = [_CONDITION_WORDS.get(unit.condition, unit.condition), _check_line(unit)]
+    lines = [CONDITION_WORDS.get(unit.condition, unit.condition), _check_line(unit)]
     if unit.ownership == INV_OWNERSHIP_RENTED:
         lines.append(f"Rented from {unit.vendor_name}" if unit.vendor_name else "Rented")
     if not unit.item.is_active:

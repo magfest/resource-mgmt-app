@@ -147,7 +147,7 @@ def test_scan_a_checked_unit_asks_first_and_again_reopens(unit_client, inv, lapt
     post(unit_client, "finish", {"check_id": first["check_id"],
                                  "answers": {str(laptop_line.id): "YES"}})
     asked = post(unit_client, "scan", {"code": "FEST91011"}).json
-    assert asked["already_checked"]["result"] == "Passed" and asked["card"]["unit_id"] == unit.id
+    assert asked["already_checked"]["result"] == "Works" and asked["card"]["unit_id"] == unit.id
     assert "check_id" not in asked
     again = post(unit_client, "scan", {"code": "FEST91011", "again": True}).json
     assert again["check_id"]
@@ -182,7 +182,7 @@ def test_unit_station_asks_again_for_a_check_under_another_event(
     unit = _tagged(inv, "TV-X-022", "FEST91022")
     _check_under(unit, laptop_line, _second_event(), "YES")
     asked = post(unit_client, "scan", {"code": "FEST91022"}).json
-    assert asked["already_checked"]["result"] == "Passed"
+    assert asked["already_checked"]["result"] == "Works"
 
 
 def test_lookup_card_shows_the_latest_check_from_any_event(inv, event, laptop_line):
@@ -594,13 +594,13 @@ async function scanAnswers(answer) {
   assert.strictEqual(await palletSends(), 1, 'a pallet scan right after a finish places it');
 
   await finishOne(2);
-  await scanAnswers({ok: true, already_checked: {result: 'Passed', when: 'today'},
+  await scanAnswers({ok: true, already_checked: {result: 'Works', when: 'today'},
                      code: 'FEST93', name: 'TV', card: card(3)});
   choice.onPick('cancel');
   assert.strictEqual(await palletSends(), null, 'already checked, then Cancel');
 
   await finishOne(11);
-  await scanAnswers({ok: true, already_checked: {result: 'Passed', when: 'today'},
+  await scanAnswers({ok: true, already_checked: {result: 'Works', when: 'today'},
                      code: 'FEST911', name: 'TV', card: card(11)});
   choice.onPick('cancel');
   assert.strictEqual(await palletSends(), 11, 'a rescan of the same unit keeps it');

@@ -257,7 +257,7 @@ def last_result(unit: InvUnit) -> dict | None:
     check = db.session.get(InvCheck, prep.check_id)
     if check is None or check.status != INV_CHECK_PASSED:
         return None
-    return {"result": "Passed", "when": local_stamp(check.finished_at)}
+    return {"result": "Works", "when": local_stamp(check.finished_at)}
 
 
 def _joined_note(parts: list[str]) -> str | None:

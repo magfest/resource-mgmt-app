@@ -64,7 +64,7 @@
    ], active=active_tab) %}
 {% if tab == 'about' %}
 <h2>Last checked</h2>
-<div>{% if check.word == 'WORKS' %}<span class="works">Works</span> {% elif check.word == 'BROKEN' %}<span class="broken">Broken</span> {% endif %}{{ check.text }}</div>
+<div>{% if check.word == 'WORKS' %}<span class="works">Works</span> &middot; {% elif check.word == 'BROKEN' %}<span class="broken">Broken</span> &middot; {% endif %}{{ check.text }}</div>
 <div>{{ owner }}</div>
 
 <h2 id="where">Where it is</h2>

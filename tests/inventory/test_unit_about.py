@@ -46,7 +46,7 @@ def test_where_in_an_unnamed_pallet(inv, places):
 
 
 def test_check_line_never_checked(inv):
-    assert check_line(_unit(inv)) == {"word": None, "text": "Not checked yet"}
+    assert check_line(_unit(inv)) == {"word": None, "text": "Never"}
 
 
 def test_owner_line_rented(inv):

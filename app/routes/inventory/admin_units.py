@@ -182,7 +182,7 @@ def _csv_rows(rows: list[dict]) -> list[list]:
     return [[r["unit"].name or "", r["number"] or "", r["unit"].item.item_name,
              model_number(r["unit"]) or "", r["check_word"] or "Never",
              local_iso(r["checked_at"]) if r["checked_at"] else "",
-             local_iso(r["seen_at"]) if r["seen_at"] else "Never",
+             local_iso(r["seen_at"]) if r["seen_at"] else "",
              CONDITION_WORDS.get(r["unit"].condition, r["unit"].condition), r["where"],
              r["open_flags"]]
             for r in rows]

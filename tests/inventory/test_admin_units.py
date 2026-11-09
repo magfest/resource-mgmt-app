@@ -991,7 +991,7 @@ def test_unit_page_status_says_works_with_local_time(client, inv):
     _prep(event, u, "CHECKED", datetime(2026, 12, 8, 15, 14))
     login(client, "test:operator")
     page = _page(client, u)
-    assert '<span class="works">Works</span> checked Dec 8 at 10:14 AM' in page
+    assert '<span class="works">Works</span> &middot; checked Dec 8 at 10:14 AM' in page
     assert page.index("Last checked") < page.index('id="where"')
 
 
@@ -999,13 +999,13 @@ def test_unit_page_status_says_broken(client, inv):
     event, (u,) = _week_units(inv, 1)
     _prep(event, u, "FAILED_CHECK")
     login(client, "test:operator")
-    assert '<span class="broken">Broken</span> checked' in _page(client, u)
+    assert '<span class="broken">Broken</span> &middot; checked' in _page(client, u)
 
 
 def test_unit_page_status_not_checked_has_no_time(client, inv):
     _, (u,) = _week_units(inv, 1)
     login(client, "test:operator")
-    assert "Not checked yet" in _page(client, u)
+    assert "Never" in _page(client, u)
 
 
 def test_unit_page_without_a_default_event_still_says_where(client, unit):
@@ -1228,7 +1228,7 @@ def test_last_checked_reads_a_check_under_another_event(client, inv):
 
 def test_never_checked_unit_says_not_checked_yet(client, unit):
     login(client, "test:operator")
-    assert "Not checked yet" in _page(client, unit)
+    assert "Never" in _page(client, unit)
 
 
 def test_add_note_lands_on_the_notes_tab(client, unit):
@@ -1329,3 +1329,13 @@ def test_open_flags_callout_opens_about_first(client, unit):
         page = _page(client, unit)
         assert f'#flags" data-show-tab="about">1 open flag</a>' in page
         assert '.tab-btn[data-tab="' in page
+
+
+def test_csv_leaves_last_seen_empty_when_a_unit_was_never_seen(client, inv):
+    from app.models import InvMovement
+    _, (u,) = _week_units(inv, 1)
+    InvMovement.query.filter_by(unit_id=u.id).delete()
+    db.session.commit()
+    login(client, "test:operator")
+    row = _list(client, format="csv").get_data(as_text=True).splitlines()[1].split(",")
+    assert row[6] == ""
