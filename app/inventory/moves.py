@@ -96,7 +96,8 @@ def _unused_label(code: str, destination: InvContainer | None,
     else:
         # A fixed spot cannot sit on a pallet, so a new thing is never offered one.
         query = query.filter_by(is_fixed=False)
-        where = f"It goes on {destination.label_code}."
+        joiner = "in" if destination.kind.is_fixed else "on"
+        where = f"It goes {joiner} {destination.label_code}."
     kinds = query.order_by(InvContainerKind.sort_order, InvContainerKind.id).all()
     return {"unused": True, "code": code, "kinds": [{"id": k.id, "name": k.name} for k in kinds],
             "where": where}

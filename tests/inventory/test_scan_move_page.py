@@ -106,6 +106,8 @@ FLOW = PRELUDE + r"""
   assert.deepEqual(await p, {ok: true});
   assert.ok(texts(panel).includes('Pallet C-0040'));
   assert.ok(find(panel, 'Move supplies') && find(panel, 'New destination'));
+  assert.equal(find(panel, 'New destination').className, 'cnt-submit');
+  assert.equal(find(panel, 'Move supplies').className, 'cnt-small');
   assert.deepEqual(subjects[subjects.length - 1], {code: 'C-0040', label: 'Pallet C-0040'});
 
   p = onScan('C-0042');
@@ -239,3 +241,34 @@ def test_a_refused_supplies_move_keeps_the_item_step(tmp_path):
     result = _node(tmp_path, REFUSED, "move_refused.js")
     assert result.returncode == 0, result.stderr
     assert "refused ok" in result.stdout
+
+
+STALE = PRELUDE + r"""
+(async () => {
+  let p = onScan('C-0040');
+  await tick();
+  writes[0].resolve({ok: true, destination: {code: 'C-0040', title: 'Pallet C-0040'},
+    message: 'Going to Pallet C-0040.'});
+  await p;
+  p = onScan('C-0041');
+  await tick();
+  assert.equal(writes[1].body.destination_code, 'C-0040');
+  writes[1].resolve({ok: false, message: "Scan where it's going again."});
+  await p;
+  assert.equal(messages[messages.length - 1], "Scan where it's going again.");
+  assert.ok(texts(panel).includes("Scan where it's going: a pallet, a tote or a location."));
+  assert.ok(!find(panel, 'New destination'));
+  p = onScan('C-0050');
+  await tick();
+  assert.equal(writes[2].body.destination_code, null);
+  console.log('stale ok');
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_dead_destination_is_cleared_so_a_new_one_can_be_scanned(tmp_path):
+    result = _node(tmp_path, STALE, "move_stale.js")
+    assert result.returncode == 0, result.stderr
+    assert "stale ok" in result.stdout

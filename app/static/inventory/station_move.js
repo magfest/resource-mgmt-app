@@ -12,7 +12,10 @@
     scanSource: 'Scan where they are coming from.',
     tapItem: 'Tap the item, or scan its barcode.',
     noItems: 'No item matches that.',
-    failed: 'That scan failed. Scan it again.'
+    failed: 'That scan failed. Scan it again.',
+    // Copied from DESTINATION_AGAIN in app/inventory/moves.py; the server sends it when the
+    // destination was deactivated, and the page must drop the dead code or every scan fails.
+    destinationAgain: "Scan where it's going again."
   };
   var CONTAINER_CODE = /^\s*C-?\d+\s*$/i;
 
@@ -65,6 +68,17 @@
     S.showMessage(text, 'error');
   }
 
+  // True when the server refused because the destination is gone; the page starts over.
+  function dropDeadDestination(answer) {
+    if (answer.message !== MESSAGES.destinationAgain) { return false; }
+    destination = null;
+    source = null;
+    picking = false;
+    render();
+    fail(answer.message);
+    return true;
+  }
+
   function destinationCode() { return destination ? destination.code : null; }
 
   function headNode() {
@@ -98,13 +112,13 @@
       box.appendChild(headNode());
       box.appendChild(el('div', 'cnt-step', MESSAGES.scanEach));
       var foot = el('div', 'cnt-foot');
-      foot.appendChild(button('Move supplies', 'cnt-submit', function () {
+      foot.appendChild(button('Move supplies', 'cnt-small', function () {
         picking = true;
         S.showMessage('', 'info');
         render();
         refocus();
       }));
-      foot.appendChild(button('New destination', 'cnt-small', function () {
+      foot.appendChild(button('New destination', 'cnt-submit', function () {
         destination = null;
         S.showMessage('', 'info');
         render();
@@ -248,7 +262,12 @@
   // Only a real change reports ok, so the shell's repeat guard records real moves.
   function placed(answer) {
     if (answer.need_name || answer.fatal) { return {ok: false}; }
-    if (!answer.ok) { fail(answer.message); render(); return {ok: false}; }
+    if (!answer.ok) {
+      if (dropDeadDestination(answer)) { return {ok: false}; }
+      fail(answer.message);
+      render();
+      return {ok: false};
+    }
     if (answer.unused) { offerCreate(answer); return {ok: false}; }
     S.feedback('ok');
     if (answer.destination) {
@@ -266,7 +285,10 @@
     return S.read(cfg.sourceUrl, {code: code, destination_code: destination.code}).then(
       function (answer) {
         if (answer.need_name || answer.fatal) { return {ok: false}; }
-        if (!answer.ok) { fail(answer.message); return {ok: false}; }
+        if (!answer.ok) {
+          if (!dropDeadDestination(answer)) { fail(answer.message); }
+          return {ok: false};
+        }
         source = {code: answer.source.code, title: answer.source.title, usual: answer.usual || []};
         picking = false;
         S.feedback('ok');

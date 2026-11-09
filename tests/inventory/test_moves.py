@@ -176,6 +176,9 @@ def test_a_new_label_offers_kinds_for_where_it_goes(inv):
     as_thing = move_scan(code, pallet, ACTOR, home)
     assert as_thing["where"] == "It goes on C-0040."
     assert {k["name"] for k in as_thing["kinds"]} == {"Pallet", "Bin"}
+    in_zone = move_scan(code, home, ACTOR, None)
+    assert in_zone["where"] == "It goes in C-0005."
+    assert {k["name"] for k in in_zone["kinds"]} == {"Pallet", "Bin"}
     no_home = move_scan(code, None, ACTOR, None)
     assert no_home["where"] == "This scanner has no home location, so it goes at the top level."
     assert InvContainer.query.filter_by(label_code=code).first() is None
