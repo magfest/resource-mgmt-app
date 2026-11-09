@@ -53,7 +53,7 @@
 </script>
 {% if fell_back %}<p class="muted">That date could not be used, so this shows the last 30 days.</p>{% endif %}
 {% if not q %}<p class="muted">Retired units are hidden.</p>{% endif %}
-<p>{{ total }} unit{{ '' if total == 1 else 's' }}, {{ checked }} checked since {{ since_word }}, {{ broken }} broken
+<p>{{ total }} unit{{ '' if total == 1 else 's' }}, {{ checked }} of {{ counted }} checked since {{ since_word }}, {{ broken }} broken
   &middot; <a href="{{ url_for('inventory.units', format='csv', **keep) }}">Download CSV</a></p>
 <style nonce="{{ csp_nonce }}">
   .units-table { table-layout: auto; width: max-content; min-width: 100%; }

@@ -820,7 +820,7 @@ def test_units_list_summary_line(client, inv):
     since = _since(10)
     page = _list(client, since=since).get_data(as_text=True)
     day = local_day(since_start(date.fromisoformat(since)))
-    assert f"2 units, 2 checked since {day}, 1 broken" in page
+    assert f"2 units, 2 of 2 checked since {day}, 1 broken" in page
 
 
 def test_units_list_says_so_when_the_date_cannot_be_used(client, inv):
@@ -851,7 +851,7 @@ def test_page_shows_where_and_counts(client, inv):
     _check(units[0], 2)
     login(client, "test:operator")
     page = _list(client, since=_since(10)).get_data(as_text=True)
-    assert "2 units, 1 checked since" in page and ", 0 broken" in page
+    assert "2 units, 1 of 2 checked since" in page and ", 0 broken" in page
     assert "C-7001 Back shelf" in page
     assert ">More filters<" in page
 

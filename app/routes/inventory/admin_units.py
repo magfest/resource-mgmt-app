@@ -33,7 +33,7 @@ from app.inventory.unit_fields import (
 )
 from app.inventory.last_check import (
     CHECK_FILTERS, CHECK_WORDS, check_filter, check_word, last_seen_dates,
-    latest_check_rows, parse_since, since_start,
+    latest_check_rows, parse_since, since_start, counted_units,
 )
 from app.inventory.unit_station import give_unit_number, number_refusal
 from app.models import (
@@ -214,6 +214,7 @@ def units():
              "Last checked at", "Last seen", "Condition", "Where", "Open flags"],
             _csv_rows(_unit_rows(found)))
     total = query.count()
+    counted = query.filter(counted_units()).count()
     checked = query.filter(check_filter("checked", start)).count()
     broken = query.filter(check_filter("broken", start)).count()
     pages = max(1, -(-total // SEARCH_LIMIT))
@@ -224,7 +225,7 @@ def units():
     keep = {k: v for k, v in request.args.items() if k not in ("page", "format") and v}
     return render_inventory_page(
         "inventory/units.html", q=q, rows=_unit_rows(found), kinds=kinds, kind=kind,
-        total=total, checked=checked, broken=broken, show=show, page=page, pages=pages,
+        total=total, counted=counted, checked=checked, broken=broken, show=show, page=page, pages=pages,
         since=day.isoformat(), since_word=local_day(start), fell_back=fell_back,
         keep=keep, filter_fields=fields, chosen=chosen, condition_words=CONDITION_WORDS,
         show_buttons=(("checked", "Checked"), ("not_checked", "Not checked"),
