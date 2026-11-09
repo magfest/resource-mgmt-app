@@ -46,7 +46,14 @@
   {% endif %}
 </div>
 {% if open_flags %}
-<div class="callout callout-action mb-16"><a href="{{ url_for('inventory.unit_page', unit_id=unit.id) }}#flags">{{ open_flags }} open flag{{ '' if open_flags == 1 else 's' }}</a></div>
+<div class="callout callout-action mb-16"><a href="{{ url_for('inventory.unit_page', unit_id=unit.id) }}#flags" data-show-tab="about">{{ open_flags }} open flag{{ '' if open_flags == 1 else 's' }}</a></div>
+<script nonce="{{ csp_nonce }}">
+  // The flags list sits on About; open it first so the #flags jump has a visible target.
+  document.querySelector('a[data-show-tab]').addEventListener('click', function () {
+    var tab = document.querySelector('.tab-btn[data-tab="' + this.getAttribute('data-show-tab') + '"]');
+    if (tab) tab.click();
+  });
+</script>
 {% endif %}
 
 {% call(tab) request_tabs([

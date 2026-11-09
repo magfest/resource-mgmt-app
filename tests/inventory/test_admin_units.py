@@ -1052,7 +1052,7 @@ def test_unit_page_counts_open_flags(client, unit):
     db.session.commit()
     page = _page(client, unit)
     href = f"/inv/admin/units/{unit.id}#flags"
-    assert f'<a href="{href}">1 open flag</a>' in page and 'id="flags"' in page
+    assert f'<a href="{href}" data-show-tab="about">1 open flag</a>' in page and 'id="flags"' in page
     assert "1 open flags" not in page
 
 
@@ -1311,3 +1311,21 @@ def test_units_table_scrolls_instead_of_breaking_words(client, inv):
     page = _list(client).get_data(as_text=True)
     assert '<table class="units-table">' in page
     assert "table-layout: auto" in page and "width: max-content" in page
+
+
+def test_retire_confirm_listener_runs_in_the_capture_phase(client, unit):
+    login(client, "test:invadmin")
+    page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
+    script = page[page.index("data-retire-confirm'"):]
+    script = script[:script.index("</script>")]
+    assert "e.stopPropagation();" in script and script.rstrip().endswith("}, true);")
+
+
+def test_open_flags_callout_opens_about_first(client, unit):
+    raise_flag(ACTOR, "LOOKUP", "DAMAGED", unit=unit)
+    db.session.commit()
+    for who in ("test:operator", "test:invadmin"):
+        login(client, who)
+        page = _page(client, unit)
+        assert f'#flags" data-show-tab="about">1 open flag</a>' in page
+        assert '.tab-btn[data-tab="' in page
