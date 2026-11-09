@@ -6,13 +6,13 @@ from app.models import SupplyItem
 from tests.inventory.helpers import login, make_container
 
 
-def test_inventory_admin_creates_a_tracked_item_orderable_by_default(client, inv):
+def test_inventory_admin_creates_a_tracked_item_not_orderable(client, inv):
     login(client, "test:invadmin")
     client.post("/inv/admin/items/new", data={
         "item_name": "Digital Sign", "category_id": str(inv.category.id),
         "unit": "each", "is_serialized": "1"})
     sign = SupplyItem.query.filter_by(item_name="Digital Sign").one()
-    assert sign.is_orderable is True and sign.is_serialized is True and not sign.is_expendable
+    assert sign.is_orderable is False and sign.is_serialized is True and not sign.is_expendable
 
 
 def test_admin_sets_gear_kind_and_model_defaults(client, inv):

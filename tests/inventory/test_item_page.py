@@ -228,6 +228,21 @@ def test_supply_admin_adds_an_untracked_orderable_item(client, inv, supply_admin
     assert resp.headers["Location"].endswith(f"/inv/admin/items/{item.id}")
 
 
+def test_supply_admin_adding_without_the_box_gets_a_not_orderable_item(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    client.post("/inv/admin/items/new",
+                data={"item_name": "Gaffer Tape", "category_id": inv.category.id, "unit": "roll"})
+    item = db.session.query(SupplyItem).filter_by(item_name="Gaffer Tape").one()
+    assert item.is_orderable is False
+
+
+def test_add_an_item_orderable_box_starts_unticked(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    page = client.get("/inv/admin/items").get_data(as_text=True)
+    box = re.search(r'<input[^>]*name="is_orderable"[^>]*>', page)
+    assert box is not None and "checked" not in box.group(0)
+
+
 def test_operator_cannot_add_an_item(client, inv):
     login(client, "test:operator")
     resp = client.post("/inv/admin/items/new",

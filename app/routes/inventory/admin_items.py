@@ -1,7 +1,8 @@
 """The Items list, Add an item, and item-page posts for assets.
 
-Supply admins and inventory admins both use this module. New items default to
-orderable. The asset type and defaults posts here serve the Inventory tab of
+Supply admins and inventory admins both use this module. New items are not
+orderable until a Supply admin ticks the box, so deploy-only gear never lands
+in department catalogs by default. The asset type and defaults posts here serve the Inventory tab of
 the item page in admin_item_page.
 """
 from flask import abort, flash, redirect, request, url_for
@@ -77,7 +78,7 @@ def create_deploy_item():
     if not name or len(name) > 256 or category is None or not unit or len(unit) > 32:
         flash("An item needs a name, a category, and a unit of measure.", "error")
         return redirect(url_for("inventory.items"))
-    orderable = request.form.get("is_orderable") == "1" if rights.can_set_orderable else True
+    orderable = request.form.get("is_orderable") == "1" if rights.can_set_orderable else False
     tracked = request.form.get("is_serialized") == "1" if rights.can_set_tracked else False
     item = SupplyItem(
         category_id=category.id, item_name=name, unit=unit,

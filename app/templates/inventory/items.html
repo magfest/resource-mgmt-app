@@ -20,7 +20,7 @@
       </select>
     </label>
     <label>Unit of measure <input type="text" name="unit" value="each" maxlength="32" style="width: 90px;"></label>
-    {% if rights.can_set_orderable %}<label><input type="checkbox" name="is_orderable" value="1" checked> Departments can order this</label>{% endif %}
+    {% if rights.can_set_orderable %}<label><input type="checkbox" name="is_orderable" value="1"> Departments can order this</label>{% endif %}
     {% if rights.can_set_tracked %}<label><input type="checkbox" name="is_serialized" value="1"> Track each piece as an asset</label>{% endif %}
   </div>
   <button type="submit" class="btn btn-primary">Add item</button>
