@@ -46,7 +46,7 @@ def test_empty_states(client, inv):
     login(client, "test:admin")
     page = client.get("/inv/allocation").get_data(as_text=True)
     assert "No event has submitted requests or allocations yet." in page
-    assert "No item needs pre-allocation yet. Switch it on from an item&#39;s About tab." in page
+    assert "No item needs pre-allocation yet. Switch it on from an item's About tab." in page
 
 
 def test_unallocated_only_hides_allocated_assets(client, alloc):
