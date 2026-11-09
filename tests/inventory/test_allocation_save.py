@@ -130,3 +130,40 @@ def test_an_unknown_unit_is_a_404(client, alloc):
     response = client.post("/inv/allocation/save",
                            data={"was_99999": "", "to_99999": "", "event": alloc.event.id})
     assert response.status_code == 404
+
+
+def _post_raw(client, alloc, rows):
+    data = {"event": alloc.event.id, "item": alloc.tv.id}
+    for unit, was, to in rows:
+        data[f"was_{unit.id}"] = was.id if was else ""
+        data[f"to_{unit.id}"] = to.id if to else ""
+    return client.post("/inv/allocation/save", data=data)
+
+
+def test_a_refused_fill_undoes_an_earlier_release(client, alloc):
+    a = supply_line(alloc, alloc.alpha, 2, notes="any")
+    full = supply_line(alloc, alloc.beta, 1, notes="any")
+    held, other, x, y = (make_asset(alloc.tv, f"U-000{i}") for i in (1, 2, 3, 4))
+    make_allocation(held, a)
+    make_allocation(other, full)
+    db.session.commit()
+    login(client, "test:admin")
+    response = _post_raw(client, alloc, [(held, a, None), (x, None, full), (y, None, full)])
+    assert response.status_code == 200
+    assert _held(held) == a.id and _held(x) is None and _held(y) is None
+    assert db.session.query(InvAllocationEvent).count() == 0
+
+
+def test_a_refused_fill_undoes_an_earlier_move(client, alloc):
+    a = supply_line(alloc, alloc.alpha, 2, notes="any")
+    b = supply_line(alloc, alloc.beta, 2, notes="any")
+    full = supply_line(alloc, alloc.alpha, 1, notes="any")
+    mover, other, x, y = (make_asset(alloc.tv, f"U-000{i}") for i in (1, 2, 3, 4))
+    make_allocation(mover, a)
+    make_allocation(other, full)
+    db.session.commit()
+    login(client, "test:admin")
+    response = _post_raw(client, alloc, [(mover, a, b), (x, None, full), (y, None, full)])
+    assert response.status_code == 200
+    assert _held(mover) == a.id and _held(x) is None
+    assert db.session.query(InvAllocationEvent).count() == 0
