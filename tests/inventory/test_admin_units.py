@@ -695,70 +695,156 @@ def test_retired_units_show_only_when_searched_for(client, inv):
     assert _list(client, q="WK-000").data.count(b'class="unit-row"') == 1
 
 
+def _check(unit, days_ago, status="CHECKED", event=None):
+    """Record a check under an event that is not the default."""
+    from datetime import datetime, timedelta
+    from app.models import EventCycle, InvPrepStatus
+    event = event or db.session.query(EventCycle).filter_by(code="OLD2026").first()
+    if event is None:
+        event = EventCycle(code="OLD2026", name="Old 2026", is_active=True, is_default=False)
+        db.session.add(event)
+        db.session.flush()
+    db.session.add(InvPrepStatus(unit_id=unit.id, event_cycle_id=event.id, status=status,
+                                 created_at=datetime.utcnow() - timedelta(days=days_ago)))
+    db.session.commit()
+
+
+def _since(days):
+    from datetime import timedelta
+    from app.inventory.printing import local_today
+    return (local_today() - timedelta(days=days)).isoformat()
+
+
 def test_show_filters_narrow_the_list(client, inv):
-    from app.models import InvPrepStatus
-    event, units = _week_units(inv, 4)
+    _, units = _week_units(inv, 4)
     nameless = add_unit(inv.laptop, None, ACTOR, [], name="No tag")
-    db.session.add_all([
-        InvPrepStatus(unit_id=units[0].id, event_cycle_id=event.id, status="CHECKED"),
-        InvPrepStatus(unit_id=units[1].id, event_cycle_id=event.id, status="FAILED_CHECK")])
+    _check(units[0], 2)
+    _check(units[1], 2, "FAILED_CHECK")
     db.session.commit()
     login(client, "test:operator")
 
     def ids(show):
-        page = _list(client, show=show).get_data(as_text=True)
+        page = _list(client, show=show, since=_since(10)).get_data(as_text=True)
         return {u.id for u in units + [nameless] if f"/inv/admin/units/{u.id}\"" in page}
 
-    assert ids("seen") == {units[0].id, units[1].id}
-    assert ids("not_seen") == {units[2].id, units[3].id, nameless.id}
+    assert ids("checked") == {units[0].id, units[1].id}
+    assert ids("not_checked") == {units[2].id, units[3].id, nameless.id}
     assert ids("broken") == {units[1].id}
     assert ids("no_number") == {nameless.id}
 
 
+def test_units_filter_checked_since(client, inv):
+    _, units = _week_units(inv, 2)
+    _check(units[0], 20)
+    _check(units[1], 2)
+    login(client, "test:operator")
+    page = _list(client, show="checked", since=_since(10)).get_data(as_text=True)
+    assert f"/inv/admin/units/{units[1].id}\"" in page
+    assert f"/inv/admin/units/{units[0].id}\"" not in page
+
+
 def test_show_filters_leave_out_rented_units_and_the_plain_list_keeps_them(client, inv):
-    from app.models import InvPrepStatus
-    event, (owned,) = _week_units(inv, 1)
+    _, (owned,) = _week_units(inv, 1)
     rented = add_unit(inv.laptop, None, ACTOR, [], name="Rented laptop")
     rented.ownership = "RENTED"
     seen_rental = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-RENT-2")], name="Rental two")
     seen_rental.ownership = "RENTED"
-    db.session.add(InvPrepStatus(unit_id=seen_rental.id, event_cycle_id=event.id,
-                                 status="CHECKED"))
     db.session.commit()
+    _check(seen_rental, 1)
     login(client, "test:operator")
 
     def ids(**args):
-        page = _list(client, **args).get_data(as_text=True)
+        page = _list(client, since=_since(10), **args).get_data(as_text=True)
         return {u.id for u in (owned, rented, seen_rental) if f"/inv/admin/units/{u.id}\"" in page}
 
     assert ids(show="no_number") == set()
-    assert ids(show="not_seen") == {owned.id}
-    assert ids(show="seen") == set()
+    assert ids(show="not_checked") == {owned.id}
+    assert ids(show="checked") == set()
     assert ids() == {owned.id, rented.id, seen_rental.id}
 
 
-def test_page_shows_week_and_where_and_counts(client, inv):
-    from app.models import InvPrepStatus
+def test_units_list_has_the_new_columns(client, inv):
+    import re
+    _week_units(inv, 1)
+    login(client, "test:operator")
+    page = _list(client).get_data(as_text=True)
+    heads = re.findall(r"<th>(.*?)</th>", page)
+    assert heads == ["Name", "Tag or label", "Inventory item group", "Last checked",
+                     "Last seen", "Condition", "Where", "Flags"]
+    assert "Number and name" not in page and "This week" not in page
+
+
+def test_units_list_cells_for_a_checked_named_unit(client, inv):
     from tests.inventory.helpers import make_container
-    event, units = _week_units(inv, 2)
+    from app.inventory.printing import local_day
+    from datetime import datetime, timedelta
+    _, (u,) = _week_units(inv, 1, names=["Front desk"])
+    box = make_container(inv, "C-7001", kind="BIN", name="Back shelf")
+    u.current_container_id = box.id
+    db.session.commit()
+    _check(u, 3)
+    login(client, "test:operator")
+    page = _list(client).get_data(as_text=True)
+    stamp = local_day(datetime.utcnow() - timedelta(days=3))
+    assert f'<a href="/inv/admin/units/{u.id}">Front desk</a>' in page
+    assert "WK-000" in page
+    assert f"Works · {stamp}" in page
+    assert "Back shelf" in page
+
+
+def test_units_list_never_checked_and_not_placed(client, inv):
+    _week_units(inv, 1)
+    login(client, "test:operator")
+    row = _list(client).get_data(as_text=True).split('class="unit-row"')[1].split("</tr>")[0]
+    assert "Never" in row and "Not placed yet" in row
+
+
+def test_units_list_links_a_nameless_numberless_unit(client, inv):
+    u = add_unit(inv.laptop, None, ACTOR, [("SERIAL", "SN-BARE-1")])
+    retire_identifier(u.identifiers[0])
+    db.session.commit()
+    login(client, "test:operator")
+    page = _list(client).get_data(as_text=True)
+    assert (f'<a href="/inv/admin/units/{u.id}"><span class="muted">No number yet</span></a>'
+            in page)
+
+
+def test_units_list_summary_line(client, inv):
+    _, units = _week_units(inv, 2)
+    _check(units[0], 2)
+    _check(units[1], 2, "FAILED_CHECK")
+    login(client, "test:operator")
+    from app.inventory.last_check import since_start
+    from app.inventory.printing import local_day
+    from datetime import date
+    since = _since(10)
+    page = _list(client, since=since).get_data(as_text=True)
+    day = local_day(since_start(date.fromisoformat(since)))
+    assert f"2 units, 2 checked since {day}, 1 broken" in page
+
+
+def test_units_list_query_count_is_fixed(client, inv):
+    login(client, "test:operator")
+    _week_units(inv, 3)
+    few = _selects(lambda: _list(client))
+    for i in range(3, 30):
+        add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", f"QN-{i:03d}")], name=f"Many {i}")
+    db.session.commit()
+    assert _selects(lambda: _list(client)) == few
+
+
+def test_page_shows_where_and_counts(client, inv):
+    from tests.inventory.helpers import make_container
+    _, units = _week_units(inv, 2)
     bin_ = make_container(inv, "C-7001", kind="BIN", name="Back shelf")
     units[0].current_container_id = bin_.id
-    db.session.add(InvPrepStatus(unit_id=units[0].id, event_cycle_id=event.id, status="CHECKED"))
     db.session.commit()
+    _check(units[0], 2)
     login(client, "test:operator")
-    page = _list(client).get_data(as_text=True)
-    assert "2 units, 1 seen, 0 broken" in page
-    assert "C-7001 Back shelf" in page and "Not seen" in page and "Works" in page
+    page = _list(client, since=_since(10)).get_data(as_text=True)
+    assert "2 units, 1 checked since" in page and ", 0 broken" in page
+    assert "C-7001 Back shelf" in page
     assert ">More filters<" in page
-
-
-def test_no_default_event_hides_week_column(client, inv):
-    add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "WK-001")])
-    db.session.commit()
-    login(client, "test:operator")
-    page = _list(client).get_data(as_text=True)
-    assert "No default event is set." in page
-    assert "This week" not in page and "No number yet</button>" not in page
 
 
 def test_list_pages_fifty_at_a_time(client, inv):
@@ -769,16 +855,19 @@ def test_list_pages_fifty_at_a_time(client, inv):
 
 
 def test_csv_holds_every_matching_row(client, inv):
-    event, _ = _week_units(inv, 55)
+    _week_units(inv, 55)
     login(client, "test:operator")
     resp = _list(client, format="csv")
     assert resp.mimetype == "text/csv"
-    assert resp.headers["Content-Disposition"].startswith(
-        'attachment; filename="units-SMF2027-')
-    lines = resp.get_data(as_text=True).strip().splitlines()
-    assert lines[0] == ("Number,Name,Type,Model,This week,Condition,Where,Open flags,"
-                        "Last checked")
-    assert len(lines) == 56
+    assert len(resp.get_data(as_text=True).strip().splitlines()) == 56
+
+
+def test_units_csv_headers(client, inv):
+    _week_units(inv, 1)
+    login(client, "test:operator")
+    first = _list(client, format="csv").get_data(as_text=True).splitlines()[0]
+    assert first == ("Name,Tag or label,Inventory item group,Model,Last checked,"
+                     "Last checked at,Last seen,Condition,Where,Open flags")
 
 
 def test_csv_neutralises_formulas(client, inv):
@@ -789,13 +878,17 @@ def test_csv_neutralises_formulas(client, inv):
 
 def test_csv_last_checked_is_warehouse_local_time(client, inv):
     from datetime import datetime
-    from app.models import InvPrepStatus
-    event, units = _week_units(inv, 1)
+    from app.models import EventCycle, InvPrepStatus
+    _, units = _week_units(inv, 1)
+    event = EventCycle(code="OLD2026", name="Old 2026", is_active=True, is_default=False)
+    db.session.add(event)
+    db.session.flush()
     db.session.add(InvPrepStatus(unit_id=units[0].id, event_cycle_id=event.id, status="CHECKED",
                                  created_at=datetime(2026, 12, 8, 2, 30)))
     db.session.commit()
     login(client, "test:operator")
-    assert ",2026-12-07 21:30" in _list(client, format="csv").get_data(as_text=True)
+    row = _list(client, format="csv").get_data(as_text=True).splitlines()[1]
+    assert ",Works,2026-12-07 21:30," in row
 
 
 def test_local_iso_converts_utc():
@@ -810,24 +903,20 @@ def test_csv_filename_uses_local_date(client, inv, monkeypatch):
     monkeypatch.setattr("app.routes.inventory.admin_units.local_today",
                         lambda: date(2026, 12, 4))
     login(client, "test:operator")
-    assert "units-SMF2027-2026-12-04.csv" in _list(client, format="csv").headers[
+    assert 'filename="units-2026-12-04.csv"' in _list(client, format="csv").headers[
         "Content-Disposition"]
 
 
-def test_csv_leaves_week_cells_blank_without_a_default_event(client, inv):
-    add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", "WK-001")])
-    db.session.commit()
+def test_csv_says_never_for_an_unchecked_unit(client, inv):
+    _week_units(inv, 1)
     login(client, "test:operator")
     row = _list(client, format="csv").get_data(as_text=True).splitlines()[1].split(",")
-    assert row[4] == "" and row[6] == ""
+    assert row[4] == "Never" and row[5] == ""
 
 
 def test_csv_honours_the_show_filter(client, inv):
-    from app.models import InvPrepStatus
-    event, units = _week_units(inv, 3)
-    db.session.add(InvPrepStatus(unit_id=units[1].id, event_cycle_id=event.id,
-                                 status="FAILED_CHECK"))
-    db.session.commit()
+    _, units = _week_units(inv, 3)
+    _check(units[1], 1, "FAILED_CHECK")
     login(client, "test:operator")
     lines = _list(client, format="csv", show="broken").get_data(as_text=True).splitlines()
     assert len(lines) == 2 and "WK-001" in lines[1]
@@ -841,9 +930,9 @@ def test_pager_next_link_keeps_the_filters(client, inv):
         add_unit(inv.laptop, None, ACTOR, [("FESTOPS_LABEL", f"PG-{i:03d}")], name=f"Pager {i:03d}")
     db.session.commit()
     login(client, "test:operator")
-    page = _list(client, q="pager", kind="TV", show="not_seen").get_data(as_text=True)
+    page = _list(client, q="pager", kind="TV", show="not_checked").get_data(as_text=True)
     href = unescape(re.search(r'<a href="([^"]*)">Next</a>', page).group(1))
-    assert "q=pager" in href and "kind=TV" in href and "show=not_seen" in href
+    assert "q=pager" in href and "kind=TV" in href and "show=not_checked" in href
     assert "page=2" in href
 
 
@@ -866,7 +955,6 @@ def test_csv_does_not_query_per_unit(client, inv):
             box = make_container(inv, f"C-72{i:02d}", kind=f"K{i}")
             unit = add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", f"QC-{i:03d}")])
             db.session.flush()
-            # Only a seen unit shows its container, so each one needs a prep row.
             db.session.add(InvPrepStatus(unit_id=unit.id, event_cycle_id=event.id,
                                          status="CHECKED"))
         db.session.commit()
@@ -927,15 +1015,13 @@ def test_unit_page_without_a_default_event_shows_the_container(client, inv):
     assert "Shelf three" in _page(client, u)
 
 
-def test_units_list_still_says_not_seen_for_a_placed_unit(client, inv):
+def test_units_csv_says_where_for_a_placed_unit_with_no_check(client, inv):
     from tests.inventory.helpers import make_container
-    _week_units(inv, 0)
     box = make_container(inv, "C-9004", name="Shelf four")
     add_unit(inv.laptop, box, ACTOR, [("FESTOPS_LABEL", "PL-004")])
     db.session.commit()
     login(client, "test:operator")
-    assert "Last recorded" not in _list(client).get_data(as_text=True)
-    assert ",Not seen," in _list(client, format="csv").get_data(as_text=True)
+    assert "Shelf four" in _list(client, format="csv").get_data(as_text=True)
 
 
 def test_unit_page_shows_where_for_a_placed_unit(client, inv):

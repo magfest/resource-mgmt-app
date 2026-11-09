@@ -1,4 +1,4 @@
-"""The inventory home page: this week's tiles and grouped links."""
+"""The inventory home page: tiles counted from a chosen date, and grouped links."""
 from datetime import datetime, timedelta
 
 import pytest
@@ -30,17 +30,22 @@ def _prep(unit, event, status, check_status):
                                  check_id=check.id))
 
 
+def _day_ago(n):
+    return datetime.utcnow() - timedelta(days=n)
+
+
 @pytest.fixture
 def week(inv):
-    event = EventCycle(code="SMF2027", name="SMF 2027", is_active=True, is_default=True)
+    """Two units checked under a non-default event, one 20 days ago and one 2 days ago."""
+    event = EventCycle(code="OLD2026", name="Old 2026", is_active=True, is_default=False)
     db.session.add(event)
     db.session.flush()
-    works = _unit(inv, "Works", "U-0001")
-    broken = _unit(inv, "Broken", "U-0002")
-    _unit(inv, "Unseen", "U-0003")
-    _unit(inv, "Unnumbered")
-    _prep(works, event, "CHECKED", "PASSED")
-    _prep(broken, event, "FAILED_CHECK", "FAILED")
+    old = _unit(inv, "Old check", "U-0001")
+    recent = _unit(inv, "Recent check", "U-0002")
+    _prep(old, event, "CHECKED", "PASSED")
+    _prep(recent, event, "CHECKED", "PASSED")
+    db.session.query(InvPrepStatus).filter_by(unit_id=old.id).update({"created_at": _day_ago(20)})
+    db.session.query(InvPrepStatus).filter_by(unit_id=recent.id).update({"created_at": _day_ago(2)})
     db.session.commit()
     return event
 
@@ -53,22 +58,48 @@ def _queue(printer, n=1):
     db.session.flush()
 
 
-def test_home_shows_tiles_and_hrefs(client, week):
+def _chosen(days):
+    from app.inventory.printing import local_today
+    return local_today() - timedelta(days=days)
+
+
+def test_home_counts_checks_since_the_chosen_date(client, week):
+    from app.inventory.last_check import since_start
+    from app.inventory.printing import local_day
+    day = _chosen(10)
     login(client, "test:invadmin")
-    page = client.get("/inv/").data.decode()
-    assert "2 of 4" in page
-    for show in ("seen", "not_seen", "broken", "no_number"):
-        assert f'href="/inv/admin/units?show={show}"' in page
+    page = client.get("/inv/", query_string={"since": day.isoformat()}).data.decode()
+    assert f"Checked since {local_day(since_start(day))}" in page
+    assert "1 of 2" in page
+    assert f'value="{day.isoformat()}"' in page
+    for word in ("This week", "Seen", "Not seen", "No default event is set."):
+        assert word not in page
+    assert "That date could not be used" not in page
+
+
+def test_home_tiles_link_to_the_list_with_the_date(client, week):
+    day = _chosen(10)
+    login(client, "test:invadmin")
+    page = client.get("/inv/", query_string={"since": day.isoformat()}).data.decode()
+    for show in ("checked", "not_checked", "broken", "no_number"):
+        assert f'href="/inv/admin/units?show={show}&amp;since={day.isoformat()}"' in page
     assert "0 waiting" in page
     assert "Print station offline" not in page
 
 
-def test_home_without_default_event_says_so(client, inv):
+def test_home_without_since_shows_the_default_day_and_no_fallback(client, week):
+    from app.inventory.last_check import default_since
     login(client, "test:invadmin")
     page = client.get("/inv/").data.decode()
-    assert "No default event is set." in page
-    assert "units?show=" not in page
-    assert "Open flags" in page and "Print queue" in page
+    assert f'value="{default_since().isoformat()}"' in page
+    assert "That date could not be used" not in page
+    assert "Day to day" in page and "<h1>Inventory</h1>" in page
+
+
+def test_home_falls_back_on_a_bad_date(client, week):
+    login(client, "test:invadmin")
+    page = client.get("/inv/?since=nope").data.decode()
+    assert "That date could not be used, so this shows the last 30 days." in page
 
 
 def test_queue_summary_counts_waiting_and_flags_a_stale_station(app, inv):
@@ -103,7 +134,7 @@ def test_home_warns_when_a_station_is_offline(client, week):
 def test_groups_are_headed_and_admin_sees_set_up_links(client, week):
     login(client, "test:invadmin")
     page = client.get("/inv/").data.decode()
-    for heading in ("During the week", "Set up", "History"):
+    for heading in ("Day to day", "Set up", "History"):
         assert heading in page
     assert "Scanners and print stations" in page and "Import old tech lists" in page
 
@@ -111,7 +142,7 @@ def test_groups_are_headed_and_admin_sees_set_up_links(client, week):
 def test_operator_does_not_see_admin_links(client, week):
     login(client, "test:operator")
     page = client.get("/inv/").data.decode()
-    assert "During the week" in page
+    assert "Day to day" in page
     for href in ("/inv/admin/items", "/inv/admin/devices", "/inv/admin/printers",
                  "/inv/admin/operators", "/inv/admin/movements"):
         assert f'href="{href}"' not in page

@@ -15,13 +15,12 @@
       </select>
     </label>
     <button type="submit" class="btn btn-small">Search</button>
-    {% if event %}
+    <label style="flex: 1 1 140px;">Since
+      <input type="date" name="since" value="{{ since }}">
+    </label>
     {% for value, word in show_buttons %}
     <button type="submit" name="show" value="{{ value }}" class="btn btn-small"{% if show == value %} aria-pressed="true" style="font-weight: bold;"{% endif %}>{{ word }}</button>
     {% endfor %}
-    {% elif show %}
-    <input type="hidden" name="show" value="{{ show }}">
-    {% endif %}
   </div>
   {% if filter_fields %}
   <details class="mt-8">
@@ -52,25 +51,27 @@
     this.form.submit();
   });
 </script>
-{% if not event %}<p class="muted">No default event is set.</p>{% endif %}
 {% if not q %}<p class="muted">Retired units are hidden.</p>{% endif %}
-<p>{{ total }} unit{{ '' if total == 1 else 's' }}{% if event %}, {{ seen }} seen, {{ broken }} broken{% endif %}
+<p>{{ total }} unit{{ '' if total == 1 else 's' }}, {{ checked }} checked since {{ since_word }}, {{ broken }} broken
   &middot; <a href="{{ url_for('inventory.units', format='csv', **keep) }}">Download CSV</a></p>
 <div style="overflow-x: auto;">
 <table>
-  <thead><tr><th>Number and name</th><th>Type</th>{% if event %}<th>This week</th>{% endif %}<th>Condition</th><th>Where</th><th>Flags</th></tr></thead>
+  <thead><tr><th>Name</th><th>Tag or label</th><th>Inventory item group</th><th>Last checked</th><th>Last seen</th><th>Condition</th><th>Where</th><th>Flags</th></tr></thead>
   <tbody>
   {% for r in rows %}
+    {% set page_url = url_for('inventory.unit_page', unit_id=r.unit.id) %}
     <tr class="unit-row">
-      <td><a href="{{ url_for('inventory.unit_page', unit_id=r.unit.id) }}">{% if r.unit.name %}{{ r.unit.name }} {% endif %}{% if r.number %}{% if r.unit.name %}<span class="muted">{{ r.number }}</span>{% else %}{{ r.number }}{% endif %}{% else %}<span class="muted">No number yet</span>{% endif %}</a></td>
+      <td>{% if r.unit.name %}<a href="{{ page_url }}">{{ r.unit.name }}</a>{% endif %}</td>
+      <td>{% if r.number %}{% if r.unit.name %}{{ r.number }}{% else %}<a href="{{ page_url }}">{{ r.number }}</a>{% endif %}{% elif r.unit.name %}<span class="muted">No number yet</span>{% else %}<a href="{{ page_url }}"><span class="muted">No number yet</span></a>{% endif %}</td>
       <td>{{ r.unit.item.item_name }}</td>
-      {% if event %}<td>{{ r.week_word }}</td>{% endif %}
+      <td>{% if r.check_word %}{{ r.check_word }} · {{ r.checked_day }}{% else %}Never{% endif %}</td>
+      <td>{{ r.seen_day or 'Never' }}</td>
       <td>{{ condition_words.get(r.unit.condition, r.unit.condition) }}</td>
-      <td>{{ r.where if event else (r.unit.current_container.label_code if r.unit.current_container else 'Not placed') }}</td>
+      <td>{{ r.where }}</td>
       <td>{% if r.open_flags %}{{ r.open_flags }} open{% else %}<span class="muted">None</span>{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="6" class="muted">No unit matches.</td></tr>
+    <tr><td colspan="8" class="muted">No unit matches.</td></tr>
   {% endfor %}
   </tbody>
 </table>

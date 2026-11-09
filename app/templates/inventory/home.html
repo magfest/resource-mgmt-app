@@ -1,28 +1,29 @@
 {% extends "layout/base.html" %}
 {% block title %}Inventory{% endblock %}
 {% block content %}
-<h1>This week</h1>
+<h1>Inventory</h1>
 <div class="muted mb-16">FestOps stock, containers, and labels.</div>
 <style nonce="{{ csp_nonce }}">
-  .week-tiles { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
-  .week-tile { display: block; flex: 1 1 140px; max-width: 100%; padding: 12px 16px;
+  .count-tiles { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+  .count-tile { display: block; flex: 1 1 140px; max-width: 100%; padding: 12px 16px;
     border: 1px solid #ddd; border-radius: 6px; text-decoration: none; color: inherit; }
-  .week-tile strong { display: block; font-size: 1.4em; }
+  .count-tile strong { display: block; font-size: 1.4em; }
 </style>
-<div class="week-tiles">
-  {% if totals %}
-  <a class="week-tile" href="{{ url_for('inventory.units', show='seen') }}">Seen<strong>{{ totals.seen }} of {{ totals.owned }}</strong></a>
-  <a class="week-tile" href="{{ url_for('inventory.units', show='not_seen') }}">Not seen<strong>{{ totals.not_seen }}</strong></a>
-  <a class="week-tile" href="{{ url_for('inventory.units', show='broken') }}">Broken<strong>{{ totals.broken }}</strong></a>
-  <a class="week-tile" href="{{ url_for('inventory.units', show='no_number') }}">No number yet<strong>{{ totals.no_number }}</strong></a>
-  {% else %}
-  <p class="muted">No default event is set.</p>
-  {% endif %}
-  <a class="week-tile" href="{{ url_for('inventory.flags') }}">Open flags<strong>{{ open_flags }}</strong></a>
-  <a class="week-tile" href="{{ url_for('inventory.print_queue') }}">Print queue<strong>{{ queue.waiting }} waiting</strong>{% if not queue.station_online %}<span class="pill pill-warning">Print station offline</span>{% endif %}</a>
+<form method="get" class="mb-16">
+  <label>Since <input type="date" name="since" value="{{ since }}"></label>
+  <button type="submit" class="btn btn-small">Show</button>
+</form>
+{% if fell_back %}<p class="muted">That date could not be used, so this shows the last 30 days.</p>{% endif %}
+<div class="count-tiles">
+  <a class="count-tile" href="{{ url_for('inventory.units', show='checked', since=since) }}">Checked since {{ since_word }}<strong>{{ totals.checked }} of {{ totals.counted }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.units', show='not_checked', since=since) }}">Not checked since {{ since_word }}<strong>{{ totals.not_checked }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.units', show='broken', since=since) }}">Broken<strong>{{ totals.broken }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.units', show='no_number', since=since) }}">No number yet<strong>{{ totals.no_number }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.flags') }}">Open flags<strong>{{ open_flags }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.print_queue') }}">Print queue<strong>{{ queue.waiting }} waiting</strong>{% if not queue.station_online %}<span class="pill pill-warning">Print station offline</span>{% endif %}</a>
 </div>
 
-<h2>During the week</h2>
+<h2>Day to day</h2>
 <ul>
   <li><a href="{{ url_for('inventory.where') }}">Where things are</a></li>
   <li><a href="{{ url_for('inventory.units') }}">Units</a></li>

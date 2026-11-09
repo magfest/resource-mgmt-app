@@ -13,14 +13,13 @@ from app import db
 from app.inventory.describe import unit_tag
 from app.inventory.tree import place_name, unplaced_text
 from app.inventory.unit_fields import details_line
-from app.inventory.week import WEEK_BROKEN, WEEK_WORKS, live_prep_rows, week_status
+from app.inventory.last_check import CHECK_WORDS, check_word, latest_check_rows
 from app.models import InvContainer, InvGearKind, InvStock, InvUnit, InvUnitValue, SupplyItem
 from app.models.constants import (
     INV_CONDITION_LOST, INV_CONDITION_REPAIR, INV_CONDITION_RETIRED,
 )
 
 NO_NUMBER_LABEL = "No number yet"
-_WEEK_WORDS = {WEEK_WORKS: "Works", WEEK_BROKEN: "Broken"}
 
 
 @dataclass
@@ -98,19 +97,17 @@ def _unit_row(unit: InvUnit, word: str | None) -> UnitRow:
                    search=" ".join(parts).lower())
 
 
-def _word(unit: InvUnit, event, prep_rows) -> str | None:
+def _word(unit: InvUnit, prep_rows) -> str:
     if unit.condition == INV_CONDITION_REPAIR:
         return "Repair"
-    if event is None:
-        return None
-    return _WEEK_WORDS.get(week_status(prep_rows.get(unit.id)), "Not checked")
+    return CHECK_WORDS.get(check_word(prep_rows.get(unit.id)), "Not checked")
 
 
 def _sort_units(rows: list[UnitRow]) -> None:
     rows.sort(key=lambda r: (r.label.lower(), r.unit_id))
 
 
-def build_where(event) -> WhereTree:
+def build_where() -> WhereTree:
     containers = {c.id: c for c in db.session.query(InvContainer).all()}
     units = (db.session.query(InvUnit)
              .filter(InvUnit.condition != INV_CONDITION_RETIRED)
@@ -122,7 +119,7 @@ def build_where(event) -> WhereTree:
              .all())
     stock = (db.session.query(InvStock).options(joinedload(InvStock.item))
              .filter(InvStock.quantity > 0).all())
-    prep_rows = live_prep_rows(event, [u.id for u in units])
+    prep_rows = latest_check_rows([u.id for u in units])
 
     parent = _effective_parents(containers)
     nodes = {cid: Node(container_id=cid, name=place_name(c), code=c.label_code,
@@ -135,7 +132,7 @@ def build_where(event) -> WhereTree:
     not_placed: list[UnitRow] = []
     lost: list[UnitRow] = []
     for unit in units:
-        row = _unit_row(unit, _word(unit, event, prep_rows))
+        row = _unit_row(unit, _word(unit, prep_rows))
         if unit.condition == INV_CONDITION_LOST:
             lost.append(row)
         elif unit.current_container_id not in nodes:

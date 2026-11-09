@@ -1,4 +1,6 @@
 """Units page: find a unit by any identifier, then correct it or print its label."""
+from datetime import datetime
+
 from flask import abort, flash, redirect, request, url_for
 from sqlalchemy import false, func, or_
 from sqlalchemy.orm import selectinload
@@ -23,14 +25,15 @@ from app.inventory.names import name_key, set_unit_name
 from app.inventory.tree import display_name
 from app.inventory.printing import (
     REPRINT_CURRENT_DETAILS, REPRINT_MODES, REPRINT_TODAY, REPRINT_ORIGINAL_DATE,
-    local_iso, local_today, local_when, reprint, reprint_options,
+    local_day, local_iso, local_today, local_when, reprint, reprint_options,
 )
 from app.inventory.resolver import KIND_AMBIGUOUS, KIND_UNIT, resolve
 from app.inventory.unit_fields import (
     active_fields, details_line, model_number, parse_value, set_unit_value, unit_field_rows,
 )
-from app.inventory.week import (
-    SHOW_FILTERS, WEEK_WORDS, live_prep_rows, show_condition, week_status,
+from app.inventory.last_check import (
+    CHECK_FILTERS, CHECK_WORDS, check_filter, check_word, last_seen_dates,
+    latest_check_rows, parse_since, since_start,
 )
 from app.inventory.unit_station import give_unit_number, number_refusal
 from app.models import (
@@ -128,8 +131,8 @@ def _value_matches(field: InvField, answer: str):
 
 
 def _units_query(q: str, kind: InvGearKind | None, fields: list[InvField],
-                 chosen: dict[int, str], show: str, event):
-    """Units matching the search text, kind, field answers and week filter.
+                 chosen: dict[int, str], show: str, since: datetime):
+    """Units matching the search text, kind, field answers and check filter.
 
     Retired units are listed only when the search text finds them.
     """
@@ -144,37 +147,39 @@ def _units_query(q: str, kind: InvGearKind | None, fields: list[InvField],
         if field.id in chosen:
             query = query.filter(_value_matches(field, chosen[field.id]))
     if show:
-        query = query.filter(show_condition(event, show))
+        query = query.filter(check_filter(show, since))
     return query
 
 
-def _unit_rows(units: list[InvUnit], event) -> list[dict]:
+def _unit_rows(units: list[InvUnit]) -> list[dict]:
     ids = [u.id for u in units]
     counts = (dict(db.session.query(InvFlag.unit_id, func.count(InvFlag.id))
                    .filter(InvFlag.unit_id.in_(ids), InvFlag.resolved_at.is_(None))
                    .group_by(InvFlag.unit_id).all()) if ids else {})
-    preps = live_prep_rows(event, ids)
+    preps = latest_check_rows(ids)
+    seen = last_seen_dates(ids)
     rows = []
     for u in units:
         prep = preps.get(u.id)
-        status = week_status(prep)
-        if event is None:
-            where = ""
-        elif prep is None:
-            where = "Not seen"
-        else:
-            where = display_name(u.current_container) if u.current_container else "Not placed"
-        rows.append({"unit": u, "number": unit_code(u), "open_flags": counts.get(u.id, 0),
-                     "week": status, "week_word": WEEK_WORDS[status] if event else "", "where": where,
-                     "checked_at": prep.created_at if prep else None})
+        word = check_word(prep)
+        rows.append({
+            "unit": u, "number": unit_code(u), "open_flags": counts.get(u.id, 0),
+            "check_word": CHECK_WORDS.get(word, ""),
+            "checked_at": prep.created_at if word else None,
+            "seen_at": seen.get(u.id),
+            "checked_day": local_day(prep.created_at) if word else "",
+            "seen_day": local_day(seen[u.id]) if u.id in seen else "",
+            "where": display_name(u.current_container) if u.current_container else "Not placed yet"})
     return rows
 
 
 def _csv_rows(rows: list[dict]) -> list[list]:
-    return [[r["number"] or "", r["unit"].name or "", r["unit"].item.item_name,
-             model_number(r["unit"]) or "", r["week_word"],
+    return [[r["unit"].name or "", r["number"] or "", r["unit"].item.item_name,
+             model_number(r["unit"]) or "", r["check_word"] or "Never",
+             local_iso(r["checked_at"]) if r["checked_at"] else "",
+             local_iso(r["seen_at"]) if r["seen_at"] else "Never",
              CONDITION_WORDS.get(r["unit"].condition, r["unit"].condition), r["where"],
-             r["open_flags"], local_iso(r["checked_at"]) if r["checked_at"] else ""]
+             r["open_flags"]]
             for r in rows]
 
 
@@ -187,24 +192,25 @@ def units():
             if kind_code else None)
     fields = _filter_fields(kind)
     chosen = _selected_filters(fields)
-    event = default_event()
+    day, _ = parse_since(request.args.get("since"))
+    start = since_start(day)
     show = request.args.get("show", "")
-    if show not in SHOW_FILTERS or event is None and show != "no_number":
+    if show not in CHECK_FILTERS:
         show = ""
-    query = _units_query(q, kind, fields, chosen, show, event)
+    query = _units_query(q, kind, fields, chosen, show, start)
     # NULLs sort first on SQLite and last on PostgreSQL; nulls_last() makes both agree.
     ordered = query.order_by(InvUnit.name_key.asc().nulls_last(), InvUnit.id)
     if request.args.get("format") == "csv":
         found = ordered.options(*_ROW_LOADS, selectinload(InvUnit.values)
                                 .selectinload(InvUnitValue.field)).all()
-        stamp = f"{local_today():%Y-%m-%d}"
         return csv_response(
-            f"units-{event.code if event else 'no-event'}-{stamp}.csv",
-            ["Number", "Name", "Type", "Model", "This week", "Condition", "Where",
-             "Open flags", "Last checked"], _csv_rows(_unit_rows(found, event)))
+            f"units-{local_today():%Y-%m-%d}.csv",
+            ["Name", "Tag or label", "Inventory item group", "Model", "Last checked",
+             "Last checked at", "Last seen", "Condition", "Where", "Open flags"],
+            _csv_rows(_unit_rows(found)))
     total = query.count()
-    seen = query.filter(show_condition(event, "seen")).count() if event else 0
-    broken = query.filter(show_condition(event, "broken")).count() if event else 0
+    checked = query.filter(check_filter("checked", start)).count()
+    broken = query.filter(check_filter("broken", start)).count()
     pages = max(1, -(-total // SEARCH_LIMIT))
     page = min(max(request.args.get("page", 1, type=int), 1), pages)
     found = (ordered.options(*_ROW_LOADS).limit(SEARCH_LIMIT)
@@ -212,11 +218,12 @@ def units():
     kinds = db.session.query(InvGearKind).order_by(InvGearKind.name).all()
     keep = {k: v for k, v in request.args.items() if k not in ("page", "format") and v}
     return render_inventory_page(
-        "inventory/units.html", q=q, rows=_unit_rows(found, event), kinds=kinds, kind=kind,
-        total=total, seen=seen, broken=broken, event=event, show=show, page=page, pages=pages,
+        "inventory/units.html", q=q, rows=_unit_rows(found), kinds=kinds, kind=kind,
+        total=total, checked=checked, broken=broken, show=show, page=page, pages=pages,
+        since=day.isoformat(), since_word=local_day(start),
         keep=keep, filter_fields=fields, chosen=chosen, condition_words=CONDITION_WORDS,
-        show_buttons=(("seen", "Seen"), ("not_seen", "Not seen"), ("broken", "Broken"),
-                      ("no_number", "No number yet")))
+        show_buttons=(("checked", "Checked"), ("not_checked", "Not checked"),
+                      ("broken", "Broken"), ("no_number", "No number yet")))
 
 
 def _unit_or_404(unit_id: int) -> InvUnit:
