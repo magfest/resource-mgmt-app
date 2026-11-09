@@ -47,6 +47,7 @@ def _guard(check, message):
 require_inventory_admin = _guard(is_inventory_admin, "Inventory admin access required")
 require_inventory_operator = _guard(is_inventory_operator, "Inventory access required")
 require_item_viewer = _guard(lambda u: item_rights(u).can_view, "Item access required")
+require_shared_editor = _guard(lambda u: item_rights(u).can_edit_shared, "Item edit access required")
 
 
 def render_inventory_page(template: str, **ctx):

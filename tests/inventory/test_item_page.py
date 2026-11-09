@@ -1,6 +1,8 @@
+import io
 import re
 
 from app import db
+from app.models import ConfigAuditEvent, InvUnit, SupplyItem
 from app.inventory.ledger import Actor, add_stock
 from tests.inventory.helpers import login, make_container
 
@@ -82,3 +84,158 @@ def test_about_tab_shows_both_switch_states_as_text(client, inv):
     login(client, "test:invadmin")
     page = client.get(f"/inv/admin/items/{inv.wap.id}").get_data(as_text=True)
     assert "Departments can order this" in page and "Track each piece as an asset" in page
+
+
+def _about(client, item, **over):
+    data = {"item_name": item.item_name, "category_id": item.category_id, "unit": "each",
+            "is_active": "1"}
+    data.update(over)
+    return client.post(f"/inv/admin/items/{item.id}/about", data=data,
+                       content_type="multipart/form-data")
+
+
+def test_supply_admin_saving_about_leaves_tracking_alone(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    _about(client, inv.laptop, is_orderable="1")
+    assert db.session.get(SupplyItem, inv.laptop.id).is_serialized is True
+
+
+def test_inventory_admin_saving_about_leaves_ordering_alone(client, inv):
+    login(client, "test:invadmin")
+    _about(client, inv.pens, item_name="Blue Pen 2")
+    item = db.session.get(SupplyItem, inv.pens.id)
+    assert item.is_orderable is True and item.item_name == "Blue Pen 2"
+
+
+def test_supply_admin_unticked_orderable_means_off(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    _about(client, inv.pens)
+    assert db.session.get(SupplyItem, inv.pens.id).is_orderable is False
+
+
+def test_supply_admin_cannot_post_the_tracking_switch(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    resp = _about(client, inv.pens, item_name="Changed", is_serialized="1")
+    assert resp.status_code == 403
+    item = db.session.get(SupplyItem, inv.pens.id)
+    assert item.is_serialized is False and item.item_name == "Blue Pen"
+
+
+def test_inventory_admin_cannot_post_the_ordering_switch(client, inv):
+    login(client, "test:invadmin")
+    assert _about(client, inv.pens, is_orderable="1").status_code == 403
+
+
+def test_operator_cannot_save_about(client, inv):
+    login(client, "test:operator")
+    assert client.post(f"/inv/admin/items/{inv.pens.id}/about",
+                       data={"item_name": "X"}).status_code == 403
+
+
+def test_tracking_refused_while_stock_is_counted(client, inv):
+    add_stock(inv.pens, make_container(inv, "C-0001", kind="BIN"), 4,
+              Actor(user_id="test:invadmin"))
+    db.session.commit()
+    login(client, "test:invadmin")
+    resp = _about(client, inv.pens, item_name="Renamed", is_serialized="1")
+    assert resp.headers["Location"].endswith(f"/inv/admin/items/{inv.pens.id}?tab=about")
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "Count it to zero before tracking each piece as an asset." in page
+    item = db.session.get(SupplyItem, inv.pens.id)
+    assert item.is_serialized is False and item.item_name == "Blue Pen"
+
+
+def test_untracking_refused_while_assets_exist(client, inv):
+    db.session.add(InvUnit(item_id=inv.laptop.id))
+    db.session.commit()
+    login(client, "test:invadmin")
+    resp = _about(client, inv.laptop)
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "must stay tracked as assets." in page
+    assert db.session.get(SupplyItem, inv.laptop.id).is_serialized is True
+
+
+def test_validation_error_saves_nothing_and_skips_the_picture(client, inv, monkeypatch):
+    from app.services import images
+    calls = []
+    monkeypatch.setattr(images, "process_and_upload_item_image",
+                        lambda f, i: calls.append(i) or "https://x/y.png")
+    login(client, "test:invadmin")
+    resp = _about(client, inv.pens, unit="", image_file=(io.BytesIO(b"x"), "p.png"))
+    page = client.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "Item name, category, and unit of measure are required." in page
+    assert calls == [] and db.session.get(SupplyItem, inv.pens.id).image_url is None
+
+
+def test_about_writes_an_audit_row(client, inv):
+    login(client, "test:invadmin")
+    _about(client, inv.pens, item_name="Black Pen")
+    row = ConfigAuditEvent.query.filter_by(entity_type="supply_item", entity_id=inv.pens.id).first()
+    assert row is not None
+
+
+def test_about_picture_upload_sets_url(client, inv, monkeypatch):
+    from app.services import images
+    monkeypatch.setattr(images, "process_and_upload_item_image",
+                        lambda f, i: "https://bucket/pen.png")
+    login(client, "test:invadmin")
+    _about(client, inv.pens, image_file=(io.BytesIO(b"x"), "p.png"))
+    assert db.session.get(SupplyItem, inv.pens.id).image_url == "https://bucket/pen.png"
+
+
+def test_about_picture_remove_clears_url_and_deletes(client, inv, monkeypatch):
+    from app.services import images
+    deleted = []
+    monkeypatch.setattr(images, "delete_item_image", deleted.append)
+    inv.pens.image_url = "https://bucket/old.png"
+    db.session.commit()
+    login(client, "test:invadmin")
+    _about(client, inv.pens, remove_image="1")
+    assert db.session.get(SupplyItem, inv.pens.id).image_url is None
+    assert deleted == ["https://bucket/old.png"]
+
+
+def test_about_bad_picture_flashes_and_keeps_fields(client, inv, monkeypatch):
+    from app.services import images
+
+    def _raise(f, i):
+        raise images.ImageValidationError("too big")
+    monkeypatch.setattr(images, "process_and_upload_item_image", _raise)
+    login(client, "test:invadmin")
+    resp = _about(client, inv.pens, item_name="Red Pen", image_file=(io.BytesIO(b"x"), "p.png"))
+    assert "too big" in client.get(resp.headers["Location"]).get_data(as_text=True)
+    item = db.session.get(SupplyItem, inv.pens.id)
+    assert item.item_name == "Red Pen" and item.image_url is None
+
+
+def test_about_without_touching_picture_keeps_it(client, inv):
+    inv.pens.image_url = "https://bucket/keep.png"
+    db.session.commit()
+    login(client, "test:invadmin")
+    _about(client, inv.pens, item_name="Keep Pen")
+    assert db.session.get(SupplyItem, inv.pens.id).image_url == "https://bucket/keep.png"
+
+
+def test_supply_admin_adds_an_untracked_orderable_item(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    resp = client.post("/inv/admin/items/new",
+                       data={"item_name": "Gaffer Tape", "category_id": inv.category.id,
+                             "unit": "roll", "is_orderable": "1"})
+    item = db.session.query(SupplyItem).filter_by(item_name="Gaffer Tape").one()
+    assert item.is_orderable and not item.is_serialized and item.is_expendable
+    assert resp.headers["Location"].endswith(f"/inv/admin/items/{item.id}")
+
+
+def test_operator_cannot_add_an_item(client, inv):
+    login(client, "test:operator")
+    resp = client.post("/inv/admin/items/new",
+                       data={"item_name": "X", "category_id": inv.category.id, "unit": "each"})
+    assert resp.status_code == 403
+
+
+def test_supply_admin_cannot_add_a_tracked_item(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    resp = client.post("/inv/admin/items/new",
+                       data={"item_name": "X", "category_id": inv.category.id,
+                             "unit": "each", "is_serialized": "1"})
+    assert resp.status_code == 403

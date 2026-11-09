@@ -8,10 +8,10 @@
   {% if show_inactive %}<a href="{{ url_for('inventory.items') }}">Show active items</a>
   {% else %}<a href="{{ url_for('inventory.items', show='inactive') }}">Show inactive items</a>{% endif %}
 </div>
-{% if is_inv_admin %}
+{% if rights.can_edit_shared %}
 <form method="post" action="{{ url_for('inventory.create_deploy_item') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <strong>Add an item that is not orderable</strong>
+  <strong>Add an item</strong>
   <div class="row">
     <label>Name <input type="text" name="item_name" required maxlength="256"></label>
     <label>Category
@@ -20,7 +20,8 @@
       </select>
     </label>
     <label>Unit of measure <input type="text" name="unit" value="each" maxlength="32" style="width: 90px;"></label>
-    <label><input type="checkbox" name="is_serialized" value="1" checked> Track each piece as an asset</label>
+    {% if rights.can_set_orderable %}<label><input type="checkbox" name="is_orderable" value="1" checked> Departments can order this</label>{% endif %}
+    {% if rights.can_set_tracked %}<label><input type="checkbox" name="is_serialized" value="1"> Track each piece as an asset</label>{% endif %}
   </div>
   <button type="submit" class="btn btn-primary">Add item</button>
 </form>

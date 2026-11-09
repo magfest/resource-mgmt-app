@@ -25,13 +25,13 @@ def test_item_holding_counted_stock_cannot_become_serialized(client, inv):
     assert db.session.get(SupplyItem, inv.pens.id).is_serialized is False
 
 
-def test_deploy_only_item_is_created_unorderable(client, inv):
+def test_inventory_admin_creates_a_tracked_item_orderable_by_default(client, inv):
     login(client, "test:invadmin")
     client.post("/inv/admin/items/new", data={
         "item_name": "Digital Sign", "category_id": str(inv.category.id),
         "unit": "each", "is_serialized": "1"})
     sign = SupplyItem.query.filter_by(item_name="Digital Sign").one()
-    assert sign.is_orderable is False and sign.is_serialized is True
+    assert sign.is_orderable is True and sign.is_serialized is True and not sign.is_expendable
 
 
 def _save(client, item, **fields):
@@ -148,5 +148,5 @@ def test_items_page_words(client, inv):
     login(client, "test:invadmin")
     page = client.get("/inv/admin/items").get_data(as_text=True)
     assert "Asset type" in page and "Unit of measure" in page
-    assert "Add an item that is not orderable" in page
+    assert "Add an item" in page
     assert "Gear kind" not in page and "deploy-only" not in page

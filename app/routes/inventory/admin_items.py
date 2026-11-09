@@ -11,12 +11,19 @@ from app import db
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import InventoryError
 from app.inventory.unit_fields import active_fields, set_model_default
+from app.inventory.item_rights import item_rights
 from app.models import (
-    InvGearKind, InvStock, InvUnit, SupplyCategory, SupplyItem,
+    CONFIG_AUDIT_CREATE, InvGearKind, InvStock, InvUnit, SupplyCategory, SupplyItem,
 )
 
+from app.routes import get_user_ctx
+
 from . import inventory_bp
-from .helpers import render_inventory_page, require_inventory_admin, require_item_viewer
+from .admin_item_page import item_state
+from .helpers import (
+    render_inventory_page, require_inventory_admin, require_item_viewer,
+    require_shared_editor,
+)
 
 
 @inventory_bp.get("/admin/items")
@@ -30,7 +37,8 @@ def items():
     categories = (db.session.query(SupplyCategory).filter_by(is_active=True)
                   .order_by(SupplyCategory.name).all())
     return render_inventory_page("inventory/items.html", items=rows, categories=categories,
-                                 show_inactive=show_inactive)
+                                 show_inactive=show_inactive,
+                                 rights=item_rights(get_user_ctx()))
 
 
 def _barcode_error(item_id: int | None, barcode: str | None) -> str | None:
@@ -68,11 +76,11 @@ def update_item(item_id: int):
     if serialized and not item.is_serialized and db.session.query(InvStock).filter(
             InvStock.item_id == item.id, InvStock.quantity > 0).first():
         flash(f"{item.item_name} has counted stock. Count it to zero before "
-              f"making it serialized.", "error")
+              f"tracking each piece as an asset.", "error")
         return redirect(url_for("inventory.items"))
     if not serialized and item.is_serialized and db.session.query(InvUnit).filter_by(
             item_id=item.id).first():
-        flash(f"{item.item_name} has serialized assets and must stay serialized.", "error")
+        flash(f"{item.item_name} has assets and must stay tracked as assets.", "error")
         return redirect(url_for("inventory.items"))
     pack_size, error = _parse_pack_size(request.form.get("pack_size"))
     error = error or _barcode_error(item.id, barcode)
@@ -91,22 +99,34 @@ def update_item(item_id: int):
 
 
 @inventory_bp.post("/admin/items/new")
-@require_inventory_admin
+@require_shared_editor
 def create_deploy_item():
+    rights = item_rights(get_user_ctx())
+    # A switch the user may not set is refused; an unchecked box from a permitted user means off.
+    if (("is_orderable" in request.form and not rights.can_set_orderable)
+            or ("is_serialized" in request.form and not rights.can_set_tracked)):
+        abort(403, "You may not set that switch")
     name = (request.form.get("item_name") or "").strip()
     unit = (request.form.get("unit") or "each").strip()
     category = db.session.get(SupplyCategory, request.form.get("category_id", type=int) or 0)
     if not name or len(name) > 256 or category is None or not unit or len(unit) > 32:
-        flash("An item that is not orderable needs a name, a category, and a unit of measure.", "error")
+        flash("An item needs a name, a category, and a unit of measure.", "error")
         return redirect(url_for("inventory.items"))
-    serialized = request.form.get("is_serialized") == "1"
-    db.session.add(SupplyItem(
+    orderable = request.form.get("is_orderable") == "1" if rights.can_set_orderable else True
+    tracked = request.form.get("is_serialized") == "1" if rights.can_set_tracked else False
+    item = SupplyItem(
         category_id=category.id, item_name=name, unit=unit,
-        is_serialized=serialized, is_orderable=False, is_expendable=not serialized,
-    ))
+        is_serialized=tracked, is_orderable=orderable, is_expendable=not tracked,
+        updated_by_user_id=get_user_ctx().user_id,
+    )
+    db.session.add(item)
+    db.session.flush()
+    # Imported here: app.routes.admin.helpers is circular at module level.
+    from app.routes.admin.helpers import log_config_change
+    log_config_change("supply_item", item.id, CONFIG_AUDIT_CREATE, item_state(item))
     db.session.commit()
-    flash(f"Added {name}. It will not appear in the Supply catalog.", "success")
-    return redirect(url_for("inventory.items"))
+    flash(f"Added {name}.", "success")
+    return redirect(url_for("inventory.item_page", item_id=item.id))
 
 
 @inventory_bp.post("/admin/items/<int:item_id>/gear-kind")

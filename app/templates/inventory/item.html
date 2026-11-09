@@ -16,6 +16,36 @@
 </div>
 {% call(tab) request_tabs(tabs, active=active_tab) %}
   {% if tab == 'about' %}
+  {% if rights.can_edit_shared %}
+  <form method="post" action="{{ url_for('inventory.save_item_about', item_id=item.id) }}" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Name <input type="text" name="item_name" value="{{ item.item_name }}" required maxlength="256"></label>
+    <label>Category
+      <select name="category_id" required>
+        {% for c in categories %}<option value="{{ c.id }}" {% if c.id == item.category_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        {% if item.category not in categories %}<option value="{{ item.category_id }}" selected>{{ item.category.name }}</option>{% endif %}
+      </select>
+    </label>
+    <label>Unit of measure <input type="text" name="unit" value="{{ item.unit }}" required maxlength="32"></label>
+    <div>
+      {% if item.image_url %}<img src="{{ item.image_url }}" alt="" style="max-width: 120px; display: block;">
+      <label><input type="checkbox" name="remove_image" value="1"> Remove picture</label>{% endif %}
+      <label>Picture <input type="file" name="image_file" accept="image/*"></label>
+    </div>
+    <label><input type="checkbox" name="is_active" value="1" {% if item.is_active %}checked{% endif %}> Active</label>
+    {% if rights.can_set_orderable %}
+    <label><input type="checkbox" name="is_orderable" value="1" {% if item.is_orderable %}checked{% endif %}> Departments can order this</label>
+    {% endif %}
+    {% if rights.can_set_tracked %}
+    <label><input type="checkbox" name="is_serialized" value="1" {% if item.is_serialized %}checked{% endif %}> Track each piece as an asset</label>
+    {% endif %}
+    <table class="pair">
+      {% if not rights.can_set_orderable %}<tr><th>Departments can order this</th><td>{{ 'Yes' if item.is_orderable else 'No' }}</td></tr>{% endif %}
+      {% if not rights.can_set_tracked %}<tr><th>Track each piece as an asset</th><td>{{ 'Yes' if item.is_serialized else 'No' }}</td></tr>{% endif %}
+    </table>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+  {% else %}
   <table class="pair">
     <tr><th>Name</th><td>{{ item.item_name }}</td></tr>
     <tr><th>Category</th><td>{{ item.category.name }}</td></tr>
@@ -24,6 +54,7 @@
     <tr><th>Track each piece as an asset</th><td>{{ 'Yes' if item.is_serialized else 'No' }}</td></tr>
     <tr><th>Active</th><td>{{ 'Yes' if item.is_active else 'No' }}</td></tr>
   </table>
+  {% endif %}
   {% elif tab == 'ordering' %}
   <div class="muted">Ordering settings.</div>
   {% elif tab == 'inventory' %}
