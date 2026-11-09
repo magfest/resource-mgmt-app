@@ -10,7 +10,8 @@ import pytest
 from app import db
 from app.models import (
     InvContainerKind, ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR,
-    ROLE_SUPER_ADMIN, SupplyCategory, SupplyItem, User, UserRole,
+    ROLE_SUPER_ADMIN, ROLE_WORKTYPE_ADMIN, SupplyCategory, SupplyItem, User, UserRole,
+    WorkType,
 )
 
 USERS = [
@@ -49,3 +50,20 @@ def inv(app):
     db.session.add_all([pens, laptop, wap])
     db.session.commit()
     return SimpleNamespace(kinds=kinds, category=category, pens=pens, laptop=laptop, wap=wap)
+
+
+@pytest.fixture
+def supply_admin(inv):
+    """A user holding WORKTYPE_ADMIN on the SUPPLY work type.
+
+    Separate from `inv` so other tests run with no SUPPLY row at all.
+    """
+    supply = WorkType(code="SUPPLY", name="Supply Orders", is_active=True)
+    db.session.add(supply)
+    db.session.add(User(id="test:supplyadmin", email="supplyadmin@test.local",
+                        display_name="Supplyadmin", is_active=True))
+    db.session.flush()
+    db.session.add(UserRole(user_id="test:supplyadmin", role_code=ROLE_WORKTYPE_ADMIN,
+                            work_type_id=supply.id))
+    db.session.commit()
+    return supply

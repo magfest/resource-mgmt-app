@@ -5,6 +5,7 @@ from functools import wraps
 
 from flask import abort, current_app, redirect, render_template, session, url_for
 
+from app.inventory.item_rights import item_rights
 from app.inventory.ledger import Actor
 from app.models.constants import INV_NOTE_TYPES
 from app.models import ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR
@@ -45,6 +46,7 @@ def _guard(check, message):
 
 require_inventory_admin = _guard(is_inventory_admin, "Inventory admin access required")
 require_inventory_operator = _guard(is_inventory_operator, "Inventory access required")
+require_item_viewer = _guard(lambda u: item_rights(u).can_view, "Item access required")
 
 
 def render_inventory_page(template: str, **ctx):
