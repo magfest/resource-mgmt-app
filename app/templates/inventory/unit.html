@@ -236,14 +236,18 @@
 <div class="muted">Internal database ID: {{ unit.id }}. For troubleshooting only; it is never printed or scanned.</div>
 {% if is_inv_admin %}
 <script nonce="{{ csp_nonce }}">
+  // Capture phase: on Cancel, stopPropagation keeps the app-wide submit guard from disabling Save.
   document.addEventListener('submit', function (e) {
     var form = e.target.closest('form[data-retire-confirm]');
     if (!form) return;
     var only = form.getAttribute('data-retire-value');
     var select = form.querySelector('select[name="condition"]');
     if (only && select && select.value !== only) return;
-    if (!window.confirm(form.getAttribute('data-retire-confirm'))) e.preventDefault();
-  });
+    if (!window.confirm(form.getAttribute('data-retire-confirm'))) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
 </script>
 {% endif %}
 {% endif %}
