@@ -312,3 +312,19 @@ def test_release_after_the_line_is_deleted_uses_the_snapshot(alloc):
     event = db.session.query(InvAllocationEvent).filter_by(action="RELEASE").one()
     assert (event.work_line_id, event.line_label, event.department_id) == \
         (None, "one 4K", alloc.alpha.id)
+
+
+def test_a_dangling_line_id_falls_back_to_the_snapshot(alloc):
+    unit = make_asset(alloc.tv, "U-0001")
+    line = supply_line(alloc, alloc.alpha, 2, notes="one 4K")
+    row = make_allocation(unit, line, words="snapshot words")
+    db.session.commit()
+    # Dev SQLite does not enforce foreign keys, so a deleted line can leave its id behind.
+    db.session.execute(text("PRAGMA foreign_keys=OFF"))
+    db.session.execute(text("UPDATE inv_allocations SET work_line_id = 999999"))
+    db.session.commit()
+    db.session.refresh(row)
+    assert allocation._live_words(row) == "snapshot words"
+    release(unit, "test:invadmin")
+    event = db.session.query(InvAllocationEvent).filter_by(action="RELEASE").one()
+    assert event.line_label == "snapshot words"

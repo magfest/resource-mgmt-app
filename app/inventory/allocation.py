@@ -83,9 +83,9 @@ def _held_label(row: InvAllocation) -> str:
 
 
 def _live_words(row: InvAllocation) -> str:
-    if row.work_line_id is None:
-        return row.line_label
-    return line_words(db.session.get(WorkLine, row.work_line_id))
+    # Dev SQLite enforces no foreign keys, so the id can outlive its line.
+    line = db.session.get(WorkLine, row.work_line_id) if row.work_line_id is not None else None
+    return row.line_label if line is None else line_words(line)
 
 
 def _check_unit(unit: InvUnit, line: DemandLine) -> None:
