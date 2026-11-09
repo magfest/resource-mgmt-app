@@ -6,25 +6,6 @@ from app.models import SupplyItem
 from tests.inventory.helpers import login, make_container
 
 
-def test_admin_sets_flags_and_normalizes_barcode(client, inv):
-    login(client, "test:invadmin")
-    client.post(f"/inv/admin/items/{inv.pens.id}", data={
-        "is_orderable": "1", "barcode": " i-0001 "})
-    item = db.session.get(SupplyItem, inv.pens.id)
-    assert item.barcode == "I-0001"
-    assert item.is_serialized is False
-
-
-def test_item_holding_counted_stock_cannot_become_serialized(client, inv):
-    add_stock(inv.pens, make_container(inv, "C-0001", kind="BIN"), 5,
-              Actor(user_id="test:invadmin"))
-    db.session.commit()
-    login(client, "test:invadmin")
-    client.post(f"/inv/admin/items/{inv.pens.id}", data={
-        "is_orderable": "1", "is_serialized": "1"})
-    assert db.session.get(SupplyItem, inv.pens.id).is_serialized is False
-
-
 def test_inventory_admin_creates_a_tracked_item_orderable_by_default(client, inv):
     login(client, "test:invadmin")
     client.post("/inv/admin/items/new", data={
@@ -32,38 +13,6 @@ def test_inventory_admin_creates_a_tracked_item_orderable_by_default(client, inv
         "unit": "each", "is_serialized": "1"})
     sign = SupplyItem.query.filter_by(item_name="Digital Sign").one()
     assert sign.is_orderable is True and sign.is_serialized is True and not sign.is_expendable
-
-
-def _save(client, item, **fields):
-    data = {"is_serialized": "1", "is_orderable": "1", "pack_size": ""}
-    data.update(fields)
-    return client.post(f"/inv/admin/items/{item.id}", data=data)
-
-
-def test_items_page_saves_pack_size_and_needs_asset_tag(client, inv):
-    login(client, "test:invadmin")
-    _save(client, inv.laptop, pack_size="10", needs_asset_tag="on")
-    item = db.session.get(SupplyItem, inv.laptop.id)
-    assert item.pack_size == 10 and item.needs_asset_tag is True
-
-    _save(client, inv.laptop)
-    db.session.refresh(item)
-    assert item.pack_size is None and item.needs_asset_tag is False
-
-
-def test_items_page_refuses_bad_pack_size_and_saves_nothing(client, inv):
-    login(client, "test:invadmin")
-    for bad in ("0", "-1", "abc", "2.5"):
-        resp = _save(client, inv.laptop, pack_size=bad, needs_asset_tag="on",
-                     barcode="I-9999")
-        assert resp.status_code == 302
-        item = db.session.get(SupplyItem, inv.laptop.id)
-        db.session.refresh(item)
-        assert item.pack_size is None and item.needs_asset_tag is False
-        assert item.barcode is None
-    with client.session_transaction() as sess:
-        flashes = [m for _, m in sess["_flashes"]]
-    assert any("pack size" in m.lower() for m in flashes)
 
 
 def test_admin_sets_gear_kind_and_model_defaults(client, inv):
@@ -150,3 +99,37 @@ def test_items_page_words(client, inv):
     assert "Asset type" in page and "Unit of measure" in page
     assert "Add an item" in page
     assert "Gear kind" not in page and "deploy-only" not in page
+
+
+def test_old_supply_edit_url_redirects_to_the_item_page(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    resp = client.get(f"/admin/config/supply-items/{inv.pens.id}")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith(f"/inv/admin/items/{inv.pens.id}")
+
+
+def test_old_supply_new_url_redirects_to_the_add_item_form(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    resp = client.get("/admin/config/supply-items/new")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/inv/admin/items#add-item")
+
+
+def test_old_supply_editor_posts_are_gone(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    assert client.post(f"/admin/config/supply-items/{inv.pens.id}", data={}).status_code == 405
+    assert client.post("/admin/config/supply-items/new", data={}).status_code == 405
+
+
+def test_old_supply_edit_url_still_needs_supply_admin(client, inv, supply_admin):
+    login(client, "test:invadmin")
+    assert client.get(f"/admin/config/supply-items/{inv.pens.id}").status_code in (302, 403)
+    assert not client.get(f"/admin/config/supply-items/{inv.pens.id}").headers.get(
+        "Location", "").endswith(f"/inv/admin/items/{inv.pens.id}")
+
+
+def test_supply_list_links_rows_to_the_item_page(client, inv, supply_admin):
+    login(client, "test:supplyadmin")
+    page = client.get("/admin/config/supply-items/").get_data(as_text=True)
+    assert f"/inv/admin/items/{inv.pens.id}" in page
+    assert "/inv/admin/items#add-item" in page

@@ -8,12 +8,11 @@ from flask import abort, flash, redirect, request, url_for
 from sqlalchemy.orm import joinedload
 
 from app import db
-from app.inventory.codes import normalize_code
 from app.inventory.ledger import InventoryError
 from app.inventory.unit_fields import active_fields, set_model_default
 from app.inventory.item_rights import item_rights
 from app.models import (
-    CONFIG_AUDIT_CREATE, InvGearKind, InvStock, InvUnit, SupplyCategory, SupplyItem,
+    CONFIG_AUDIT_CREATE, InvGearKind, SupplyCategory, SupplyItem,
 )
 
 from app.routes import get_user_ctx
@@ -62,40 +61,6 @@ def _parse_pack_size(raw: str | None) -> tuple[int | None, str | None]:
     if not text.isascii() or not text.isdigit() or not 0 < int(text) <= 2_147_483_647:
         return None, "A pack size is blank or a whole number above zero."
     return int(text), None
-
-
-@inventory_bp.post("/admin/items/<int:item_id>")
-@require_inventory_admin
-def update_item(item_id: int):
-    item = db.session.get(SupplyItem, item_id)
-    if item is None:
-        abort(404)
-    serialized = request.form.get("is_serialized") == "1"
-    barcode = normalize_code(request.form.get("barcode")) or None
-
-    if serialized and not item.is_serialized and db.session.query(InvStock).filter(
-            InvStock.item_id == item.id, InvStock.quantity > 0).first():
-        flash(f"{item.item_name} has counted stock. Count it to zero before "
-              f"tracking each piece as an asset.", "error")
-        return redirect(url_for("inventory.items"))
-    if not serialized and item.is_serialized and db.session.query(InvUnit).filter_by(
-            item_id=item.id).first():
-        flash(f"{item.item_name} has assets and must stay tracked as assets.", "error")
-        return redirect(url_for("inventory.items"))
-    pack_size, error = _parse_pack_size(request.form.get("pack_size"))
-    error = error or _barcode_error(item.id, barcode)
-    if error:
-        flash(error, "error")
-        return redirect(url_for("inventory.items"))
-
-    item.is_serialized = serialized
-    item.is_orderable = request.form.get("is_orderable") == "1"
-    item.barcode = barcode
-    item.pack_size = pack_size
-    item.needs_asset_tag = bool(request.form.get("needs_asset_tag"))
-    db.session.commit()
-    flash(f"Saved {item.item_name}.", "success")
-    return redirect(url_for("inventory.items"))
 
 
 @inventory_bp.post("/admin/items/new")

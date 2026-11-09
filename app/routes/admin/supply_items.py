@@ -4,7 +4,6 @@ Admin routes for supply item (catalog) management.
 from __future__ import annotations
 
 import json
-from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 from flask import Blueprint, redirect, url_for, request, abort, flash, send_file
@@ -14,17 +13,11 @@ from app import db
 from app.models import (
     SupplyItem,
     SupplyCategory,
-    CONFIG_AUDIT_CREATE,
-    CONFIG_AUDIT_UPDATE,
 )
 from app.routes import h
 from .helpers import (
     require_supply_admin,
     render_supply_admin_page,
-    log_config_change,
-    track_changes,
-    safe_int,
-    safe_int_or_none,
     sort_with_override,
     validate_upload_file,
 )
@@ -52,42 +45,6 @@ def _get_item_or_404(item_id: int) -> SupplyItem:
     if not item:
         abort(404, "Supply item not found")
     return item
-
-
-def _get_form_context():
-    """Get common form context data."""
-    categories = (
-        db.session.query(SupplyCategory)
-        .filter(SupplyCategory.is_active == True)
-        .order_by(*sort_with_override(SupplyCategory))
-        .all()
-    )
-    return {
-        "categories": categories,
-    }
-
-
-def _item_to_dict(item: SupplyItem) -> dict:
-    """Convert supply item to dict for change tracking."""
-    return {
-        "category_id": item.category_id,
-        "item_name": item.item_name,
-        "unit": item.unit,
-        "notes": item.notes,
-        "order_guidance": item.order_guidance,
-        "image_url": item.image_url,
-        "is_active": item.is_active,
-        "is_limited": item.is_limited,
-        "is_popular": item.is_popular,
-        "is_expendable": item.is_expendable,
-        "notes_required": item.notes_required,
-        "internal_type": item.internal_type,
-        "unit_cost_cents": item.unit_cost_cents,
-        "qty_on_hand": item.qty_on_hand,
-        "location_zone": item.location_zone,
-        "bin_location": item.bin_location,
-        "sort_order": item.sort_order,
-    }
 
 
 @supply_items_bp.get("/")
@@ -127,173 +84,16 @@ def list_supply_items():
 @supply_items_bp.get("/new")
 @require_supply_admin
 def new_supply_item():
-    """Show form to create a new supply item."""
-    return render_supply_admin_page(
-        "admin/supply_items/form.html",
-        item=None,
-        **_get_form_context(),
-    )
-
-
-@supply_items_bp.post("/new")
-@require_supply_admin
-def create_supply_item():
-    """Create a new supply item."""
-    item_name = request.form.get("item_name", "").strip()
-    category_id = safe_int_or_none(request.form.get("category_id"))
-    unit = request.form.get("unit", "").strip()
-
-    if not item_name or not category_id or not unit:
-        flash("Item name, category, and unit are required.", "error")
-        return redirect(url_for('.new_supply_item'))
-
-    # Parse unit cost (in dollars, convert to cents)
-    unit_cost = request.form.get("unit_cost", "").strip()
-    unit_cost_cents = None
-    if unit_cost:
-        try:
-            unit_cost_cents = int(Decimal(unit_cost) * 100)
-        except (ValueError, InvalidOperation):
-            flash("Invalid unit cost format.", "error")
-            return redirect(url_for('.new_supply_item'))
-
-    item = SupplyItem(
-        category_id=category_id,
-        item_name=item_name,
-        unit=unit,
-        notes=request.form.get("notes", "").strip() or None,
-        order_guidance=request.form.get("order_guidance", "").strip() or None,
-        is_active=bool(request.form.get("is_active")),
-        is_limited=bool(request.form.get("is_limited")),
-        is_popular=bool(request.form.get("is_popular")),
-        is_expendable=bool(request.form.get("is_expendable")),
-        notes_required=bool(request.form.get("notes_required")),
-        internal_type=request.form.get("internal_type", "").strip() or None,
-        unit_cost_cents=unit_cost_cents,
-        qty_on_hand=safe_int_or_none(request.form.get("qty_on_hand")),
-        location_zone=request.form.get("location_zone", "").strip() or None,
-        bin_location=request.form.get("bin_location", "").strip() or None,
-        sort_order=safe_int_or_none(request.form.get("sort_order")),
-        created_by_user_id=h.get_active_user_id(),
-    )
-    db.session.add(item)
-    db.session.flush()
-
-    # Image handling — lazy import so admin blueprint import order stays inert
-    from app.services.images import (
-        process_and_upload_item_image, delete_item_image,
-        ImageValidationError, ImageStorageError,
-    )
-
-    old_image_url = item.image_url
-    image_file = request.files.get("image_file")
-    if request.form.get("remove_image"):
-        if old_image_url:
-            delete_item_image(old_image_url)
-        item.image_url = None
-    elif image_file and image_file.filename:
-        try:
-            item.image_url = process_and_upload_item_image(image_file, item.id)
-            if old_image_url and old_image_url != item.image_url:
-                delete_item_image(old_image_url)
-        except (ImageValidationError, ImageStorageError) as exc:
-            flash(f"Image not saved: {exc}", "error")
-            # Item itself still saves — images are never load-bearing.
-
-    log_config_change("supply_item", item.id, CONFIG_AUDIT_CREATE, _item_to_dict(item))
-    db.session.commit()
-
-    flash(f"Supply item '{item_name}' created.", "success")
-    return redirect(url_for('.list_supply_items'))
+    """Send the old new-item form to the Add an item form on the Items list."""
+    return redirect(url_for("inventory.items", _anchor="add-item"))
 
 
 @supply_items_bp.get("/<int:item_id>")
 @require_supply_admin
 def edit_supply_item(item_id: int):
-    """Show form to edit a supply item."""
-    item = _get_item_or_404(item_id)
-    return render_supply_admin_page(
-        "admin/supply_items/form.html",
-        item=item,
-        **_get_form_context(),
-    )
-
-
-@supply_items_bp.post("/<int:item_id>")
-@require_supply_admin
-def update_supply_item(item_id: int):
-    """Update a supply item."""
-    item = _get_item_or_404(item_id)
-    old_state = _item_to_dict(item)
-
-    item_name = request.form.get("item_name", "").strip()
-    category_id = safe_int_or_none(request.form.get("category_id"))
-    unit = request.form.get("unit", "").strip()
-
-    if not item_name or not category_id or not unit:
-        flash("Item name, category, and unit are required.", "error")
-        return redirect(url_for('.edit_supply_item', item_id=item_id))
-
-    # Parse unit cost (in dollars, convert to cents)
-    unit_cost = request.form.get("unit_cost", "").strip()
-    unit_cost_cents = None
-    if unit_cost:
-        try:
-            unit_cost_cents = int(Decimal(unit_cost) * 100)
-        except (ValueError, InvalidOperation):
-            flash("Invalid unit cost format.", "error")
-            return redirect(url_for('.edit_supply_item', item_id=item_id))
-
-    item.category_id = category_id
-    item.item_name = item_name
-    item.unit = unit
-    item.notes = request.form.get("notes", "").strip() or None
-    item.order_guidance = request.form.get("order_guidance", "").strip() or None
-    # image_url is managed exclusively by the photo upload / remove handling
-    # below — there is no direct form input for it.
-    item.is_active = bool(request.form.get("is_active"))
-    item.is_limited = bool(request.form.get("is_limited"))
-    item.is_popular = bool(request.form.get("is_popular"))
-    item.is_expendable = bool(request.form.get("is_expendable"))
-    item.notes_required = bool(request.form.get("notes_required"))
-    item.internal_type = request.form.get("internal_type", "").strip() or None
-    item.unit_cost_cents = unit_cost_cents
-    item.qty_on_hand = safe_int_or_none(request.form.get("qty_on_hand"))
-    item.location_zone = request.form.get("location_zone", "").strip() or None
-    item.bin_location = request.form.get("bin_location", "").strip() or None
-    item.sort_order = safe_int_or_none(request.form.get("sort_order"))
-    item.updated_by_user_id = h.get_active_user_id()
-
-    # Image handling — lazy import so admin blueprint import order stays inert
-    from app.services.images import (
-        process_and_upload_item_image, delete_item_image,
-        ImageValidationError, ImageStorageError,
-    )
-
-    old_image_url = item.image_url
-    image_file = request.files.get("image_file")
-    if request.form.get("remove_image"):
-        if old_image_url:
-            delete_item_image(old_image_url)
-        item.image_url = None
-    elif image_file and image_file.filename:
-        try:
-            item.image_url = process_and_upload_item_image(image_file, item.id)
-            if old_image_url and old_image_url != item.image_url:
-                delete_item_image(old_image_url)
-        except (ImageValidationError, ImageStorageError) as exc:
-            flash(f"Image not saved: {exc}", "error")
-            # Item itself still saves — images are never load-bearing.
-
-    new_state = _item_to_dict(item)
-    changes = track_changes(old_state, new_state)
-    if changes:
-        log_config_change("supply_item", item.id, CONFIG_AUDIT_UPDATE, changes)
-
-    db.session.commit()
-
-    flash(f"Supply item '{item_name}' updated.", "success")
-    return redirect(url_for('.list_supply_items'))
+    """Send the old edit form to the item page."""
+    _get_item_or_404(item_id)
+    return redirect(url_for("inventory.item_page", item_id=item_id))
 
 
 # ============================================================

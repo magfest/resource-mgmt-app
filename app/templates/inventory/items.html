@@ -9,7 +9,7 @@
   {% else %}<a href="{{ url_for('inventory.items', show='inactive') }}">Show inactive items</a>{% endif %}
 </div>
 {% if rights.can_edit_shared %}
-<form method="post" action="{{ url_for('inventory.create_deploy_item') }}" class="card mb-16">
+<form id="add-item" method="post" action="{{ url_for('inventory.create_deploy_item') }}" class="card mb-16">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <strong>Add an item</strong>
   <div class="row">

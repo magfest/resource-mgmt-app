@@ -9,7 +9,7 @@
 </div>
 
 <div class="row mb-16">
-  <a class="btn btn-primary" href="{{ url_for('admin_config.supply_items.new_supply_item') }}">+ New Item</a>
+  <a class="btn btn-primary" href="{{ url_for('inventory.items', _anchor='add-item') }}">+ New Item</a>
   <a class="btn" href="{{ url_for('admin_config.supply_categories.list_supply_categories') }}">Manage Categories</a>
   <span class="muted small">Show:</span>
   <a class="btn {% if orderable_filter is none %}btn-primary{% endif %}" href="{{ url_for('admin_config.supply_items.list_supply_items') }}">All</a>
@@ -42,7 +42,7 @@
             {% endif %}
           </td>
           <td>
-            {{ item.item_name }}
+            <a href="{{ url_for('inventory.item_page', item_id=item.id) }}">{{ item.item_name }}</a>
             {% if item.is_popular %}<span class="pill" style="background: #fef3c7; color: #92400e; font-size: 0.7rem;">Popular</span>{% endif %}
             {% if not item.is_orderable %}<span class="pill pill-info" style="font-size: 0.7rem;">Not orderable</span>{% endif %}
             {% if item.is_limited %}<span class="pill" style="background: #fee2e2; color: #b91c1c; font-size: 0.7rem;">Limited</span>{% endif %}
@@ -59,7 +59,7 @@
             {% endif %}
           </td>
           <td>
-            <a class="btn" href="{{ url_for('admin_config.supply_items.edit_supply_item', item_id=item.id) }}">Edit</a>
+            <a class="btn" href="{{ url_for('inventory.item_page', item_id=item.id) }}">Edit</a>
           </td>
         </tr>
       {% endfor %}
