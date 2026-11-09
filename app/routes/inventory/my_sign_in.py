@@ -16,6 +16,8 @@ from .helpers import render_inventory_page, require_inventory_operator
 def log_sign_in_event(target: User, change: str) -> None:
     """Record a sign-in credential change; `change` is pin_issued, pin_reset or card_printed.
 
+    Self-service logs pin_issued; pin_reset is the super-admin action.
+
     The details hold no PIN, card value or email.
     """
     log_security_event(EVENT_USER_MODIFY, category=CATEGORY_ADMIN, details={
@@ -49,9 +51,8 @@ def my_sign_in():
 @require_inventory_operator
 def my_new_pin():
     user = _me()
-    had_pin = _status(user)["pin_day"] is not None
     pin = new_pin(user)
-    log_sign_in_event(user, "pin_reset" if had_pin else "pin_issued")
+    log_sign_in_event(user, "pin_issued")
     db.session.commit()
     # The PIN is stored only as a digest, so this response is the one chance to show it.
     response = make_response(render_inventory_page(

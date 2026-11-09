@@ -73,12 +73,12 @@ def test_print_my_card_without_a_printer_flashes_the_reason(client, inv):
     assert "Your card is printing" not in r.get_data(as_text=True)
 
 
-def test_second_pin_is_logged_as_a_reset(client, inv):
+def test_every_self_service_pin_is_logged_as_issued(client, inv):
     login(client, "test:operator")
     client.post("/inv/me/sign-in/pin")
     client.post("/inv/me/sign-in/pin")
     changes = [json.loads(x.details)["change"] for x in _sign_in_rows()]
-    assert changes == ["pin_issued", "pin_reset"]
+    assert changes == ["pin_issued", "pin_issued"]
 
 
 def test_audit_holds_no_values(client, inv):
