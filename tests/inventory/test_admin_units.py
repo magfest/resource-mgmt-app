@@ -1368,3 +1368,10 @@ def test_assets_list_and_page_use_the_new_words(client, unit):
     assert "<th>Item</th>" in listing
     page = client.get(f"/inv/admin/units/{unit.id}?tab=edit").get_data(as_text=True)
     assert "<h2>Numbers</h2>" in page and "Change item" in page and "Add a number" in page
+
+
+def test_add_number_with_an_unknown_kind_says_number(client, unit):
+    login(client, "test:invadmin")
+    resp = client.post(f"/inv/admin/units/{unit.id}/identifiers",
+                       data={"kind": "BOGUS", "value": "X1"}, follow_redirects=True)
+    assert "Pick what kind of number this is." in resp.get_data(as_text=True)

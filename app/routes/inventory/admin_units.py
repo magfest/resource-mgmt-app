@@ -382,7 +382,7 @@ def unit_add_identifier(unit_id: int):
 
     def add():
         if kind not in KIND_WORDS:
-            raise InventoryError("Pick what kind of code this is.")
+            raise InventoryError("Pick what kind of number this is.")
         if kind in NUMBER_KINDS:
             # An owned asset keeps one number, so a new asset tag or label retires the old one.
             replace_number(unit, kind, value, admin_actor())
