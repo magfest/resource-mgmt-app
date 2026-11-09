@@ -35,7 +35,7 @@ def _post(client, **body):
 @pytest.fixture
 def device(client, inv):
     dev = enrolled_client(client, station_code="COUNT")
-    start_shift(dev, "Sam")
+    start_shift(dev, "test:operator")
     db.session.commit()
     return dev
 

@@ -42,7 +42,7 @@ def _printer(seen=True):
 def rc(client, inv):
     _printer()
     device = enrolled_client(client, station_code="RECEIVE")
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     db.session.commit()
     return inv
 
@@ -276,7 +276,7 @@ def test_undo_applies_only_to_the_last_unit_and_only_once(client, rc):
 def test_undo_refuses_a_unit_from_another_shift(client, rc):
     a = _post(client, rc, tag="FEST00001")
     device = InvDevice.query.filter_by(station_code="RECEIVE").one()
-    start_shift(device, "Alex")
+    start_shift(device, "test:invadmin")
     db.session.commit()
     r = client.post(RECEIVE + "/undo", json={"client_request_id": _rid(),
                                              "unit_id": a["unit_id"]}).get_json()
@@ -285,7 +285,7 @@ def test_undo_refuses_a_unit_from_another_shift(client, rc):
 
 def test_receive_works_with_the_print_station_down(client, inv):
     _printer(seen=False)
-    start_shift(enrolled_client(client, station_code="RECEIVE"), "Sam")
+    start_shift(enrolled_client(client, station_code="RECEIVE"), "test:operator")
     db.session.commit()
     r = _post(client, inv, tag="FEST00001")
     assert r["ok"] is True and r["station_seen"] is False and r["waiting"] == 1
@@ -293,7 +293,7 @@ def test_receive_works_with_the_print_station_down(client, inv):
 
 
 def test_a_missing_printer_route_refuses_the_whole_receive(client, inv):
-    start_shift(enrolled_client(client, station_code="RECEIVE"), "Sam")
+    start_shift(enrolled_client(client, station_code="RECEIVE"), "test:operator")
     db.session.commit()
     r = _post(client, inv, serial="S1")
     assert r["ok"] is False and "No printer" in r["message"]
@@ -373,7 +373,7 @@ def test_the_page_needs_the_receive_station_and_a_shift(client, inv):
     assert client.get("/inv/scan/receive").status_code == 302
     assert "/scan/who" in client.get("/inv/scan/receive").headers["Location"]
     device = InvDevice.query.one()
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     db.session.commit()
     assert client.get("/inv/scan/").headers["Location"].endswith("/inv/scan/receive")
     page = client.get("/inv/scan/receive")

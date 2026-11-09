@@ -8,7 +8,7 @@ from app.inventory.checks import NO_EVENT
 from app.inventory.codes import normalize_code
 from app.inventory.devices import COOKIE_MAX_AGE, COOKIE_NAME, redeem_enroll_code
 from app.inventory.ledger import InventoryError
-from app.inventory.shifts import current_shift, recent_names
+from app.inventory.shifts import current_shift
 from app.models import InvContainer
 from app.models.constants import (
     INV_STATION_COUNT, INV_STATION_LOOKUP, INV_STATION_NAMES, INV_STATION_PRINT,
@@ -135,12 +135,11 @@ def scan_unit_page():
 @inventory_bp.get("/scan/who")
 @require_scanner
 def scan_who():
-    """Ask who is scanning. Never errors; an operator has no name to pick."""
+    """Ask who is scanning. Never errors; a signed-in operator needs no shift."""
     principal = g.scan_principal
-    names = recent_names(principal.device) if principal.is_device else []
     who = who_text()
-    db.session.commit()  # keeps an IDLE close that who_text made
-    return render_template("inventory/scan/who.html", names=names,
+    db.session.commit()  # keeps an IDLE or REVOKED close that who_text made
+    return render_template("inventory/scan/who.html",
                            is_device=principal.is_device, who=who)
 
 

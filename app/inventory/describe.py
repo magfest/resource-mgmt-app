@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app import db
+from app.inventory.people import shift_person
 from app.models import InvMovement, User
 from app.models.constants import (
     INV_ACTION_ADD, INV_ACTION_ADJUST, INV_ACTION_DISCARD, INV_IDENT_FESTOPS_LABEL,
@@ -68,12 +69,13 @@ def describe_movement(m: InvMovement) -> str:
 
 
 def describe_actor(m: InvMovement) -> str:
+    """Name who made the movement, then the scanner it was made on."""
+    parts = []
     if m.performed_by_user_id:
         user = db.session.get(User, m.performed_by_user_id)
-        return user.display_name if user else m.performed_by_user_id
-    parts = []
-    if m.shift is not None:
-        parts.append(m.shift.person_name)
+        parts.append(user.display_name if user else m.performed_by_user_id)
+    elif m.shift is not None:
+        parts.append(shift_person(m.shift))
     if m.device is not None:
         parts.append(f"on {m.device.name}")
     return " ".join(parts) or "unknown"

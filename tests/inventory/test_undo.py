@@ -44,7 +44,7 @@ def _rid():
 @pytest.fixture
 def shift(client, inv):
     device = enrolled_client(client, station_code="UNIT")
-    shift = start_shift(device, "Sam")
+    shift = start_shift(device, "test:operator")
     db.session.commit()
     return shift
 
@@ -601,7 +601,7 @@ def test_the_movements_log_names_an_undo(inv, shift):
 def test_the_finish_payload_names_a_retired_unit_by_its_number(client, inv, tv_checklist, event):
     t = tv_checklist
     enrolled_client(client, station_code="UNIT")
-    start_shift(db.session.query(__import__("app.models", fromlist=["x"]).InvDevice).one(), "Sam")
+    start_shift(db.session.query(__import__("app.models", fromlist=["x"]).InvDevice).one(), "test:operator")
     db.session.commit()
     opened = client.post("/inv/scan/api/unit/scan",
                          json={"client_request_id": _rid(), "code": "TECH00412"}).get_json()

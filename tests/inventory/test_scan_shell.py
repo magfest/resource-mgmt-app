@@ -34,7 +34,7 @@ def _event(default=True):
 def test_retry_writes_once(client, inv):
     enrolled_client(client)
     from app.models import InvDevice
-    start_shift(InvDevice.query.one(), "Sam")
+    start_shift(InvDevice.query.one(), "test:operator")
     body = {"client_request_id": "r-1", "label_code": allocate("C", 1)[0],
             "kind_id": inv.kinds["BIN"].id}
     db.session.commit()
@@ -49,7 +49,7 @@ def test_container_is_created_under_the_home_container(client, inv):
     code = allocate("C", 2)[1]
     device = enrolled_client(client, station_code="COUNT")
     device.home_container_id = home.id
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     db.session.commit()
     r = client.post("/inv/scan/api/container", json={
         "client_request_id": "r-2", "label_code": code, "kind_id": inv.kinds["BIN"].id}).get_json()
@@ -63,14 +63,14 @@ def test_a_write_without_a_name_is_refused_and_not_stored(client, inv):
     db.session.commit()
     r = client.post("/inv/scan/api/container", json={
         "client_request_id": "r-3", "label_code": code, "kind_id": inv.kinds["BIN"].id}).get_json()
-    assert r["ok"] is False and "name" in r["message"]
+    assert r["ok"] is False and r["need_name"] and r["message"] == "Sign in first."
     assert InvScanRequest.query.count() == 0 and InvContainer.query.count() == 0
 
 
 def test_a_label_never_issued_is_refused(client, inv):
     enrolled_client(client, station_code="COUNT")
     from app.models import InvDevice
-    start_shift(InvDevice.query.one(), "Sam")
+    start_shift(InvDevice.query.one(), "test:operator")
     db.session.commit()
     r = client.post("/inv/scan/api/container", json={
         "client_request_id": "r-4", "label_code": "C-0099",
@@ -128,7 +128,7 @@ def test_resolve_caps_candidates_at_ten(client, inv):
 def test_a_non_string_label_code_is_a_normal_refusal(client, inv):
     from app.models import InvDevice
     enrolled_client(client, station_code="COUNT")
-    start_shift(InvDevice.query.one(), "Sam")
+    start_shift(InvDevice.query.one(), "test:operator")
     db.session.commit()
     for bad in (123, ["C-0001"], {"a": 1}):
         r = client.post("/inv/scan/api/container", json={
@@ -159,7 +159,7 @@ def test_run_once_refuses_a_missing_request_id(app, inv):
 def test_the_container_route_is_csrf_exempt_with_csrf_on(app, client, inv):
     enrolled_client(client, station_code="COUNT")
     from app.models import InvDevice
-    start_shift(InvDevice.query.one(), "Sam")
+    start_shift(InvDevice.query.one(), "test:operator")
     code = allocate("C", 1)[0]
     db.session.commit()
     app.config["WTF_CSRF_ENABLED"] = True
@@ -640,7 +640,7 @@ def test_unit_device_opens_the_unit_station(client, inv):
         sess.clear()
     assert client.post("/inv/scan/enroll", data={"code": raw}).status_code == 302
     assert "/scan/who" in client.get("/inv/scan/").headers["Location"]
-    start_shift(InvDevice.query.filter_by(name="Unit 1").one(), "Sam")
+    start_shift(InvDevice.query.filter_by(name="Unit 1").one(), "test:operator")
     db.session.commit()
     page = client.get("/inv/scan/", follow_redirects=True)
     assert b"station_unit.js" in page.data and b'data-station="UNIT"' in page.data
@@ -658,7 +658,7 @@ def test_unit_station_page_stops_when_the_device_has_no_home(client, inv):
         sess.clear()
     client.post("/inv/scan/enroll", data={"code": raw})
     device = InvDevice.query.filter_by(name="Unit 2").one()
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     device.home_container_id = None
     db.session.commit()
     page = client.get("/inv/scan/unit")

@@ -3,10 +3,22 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from sqlalchemy.orm import joinedload
+
 from app import db
 from app.models import InvShift, User
 
 _SHIFT_PREFIX = "shift:"
+
+
+def shift_person(shift: InvShift) -> str:
+    """Name the person on a shift: the user, else the typed name, else "Someone".
+
+    Shifts written before sign-in have only a typed person_name and no user.
+    """
+    if shift.user is not None:
+        return shift.user.display_name or shift.user.id
+    return shift.person_name or "Someone"
 
 
 def _shift_number(raw) -> int | None:
@@ -30,10 +42,11 @@ def names_for(user_ids: Iterable[str | None]) -> dict[str, str]:
             names[user.id] = user.display_name or user.id
     if shift_numbers:
         shifts = {s.id: s for s in db.session.query(InvShift)
+                  .options(joinedload(InvShift.user))
                   .filter(InvShift.id.in_(set(shift_numbers.values())))}
         for raw, number in shift_numbers.items():
             if number in shifts:
-                names[raw] = f"{shifts[number].person_name} (scanner)"
+                names[raw] = f"{shift_person(shifts[number])} (scanner)"
     return names
 
 
@@ -42,5 +55,5 @@ def actor_name(user_id: str | None, shift, names: dict[str, str]) -> str:
     if user_id:
         return names.get(user_id, user_id)
     if shift is not None:
-        return f"{shift.person_name} (scanner)"
+        return f"{shift_person(shift)} (scanner)"
     return "Someone"

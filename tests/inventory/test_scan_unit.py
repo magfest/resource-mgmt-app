@@ -73,7 +73,7 @@ def _unit_client(client, home_container):
     with client.session_transaction() as sess:
         sess.clear()
     assert client.post("/inv/scan/enroll", data={"code": raw}).status_code == 302
-    start_shift(InvDevice.query.filter_by(name="Unit 1").one(), "Sam")
+    start_shift(InvDevice.query.filter_by(name="Unit 1").one(), "test:operator")
     db.session.commit()
     return client
 
@@ -116,7 +116,7 @@ def test_every_route_but_keepalive_refuses_a_unit_device_with_no_home(
     enrolled_client(client, station_code="LOOKUP")
     device = InvDevice.query.one()
     device.station_code = "UNIT"
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     db.session.commit()
     for path, body in [("scan", {"code": "X"}), ("candidates", {"digits": "3"}),
                        ("link", {"unit_id": 1, "tag": "FEST1"}),
@@ -313,7 +313,7 @@ def test_give_number_adds_a_u_label_and_records_who(unit_client, two_named_units
     answer = post(unit_client, "give-number", {"unit_id": a.id}).json
     assert answer["ok"] and answer["code"].startswith("U-") and answer["check_id"]
     row = ConfigAuditEvent.query.filter_by(action="ADD_CODE", entity_id=str(a.id)).one()
-    assert row.created_by_user_id.startswith("shift:")
+    assert row.created_by_user_id == "test:operator"
     again = post(unit_client, "give-number", {"unit_id": a.id}).json
     assert again["message"] == "This asset already has a number."
 
@@ -478,7 +478,7 @@ def test_a_new_shift_sets_aside_the_ended_shifts_open_check(unit_client, inv):
     _tagged(inv, "TV-X-063", "FEST91063")
     _tagged(inv, "TV-X-064", "FEST91064")
     old = post(unit_client, "scan", {"code": "FEST91063"}).json
-    start_shift(InvDevice.query.filter_by(name="Unit 1").one(), "Alex")
+    start_shift(InvDevice.query.filter_by(name="Unit 1").one(), "test:invadmin")
     db.session.commit()
     new = post(unit_client, "scan", {"code": "FEST91064"}).json
     assert new["ok"] is True and new["check_id"] != old["check_id"]

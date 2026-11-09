@@ -35,7 +35,12 @@ from app.inventory.resolver import (
     Resolution, resolve,
 )
 from app.inventory.zpl import can_print_code
+from app.inventory.people import shift_person
 from app.inventory.shifts import current_shift, end_shift, start_shift, touch
+from app.inventory.sign_in import (
+    can_sign_in, clear_pin_failures, keypad_locked, record_pin_failure, user_for_card,
+    user_for_pin,
+)
 from app.models import InvCheck, InvContainerKind, InvCount, InvUnit, SupplyItem
 from app.models.constants import INV_SHIFT_END_ENDED, INV_STATION_COUNT, INV_STATION_LOOKUP
 
@@ -118,18 +123,59 @@ def scan_undo():
     return jsonify(run_once(data.get("client_request_id"), undo))
 
 
-@inventory_bp.post("/scan/api/shift")
+def _first_word(name: str) -> str:
+    words = name.split()
+    return words[0] if words else name
+
+
+def _given(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+@inventory_bp.post("/scan/api/sign-in")
 @api
-def scan_shift_start():
+def scan_sign_in():
+    """Start a shift for the owner of a scanned card or a typed PIN.
+
+    Refusals are returned, not raised: the api wrapper rolls back a raised
+    refusal, and a wrong PIN and an idle close must both be kept.
+    """
     principal = g.scan_principal
     if not principal.is_device:
-        raise InventoryError("Signed-in operators do not pick a name.")
+        raise InventoryError("You are signed in to RMS already.")
+    device = principal.device
     data = request.get_json(silent=True)
-    name = data.get("person_name") if isinstance(data, dict) else None
-    if not isinstance(name, str):
-        raise InventoryError("Type a name, 1 to 64 characters.")
-    shift = start_shift(principal.device, name)
-    return jsonify(ok=True, person_name=shift.person_name)
+    data = data if isinstance(data, dict) else {}
+    card, pin = data.get("card"), data.get("pin")
+    if _given(card) == _given(pin):
+        return jsonify(ok=False, message="Scan your card or type your PIN.")
+    # The idle close runs before the switch prompt; an idle scanner never asks to switch.
+    current = current_shift(device)
+    if _given(pin):
+        if keypad_locked(device):
+            return jsonify(ok=False, locked=True,
+                           message="Too many wrong PINs. Scan your card, or wait 5 minutes.")
+        user = user_for_pin(pin)
+        if user is None:
+            record_pin_failure(device)
+            return jsonify(ok=False, message="That PIN did not match. Try again.")
+    else:
+        user = user_for_card(card)
+        if user is None:
+            return jsonify(ok=False, message="This card no longer works. Ask a lead for a new one.")
+    if not can_sign_in(user):
+        return jsonify(ok=False, message="This account cannot use scanners. Ask a lead.")
+    name = user.display_name or user.id
+    if current is not None and current.user_id == user.id:
+        clear_pin_failures(device)
+        return jsonify(ok=True, already=True, name=name)
+    if current is not None and data.get("switch") is not True:
+        return jsonify(ok=False, switch_to=name, switch_first=_first_word(name),
+                       current_first=_first_word(shift_person(current)),
+                       message=f"This is {name}'s card.")
+    start_shift(device, user.id)
+    clear_pin_failures(device)
+    return jsonify(ok=True, name=name)
 
 
 @inventory_bp.post("/scan/api/shift/end")

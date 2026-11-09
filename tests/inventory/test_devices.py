@@ -299,14 +299,14 @@ def _printer(device, name="Zebra 1"):
 
 
 def test_row_shows_who_is_signed_in(scanner):
-    start_shift(scanner, "Robin Test", now=NOW)
+    start_shift(scanner, "test:operator", now=NOW)
     row = _row(scanner)
-    assert row["person"] == "Robin Test" and row["stale"] is False
+    assert row["person"] == "Operator" and row["stale"] is False
 
 
 def test_nobody_signed_in_and_idle_shift_is_not_open(scanner):
     assert _row(scanner)["person"] is None
-    start_shift(scanner, "Robin Test", now=NOW - timedelta(minutes=30))
+    start_shift(scanner, "test:operator", now=NOW - timedelta(minutes=30))
     assert _row(scanner)["person"] is None
 
 
@@ -355,19 +355,19 @@ def test_page_says_nobody_signed_in(app, scanner):
 
 def test_since_time_is_local(scanner):
     now = datetime(2026, 12, 7, 15, 10)
-    start_shift(scanner, "Robin Test", now=datetime(2026, 12, 7, 15, 5))
+    start_shift(scanner, "test:operator", now=datetime(2026, 12, 7, 15, 5))
     scanner.last_seen_at = now
     assert _row(scanner, now)["since"] == "10:05"
 
 
 def test_page_shows_who_and_since(app, scanner):
-    start_shift(scanner, "Robin Test")
+    start_shift(scanner, "test:operator")
     scanner.last_seen_at = datetime.utcnow()
     db.session.commit()
     admin = app.test_client()
     login(admin, "test:invadmin")
     page = admin.get("/inv/admin/devices").get_data(as_text=True)
-    assert "Robin Test, since " in page and "just now" in page
+    assert "Operator, since " in page and "just now" in page
 
 
 def test_print_station_lists_its_printer(inv):
@@ -447,7 +447,7 @@ def test_page_queries_do_not_grow_with_devices(app, inv):
             station.last_seen_at = datetime.utcnow()
             _printer(station, f"Zebra {i}-{station.id}")
             scanner, _ = enroll_device(f"S {station.id}", "test:invadmin")
-            start_shift(scanner, "Robin Test")
+            start_shift(scanner, "test:operator")
         db.session.commit()
 
     add(1)

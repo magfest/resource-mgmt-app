@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 from app import db
 from app.inventory.devices import create_enroll_code, revoke_device, set_station
 from app.inventory.ledger import InventoryError
+from app.inventory.people import shift_person
 from app.inventory.printing import STATION_SEEN_WITHIN, local_clock, local_stamp
 from app.inventory.shifts import IDLE_LIMIT
 from app.models import InvDevice, InvPrinter, InvPrintJob, InvShift
@@ -53,8 +54,8 @@ def device_rows(now: datetime | None = None) -> list[dict]:
         .order_by(InvDevice.revoked_at.isnot(None), InvDevice.name).all()
     # Ascending id, so the newest open shift per device wins, as in `_open_shift`.
     shifts = {}
-    for shift in db.session.query(InvShift).filter(InvShift.ended_at.is_(None)) \
-            .order_by(InvShift.id):
+    for shift in db.session.query(InvShift).options(joinedload(InvShift.user)) \
+            .filter(InvShift.ended_at.is_(None)).order_by(InvShift.id):
         if now - shift.last_activity_at <= IDLE_LIMIT:
             shifts[shift.device_id] = shift
         else:
@@ -80,7 +81,7 @@ def device_rows(now: datetime | None = None) -> list[dict]:
         if is_print:
             person, since = "Print station", None
         elif shift is not None:
-            person, since = shift.person_name, local_clock(shift.started_at)
+            person, since = shift_person(shift), local_clock(shift.started_at)
         else:
             person, since = None, None
         rows.append({

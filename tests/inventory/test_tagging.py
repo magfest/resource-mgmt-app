@@ -62,7 +62,7 @@ def test_link_attaches_the_tag_prints_and_audits(inv, printer):
 def test_audit_names_the_shift(inv, printer):
     client_device = enroll_device("Tag PC", "test:invadmin", station_code="UNIT",
                                   home_container=make_container(inv, "LOC-T", kind="LOCATION"))[0]
-    shift = start_shift(client_device, "Sam")
+    shift = start_shift(client_device, "test:operator")
     unit = _named(inv)
     link_tag(unit.id, "FEST10001", Actor(shift_id=shift.id, device_id=client_device.id))
     db.session.commit()
@@ -126,13 +126,13 @@ def test_unit_page_shows_the_shift_as_a_scanner(client, inv, printer):
     from tests.inventory.helpers import login
     device = enroll_device("Unit PC", "test:invadmin", station_code="UNIT",
                            home_container=make_container(inv, "LOC-U", kind="LOCATION"))[0]
-    shift = start_shift(device, "Sam")
+    shift = start_shift(device, "test:operator")
     unit = _named(inv)
     link_tag(unit.id, "FEST10001", Actor(shift_id=shift.id, device_id=device.id))
     db.session.commit()
     login(client, "test:invadmin")
     page = client.get(f"/inv/admin/units/{unit.id}").get_data(as_text=True)
-    assert "Sam (scanner)" in page and "FEST10001" in page
+    assert "Operator (scanner)" in page and "FEST10001" in page
 
 
 def test_a_tag_taken_between_check_and_insert_gets_the_receive_refusal(inv, printer, monkeypatch):

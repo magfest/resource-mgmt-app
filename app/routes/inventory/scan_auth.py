@@ -13,6 +13,7 @@ from flask import g, jsonify, redirect, render_template, request, url_for
 from app import csrf, db
 from app.inventory.devices import COOKIE_NAME, device_for_token
 from app.inventory.ledger import Actor
+from app.inventory.people import shift_person
 from app.inventory.shifts import NameNeeded, current_shift
 from app.models import InvDevice
 from app.models.constants import INV_STATION_PRINT
@@ -87,17 +88,19 @@ def require_scanner_or_print(f):
 def scan_actor() -> Actor:
     """The signed-in user, or the open shift on the device. Needs require_scanner.
 
-    Call it before any write: with no open shift it commits the idle close that
-    the lookup made, then raises NameNeeded.
+    A device actor carries the shift's user as well as the shift. Ownership
+    checks compare the shift first, so undo stays per shift. Call it before any
+    write: with no open shift it commits the close that the lookup made, then
+    raises NameNeeded.
     """
     principal = g.scan_principal
     if not principal.is_device:
         return Actor(user_id=principal.user_id)
     shift = current_shift(principal.device)
     if shift is None:
-        db.session.commit()  # keep the IDLE close the lookup just made
-        raise NameNeeded("Pick your name first.")
-    return Actor(shift_id=shift.id, device_id=principal.device.id)
+        db.session.commit()  # keep the IDLE or REVOKED close the lookup just made
+        raise NameNeeded("Sign in first.")
+    return Actor(user_id=shift.user_id, shift_id=shift.id, device_id=principal.device.id)
 
 
 def who_text() -> str:
@@ -107,7 +110,7 @@ def who_text() -> str:
         user = get_user_ctx().user
         return (user.display_name if user else None) or principal.user_id
     shift = current_shift(principal.device)
-    return shift.person_name if shift else "No name picked"
+    return shift_person(shift) if shift else "No name picked"
 
 
 def device_api(f):

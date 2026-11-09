@@ -230,7 +230,7 @@ def ct(client, inv):
     db.session.commit()
     device = enrolled_client(client, station_code="COUNT")
     device.home_container_id = home.id
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     db.session.commit()
     return inv
 
@@ -396,7 +396,7 @@ def test_the_page_needs_the_count_station_and_a_shift(client, inv):
     enrolled_client(client, station_code="COUNT")
     assert "/scan/who" in client.get("/inv/scan/count").headers["Location"]
     device = InvDevice.query.one()
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     db.session.commit()
     assert client.get("/inv/scan/").headers["Location"].endswith("/inv/scan/count")
     page = client.get("/inv/scan/count")

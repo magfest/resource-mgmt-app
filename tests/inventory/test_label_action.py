@@ -46,7 +46,7 @@ def _printer(job_types=(INV_JOB_OWNED_UNIT, INV_JOB_CONTAINER, INV_JOB_ITEM)):
 def lab(client, inv):
     _printer()
     device = enrolled_client(client, station_code="LOOKUP")
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     db.session.commit()
     return inv
 
@@ -223,7 +223,7 @@ def test_new_tag_refuses_a_code_that_is_not_unknown_or_not_printable(client, lab
 def test_a_missing_route_refuses_and_creates_nothing(client, inv):
     _printer(job_types=(INV_JOB_CONTAINER,))
     device = enrolled_client(client, station_code="LOOKUP")
-    start_shift(device, "Sam")
+    start_shift(device, "test:operator")
     db.session.commit()
     body = {"client_request_id": _rid(), "tag": "FEST00005", "item_id": inv.laptop.id}
     answer = client.post(f"{BASE}/label/new-tag", json=body).get_json()
