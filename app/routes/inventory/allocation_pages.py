@@ -71,7 +71,7 @@ def allocation():
     event = pick_event(events, _int(request.args.get("event")))
     options = selections(event.id if event else None)
     selection = _requested_selection(event)
-    ctx = dict(line_label=line_label, events=events, event=event, options=options, selection=selection,
+    ctx = dict(line_label=line_label, unit_code=unit_code, events=events, event=event, options=options, selection=selection,
                can_allocate=can_allocate(get_user_ctx()),
                unallocated_only=request.args.get("show") == "unallocated")
     if event is None or selection is None:

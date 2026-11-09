@@ -43,6 +43,7 @@
     {% if line.state != 'REMOVED' %}
     <div class="muted">Requested {{ line.requested }} · Approved {{ line.approved if line.approved is not none else 'not reviewed' }} · {{ line.allocated }} of {{ line.requested }} allocated</div>
     {% endif %}
+    {% if line.allocations %}<div class="muted">{% for a in line.allocations %}{{ unit_code(a.unit) or 'No number yet' }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
     {% for w in line.warnings %}<span class="pill pill-warning">{{ w }}</span>{% endfor %}
   </li>
   {% else %}
@@ -65,6 +66,7 @@
     <div><strong>{{ row.number or 'No number yet' }}</strong>{% if row.unit.name %} · {{ row.unit.name }}{% endif %}</div>
     {% if row.details %}<div class="muted">{{ row.details }}</div>{% endif %}
     <div>{{ row.text }}</div>
+    {% if row.allocation and row.allocation.work_line_id is none %}<span class="pill pill-warning">Line changed: removed</span>{% endif %}
     {% if row.warning %}<span class="pill pill-warning">{{ row.warning }}</span>{% endif %}
     {% if can_allocate %}
     {% if not row.allocation and not row.warning %}

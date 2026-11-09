@@ -58,7 +58,8 @@ def test_unallocated_only_hides_allocated_assets(client, alloc):
     db.session.commit()
     login(client, "test:admin")
     page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id, show="unallocated")
-    assert "U-0002" in page and "U-0001" not in page
+    assets = page.split("<h2>Assets</h2>")[1]
+    assert "U-0002" in assets and "U-0001" not in assets
     assert "U-0001" in _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
 
 
@@ -141,3 +142,32 @@ def test_a_printer_item_without_supply_lines_shows_only_its_service(client, allo
     supply_line(alloc, alloc.alpha, 1, item=alloc.printer)
     db.session.commit()
     assert ">Test Printer<" in _page(client, alloc, event=alloc.event.id)
+
+
+def test_each_line_lists_the_asset_numbers_allocated_to_it(client, alloc):
+    line = supply_line(alloc, alloc.alpha, 3, notes="one 4K")
+    make_allocation(make_asset(alloc.tv, "U-0001"), line)
+    make_allocation(make_asset(alloc.tv, "U-0002"), line)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
+    block = page.split("<h2>Department lines</h2>")[1].split("<h2>Assets</h2>")[0]
+    assert "U-0001" in block and "U-0002" in block
+
+
+def test_a_removed_line_marks_its_asset_row_and_a_live_line_does_not(client, alloc):
+    gone = supply_line(alloc, alloc.alpha, 2, notes="one 4K")
+    live = supply_line(alloc, alloc.beta, 2)
+    make_allocation(make_asset(alloc.tv, "U-0001"), gone)
+    make_allocation(make_asset(alloc.tv, "U-0002"), live)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
+    assert "Line changed: removed" not in page
+    db.session.delete(gone)
+    db.session.commit()
+    page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
+    assets = page.split("<h2>Assets</h2>")[1]
+    first, second = assets.split("U-0002")
+    assert "Line changed: removed" in first.split("U-0001")[1]
+    assert "Line changed: removed" not in second
