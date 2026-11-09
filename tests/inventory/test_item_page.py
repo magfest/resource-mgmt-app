@@ -441,14 +441,32 @@ def test_pre_allocation_is_refused_on_a_counted_item(client, inv):
     assert db.session.get(SupplyItem, inv.pens.id).needs_pre_allocation is False
 
 
-def test_a_service_needs_the_switch_on(client, alloc):
+def test_unticking_the_switch_clears_the_service(client, alloc):
     login(client, "test:invadmin")
-    resp = _about(client, alloc.tv, is_serialized="1", item_name="Renamed TV",
+    _about(client, alloc.printer, is_serialized="1",
+           techops_service_type_id=str(alloc.printer_service.id))
+    item = db.session.get(SupplyItem, alloc.printer.id)
+    assert item.needs_pre_allocation is False and item.techops_service_type_id is None
+
+
+def test_unticking_the_switch_is_refused_while_allocated(client, alloc):
+    make_allocation(make_asset(alloc.printer, "U-0001"), supply_line(alloc, alloc.alpha, 1))
+    db.session.commit()
+    login(client, "test:invadmin")
+    resp = _about(client, alloc.printer, is_serialized="1",
                   techops_service_type_id=str(alloc.printer_service.id))
     page = client.get(resp.headers["Location"]).get_data(as_text=True)
-    assert "Turn on Needs pre-allocation before picking a TechOps service." in page
-    item = db.session.get(SupplyItem, alloc.tv.id)
-    assert item.item_name == "Test TV" and item.techops_service_type_id is None
+    assert ("Test Printer has 1 allocated asset. Release them before turning off "
+            "pre-allocation or changing its TechOps service.") in page
+    item = db.session.get(SupplyItem, alloc.printer.id)
+    assert item.needs_pre_allocation is True
+    assert item.techops_service_type_id == alloc.printer_service.id
+
+
+def test_supply_admin_cannot_post_only_the_service(client, alloc):
+    login(client, "test:supplyadmin")
+    resp = _about(client, alloc.tv, techops_service_type_id=str(alloc.printer_service.id))
+    assert resp.status_code == 403
 
 
 def test_an_unknown_service_is_refused(client, alloc):

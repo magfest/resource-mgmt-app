@@ -158,16 +158,10 @@ def save_item_about(item_id: int):
     service_id = item.techops_service_type_id
     if rights.can_set_tracked:
         pre_allocation = form.get("needs_pre_allocation") == "1"
-        service_id = form.get("techops_service_type_id", type=int) or None
-        if pre_allocation and not tracked:
-            flash("Needs pre-allocation is only for items tracked as assets.", "error")
-            return back
-        if service_id is not None and not pre_allocation:
-            flash("Turn on Needs pre-allocation before picking a TechOps service.", "error")
-            return back
-        if service_id is not None and db.session.get(TechOpsServiceType, service_id) is None:
-            flash("Pick a TechOps service from the list.", "error")
-            return back
+        # The select still posts its value when the switch is off; the link means
+        # nothing without the switch, so an unticked switch clears it.
+        service_id = (form.get("techops_service_type_id", type=int) or None
+                      if pre_allocation else None)
         if ((item.needs_pre_allocation and not pre_allocation)
                 or service_id != item.techops_service_type_id):
             held = active_allocation_count(item.id)
@@ -176,6 +170,12 @@ def save_item_about(item_id: int):
                       f"Release them before turning off pre-allocation or changing its "
                       f"TechOps service.", "error")
                 return back
+        if pre_allocation and not tracked:
+            flash("Needs pre-allocation is only for items tracked as assets.", "error")
+            return back
+        if service_id is not None and db.session.get(TechOpsServiceType, service_id) is None:
+            flash("Pick a TechOps service from the list.", "error")
+            return back
 
     # Imported here: app.routes.admin.helpers is circular at module level.
     from app.routes.admin.helpers import log_config_change, track_changes
