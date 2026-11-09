@@ -17,7 +17,7 @@
     </label>
     <label>Action
       <select name="action"><option value="">All actions</option>
-        {% for code in actions %}<option value="{{ code }}"{% if args.get('action') == code %} selected{% endif %}>{{ code }}</option>{% endfor %}
+        {% for code in actions %}<option value="{{ code }}"{% if args.get('action') == code %} selected{% endif %}>{{ action_words.get(code, code) }}</option>{% endfor %}
       </select>
     </label>
     <label>Since <input type="date" name="since" value="{{ args.get('since', '') }}"></label>

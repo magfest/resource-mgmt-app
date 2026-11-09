@@ -18,6 +18,8 @@ from .helpers import render_inventory_page, require_inventory_admin
 
 PAGE_SIZE = 200
 ACTIONS = (INV_ACTION_ADD, INV_ACTION_MOVE, INV_ACTION_ADJUST, INV_ACTION_DISCARD)
+ACTION_WORDS = {INV_ACTION_ADD: "Added", INV_ACTION_MOVE: "Moved",
+                INV_ACTION_ADJUST: "Adjusted", INV_ACTION_DISCARD: "Discarded"}
 
 
 @inventory_bp.get("/admin/movements")
@@ -62,4 +64,4 @@ def movements():
         rows=[(m, describe_movement(m), describe_actor(m)) for m in rows],
         items=db.session.query(SupplyItem).filter_by(is_active=True).order_by(SupplyItem.item_name).all(),
         devices=db.session.query(InvDevice).order_by(InvDevice.name).all(),
-        args=request.args, page_size=PAGE_SIZE, actions=ACTIONS)
+        args=request.args, page_size=PAGE_SIZE, actions=ACTIONS, action_words=ACTION_WORDS)
