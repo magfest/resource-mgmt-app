@@ -29,12 +29,8 @@
     if (selects.indexOf(event.target) !== -1) { refresh(); }
   });
 
-  // A removed line shares the "" value with Not allocated, so the marked option wins over the value.
   undo.addEventListener('click', function () {
-    selects.forEach(function (select) {
-      var original = select.querySelector('option[data-was]');
-      if (original) { original.selected = true; } else { select.value = wasOf(select); }
-    });
+    selects.forEach(function (select) { select.value = wasOf(select); });
     refresh();
   });
 

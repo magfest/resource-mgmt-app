@@ -7,7 +7,7 @@ from app.inventory.allocation_view import (
     LINES_ALL, LINES_NOTES, LINES_SHORT, asset_choices, cut_words, departments, filter_lines,
     group_by_department, option_text, short_count, short_order,
 )
-from app.inventory.allocation import RowChange, save_changes
+from app.inventory.allocation import REMOVED_LINE, RowChange, save_changes
 from app.inventory.checks import unit_code, unit_phrase
 from app.inventory.demand import (
     allocation_events, asset_warning, demand_lines, find_selection, line_label, pick_event,
@@ -28,6 +28,11 @@ def _int(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _line_value(raw):
+    """Read a row's form value: a line id, REMOVED_LINE, or None for Not allocated."""
+    return REMOVED_LINE if raw == REMOVED_LINE else _int(raw)
 
 
 def _requested_selection(event):
@@ -75,7 +80,9 @@ def _asset_rows(assets, held, lines, event, choices, picked=None, was=None):
     rows = []
     for unit in assets:
         row = held.get(unit.id)
-        current = row.work_line_id if row else None
+        current = None
+        if row is not None:
+            current = REMOVED_LINE if row.work_line_id is None else row.work_line_id
         if row is None:
             text = "Not allocated"
         else:
@@ -86,7 +93,7 @@ def _asset_rows(assets, held, lines, event, choices, picked=None, was=None):
                 text += f" ({row.event_cycle.code})"
         warning = asset_warning(unit)
         selected = picked[unit.id] if picked and unit.id in picked else current
-        rendered = _int(was[unit.id]) if was and unit.id in was else current
+        rendered = was[unit.id] if was and unit.id in was else current
         # The rules refuse a new allocation for an asset out of service, so it gets no choices.
         extra, seen = [], set() if warning else set(offered)
         for line_id in (current, rendered, selected):
@@ -97,10 +104,7 @@ def _asset_rows(assets, held, lines, event, choices, picked=None, was=None):
                 extra.append((line_id, option_text(live[line_id])))
             elif line_id == current:
                 extra.append((line_id, _held_option(row, event)))
-        # A removed line has no id, so its option shares the "" value of Not allocated.
-        removed = row is not None and current is None
-        if removed:
-            extra.append(("", _held_option(row, event)))
+        removed = current == REMOVED_LINE
         rows.append({"unit": unit, "number": unit_code(unit), "details": label_line(unit),
                      "text": text, "warning": warning, "allocation": row, "removed": removed,
                      "choices": [] if warning else choices, "extra": extra,
@@ -179,9 +183,9 @@ def allocation_save():
     """Apply every changed row in one transaction; a refusal re-renders the page with nothing saved."""
     ids = sorted({key.partition("_")[2] for key in request.form if key.startswith(("was_", "to_"))})
     units = {unit.id: unit for unit in _units_from(ids)}
-    was = {uid: request.form.get(f"was_{uid}", "") for uid in units}
-    picked = {uid: _int(request.form.get(f"to_{uid}")) for uid in units}
-    changes = [RowChange(units[uid], _int(was[uid]), picked[uid]) for uid in units]
+    was = {uid: _line_value(request.form.get(f"was_{uid}")) for uid in units}
+    picked = {uid: _line_value(request.form.get(f"to_{uid}")) for uid in units}
+    changes = [RowChange(units[uid], was[uid], picked[uid]) for uid in units]
     try:
         result = save_changes(changes, get_user_ctx().user_id)
     except InventoryError as error:

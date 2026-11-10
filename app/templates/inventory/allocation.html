@@ -120,16 +120,14 @@
     {% if saving %}
     <input type="hidden" name="was_{{ row.unit.id }}" value="{{ '' if row.was is none else row.was }}">
     <select name="to_{{ row.unit.id }}" aria-label="Line for {{ row.number or row.unit.name or 'this asset' }}">
-      <option value=""{% if row.selected is none and not row.removed %} selected{% endif %}{% if row.was is none and not row.removed %} data-was{% endif %}>Not allocated</option>
+      <option value=""{% if row.selected is none %} selected{% endif %}>Not allocated</option>
       {% for group in row.choices %}
       <optgroup label="{{ group.department }}">
-        {% for id, text in group.options %}<option value="{{ id }}"{% if id == row.selected %} selected{% endif %}{% if id == row.was %} data-was{% endif %}>{{ text }}</option>{% endfor %}
+        {% for id, text in group.options %}<option value="{{ id }}"{% if id == row.selected %} selected{% endif %}>{{ text }}</option>{% endfor %}
       </optgroup>
       {% endfor %}
       {% for value, text in row.extra %}
-      {% set marks = (row.selected is none) if value == '' else (value == row.selected) %}
-      {% set was_mark = (row.was is none) if value == '' else (value == row.was) %}
-      <option value="{{ value }}"{% if marks %} selected{% endif %}{% if was_mark %} data-was{% endif %}>{{ text }}</option>
+      <option value="{{ value }}"{% if value == row.selected %} selected{% endif %}>{{ text }}</option>
       {% endfor %}
     </select>
     {% else %}

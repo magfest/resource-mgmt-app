@@ -348,7 +348,8 @@ def test_a_full_current_line_and_a_removed_line_still_show_as_selected(client, a
     login(client, "test:admin")
     page = _assets_page(client, alloc)
     assert _selected(page, a) == [(str(full.id), "Alpha Team · SUP-1 line 1 · one only")]
-    assert _selected(page, b) == [("", "Line changed: removed · Gone TVs")]
+    assert _selected(page, b) == [("removed", "Line changed: removed · Gone TVs")]
+    assert f'name="was_{b.id}" value="removed"' in page
     assert f'value="{full.id}"' not in _select(page, b)
 
 

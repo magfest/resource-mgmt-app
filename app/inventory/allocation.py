@@ -26,6 +26,8 @@ from app.models.constants import (
 
 NOT_OPEN = "That line is not open for allocation. Reload the page."
 LOST_RACE = "Someone allocated one of those assets just now. Reload and try again."
+# The page's value for an asset held on a deleted line. None already means Not allocated.
+REMOVED_LINE = "removed"
 
 
 def active_allocation_count(item_id: int) -> int:
@@ -212,11 +214,15 @@ def release(unit: InvUnit, user_id: str) -> InvAllocation:
 
 @dataclass(frozen=True)
 class RowChange:
-    """One page row: the line it showed and the line chosen; None means Not allocated."""
+    """One page row: the line it showed and the line chosen.
+
+    A line is a work line id, None for Not allocated, or REMOVED_LINE for a line
+    that was deleted under the asset.
+    """
 
     unit: InvUnit
-    was_line_id: int | None
-    to_line_id: int | None
+    was_line_id: int | str | None
+    to_line_id: int | str | None
 
 
 @dataclass
@@ -240,8 +246,14 @@ def save_changes(changes: list[RowChange], user_id: str) -> SaveResult:
     for change in changes:
         if change.was_line_id == change.to_line_id:
             continue
+        if change.to_line_id == REMOVED_LINE:
+            # The page offers a removed line only as the asset's own value; nothing can move onto one.
+            raise InventoryError(NOT_OPEN)
         row = current_allocation(change.unit.id)
-        current = row.work_line_id if row else None
+        if row is None:
+            current = None
+        else:
+            current = REMOVED_LINE if row.work_line_id is None else row.work_line_id
         if current == change.was_line_id:
             pending.append(change)
         elif current != change.to_line_id:

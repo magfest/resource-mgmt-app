@@ -167,3 +167,66 @@ def test_a_refused_fill_undoes_an_earlier_move(client, alloc):
     assert response.status_code == 200
     assert _held(mover) == a.id and _held(x) is None
     assert db.session.query(InvAllocationEvent).count() == 0
+
+
+def _removed_asset(alloc, label="U-0001"):
+    """An asset still held on a line that was deleted."""
+    unit = make_asset(alloc.tv, label)
+    row = make_allocation(unit, supply_line(alloc, alloc.beta, 1), words="Gone TVs")
+    row.work_line_id = None
+    return unit
+
+
+def _save_values(client, alloc, values, follow=True):
+    """Post rows given as {unit: (was, to)} with the raw form values."""
+    data = {"event": alloc.event.id, "item": alloc.tv.id}
+    for unit, (was, to) in values.items():
+        data[f"was_{unit.id}"] = was
+        data[f"to_{unit.id}"] = to
+    return client.post("/inv/allocation/save", data=data, follow_redirects=follow)
+
+
+def test_a_removed_line_asset_can_be_released(client, alloc):
+    unit = _removed_asset(alloc)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _save_values(client, alloc, {unit: ("removed", "")}).get_data(as_text=True)
+    assert "Saved 1 change." in page
+    assert current_allocation(unit.id) is None
+    assert [e.action for e in db.session.query(InvAllocationEvent)] == ["RELEASE"]
+
+
+def test_a_removed_line_asset_can_move_to_a_live_line(client, alloc):
+    unit = _removed_asset(alloc)
+    line = supply_line(alloc, alloc.alpha, 2, notes="any")
+    db.session.commit()
+    login(client, "test:admin")
+    page = _save_values(client, alloc, {unit: ("removed", str(line.id))}).get_data(as_text=True)
+    assert "Saved 1 change." in page
+    assert _held(unit) == line.id
+    assert [e.action for e in db.session.query(InvAllocationEvent)] == ["MOVE"]
+
+
+def test_keeping_a_removed_line_is_nothing_to_save(client, alloc):
+    unit = _removed_asset(alloc)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _save_values(client, alloc, {unit: ("removed", "removed")}).get_data(as_text=True)
+    assert "Nothing to save." in page
+    assert current_allocation(unit.id) is not None
+    assert db.session.query(InvAllocationEvent).count() == 0
+
+
+def test_choosing_removed_for_a_live_allocation_is_refused(client, alloc):
+    line = supply_line(alloc, alloc.alpha, 2, notes="any")
+    unit = make_asset(alloc.tv, "U-0001")
+    make_allocation(unit, line)
+    free = make_asset(alloc.tv, "U-0002")
+    db.session.commit()
+    login(client, "test:admin")
+    response = _save_values(client, alloc, {unit: (str(line.id), "removed"),
+                                            free: ("", str(line.id))}, follow=False)
+    assert response.status_code == 200
+    assert "That line is not open for allocation. Reload the page." in response.get_data(as_text=True)
+    assert _held(unit) == line.id and _held(free) is None
+    assert db.session.query(InvAllocationEvent).count() == 0
