@@ -10,7 +10,7 @@ from app import db
 from app.inventory.cards import card_for
 from app.inventory.checks import finish_check, open_check
 from app.inventory.devices import create_enroll_code, enroll_device
-from app.inventory.ledger import Actor, add_identifier, add_unit
+from app.inventory.ledger import Actor, add_identifier, add_unit, set_condition
 from app.inventory.printing import local_day, unit_number
 from app.inventory.resolver import resolve
 from app.inventory.shifts import start_shift
@@ -243,6 +243,14 @@ def test_scan_several_units_lists_candidates_and_unit_id_picks(unit_client, inv)
 def test_scan_unknown_tag_shaped_code_asks_which(unit_client):
     assert post(unit_client, "scan", {"code": "FEST99999"}).json == {
         "ok": True, "which": True, "tag": "FEST99999"}
+
+
+def test_scan_a_retired_assets_tag_is_refused(unit_client, inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [(INV_IDENT_MAGFEST_TAG, "FEST91077")])
+    set_condition(unit, "RETIRED")
+    db.session.commit()
+    assert post(unit_client, "scan", {"code": "FEST91077"}).json == {
+        "ok": False, "message": "FEST91077 belongs to a retired asset. Ask a lead."}
 
 
 def test_scan_unused_u_label_is_refused(unit_client):

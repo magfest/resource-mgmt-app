@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy.orm import selectinload
 
 from app import db
-from app.inventory.audit import ACTION_TAG_LINK, unit_changes
+from app.inventory.audit import ACTION_RECEIPT_UNDO, ACTION_TAG_LINK, unit_changes
 from app.inventory.flags import FLAG_WORDS
 from app.inventory.notes import NOTE_TYPE_WORDS
 from app.inventory.people import actor_name, names_for
@@ -61,6 +61,8 @@ def _shown(value) -> str:
 
 
 def _audit_texts(action: str, changes: dict) -> list[str]:
+    if action == ACTION_RECEIPT_UNDO:
+        return ["undid receiving it"]
     texts = []
     for key, change in changes.items():
         old, new = change.get("old"), change.get("new")

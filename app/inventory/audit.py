@@ -21,6 +21,8 @@ ACTION_NOTES = "NOTES"
 ACTION_FIELDS = "FIELDS"
 ACTION_TAG_LINK = "TAG_LINK"
 ACTION_TAG_UNDO = "TAG_UNDO"
+# Written by a scanner's Receive undo. Its tag stays free; any other retirement keeps the tag.
+ACTION_RECEIPT_UNDO = "RECEIPT_UNDO"
 
 
 def audit_who(actor) -> str:
@@ -33,6 +35,17 @@ def record_unit_change(unit_id: int, action: str, changes: dict, user_id: str) -
     db.session.add(ConfigAuditEvent(
         entity_type=ENTITY_UNIT, entity_id=str(unit_id), action=action,
         changes_json=json.dumps(changes), created_by_user_id=user_id))
+
+
+def has_unit_change(unit_id: int, action: str, since=None) -> bool:
+    """Report whether the unit has an audit row of this action, at or after `since` if given."""
+    query = (db.session.query(ConfigAuditEvent.id)
+             .filter(ConfigAuditEvent.entity_type == ENTITY_UNIT,
+                     ConfigAuditEvent.entity_id == str(unit_id),
+                     ConfigAuditEvent.action == action))
+    if since is not None:
+        query = query.filter(ConfigAuditEvent.created_at >= since)
+    return query.first() is not None
 
 
 def unit_changes(unit_id: int, limit: int | None = 50) -> list[tuple[ConfigAuditEvent, dict]]:

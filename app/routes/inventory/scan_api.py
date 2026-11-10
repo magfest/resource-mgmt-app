@@ -23,7 +23,8 @@ from app.inventory.undo import undo_last
 from app.inventory.ledger import InventoryError, create_container
 from app.inventory.names import find_by_name
 from app.inventory.receive import (
-    check_tag, container_for_code, receive_unit, reprint_unit, undo_message, undo_receive,
+    check_tag, container_for_code, receive_unit, reprint_unit, retired_tag_refusal,
+    undo_message, undo_receive,
 )
 from app.inventory.printing import (
     REPRINT_MODES, job_answer, last_job_for, print_container, print_item, reprint,
@@ -205,6 +206,13 @@ def _can_create_tag(code: str) -> bool:
             and can_print_code(code))
 
 
+def _refuse_a_retired_tag(code: str) -> None:
+    """Refuse before offering "new tag" on a retired asset's sticker; Receive would refuse it."""
+    refusal = retired_tag_refusal(code)
+    if refusal:
+        raise InventoryError(refusal)
+
+
 def _with_names(raw: str | None, resolution: Resolution) -> Resolution:
     """Fall back to live asset names when the text matched no number."""
     if resolution.kind != KIND_UNKNOWN or not isinstance(raw, str):
@@ -244,6 +252,7 @@ def scan_resolve():
         if len(resolution.candidates) > MAX_CANDIDATES:
             out["more"] = len(resolution.candidates) - MAX_CANDIDATES
     elif resolution.kind == KIND_UNKNOWN:
+        _refuse_a_retired_tag(resolution.code)
         out["can_create_tag"] = _can_create_tag(resolution.code)
     return jsonify(out)
 
@@ -401,8 +410,10 @@ def _label_target(data: dict) -> Resolution:
         return Resolution(KIND_UNIT, resolution.code, unit=match)
     if kind == KIND_UNUSED:
         raise InventoryError(NOTHING_ATTACHED)
-    if kind == KIND_UNKNOWN and not _can_create_tag(resolution.code):
-        raise InventoryError(NO_MATCH)
+    if kind == KIND_UNKNOWN:
+        _refuse_a_retired_tag(resolution.code)
+        if not _can_create_tag(resolution.code):
+            raise InventoryError(NO_MATCH)
     return resolution
 
 

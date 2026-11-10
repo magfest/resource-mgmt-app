@@ -14,7 +14,7 @@ from app.inventory.checks import (
 )
 from app.inventory.ledger import InventoryError
 from app.inventory.printing import unit_number
-from app.inventory.receive import AlreadyReceived, check_tag, receive_unit
+from app.inventory.receive import AlreadyReceived, RetiredTag, check_tag, receive_unit
 from app.inventory.resolver import (
     KIND_AMBIGUOUS, KIND_CONTAINER, KIND_UNIT, KIND_UNKNOWN, KIND_UNUSED, resolve,
 )
@@ -134,6 +134,8 @@ def scan_unit_scan():
         if kind == KIND_UNKNOWN:
             try:
                 check_tag(resolution.code)
+            except RetiredTag:
+                raise
             except InventoryError:
                 raise InventoryError(NO_SUCH_UNIT) from None
             return {"which": True, "tag": resolution.code}

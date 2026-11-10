@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import event
 
 from app import db
-from app.inventory.audit import ACTION_NAME, record_unit_change
+from app.inventory.audit import ACTION_NAME, ACTION_RECEIPT_UNDO, record_unit_change
 from app.inventory.flags import raise_flag, resolve_flag
 from app.inventory.history import unit_history
 from app.inventory.ledger import Actor, add_unit, move_unit
@@ -53,6 +53,14 @@ def test_name_change_sentence(inv, unit):
     db.session.commit()
     texts = [line.text for line in unit_history(unit)]
     assert "changed the name from TV 3 to Invented TV" in texts
+
+
+def test_receipt_undo_sentence(inv, unit):
+    record_unit_change(unit.id, ACTION_RECEIPT_UNDO,
+                       {"condition": {"old": "IN_SERVICE", "new": "RETIRED"}}, "test:invadmin")
+    db.session.commit()
+    texts = [line.text for line in unit_history(unit)]
+    assert "undid receiving it" in texts
 
 
 def test_shift_actor_reads_as_scanner(inv, unit):

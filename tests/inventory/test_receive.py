@@ -8,6 +8,7 @@ import pytest
 
 from app import db
 from app.inventory.devices import enroll_device
+from app.inventory.ledger import Actor, replace_number, set_condition
 from app.inventory.shifts import start_shift
 from app.models import (
     InvDevice, InvItemTotal, InvMovement, InvPrinter, InvPrintJob, InvPrintRoute,
@@ -108,6 +109,49 @@ def test_the_same_serial_on_a_different_item_is_allowed(client, rc):
 def test_a_retired_unit_does_not_block_its_tag(client, rc):
     first = _post(client, rc, tag="FEST00001")
     client.post(RECEIVE + "/undo", json={"client_request_id": _rid(), "unit_id": first["unit_id"]})
+    assert _post(client, rc, tag="FEST00001")["ok"] is True
+
+
+RETIRED_TAG = "FEST00001 belongs to a retired asset. Ask a lead."
+
+
+def _retire(unit_id):
+    set_condition(db.session.get(InvUnit, unit_id), "RETIRED")
+    db.session.commit()
+
+
+def test_a_retired_assets_tag_is_refused_and_creates_nothing(client, rc):
+    first = _post(client, rc, tag="FEST00001")
+    _retire(first["unit_id"])
+    assert _post(client, rc, tag="FEST00001") == {"ok": False, "message": RETIRED_TAG}
+    assert client.post(CHECK, json={"tag": "fest00001"}).get_json() == \
+        {"ok": False, "message": RETIRED_TAG}
+    assert InvUnit.query.count() == 1
+
+
+def test_a_tag_received_again_after_an_undo_then_retired_is_refused(client, rc):
+    first = _post(client, rc, tag="FEST00001")
+    _undo(client, first["unit_id"])
+    second = _post(client, rc, tag="FEST00001")
+    _retire(second["unit_id"])
+    assert _post(client, rc, tag="FEST00001") == {"ok": False, "message": RETIRED_TAG}
+
+
+def test_an_undone_receipt_brought_back_then_retired_keeps_its_tag(client, rc):
+    first = _post(client, rc, tag="FEST00001")
+    _undo(client, first["unit_id"])
+    unit = db.session.get(InvUnit, first["unit_id"])
+    set_condition(unit, "IN_SERVICE")
+    db.session.commit()
+    _retire(first["unit_id"])
+    assert _post(client, rc, tag="FEST00001") == {"ok": False, "message": RETIRED_TAG}
+
+
+def test_a_tag_a_lead_moved_off_a_live_asset_is_free(client, rc):
+    first = _post(client, rc, tag="FEST00001")
+    unit = db.session.get(InvUnit, first["unit_id"])
+    replace_number(unit, "MAGFEST_TAG", "FEST00002", Actor(user_id="test:invadmin"))
+    db.session.commit()
     assert _post(client, rc, tag="FEST00001")["ok"] is True
 
 

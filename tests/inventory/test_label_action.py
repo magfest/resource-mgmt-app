@@ -5,7 +5,9 @@ import pytest
 
 from app import db
 from app.inventory.devices import enroll_device
-from app.inventory.ledger import Actor, add_identifier, replace_number, retire_identifier
+from app.inventory.ledger import (
+    Actor, add_identifier, replace_number, retire_identifier, set_condition,
+)
 from app.inventory.printing import (
     last_job_for, local_today, reprint, reprint_options, request_label,
 )
@@ -192,6 +194,15 @@ def test_an_older_job_with_rows_counts_when_the_newest_is_blank(client, lab):
         request_label(INV_JOB_OWNED_UNIT, "FEST00001", {"rows": [], "footer": None},
                       Actor(user_id="test:admin"), INV_JOB_SOURCE_SCAN, unit=unit)
     assert last_job_for(unit=unit).id == r["job_id"]
+
+
+def test_a_retired_assets_tag_is_refused_by_look_up_and_label_options(client, lab):
+    r = _receive(client, lab, tag="FEST00001")
+    set_condition(db.session.get(InvUnit, r["unit_id"]), "RETIRED")
+    db.session.commit()
+    refused = {"ok": False, "message": "FEST00001 belongs to a retired asset. Ask a lead."}
+    assert client.post(f"{BASE}/resolve", json={"code": "FEST00001"}).get_json() == refused
+    assert _options(client, "FEST00001") == refused
 
 
 def test_an_unknown_tag_creates_the_unit_and_prints(client, lab):

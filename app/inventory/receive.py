@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from app import db
 from app.inventory import labels
+from app.inventory.audit import ACTION_RECEIPT_UNDO, audit_who, has_unit_change, record_unit_change
 from app.inventory.codes import normalize_code
 from app.inventory.ledger import (
     Actor, InventoryError, add_unit, retire_received_unit,
@@ -47,6 +48,36 @@ class AlreadyReceived(InventoryError):
         self.unit = unit
         self.already = {"code": unit_number(unit), "unit_id": unit.id,
                         "item_name": unit.item.item_name}
+
+
+class RetiredTag(InventoryError):
+    """The tag's last holder is a retired asset; only a lead may give it to another."""
+
+
+def retired_tag_refusal(tag: str) -> str | None:
+    """Return the refusal for an asset tag whose last holder was retired, else None.
+
+    A retired asset usually still wears its sticker, so a free tag would create a
+    second asset for the same gear. A receipt undone at the scanner leaves its tag
+    free, because the volunteer receives it again under the right item.
+    """
+    normalized = normalize_code(tag)
+    if not normalized:
+        return None
+    last = (db.session.query(InvUnitIdentifier.unit_id, InvUnitIdentifier.retired_at,
+                             InvUnit.condition)
+            .join(InvUnit, InvUnit.id == InvUnitIdentifier.unit_id)
+            .filter(InvUnitIdentifier.kind == INV_IDENT_MAGFEST_TAG,
+                    InvUnitIdentifier.normalized_value == normalized,
+                    InvUnitIdentifier.retired_at.isnot(None))
+            .order_by(InvUnitIdentifier.retired_at.desc(), InvUnitIdentifier.id.desc())
+            .first())
+    if last is None or last.condition != INV_CONDITION_RETIRED:
+        return None
+    # An undo older than this retirement was reversed by a lead; the later retirement counts.
+    if has_unit_change(last.unit_id, ACTION_RECEIPT_UNDO, since=last.retired_at):
+        return None
+    return f"{normalized} belongs to a retired asset. Ask a lead."
 
 
 def container_for_code(raw: str | None) -> InvContainer:
@@ -106,6 +137,9 @@ def check_tag(tag: str) -> None:
     held = _active_holder(INV_IDENT_MAGFEST_TAG, normalize_code(tag))
     if held is not None:
         raise AlreadyReceived(held)
+    refusal = retired_tag_refusal(tag)
+    if refusal:
+        raise RetiredTag(refusal)
 
 
 def receive_unit(item, actor: Actor, tag=None, serial=None, container=None,
@@ -194,7 +228,11 @@ def undo_receive(unit_id: int, actor: Actor) -> None:
         raise InventoryError(NOTHING_TO_UNDO)
     jobs = (db.session.query(InvPrintJob).filter_by(unit_id=unit.id)
             .with_for_update().populate_existing().all())
+    old_condition = unit.condition
     retire_received_unit(unit, actor)
+    record_unit_change(unit.id, ACTION_RECEIPT_UNDO,
+                       {"condition": {"old": old_condition, "new": INV_CONDITION_RETIRED}},
+                       audit_who(actor))
     for job in jobs:
         if job.status == INV_JOB_QUEUED:
             cancel_job(job)
