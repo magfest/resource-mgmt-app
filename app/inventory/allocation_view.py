@@ -1,4 +1,4 @@
-"""Filtering and grouping of department lines for the allocation page's Lines tab.
+"""Filtering and grouping of department lines for the allocation page's two tabs.
 
 Pure functions over `DemandLine`; nothing here queries the database.
 """
@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from app.inventory.demand import LINE_OPEN, DemandLine
 
 LINES_SHORT, LINES_ALL, LINES_NOTES = "short", "all", "notes"
+# Dropdown options are cut harder than the 80-character line words so they fit a phone.
+_OPTION_WORDS = 40
 
 
 def short_count(line: DemandLine) -> int:
@@ -61,3 +63,41 @@ def departments(lines) -> list[tuple[int, str]]:
     """Return (id, name) for every department that has a line or allocation, sorted by name."""
     found = {line.department_id: line.department_name for line in lines}
     return sorted(found.items(), key=lambda pair: pair[1].casefold())
+
+
+def short_order(public_id: str | None) -> str:
+    """Return the request ID without its event and department codes: `SUP-3`, `TEC-7`."""
+    if not public_id:
+        return ""
+    return "-".join(public_id.split("-")[-2:])
+
+
+def cut_words(text: str) -> str:
+    """Cut dropdown words to 40 characters, ending in "…" when cut."""
+    return text if len(text) <= _OPTION_WORDS else text[:_OPTION_WORDS - 1] + "…"
+
+
+def option_text(line: DemandLine) -> str:
+    """Name a line in an asset dropdown; ` · {k} left` shows only while it has room."""
+    text = (f"{line.department_name} · {short_order(line.public_id)} line {line.line_number}"
+            f" · {cut_words(line.words)}")
+    return f"{text} · {line.left} left" if line.left > 0 else text
+
+
+@dataclass
+class ChoiceGroup:
+    department: str
+    options: list[tuple[int, str]]
+
+
+def asset_choices(lines, department_id: int | None) -> list[ChoiceGroup]:
+    """Group the open lines with room, of one department when given, by department name."""
+    by_department: dict[int, list[DemandLine]] = {}
+    for line in lines:
+        if line.state == LINE_OPEN and line.left > 0 and (
+                department_id is None or line.department_id == department_id):
+            by_department.setdefault(line.department_id, []).append(line)
+    groups = [ChoiceGroup(department=members[0].department_name,
+                          options=[(line.work_line_id, option_text(line)) for line in members])
+              for members in by_department.values()]
+    return sorted(groups, key=lambda group: group.department.casefold())

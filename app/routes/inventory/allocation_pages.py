@@ -4,18 +4,19 @@ from sqlalchemy.orm import joinedload
 
 from app.inventory.allocation_rights import can_allocate
 from app.inventory.allocation_view import (
-    LINES_ALL, LINES_NOTES, LINES_SHORT, departments, filter_lines, group_by_department, short_count,
+    LINES_ALL, LINES_NOTES, LINES_SHORT, asset_choices, cut_words, departments, filter_lines,
+    group_by_department, option_text, short_count, short_order,
 )
-from app.inventory.allocation import RowChange, allocate, move, release, save_changes
+from app.inventory.allocation import RowChange, save_changes
 from app.inventory.checks import unit_code, unit_phrase
 from app.inventory.demand import (
-    LINE_OPEN, allocation_events, asset_warning, demand_lines, find_selection, line_label, pick_event,
+    allocation_events, asset_warning, demand_lines, find_selection, line_label, pick_event,
     selection_assets, selections, shortfall,
 )
-from app.inventory.unit_fields import details_line
+from app.inventory.unit_fields import label_line
 from app import db
 from app.inventory.ledger import InventoryError
-from app.models import InvAllocation, InvUnit
+from app.models import InvAllocation, InvUnit, WorkLine
 from app.routes import get_user_ctx
 
 from . import inventory_bp
@@ -44,26 +45,66 @@ def _requested_selection(event):
     return find_selection(None, None, event_id)
 
 
-def _asset_rows(assets, lines, event):
-    """Pair each asset with its allocation text; a line seen on this page uses its live words."""
-    live = {line.work_line_id: line_label(line) for line in lines if line.work_line_id}
-    held = {}
-    if assets:
-        held = {a.unit_id: a for a in db.session.query(InvAllocation)
-                .options(joinedload(InvAllocation.department), joinedload(InvAllocation.event_cycle))
-                .filter(InvAllocation.unit_id.in_([u.id for u in assets]))}
+def _held(assets) -> dict[int, InvAllocation]:
+    """Map each listed asset to its allocation in any event, in one query."""
+    if not assets:
+        return {}
+    return {a.unit_id: a for a in db.session.query(InvAllocation)
+            .options(joinedload(InvAllocation.department), joinedload(InvAllocation.event_cycle),
+                     joinedload(InvAllocation.work_line).joinedload(WorkLine.work_item))
+            .filter(InvAllocation.unit_id.in_([u.id for u in assets]))}
+
+
+def _held_option(row: InvAllocation, event) -> str:
+    """Name an allocation whose line is not among this event's lines."""
+    if row.work_line is None:
+        text = f"Line changed: removed · {row.line_label}"
+    else:
+        text = (f"{row.department.name} · {short_order(row.work_line.work_item.public_id)}"
+                f" line {row.work_line.line_number} · {cut_words(row.line_label)}")
+    return text if row.event_cycle_id == event.id else f"{text} ({row.event_cycle.code})"
+
+
+def _asset_rows(assets, held, lines, event, choices, picked=None, was=None):
+    """Build each asset row: reader text, and the dropdown's options, choice and rendered value.
+
+    After a refused save, `picked` and `was` hold the posted values so no pick is lost.
+    """
+    live = {line.work_line_id: line for line in lines if line.work_line_id}
+    offered = {line_id for group in choices for line_id, _ in group.options}
     rows = []
     for unit in assets:
         row = held.get(unit.id)
+        current = row.work_line_id if row else None
         if row is None:
             text = "Not allocated"
         else:
-            label = live.get(row.work_line_id) or f"{row.department.name} · {row.line_label}"
+            label = (line_label(live[current]) if current in live
+                     else f"{row.department.name} · {row.line_label}")
             text = f"Allocated to {label}"
             if row.event_cycle_id != event.id:
                 text += f" ({row.event_cycle.code})"
-        rows.append({"unit": unit, "number": unit_code(unit), "details": details_line(unit),
-                     "text": text, "warning": asset_warning(unit), "allocation": row})
+        warning = asset_warning(unit)
+        selected = picked[unit.id] if picked and unit.id in picked else current
+        rendered = _int(was[unit.id]) if was and unit.id in was else current
+        # The rules refuse a new allocation for an asset out of service, so it gets no choices.
+        extra, seen = [], set() if warning else set(offered)
+        for line_id in (current, rendered, selected):
+            if line_id is None or line_id in seen:
+                continue
+            seen.add(line_id)
+            if line_id in live:
+                extra.append((line_id, option_text(live[line_id])))
+            elif line_id == current:
+                extra.append((line_id, _held_option(row, event)))
+        # A removed line has no id, so its option shares the "" value of Not allocated.
+        removed = row is not None and current is None
+        if removed:
+            extra.append(("", _held_option(row, event)))
+        rows.append({"unit": unit, "number": unit_code(unit), "details": label_line(unit),
+                     "text": text, "warning": warning, "allocation": row, "removed": removed,
+                     "choices": [] if warning else choices, "extra": extra,
+                     "selected": selected, "was": rendered})
     return rows
 
 
@@ -88,6 +129,11 @@ def _render_allocation(error=None, picked=None, was=None):
     options_by_id = dict(departments(lines))
     dept_id = _int(request.values.get("dept"))
     dept_id = dept_id if dept_id in options_by_id else None
+    held = _held(assets)
+    if dept_id:
+        # One department's view: its allocations for this event, and every free asset.
+        assets = [u for u in assets if u.id not in held or (
+            held[u.id].event_cycle_id == event.id and held[u.id].department_id == dept_id)]
     lines_show = request.values.get("lines")
     lines_show = lines_show if lines_show in (LINES_ALL, LINES_NOTES) else LINES_SHORT
     filters = {"tab": tab, "lines": lines_show}
@@ -97,7 +143,8 @@ def _render_allocation(error=None, picked=None, was=None):
         filters["show"] = "unallocated"
     shown = filter_lines(lines, dept_id, lines_show)
     # The Lines tab needs no asset rows, so they are built only when the Assets tab shows.
-    rows = _asset_rows(assets, lines, event) if tab == "assets" else []
+    rows = (_asset_rows(assets, held, lines, event, asset_choices(lines, dept_id), picked, was)
+            if tab == "assets" else [])
     return render_inventory_page(
         "inventory/allocation.html", lines=lines, totals=shortfall(selection, lines), rows=rows,
         tab=tab, dept_id=dept_id, dept_options=list(options_by_id.items()), lines_show=lines_show,
@@ -124,88 +171,6 @@ def _units_from(values) -> list[InvUnit]:
             abort(404)
         units.append(unit)
     return units
-
-
-@inventory_bp.get("/allocation/pick")
-@require_allocator
-def allocation_pick():
-    carried = _carried()
-    units = _units_from(request.args.getlist("unit"))
-    if not units:
-        flash("Tick at least one asset.", "error")
-        return redirect(url_for("inventory.allocation", **carried))
-    event = pick_event(allocation_events(), _int(request.args.get("event")))
-    selection = _requested_selection(event)
-    if event is None or selection is None:
-        return redirect(url_for("inventory.allocation", **carried))
-    is_move = request.args.get("move") == "1" and len(units) == 1
-    current = None
-    if is_move:
-        held = db.session.query(InvAllocation).filter_by(unit_id=units[0].id).one_or_none()
-        current = held.work_line_id if held else None
-    options = [line for line in demand_lines(event.id, selection)
-               if line.state == LINE_OPEN and line.left > 0
-               and (is_move or line.left >= len(units))
-               and not (is_move and line.work_line_id == current)]
-    if is_move:
-        heading = f"Move {unit_phrase(units[0])} to…"
-    elif len(units) == 1:
-        heading = f"Allocate {unit_phrase(units[0])} to…"
-    else:
-        heading = f"Allocate {len(units)} assets to…"
-    return render_inventory_page(
-        "inventory/allocation_pick.html", heading=heading, options=options, units=units,
-        line_label=line_label, is_move=is_move, carried=carried,
-        back=url_for("inventory.allocation", **carried))
-
-
-def _finish(work):
-    """Run one write; commit and flash its message, or roll back and flash the refusal."""
-    try:
-        message = work()
-    except InventoryError as error:
-        db.session.rollback()
-        flash(str(error), "error")
-    else:
-        db.session.commit()
-        flash(message, "success")
-    return redirect(url_for("inventory.allocation", **_carried()))
-
-
-@inventory_bp.post("/allocation/allocate")
-@require_allocator
-def allocation_allocate():
-    units = _units_from(request.form.getlist("unit"))
-    line_id = _int(request.form.get("line_id"))
-    user_id = get_user_ctx().user_id
-
-    def work():
-        line = allocate(units, line_id, user_id)
-        who = unit_phrase(units[0]) if len(units) == 1 else f"{len(units)} assets"
-        return f"Allocated {who} to {line_label(line)}."
-    return _finish(work)
-
-
-@inventory_bp.post("/allocation/move")
-@require_allocator
-def allocation_move():
-    unit = _units_from(request.form.getlist("unit")[:1] or [None])[0]
-    line_id = _int(request.form.get("line_id"))
-    user_id = get_user_ctx().user_id
-    return _finish(lambda: f"Moved {unit_phrase(unit)} to "
-                           f"{line_label(move(unit, line_id, user_id))}.")
-
-
-@inventory_bp.post("/allocation/release")
-@require_allocator
-def allocation_release():
-    unit = _units_from(request.form.getlist("unit")[:1] or [None])[0]
-    user_id = get_user_ctx().user_id
-
-    def work():
-        release(unit, user_id)
-        return f"Released {unit_phrase(unit)}."
-    return _finish(work)
 
 
 @inventory_bp.post("/allocation/save")

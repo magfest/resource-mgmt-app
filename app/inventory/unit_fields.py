@@ -231,3 +231,17 @@ def model_number(unit: InvUnit) -> str | None:
         if value.field.code == MODEL_FIELD_CODE and value.text_value:
             return value.text_value
     return None
+
+
+def label_line(unit: InvUnit) -> str:
+    """The printed info label's description on one line; never empty.
+
+    Matches `fields_for_unit` in printing.py: a named unit shows its spec line and
+    model, an unnamed one its item name and details.
+    """
+    if unit.name:
+        model = model_number(unit)
+        return f"{spec_line(unit)} · Model {model}" if model else spec_line(unit)
+    details = details_line(unit)
+    name = unit.item.item_name
+    return f"{name} · {details}" if details else name

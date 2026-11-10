@@ -8,9 +8,15 @@
   .alloc-form select { max-width: 100%; }
   .alloc-form label { display: block; margin-bottom: 8px; }
   .alloc-filters a[aria-current="true"] { font-weight: bold; }
-  /* A 44 px tap area: the bare checkbox and word are 18 px tall on a phone. */
-  .alloc-tick { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding-right: 12px; }
-  .alloc-tick input { width: 22px; height: 22px; margin: 0; }
+  .alloc-assets > li { padding: 10px 8px; }
+  /* A changed row stays dark on light blue so its text keeps contrast. */
+  .alloc-assets > li.changed { background: #dbeafe; }
+  /* A 44 px tap area: a bare select and button are about 34 px tall on a phone. */
+  .alloc-assets select { display: block; max-width: 100%; min-height: 44px; margin-top: 6px; }
+  .alloc-save { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 0; background: #fff; border-top: 1px solid #e5e7eb; }
+  .alloc-save button { min-height: 44px; }
+  /* base.html gives button.btn a display, which beats the hidden attribute. */
+  .alloc-save [hidden] { display: none; }
   .alloc-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0; border-bottom: 1px solid #e5e7eb; }
   .alloc-tabs a { display: inline-block; padding: 10px 14px; min-height: 24px; text-decoration: none; border-bottom: 3px solid transparent; }
   .alloc-tabs a[aria-current="page"] { font-weight: bold; border-bottom-color: #2563eb; }
@@ -51,7 +57,7 @@
 <p><strong>{{ selection.name }}: {{ totals.requested }} requested · {{ totals.approved }} approved · {{ totals.allocated }} allocated · {{ totals.free }} free</strong></p>
 <p class="muted">Free means in service and allocated to nothing, for any event.</p>
 
-<nav class="alloc-tabs" role="tablist" aria-label="Allocation views">
+<nav class="alloc-tabs" aria-label="Allocation views">
   <a href="{{ url_for('inventory.allocation', **dict(base, tab='assets')) }}"{% if tab == 'assets' %} aria-current="page"{% endif %}>Assets ({{ assets_count }})</a>
   <a href="{{ url_for('inventory.allocation', **dict(base, tab='lines')) }}"{% if tab == 'lines' %} aria-current="page"{% endif %}>Department lines ({{ lines_count }})</a>
 </nav>
@@ -100,45 +106,50 @@
   ·
   <a href="{{ url_for('inventory.allocation', **dict(base, show='unallocated')) }}"{% if unallocated_only %} aria-current="true"{% endif %}>Unallocated only</a>
 </p>
-{% set tickable = rows|rejectattr('allocation')|rejectattr('warning')|list %}
-{% set ticked_button %}<button type="submit" class="btn btn-small" form="alloc-pick">Allocate ticked to…</button>{% endset %}
-{% if can_allocate and tickable %}<p>{{ ticked_button }}</p>{% endif %}
-<ul class="alloc-list">
+{% set saving = can_allocate and rows %}
+{% if saving %}
+<form id="alloc-save" method="post" action="{{ url_for('inventory.allocation_save') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% for k, v in carry.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+{% endif %}
+<ul class="alloc-list alloc-assets">
   {% for row in rows %}
   <li>
     <div><strong>{{ row.number or 'No number yet' }}</strong>{% if row.unit.name %} · {{ row.unit.name }}{% endif %}</div>
-    {% if row.details %}<div class="muted">{{ row.details }}</div>{% endif %}
+    <div class="muted alloc-label">{{ row.details }}</div>
+    {% if saving %}
+    <input type="hidden" name="was_{{ row.unit.id }}" value="{{ '' if row.was is none else row.was }}">
+    <select name="to_{{ row.unit.id }}" aria-label="Line for {{ row.number or row.unit.name or 'this asset' }}">
+      <option value=""{% if row.selected is none and not row.removed %} selected{% endif %}{% if row.was is none and not row.removed %} data-was{% endif %}>Not allocated</option>
+      {% for group in row.choices %}
+      <optgroup label="{{ group.department }}">
+        {% for id, text in group.options %}<option value="{{ id }}"{% if id == row.selected %} selected{% endif %}{% if id == row.was %} data-was{% endif %}>{{ text }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+      {% for value, text in row.extra %}
+      {% set marks = (row.selected is none) if value == '' else (value == row.selected) %}
+      {% set was_mark = (row.was is none) if value == '' else (value == row.was) %}
+      <option value="{{ value }}"{% if marks %} selected{% endif %}{% if was_mark %} data-was{% endif %}>{{ text }}</option>
+      {% endfor %}
+    </select>
+    {% else %}
     <div>{{ row.text }}</div>
-    {% if row.allocation and row.allocation.work_line_id is none %}<span class="pill pill-warning">Line changed: removed</span>{% endif %}
+    {% endif %}
+    {% if row.removed %}<span class="pill pill-warning">Line changed: removed</span>{% endif %}
     {% if row.warning %}<span class="pill pill-warning">{{ row.warning }}</span>{% endif %}
-    {% if can_allocate %}
-    {% if not row.allocation and not row.warning %}
-    <div>
-      <label class="alloc-tick"><input type="checkbox" name="unit" value="{{ row.unit.id }}" form="alloc-pick"> Tick</label>
-      <a class="btn btn-small" href="{{ url_for('inventory.allocation_pick', unit=row.unit.id, **carry) }}">Allocate to…</a>
-    </div>
-    {% elif row.allocation %}
-    <div>
-      {% if not row.warning %}<a class="btn btn-small" href="{{ url_for('inventory.allocation_pick', unit=row.unit.id, move=1, **carry) }}">Move to…</a>{% endif %}
-      <form method="post" action="{{ url_for('inventory.allocation_release') }}" style="display:inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="unit" value="{{ row.unit.id }}">
-        {% for k, v in carry.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-        <button type="submit" class="btn btn-small">Release</button>
-      </form>
-    </div>
-    {% endif %}
-    {% endif %}
   </li>
   {% else %}
   <li class="muted">No assets to show.</li>
   {% endfor %}
 </ul>
-{% if can_allocate and tickable %}
-<form id="alloc-pick" method="get" action="{{ url_for('inventory.allocation_pick') }}">
-  {% for k, v in carry.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-  {{ ticked_button }}
+{% if saving %}
+  <div class="alloc-save">
+    <span class="alloc-count" hidden></span>
+    <button type="button" class="btn alloc-undo" hidden>Undo all</button>
+    <button type="submit" class="btn btn-primary">Save changes</button>
+  </div>
 </form>
+<script nonce="{{ csp_nonce }}" src="{{ url_for('static', filename='inventory/allocation.js') }}"></script>
 {% endif %}
 {% endif %}
 {% endif %}
