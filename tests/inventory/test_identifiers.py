@@ -1,4 +1,6 @@
 """Identifier normalization and units that start from any identifier."""
+from datetime import timedelta
+
 import pytest
 
 from app import db
@@ -110,6 +112,35 @@ def test_retiring_a_unit_frees_its_identifiers(inv):
     assert unit.condition == "RETIRED"
     assert all(i.retired_at is not None for i in unit.identifiers)
     add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net2")])
+
+
+def test_un_retiring_restores_the_codes_its_retirement_took(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [
+        ("MAGFEST_TAG", "net4"), ("SERIAL", "sn-4")])
+    set_condition(unit, "RETIRED")
+    set_condition(unit, "IN_SERVICE")
+    assert all(i.retired_at is None for i in unit.identifiers)
+    assert resolve("NET4").unit is unit
+
+
+def test_un_retiring_keeps_an_older_replaced_number_retired(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net5")])
+    replace_number(unit, "MAGFEST_TAG", "net6", ACTOR)
+    old = next(i for i in unit.identifiers if i.value == "net5")
+    old.retired_at = old.retired_at - timedelta(days=1)
+    set_condition(unit, "RETIRED")
+    set_condition(unit, "IN_SERVICE")
+    assert old.retired_at is not None
+    assert resolve("NET6").unit is unit
+
+
+def test_un_retiring_is_refused_when_another_asset_holds_its_tag(inv):
+    unit = add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net7")])
+    set_condition(unit, "RETIRED")
+    add_unit(inv.laptop, None, ACTOR, [("MAGFEST_TAG", "net7")])
+    with pytest.raises(InventoryError, match="NET7 is now on another asset"):
+        set_condition(unit, "IN_SERVICE")
+    assert unit.condition == "RETIRED"
 
 
 def test_other_conditions_keep_identifiers_and_unknown_is_refused(inv):

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 
@@ -36,6 +36,9 @@ NUMBER_KINDS = (INV_IDENT_MAGFEST_TAG, INV_IDENT_FESTOPS_LABEL)
 
 # Marks the ADJUST written when a move takes more than the app thinks is there.
 SHORT_MOVE_NOTE = "short move"
+
+# Codes retired within this span of a unit's newest retirement belong to it.
+RETIREMENT_SPAN = timedelta(seconds=1)
 
 INV_CONDITIONS = (INV_CONDITION_IN_SERVICE, INV_CONDITION_REPAIR,
                   INV_CONDITION_RETIRED, INV_CONDITION_LOST, INV_CONDITION_FOUND)
@@ -347,8 +350,27 @@ def replace_number(unit: InvUnit, kind: str, value: str, actor: Actor) -> InvUni
         return add_identifier(unit, kind, value)
 
 
+def _retirement_codes(unit: InvUnit) -> list[InvUnitIdentifier]:
+    """The codes the unit's retirement took, or none when it already holds a live code.
+
+    Retirement stamps every code in one loop, microseconds apart. A number replaced
+    earlier was retired by a separate post, so it falls outside RETIREMENT_SPAN.
+    Undo of a retiring check restores its own codes first, so this returns none.
+    """
+    rows = (db.session.query(InvUnitIdentifier)
+            .filter(InvUnitIdentifier.unit_id == unit.id).all())
+    if not rows or any(row.retired_at is None for row in rows):
+        return []
+    newest = max(row.retired_at for row in rows)
+    return [row for row in rows if newest - row.retired_at <= RETIREMENT_SPAN]
+
+
 def set_condition(unit: InvUnit, condition: str) -> None:
-    """Set a unit's lasting condition; retiring a unit retires its identifiers."""
+    """Set a unit's lasting condition; retiring a unit retires its identifiers.
+
+    Leaving RETIRED gives back the codes the retirement took. It refuses, changing
+    nothing, when another asset has since taken one of them.
+    """
     if condition not in INV_CONDITIONS:
         raise InventoryError(f"{condition} is not a condition.")
     if (unit.condition == INV_CONDITION_RETIRED and condition != INV_CONDITION_RETIRED
@@ -360,6 +382,18 @@ def set_condition(unit: InvUnit, condition: str) -> None:
         if holder is not None:
             raise InventoryError(
                 f"{holder.name} is already the name of another asset. Rename one first.")
+    restored = []
+    if unit.condition == INV_CONDITION_RETIRED and condition != INV_CONDITION_RETIRED:
+        restored = _retirement_codes(unit)
+        for identifier in restored:
+            unique = (identifier.kind in INV_IDENT_UNIQUE_KINDS
+                      or identifier.kind == INV_IDENT_VENDOR_TAG)
+            if unique and _is_taken(unit, identifier.kind, identifier.normalized_value):
+                raise InventoryError(
+                    f"{identifier.normalized_value} is now on another asset. "
+                    "Remove it there first.")
+    for identifier in restored:
+        identifier.retired_at = None
     unit.condition = condition
     if condition == INV_CONDITION_RETIRED:
         for identifier in unit.identifiers:
