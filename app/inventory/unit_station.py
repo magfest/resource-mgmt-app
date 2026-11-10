@@ -18,6 +18,7 @@ from app.inventory.ledger import (
 )
 from app.inventory.printing import fields_for_unit, last_job_for, unit_number
 from app.inventory.receive import label_job
+from app.inventory.tree import ancestors
 from app.inventory.unit_fields import spec_line
 from app.models import (
     InvCheck, InvContainer, InvGearKind, InvUnit, InvUnitIdentifier, InvUnitValue, SupplyItem,
@@ -125,7 +126,8 @@ def finish_unit(check: InvCheck, answers: dict, actor: Actor, home: InvContainer
     label = "none"
     if unit.condition != INV_CONDITION_RETIRED:
         if home is not None:
-            if unit.current_container_id != home.id:
+            # A unit already somewhere inside home, such as on a pallet, keeps that spot.
+            if not _inside(unit.current_container, home):
                 move_unit(unit, home, actor)
             placed = home.name
         if needs_info_label(unit):
@@ -137,6 +139,12 @@ def finish_unit(check: InvCheck, answers: dict, actor: Actor, home: InvContainer
                 label = str(error)
     return {"status": check.status, "condition": unit.condition, "code": code,
             "name": unit.name or code, "placed": placed, "label": label}
+
+
+def _inside(container: InvContainer | None, home: InvContainer) -> bool:
+    if container is None:
+        return False
+    return container.id == home.id or any(c.id == home.id for c in ancestors(container))
 
 
 def place_last(actor: Actor, container_code: str, unit_id: int) -> str:

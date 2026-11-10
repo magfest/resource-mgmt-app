@@ -6,7 +6,7 @@ import pytest
 from app import db
 from app.inventory.checks import finish_check, open_check
 from app.inventory.devices import enroll_device
-from app.inventory.ledger import Actor, InventoryError, add_identifier, add_unit
+from app.inventory.ledger import Actor, InventoryError, add_identifier, add_unit, move_unit
 from app.inventory.receive import label_job
 from app.inventory.unit_station import (
     digit_candidates, finish_unit, give_unit_number, needs_info_label, number_refusal,
@@ -145,6 +145,24 @@ def test_finish_places_the_unit_home_and_queues_its_label(inv, event, printer, w
     out = finish_unit(_check(unit, event), {}, ACTOR, home=warehouse)
     assert out["placed"] == "Warehouse" and out["label"] == "queued"
     assert out["code"] == "FEST91050" and out["name"] == "TV-X-050"
+    assert unit.current_container_id == warehouse.id
+
+
+def test_finish_keeps_a_unit_already_on_a_pallet_inside_home(inv, event, printer, warehouse):
+    pallet = make_container(inv, "C-PL05", parent=warehouse)
+    unit = _numbered(inv)
+    finish_unit(_check(unit, event), {}, ACTOR, home=warehouse)
+    move_unit(unit, pallet, ACTOR)
+    out = finish_unit(_check(unit, event), {}, ACTOR, home=warehouse)
+    assert unit.current_container_id == pallet.id
+    assert out["placed"] == "Warehouse"
+
+
+def test_finish_moves_a_unit_from_outside_home(inv, event, printer, warehouse):
+    elsewhere = make_container(inv, "C-WH02", kind="LOCATION", name="Other site")
+    unit = _numbered(inv)
+    move_unit(unit, elsewhere, ACTOR)
+    finish_unit(_check(unit, event), {}, ACTOR, home=warehouse)
     assert unit.current_container_id == warehouse.id
 
 
