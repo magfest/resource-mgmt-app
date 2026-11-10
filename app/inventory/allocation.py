@@ -53,9 +53,10 @@ def allocation_sentence(unit: InvUnit) -> str:
 def line_lock_query(work_line_id: int) -> Query:
     """Return the query that locks one work line until the transaction ends.
 
-    Every explicit lock here takes the line first, then allocation rows; one
-    order in every function keeps two moves from deadlocking. The query has no
-    joins because Postgres refuses a row lock on the nullable side of an outer join.
+    Every explicit lock here takes lines first, in id order when there are
+    several, then allocation rows in unit id order. One order in every function
+    keeps two writers from deadlocking. The query has no joins because Postgres
+    refuses a row lock on the nullable side of an outer join.
     """
     # key_share emits FOR NO KEY UPDATE on Postgres; two allocators of one line still wait.
     # Plain FOR UPDATE would also block foreign-key checks from rows that reference the line.
@@ -234,6 +235,10 @@ class SaveResult:
 def save_changes(changes: list[RowChange], user_id: str) -> SaveResult:
     """Apply a batch of row changes through allocate, move and release.
 
+    Every target line and every changed asset's allocation row is locked up
+    front, lines first. Form order would otherwise interleave the locks, and two
+    overlapping saves could deadlock. The stale check reads the locked rows.
+
     Releases run first, then moves in passes, then fills, so a change that
     frees room can serve a later one. A row whose current line is neither the
     one the page showed nor the one chosen is stale and skipped. Never commits.
@@ -241,15 +246,19 @@ def save_changes(changes: list[RowChange], user_id: str) -> SaveResult:
     Raises:
         InventoryError: The first refusal; the caller rolls back.
     """
+    changed = [c for c in changes if c.was_line_id != c.to_line_id]
+    if any(c.to_line_id == REMOVED_LINE for c in changed):
+        # The page offers a removed line only as the asset's own value; nothing can move onto one.
+        raise InventoryError(NOT_OPEN)
+    # A missing line is refused later, by the rule that writes to it.
+    for line_id in sorted({c.to_line_id for c in changed if c.to_line_id is not None}):
+        line_lock_query(line_id).one_or_none()
+    held = {unit_id: _allocation_lock_query(unit_id).one_or_none()
+            for unit_id in sorted({c.unit.id for c in changed})}
     stale: list[InvUnit] = []
     pending: list[RowChange] = []
-    for change in changes:
-        if change.was_line_id == change.to_line_id:
-            continue
-        if change.to_line_id == REMOVED_LINE:
-            # The page offers a removed line only as the asset's own value; nothing can move onto one.
-            raise InventoryError(NOT_OPEN)
-        row = current_allocation(change.unit.id)
+    for change in changed:
+        row = held[change.unit.id]
         if row is None:
             current = None
         else:

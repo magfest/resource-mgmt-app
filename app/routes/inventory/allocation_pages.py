@@ -4,8 +4,8 @@ from sqlalchemy.orm import joinedload
 
 from app.inventory.allocation_rights import can_allocate
 from app.inventory.allocation_view import (
-    LINES_ALL, LINES_NOTES, LINES_SHORT, asset_choices, cut_words, departments, filter_lines,
-    group_by_department, option_text, short_count, short_order,
+    LINES_ALL, LINES_NOTES, LINES_SHORT, asset_choices, departments, filter_lines,
+    group_by_department, line_option, option_text, short_count,
 )
 from app.inventory.allocation import REMOVED_LINE, RowChange, save_changes
 from app.inventory.checks import unit_code, unit_phrase
@@ -37,7 +37,7 @@ def _line_value(raw):
 
 def _requested_selection(event):
     """Read `item`, `service` or `pick`; an absent or stale key falls back to the first selection."""
-    # The form's select posts `pick`; redirects from the action routes carry `item` or `service`.
+    # The form's select posts `pick`; the save route's redirect carries `item` or `service`.
     event_id = event.id if event else None
     pick = request.values.get("pick", "")
     kind, _, raw = pick.partition(":")
@@ -65,9 +65,12 @@ def _held_option(row: InvAllocation, event) -> str:
     if row.work_line is None:
         text = f"Line changed: removed · {row.line_label}"
     else:
-        text = (f"{row.department.name} · {short_order(row.work_line.work_item.public_id)}"
-                f" line {row.work_line.line_number} · {cut_words(row.line_label)}")
-    return text if row.event_cycle_id == event.id else f"{text} ({row.event_cycle.code})"
+        text = line_option(row.department.name, row.work_line.work_item.public_id,
+                           row.work_line.line_number, row.line_label)
+    if row.event_cycle_id == event.id:
+        return text
+    # The event code leads because a phone cuts a long option at its end.
+    return f"{row.event_cycle.code} · {text}"
 
 
 def _asset_rows(assets, held, lines, event, choices, picked=None, was=None):
@@ -106,7 +109,7 @@ def _asset_rows(assets, held, lines, event, choices, picked=None, was=None):
                 extra.append((line_id, _held_option(row, event)))
         removed = current == REMOVED_LINE
         rows.append({"unit": unit, "number": unit_code(unit), "details": label_line(unit),
-                     "text": text, "warning": warning, "allocation": row, "removed": removed,
+                     "text": text, "warning": warning, "removed": removed,
                      "choices": [] if warning else choices, "extra": extra,
                      "selected": selected, "was": rendered})
     return rows
@@ -118,12 +121,13 @@ def _render_allocation(error=None, picked=None, was=None):
     event = pick_event(events, _int(request.values.get("event")))
     options = selections(event.id if event else None)
     selection = _requested_selection(event)
-    ctx = dict(line_label=line_label, unit_code=unit_code, short_count=short_count, events=events, event=event, options=options, selection=selection,
+    ctx = dict(unit_code=unit_code, short_count=short_count, events=events, event=event,
+               options=options, selection=selection,
                can_allocate=can_allocate(get_user_ctx()),
                unallocated_only=request.values.get("show") == "unallocated",
                error=error, picked=picked, was=was)
     if event is None or selection is None:
-        return render_inventory_page("inventory/allocation.html", lines=[], rows=[],
+        return render_inventory_page("inventory/allocation.html", rows=[],
                                      totals=None, tab="assets", dept_id=None, dept_options=[],
                                      lines_show=LINES_SHORT, filters={}, groups=[], lines_count=0,
                                      assets_count=0, **ctx)
@@ -150,7 +154,7 @@ def _render_allocation(error=None, picked=None, was=None):
     rows = (_asset_rows(assets, held, lines, event, asset_choices(lines, dept_id), picked, was)
             if tab == "assets" else [])
     return render_inventory_page(
-        "inventory/allocation.html", lines=lines, totals=shortfall(selection, lines), rows=rows,
+        "inventory/allocation.html", totals=shortfall(selection, lines), rows=rows,
         tab=tab, dept_id=dept_id, dept_options=list(options_by_id.items()), lines_show=lines_show,
         filters=filters, groups=group_by_department(shown), lines_count=len(shown), assets_count=len(assets), **ctx)
 
@@ -162,7 +166,7 @@ def allocation():
 
 
 def _carried() -> dict:
-    """Event, selection and filter that every write route hands back to the page."""
+    """Event, selection and filters that the save route hands back to the page."""
     return {key: request.values[key] for key in ("event", "item", "service", "tab", "dept", "show", "lines")
             if request.values.get(key)}
 

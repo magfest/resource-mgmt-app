@@ -4,7 +4,7 @@ Pure functions over `DemandLine`; nothing here queries the database.
 """
 from dataclasses import dataclass
 
-from app.inventory.demand import LINE_OPEN, DemandLine
+from app.inventory.demand import LINE_OPEN, LINE_REMOVED, DemandLine
 
 LINES_SHORT, LINES_ALL, LINES_NOTES = "short", "all", "notes"
 # Dropdown options are cut harder than the 80-character line words so they fit a phone.
@@ -36,11 +36,19 @@ def filter_lines(lines, department_id: int | None, show: str) -> list[DemandLine
 
 @dataclass
 class DepartmentGroup:
+    """One department's rows under its heading.
+
+    `lines` lists every row, REMOVED rows included. The heading's counts cover
+    only rows with a live line; `on_removed` counts the assets on REMOVED rows.
+    """
+
     name: str
     lines: list[DemandLine]
+    line_count: int
     requested: int
     allocated: int
     short: int
+    on_removed: int
 
 
 def group_by_department(lines) -> list[DepartmentGroup]:
@@ -48,14 +56,15 @@ def group_by_department(lines) -> list[DepartmentGroup]:
     by_department: dict[int, list[DemandLine]] = {}
     for line in lines:
         by_department.setdefault(line.department_id, []).append(line)
-    groups = [
-        DepartmentGroup(
-            name=members[0].department_name, lines=members,
-            # A REMOVED row has no request, so it adds nothing to requested.
-            requested=sum(line.requested or 0 for line in members),
-            allocated=sum(line.allocated for line in members),
-            short=sum(short_count(line) for line in members))
-        for members in by_department.values()]
+    groups = []
+    for members in by_department.values():
+        live = [line for line in members if line.state != LINE_REMOVED]
+        groups.append(DepartmentGroup(
+            name=members[0].department_name, lines=members, line_count=len(live),
+            requested=sum(line.requested for line in live),
+            allocated=sum(line.allocated for line in live),
+            short=sum(short_count(line) for line in live),
+            on_removed=sum(line.allocated for line in members if line.state == LINE_REMOVED)))
     return sorted(groups, key=lambda group: group.name.casefold())
 
 
@@ -77,11 +86,17 @@ def cut_words(text: str) -> str:
     return text if len(text) <= _OPTION_WORDS else text[:_OPTION_WORDS - 1] + "…"
 
 
-def option_text(line: DemandLine) -> str:
+def line_option(department: str, public_id: str | None, line_number: int | None, words: str,
+                left: int = 0) -> str:
     """Name a line in an asset dropdown; ` · {k} left` shows only while it has room."""
-    text = (f"{line.department_name} · {short_order(line.public_id)} line {line.line_number}"
-            f" · {cut_words(line.words)}")
-    return f"{text} · {line.left} left" if line.left > 0 else text
+    text = f"{department} · {short_order(public_id)} line {line_number} · {cut_words(words)}"
+    return f"{text} · {left} left" if left > 0 else text
+
+
+def option_text(line: DemandLine) -> str:
+    """Name one of this event's lines in an asset dropdown."""
+    return line_option(line.department_name, line.public_id, line.line_number, line.words,
+                       line.left)
 
 
 @dataclass

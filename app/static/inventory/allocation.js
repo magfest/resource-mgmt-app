@@ -43,6 +43,34 @@
     }
   });
 
+  // iOS Safari never shows a beforeunload prompt, so links and other forms ask first.
+  // A yes disarms beforeunload too, so desktop browsers do not ask twice.
+  function leaveAnyway(event) {
+    if (changes === 0) { return; }
+    if (window.confirm('You have unsaved changes. Leave without saving?')) {
+      submitting = true;
+    } else {
+      event.preventDefault();
+    }
+  }
+
+  function samePageAnchor(link) {
+    return link.getAttribute('href').charAt(0) === '#'
+      || (link.hash && link.href.split('#')[0] === window.location.href.split('#')[0]);
+  }
+
+  document.addEventListener('click', function (event) {
+    var link = event.target.closest('a[href]');
+    if (!link || event.defaultPrevented || event.button !== 0) { return; }
+    if (event.ctrlKey || event.metaKey || event.shiftKey) { return; }
+    if (link.target === '_blank' || link.hasAttribute('download') || samePageAnchor(link)) { return; }
+    leaveAnyway(event);
+  });
+
+  document.addEventListener('submit', function (event) {
+    if (event.target !== form) { leaveAnyway(event); }
+  });
+
   // A re-render after a refused save arrives with picks already differing.
   refresh();
 })();

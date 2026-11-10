@@ -65,6 +65,17 @@ def test_group_by_department_subtotals(alloc):
     assert departments(_lines(alloc)) == [(alloc.alpha.id, "Alpha Team"), (alloc.beta.id, "Beta Team")]
 
 
+def test_group_counts_removed_rows_apart(alloc):
+    supply_line(alloc, alloc.alpha, 2)
+    row = make_allocation(make_asset(alloc.tv, "U-0001"),
+                          supply_line(alloc, alloc.alpha, 1, item=alloc.printer), "Gone TVs")
+    row.work_line_id = None
+    [alpha] = group_by_department(_lines(alloc))
+    assert len(alpha.lines) == 2
+    assert (alpha.line_count, alpha.requested, alpha.allocated, alpha.short, alpha.on_removed) == (
+        1, 2, 0, 2, 1)
+
+
 def test_short_order():
     assert short_order("TST27-ALPHA-SUP-3") == "SUP-3"
     assert short_order("TST27-FRONT-DESK-TEC-12") == "TEC-12"

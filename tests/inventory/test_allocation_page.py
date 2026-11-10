@@ -107,7 +107,8 @@ def test_an_allocation_for_another_event_names_it(client, alloc):
     db.session.commit()
     login(client, "test:admin")
     page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
-    assert _selected(page, unit) == [(str(other.id), "Alpha Team · SUP-1 line 1 · one 4K (TST28)")]
+    # The event code leads, so a phone that cuts the option's end still shows it.
+    assert _selected(page, unit) == [(str(other.id), "TST28 · Alpha Team · SUP-1 line 1 · one 4K")]
     login(client, "test:operator")
     page = _page(client, alloc, event=alloc.event.id, item=alloc.tv.id)
     assert "Allocated to Alpha Team · one 4K (TST28)" in page
@@ -218,6 +219,19 @@ def test_lines_tab_shows_order_line_full_note_and_numbers(client, alloc):
     assert "Alpha Team · 1 line · 1 of 4 allocated · 3 short" in page
     assert "Department lines (1)" in page and "Assets (1)" in page
     assert "<table" not in page
+
+
+def test_department_heading_counts_removed_rows_apart(client, alloc):
+    supply_line(alloc, alloc.alpha, 2)
+    # The deleted line was for another item, so only the REMOVED row reaches the TV's lines.
+    row = make_allocation(make_asset(alloc.tv, "U-0001"),
+                          supply_line(alloc, alloc.alpha, 1, item=alloc.printer), "Gone TVs")
+    row.work_line_id = None
+    db.session.commit()
+    login(client, "test:admin")
+    page = html.unescape(_lines_page(client, alloc))
+    assert "Alpha Team · 1 line · 0 of 2 allocated · 2 short · 1 on removed lines" in page
+    assert "Department lines (2)" in page
 
 
 def test_lines_tab_says_no_note(client, alloc):
@@ -412,6 +426,20 @@ def test_a_refused_save_keeps_every_pick(client, alloc):
     assert [v for v, _ in _selected(page, u1)] == [str(room.id)]
     assert f'name="was_{u1.id}" value=""' in page
     assert 'name="tab" value="assets"' in page and f'name="dept" value="{alloc.beta.id}"' in page
+
+
+def test_show_buttons_after_a_refused_save_read_the_page(client, alloc):
+    full = supply_line(alloc, alloc.alpha, 1, notes="full")
+    make_allocation(make_asset(alloc.tv, "U-0001"), full)
+    unit = make_asset(alloc.tv, "U-0002")
+    db.session.commit()
+    login(client, "test:admin")
+    response = client.post("/inv/allocation/save", data={
+        "event": alloc.event.id, "item": alloc.tv.id, f"was_{unit.id}": "", f"to_{unit.id}": full.id})
+    assert response.status_code == 200
+    forms = re.findall(r'<form method="get"[^>]*>', response.get_data(as_text=True))
+    assert len(forms) == 2
+    assert all('action="/inv/allocation"' in form for form in forms)
 
 
 def test_row_never_shows_only_a_number(client, alloc):

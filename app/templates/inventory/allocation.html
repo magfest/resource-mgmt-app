@@ -34,7 +34,7 @@
 <p class="muted">No item needs pre-allocation yet. Switch it on from an item's About tab.</p>
 {% endif %}
 {% if events and options %}
-<form method="get" class="card mb-16 alloc-form">
+<form method="get" action="{{ url_for('inventory.allocation') }}" class="card mb-16 alloc-form">
   <label>Event
     <select name="event">
       {% for e in events %}<option value="{{ e.id }}"{% if e.id == event.id %} selected{% endif %}>{{ e.code }}</option>{% endfor %}
@@ -61,7 +61,7 @@
   <a href="{{ url_for('inventory.allocation', **dict(base, tab='assets')) }}"{% if tab == 'assets' %} aria-current="page"{% endif %}>Assets ({{ assets_count }})</a>
   <a href="{{ url_for('inventory.allocation', **dict(base, tab='lines')) }}"{% if tab == 'lines' %} aria-current="page"{% endif %}>Department lines ({{ lines_count }})</a>
 </nav>
-<form method="get" class="alloc-form mb-16">
+<form method="get" action="{{ url_for('inventory.allocation') }}" class="alloc-form mb-16">
   {% for k, v in base.items() if k != 'dept' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <label>Department
     <select name="dept">
@@ -79,7 +79,7 @@
   {% endfor %}
 </p>
 {% for group in groups %}
-<h2 class="alloc-dept">{{ group.name }} · {{ group.lines|length }} line{{ '' if group.lines|length == 1 else 's' }} · {{ group.allocated }} of {{ group.requested }} allocated{% if group.short > 0 %} · {{ group.short }} short{% endif %}</h2>
+<h2 class="alloc-dept">{{ group.name }} · {{ group.line_count }} line{{ '' if group.line_count == 1 else 's' }} · {{ group.allocated }} of {{ group.requested }} allocated{% if group.short > 0 %} · {{ group.short }} short{% endif %}{% if group.on_removed > 0 %} · {{ group.on_removed }} on removed lines{% endif %}</h2>
 <ul class="alloc-list">
   {% for line in group.lines %}
   <li>
