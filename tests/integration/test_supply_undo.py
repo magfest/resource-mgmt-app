@@ -122,11 +122,11 @@ def test_undo_shown_only_on_decided_rows_user_may_undo(app, client, seed_workflo
     line_page = _base(cycle, dept, wi, line) + "/review"
     for url in (quick, line_page):
         body = client.get(url).get_data(as_text=True)
-        assert "/reopen" in body, url
+        assert '/reopen"' in body, url
     # Pending line: no undo.
     _reopen(client, cycle, dept, wi, line)
     for url in (quick, line_page):
-        assert "/reopen" not in client.get(url).get_data(as_text=True), url
+        assert '/reopen"' not in client.get(url).get_data(as_text=True), url
 
 
 def test_budget_reopen_still_refused(client, seed_draft_work_item):
@@ -147,3 +147,17 @@ def test_budget_reopen_still_refused(client, seed_draft_work_item):
     client.post(_reopen_url, data={"note": "x"})
     db.session.refresh(d["line"])
     assert d["line"].status == "APPROVED"
+    assert "You cannot reopen this line." in _flashes(client)
+
+
+def test_supply_approve_json_says_decider_may_undo(app, client, seed_workflow_data):
+    wt, cycle, dept, group, item, wi, line = setup_submitted_order(
+        app, client, seed_workflow_data, quantity=10)
+    login(client, "test:reviewer")
+    data = client.post(_base(cycle, dept, wi, line) + "/approve",
+                       data={"ajax": "1", "approved_quantity": "4"}).get_json()
+    assert data["can_undo"] is True
+    client.post(_base(cycle, dept, wi, line) + "/reopen")
+    resp = client.post(_base(cycle, dept, wi, line) + "/reject",
+                       data={"ajax": "1", "note": "no"})
+    assert resp.get_json()["can_undo"] is True

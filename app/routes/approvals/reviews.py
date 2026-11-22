@@ -482,6 +482,8 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
                 "success": True,
                 "line_num": line_num,
                 "new_status": line.status,
+                # Quick Review draws Undo from this; the server rule stays the one source.
+                "can_undo": can_reopen_line(line, user_ctx),
                 "message": f"Line {line_num} {action_labels.get(action, 'updated')}."
             })
 

@@ -120,14 +120,15 @@ def test_budget_approve_ignores_approved_quantity_field(client, seed_draft_work_
     login(client, "test:admin")
     base = f"/TST2026/TESTDEPT/budget/item/{d['work_item'].public_id}"
     client.post(f"{base}/checkout")
-    from app.line_details import get_line_amount_cents
-    before = get_line_amount_cents(d["line"])
     resp = client.post(f"{base}/line/1/approve",
                        data={"ajax": "1", "approved_quantity": "abc"})
     assert resp.get_json()["success"] is True
     db.session.refresh(d["line"])
     assert d["line"].status == "APPROVED"
-    assert get_line_amount_cents(d["line"]) == before
+    # Budget approve without recommended_amount leaves the approved amount unset.
+    review = R.query.filter_by(work_line_id=d["line"].id,
+                               stage=REVIEW_STAGE_APPROVAL_GROUP).one()
+    assert review.approved_amount_cents is None
 
 
 def test_supply_order_page_hides_stale_checkout_banner(app, client, seed_workflow_data):
