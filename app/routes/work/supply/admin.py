@@ -58,6 +58,7 @@ from app.routes.work.helpers import (
     friendly_status,
     is_worktype_admin,
 )
+from app.services.notifications import notify_supply_finalized
 from .. import work_bp
 from .admin_lines import (
     SupplyAdminError,
@@ -69,7 +70,9 @@ from .admin_lines import (
     parse_admin_quantity,
     require_editable_order,
 )
-from .line_state import is_line_removed, is_order_closed, reviewer_quantity_label
+from .line_state import (
+    build_finalize_changes, is_line_removed, is_order_closed, reviewer_quantity_label,
+)
 
 _PER_PAGE = 25
 
@@ -487,7 +490,10 @@ def _build_finalize_view(work_item: WorkItem):
             "ag_review": ag_review,
             "decided_by": ag_review.decided_by_user_id if ag_review else None,
             "kicked_back": _is_line_kicked_back(line, ag_review),
-            "reviewer_label": reviewer_quantity_label(detail, ag_review),
+            "reviewer_label": (
+                None if is_line_removed(detail)
+                else reviewer_quantity_label(detail, ag_review)
+            ),
         })
     return line_rows
 
@@ -660,6 +666,8 @@ def supply_admin_finalize(public_id: str):
         created_by_user_id=user_ctx.user_id,
         snapshot={"line_count": len(lines)},
     ))
+    # Queued in this transaction; the commit below sends nothing itself.
+    notify_supply_finalized(work_item, build_finalize_changes(work_item), now)
     db.session.commit()
 
     flash(f"Supply order {work_item.public_id} finalized.", "success")

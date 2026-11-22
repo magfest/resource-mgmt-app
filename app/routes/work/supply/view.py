@@ -145,6 +145,8 @@ def supply_order_detail(event: str, dept: str, public_id: str):
     for line in lines:
         ag_review = next(
             (r for r in line.reviews if r.stage == REVIEW_STAGE_APPROVAL_GROUP), None)
+        if is_line_removed(line.supply_detail):
+            continue
         label = reviewer_quantity_label(line.supply_detail, ag_review)
         if label:
             reviewer_quantity_labels[line.line_number] = label

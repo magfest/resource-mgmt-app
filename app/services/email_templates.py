@@ -89,6 +89,17 @@ EMAIL_TEMPLATE_VARIABLES = {
         'work_item.portfolio.event_cycle.name': 'Event name',
         'work_item.portfolio.event_cycle.code': 'Event code',
         'base_url': 'Base URL of the application',
+        'changes': 'Supply only: lines that differ from the request (line_number, item_name, unit, kind, department_quantity, requested, final, reason)',
+    },
+    'closed': {
+        'work_item': 'The WorkItem that was closed',
+        'work_item.public_id': 'Public ID of the request',
+        'work_item.portfolio.department.name': 'Department name',
+        'work_item.portfolio.department.code': 'Department code',
+        'work_item.portfolio.event_cycle.name': 'Event name',
+        'work_item.portfolio.event_cycle.code': 'Event code',
+        'base_url': 'Base URL of the application',
+        'reason': 'Why Supply closed the order',
     },
     'submission_reminder': {
         'department': 'The Department being reminded',

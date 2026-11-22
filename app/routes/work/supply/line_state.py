@@ -27,3 +27,54 @@ def reviewer_quantity_label(detail, ag_review) -> str | None:
     if ag_review.status != "APPROVED":
         return None
     return f"Approved {detail.quantity_reviewed} of {detail.quantity_requested}"
+
+
+def build_finalize_changes(work_item) -> list[dict]:
+    """List what finalize changed from the department's request, by line number.
+
+    Call after the finalize writes so `quantity_approved` is set. A removed
+    or added line yields only that kind; `cut` and `raised` compare the final
+    quantity with the current request, so an admin raise that finalizes as
+    asked reports once, as `requested_changed`.
+    """
+    # Imported here: the models package imports this one.
+    from app.models import AUDIT_EVENT_FIELD_CHANGE, WorkLineAuditEvent
+
+    changes = []
+    for line in sorted(work_item.lines, key=lambda l: l.line_number):
+        detail = line.supply_detail
+        if detail is None:
+            continue
+        item = detail.item
+        base = {
+            "line_number": line.line_number,
+            "item_name": item.item_name if item else "",
+            "unit": item.unit if item else "",
+            "department_quantity": detail.department_quantity,
+            "requested": detail.quantity_requested,
+            "final": detail.quantity_approved,
+            "reason": "",
+        }
+        if is_line_removed(detail):
+            changes.append({**base, "kind": "removed", "reason": detail.removed_reason or ""})
+            continue
+        if detail.added_by_admin_user_id:
+            changes.append({**base, "kind": "added"})
+            continue
+        if (detail.department_quantity is not None
+                and detail.department_quantity != detail.quantity_requested):
+            audit = (
+                WorkLineAuditEvent.query
+                .filter_by(work_line_id=line.id, event_type=AUDIT_EVENT_FIELD_CHANGE,
+                           field_name="quantity_requested")
+                .order_by(WorkLineAuditEvent.id.desc())
+                .first()
+            )
+            changes.append({**base, "kind": "requested_changed",
+                            "reason": (audit.note or "") if audit else ""})
+        final = detail.quantity_approved
+        if final is not None and final < detail.quantity_requested:
+            changes.append({**base, "kind": "cut"})
+        elif final is not None and final > detail.quantity_requested:
+            changes.append({**base, "kind": "raised"})
+    return changes

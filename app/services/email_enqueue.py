@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 # re-finalize notifies again. Each send-back writes a new audit event. Keying
 # on item id alone silently drops the second one, because the first row still
 # owns the key.
-_ONCE_PER_EVENT_KINDS = ("submission_confirmation", "finalized", "submitted", "sent_back")
+_ONCE_PER_EVENT_KINDS = ("submission_confirmation", "finalized", "submitted", "sent_back",
+                        "closed")
 
 
 def resolve_template_key(kind: str, work_type_code: str | None) -> str:
