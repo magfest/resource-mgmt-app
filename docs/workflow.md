@@ -336,7 +336,7 @@ Line transitions:
 | PENDING | Approve with a quantity of 1 or more | APPROVED, `quantity_reviewed` set | Reviewer in the routed group |
 | PENDING | Reject, note required | REJECTED, `quantity_reviewed` 0 | Reviewer in the routed group |
 | PENDING | Request information or adjustment | NEEDS_INFO or NEEDS_ADJUSTMENT | Reviewer in the routed group |
-| APPROVED or REJECTED, order SUBMITTED | Undo, no note needed | PENDING, `quantity_reviewed` cleared | Reviewer in the routed group, or a Supply admin |
+| APPROVED or REJECTED, order SUBMITTED | Undo, no note needed; without one, the public `[REOPENED]` comment names who undid it | PENDING, `quantity_reviewed` cleared | Reviewer in the routed group, or a Supply admin |
 | Any live line, order SUBMITTED | Remove, reason required | REJECTED, `quantity_approved` 0, shown "Removed by Supply admin" | Supply admin |
 | Any live line | Finalize | APPROVED or REJECTED by the final quantity | Supply admin |
 
@@ -353,20 +353,26 @@ Decisions behind this behavior:
 
 | Decision | Reason |
 | --- | --- |
-| A second decider on a decided line is refused, and the message names who decided, what, and the quantity | Without a lock, two reviewers can post at once. Row locks on the order and the review settle the race (`apply_review_decision`) |
+| A second decider on a decided line is refused. For reviewers and admins the message names who decided, what, and the quantity; anyone else reads "This line was already decided." | Without a lock, two reviewers can post at once. Row locks on the order and the review settle the race (`apply_review_decision`) |
 | Removed lines stay on the order, struck through | A line that vanishes leaves the department unable to tell a problem from a decision. Removal sets `removed_at`; the status is `REJECTED` |
 | Removal closes any open group review as REJECTED, including kickbacks | A kicked-back removed line would otherwise block finalize with no one able to answer it |
-| A changed requested quantity keeps the department's value in `department_quantity` | Pages and email show "100 → 150" and "Changed by Supply admin" |
-| Admin-added lines show "Added by Supply admin"; the optional note becomes a public line comment | `requester_notes` holds only the department's words |
+| A changed requested quantity keeps the department's value in `department_quantity` | Pages and email show "100 → 150" and "Changed by Supply admin". The order page adds the latest reason, who changed it and when, read from the line's FIELD_CHANGE audit row |
+| Admin-added lines show "Added by Supply admin"; the department sees the optional note, who added it and when, on the order page | `requester_notes` holds only the department's words, so the note is stored as a public line comment |
 | A line with NULL `quantity_reviewed` counts at the requested quantity in the finalize prefill and the demand report | Orders decided before the column existed could only be approved as requested. A NULL on a rejected line counts as 0 |
-| The department sees "Approved {n} of {m}" once the group approves a line | `quantity_reviewed` against `quantity_requested` |
+| The order page labels each live line "Approved {n} of {m}". Under review, n is the group's `quantity_reviewed`. Once finalized, n is `quantity_approved`, and 0 reads "Not approved". A closed order shows no label | The department reads the number that will be filled. Removed lines show their removal instead |
 | Close sets every live line to REJECTED at 0 and emails the reason | The department placed the order in error; nothing will be filled |
 | Reopen cancels this order's unsent finalized and closed emails | Otherwise the department is told "finalized" about an order back in review |
 | Finalize needs a note only when it flips a group decision | Approving a rejected line or zeroing an approved one |
 | A kicked-back line blocks finalize | The requester must answer first |
 
-Finalize prefills each line from `quantity_reviewed` when the group approved,
-0 when it rejected, and the requested quantity when still pending.
+Finalize prefills each line in this order. A decided admin-final review wins:
+its `quantity_approved`, or 0 when rejected, with its note. This keeps an
+admin's cuts when a reopened order is finalized again. Otherwise the group's
+decision applies: `quantity_reviewed` when approved, 0 when rejected. A line
+still pending prefills its requested quantity. A quantity change on the
+finalize screen moves a decided admin approval to the new quantity. Finalize
+refuses a quantity above 100,000. A closed order's screen shows each line's
+closed quantity, read-only.
 "Finalize and open next" opens the oldest-submitted ready order in the same
 event. Admins edit lines on the same screen. Typed finalize quantities are
 cleared by a line edit, so the page asks for confirmation before submitting an

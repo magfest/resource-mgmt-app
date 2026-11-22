@@ -102,7 +102,7 @@ outside their group. Supply has no read-only viewer role.
 | Supply reviewer (`APPROVER` on a Supply group) | Read every Supply order and line; decide and undo lines routed to the group; read both Supply reports | Admin → Users → Edit User, the box for that group | Same form with the box cleared |
 | Supply admin (`WORKTYPE_ADMIN` for SUPPLY) | Finalize, add, change, remove, close and reopen; undo any decision; read reports | Admin → Users → Edit User, the SUPPLY box | Same form with the box cleared |
 | `SUPER_ADMIN` | Everything a Supply admin can do | Admin → Users → Edit User, "Super Admin" box | Same form with the box cleared |
-| Department member | Read own orders; see line changes, removal reasons and closure; answer kickbacks | Department membership with SUPPLY view and edit access | Delete the member row |
+| Department member | Read own orders; see final quantities, admin changes with their reasons and notes, removal reasons and closure; answer kickbacks | Department membership with SUPPLY view access to read; edit access to answer kickbacks | Delete the member row |
 
 The Supply routes enforce this in three places.
 
