@@ -806,6 +806,11 @@
             font: inherit;
         }
 
+        /* Caps a single-column action form on wide screens; phones use the full width. */
+        @media (min-width: 768px) {
+            .form-narrow { max-width: 40rem; }
+        }
+
         /* A number box sized for a count, styled like the text fields
            above. Not applied to every number input on purpose; other pages
            size theirs inline. */

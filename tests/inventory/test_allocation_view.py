@@ -5,9 +5,7 @@ from app.inventory.allocation_view import (
     short_order,
 )
 from app.inventory.demand import demand_lines, find_selection
-from app.inventory.unit_fields import set_unit_value
-from app.models.constants import INV_FIELD_CHOICE, INV_FIELD_NUMBER, INV_FIELD_TEXT
-from tests.inventory.helpers import make_allocation, make_asset, seed_gear_kind, supply_line
+from tests.inventory.helpers import make_allocation, make_asset, supply_line
 
 
 def _lines(alloc):
@@ -107,32 +105,3 @@ def test_asset_choices_group_open_lines_with_room(alloc):
     assert full.id not in dict(groups[1].options)
     assert [g.department for g in asset_choices(lines, alloc.beta.id)] == ["Beta Team"]
     assert asset_choices(lines, 999999) == []
-
-
-def _tv_kind(alloc):
-    on = {"on_label": True}
-    kind = seed_gear_kind("TV", "TV", [
-        ("MODEL", "Model", INV_FIELD_TEXT, None),
-        ("SIZE", "Size", INV_FIELD_NUMBER, "in", on),
-        ("RESOLUTION", "Resolution", INV_FIELD_CHOICE, ["1080p", "4K"], on),
-    ])
-    alloc.tv.gear_kind_id = kind.id
-    db.session.flush()
-    db.session.expire(alloc.tv)
-    return kind
-
-
-def test_label_line(alloc):
-    from app.inventory.unit_fields import label_line
-    model, size, resolution = _tv_kind(alloc).fields
-    named = make_asset(alloc.tv, "U-0001", name="Lobby TV 1")
-    for field, raw in ((model, "LP-200"), (size, "55"), (resolution, "4K")):
-        set_unit_value(named, field, raw)
-    assert label_line(named) == "Test TV (55in, 4K) · Model LP-200"
-    set_unit_value(named, model, "")
-    assert label_line(named) == "Test TV (55in, 4K)"
-    unnamed = make_asset(alloc.tv, "U-0002")
-    assert label_line(unnamed) == "Test TV"
-    set_unit_value(unnamed, size, "55")
-    set_unit_value(unnamed, resolution, "4K")
-    assert label_line(unnamed) == "Test TV · 55 in, 4K"

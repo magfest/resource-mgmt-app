@@ -1,0 +1,52 @@
+{# templates/supply/admin_order_reason.html #}
+{# Close or reopen a Supply order. Expects work_item, action ("close" or
+   "reopen"), return_to ("finalize" or "order"), cancel_url, is_closed, error
+   and reason (the typed text, kept when a refusal re-renders the page). The
+   routes lock the order and re-check its status; this form only offers the
+   action. #}
+{% extends "layout/base.html" %}
+
+{% set title = 'Close order' if action == 'close' else 'Reopen order' %}
+{% block title %}{{ title }} {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+  <h1 style="margin: 0 0 4px 0;">{{ title }} {{ work_item.public_id }}</h1>
+  <div class="muted small" style="margin-bottom: 16px;">
+    {% if action == 'close' %}
+      For an order placed by mistake. Every line is rejected and the department is emailed this reason. Reopen undoes it.
+    {% elif is_closed %}
+      Every line goes back to its review group. The reason is posted as a public comment; no email is sent.
+    {% else %}
+      Line decisions stay as they are. The reason is posted as a public comment; no email is sent.
+    {% endif %}
+  </div>
+
+  {% if error %}
+    <div class="callout callout-danger" role="alert" style="margin-bottom: 12px; padding: 10px 14px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" class="form-narrow card"
+        action="{{ url_for('work.supply_admin_close' if action == 'close' else 'work.supply_admin_reopen', public_id=work_item.public_id) }}"
+        data-confirm-submit="{{ 'Close this order? Every line is rejected and the department is emailed the reason.' if action == 'close' else 'Reopen this order for review?' }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label class="small" style="display: block; margin-bottom: 16px;">Reason (the department sees this)
+      <textarea name="reason" rows="3" maxlength="1000" required style="width: 100%;">{{ reason }}</textarea>
+    </label>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <button type="submit" class="btn{% if action == 'close' %} btn-danger{% endif %}">{{ title }}</button>
+      <a href="{{ cancel_url }}">Cancel</a>
+    </div>
+  </form>
+
+  {# Not data-confirm: base.html confirms every click inside an element with
+     that attribute, so a form carrying it would ask on each click. #}
+  <script nonce="{{ csp_nonce }}">
+  document.addEventListener('submit', function(e) {
+    var message = e.target.getAttribute && e.target.getAttribute('data-confirm-submit');
+    if (message && !confirm(message)) {
+      e.preventDefault();
+    }
+  });
+  </script>
+{% endblock %}

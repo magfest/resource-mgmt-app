@@ -385,7 +385,7 @@ def test_actions_on_closed_order_refused(app, client, seed_workflow_data):
         client.post(f"{env.admin_url}/finalize", data={"approved_qty_1": "6"}),
         _close(client, env),
     ]
-    assert all(r.status_code in (302, 400, 403) for r in resps), [r.status_code for r in resps]
+    assert all(r.status_code in (200, 302, 400, 403) for r in resps), [r.status_code for r in resps]
     assert _snapshot(env) == before
     assert supply_display_status(_order(env)) == "CLOSED"
     assert len(_rows("supply_closed")) == 1
@@ -418,18 +418,18 @@ def test_admin_sees_close_on_submitted_and_reopen_on_finalized(app, client, seed
     page = client.get(env.order_url).get_data(as_text=True)
     final = client.get(f"{env.admin_url}/finalize").get_data(as_text=True)
     for body in (page, final):
-        assert f'action="{env.admin_url}/close"' in body
-        assert f'action="{env.admin_url}/reopen"' not in body
+        assert f'href="{env.admin_url}/close' in body
+        assert f'href="{env.admin_url}/reopen' not in body
     _close(client, env)
     page = client.get(env.order_url).get_data(as_text=True)
     final = client.get(f"{env.admin_url}/finalize").get_data(as_text=True)
     for body in (page, final):
-        assert f'action="{env.admin_url}/reopen"' in body
-        assert f'action="{env.admin_url}/close"' not in body
+        assert f'href="{env.admin_url}/reopen' in body
+        assert f'href="{env.admin_url}/close' not in body
         assert REASON in body
     login(client, "test:reviewer")
     body = client.get(env.order_url).get_data(as_text=True)
-    assert "/close\"" not in body and "/reopen\"" not in body
+    assert f"{env.admin_url}/close" not in body and f"{env.admin_url}/reopen" not in body
 
 
 # Other work types
@@ -458,22 +458,19 @@ def test_supply_finalized_not_closed_still_finalized(app, client, seed_workflow_
     assert supply_display_status(order) == "FINALIZED"
 
 
-def test_close_and_reopen_forms_confirm_on_submit_only(app, client, seed_workflow_data):
-    """base.html confirms any click inside a [data-confirm] element, so the forms must not carry it."""
+def test_order_and_finalize_pages_carry_no_inline_close_reopen_forms(app, client, seed_workflow_data):
+    """Close and Reopen are links; the reason form and its confirm live on their own page."""
     env = _ready(client, seed_workflow_data)
-
-    def form_tag(body, action):
-        match = re.search(rf'<form[^>]*action="{re.escape(env.admin_url)}/{action}"[^>]*>', body)
-        assert match, action
-        return match.group(0)
-
     for url in (env.order_url, f"{env.admin_url}/finalize"):
-        tag = form_tag(client.get(url).get_data(as_text=True), "close")
-        assert "data-confirm=" not in tag and "data-confirm-submit=" in tag, url
+        body = client.get(url).get_data(as_text=True)
+        assert "data-confirm-submit" not in body and 'name="reason"' not in body, url
     _close(client, env)
     for url in (env.order_url, f"{env.admin_url}/finalize"):
-        tag = form_tag(client.get(url).get_data(as_text=True), "reopen")
-        assert "data-confirm=" not in tag and "data-confirm-submit=" in tag, url
+        body = client.get(url).get_data(as_text=True)
+        assert "data-confirm-submit" not in body and 'name="reason"' not in body, url
+    final = client.get(f"{env.admin_url}/finalize").get_data(as_text=True)
+    assert f'href="{env.admin_url}/reopen?return_to=finalize"' in final
+    assert not re.findall(r"<a [^>]*data-line-edit", final)
 
 
 def test_kicked_back_line_survives_close_reopen_and_finalizes(app, client, seed_workflow_data):

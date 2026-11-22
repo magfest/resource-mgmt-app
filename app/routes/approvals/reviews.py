@@ -239,6 +239,15 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         space_facts = review_space_facts(work_item, ctx.department.id, ctx.event_cycle)
         phone_line_not_chosen = PHONE_LINE_NOT_CHOSEN
 
+    # Supply-only: the admin "Change this line" card. Local import, same
+    # circular-import reason as the TechOps block above.
+    supply_line_edit = False
+    if work_type_slug == "supply" and is_admin:
+        from app.routes.work.supply.admin_lines import can_admin_edit_line
+        supply_line_edit = can_admin_edit_line(work_item, line)
+    from app.routes.work.supply.admin import _return_to_value
+    return_to = _return_to_value(request.args.get("return_to"))
+
     # Get comments for this line (filter admin-only for non-admins)
     comments = line.comments
     # Reviewers of this line are a trusted group and may see ADMIN notes.
@@ -286,6 +295,8 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         ag_review=ag_review,
         space_facts=space_facts,
         phone_line_not_chosen=phone_line_not_chosen,
+        supply_line_edit=supply_line_edit,
+        return_to=return_to,
     )
 
 

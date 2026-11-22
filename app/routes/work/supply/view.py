@@ -133,7 +133,6 @@ def supply_order_detail(event: str, dept: str, public_id: str):
     lines = sorted(work_item.lines, key=lambda line: line.line_number)
 
     from app.routes.work.helpers.review_state import uses_review_sessions
-    from .admin_lines import admin_item_choices
     from .line_state import (
         admin_line_notes, final_quantity_label, is_line_removed, is_order_closed,
         reviewer_quantity_label,
@@ -203,8 +202,6 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         # Only a closed order differs from the stored status; others show as before.
         display_status="CLOSED" if is_order_closed(work_item) else work_item.status,
         can_admin_edit_lines=can_admin_edit_lines,
-        admin_items=admin_item_choices() if can_admin_edit_lines else [],
-        edit_lines=[line for line in lines if not is_line_removed(line.supply_detail)],
         kickback_editable_line_numbers=kickback_editable_line_numbers,
         submit_errors=submit_errors,
         friendly_status=friendly_status,

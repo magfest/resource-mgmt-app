@@ -85,6 +85,9 @@
 
   {# Navigation #}
   <div class="btn-row mb-16">
+    {% if return_to == 'finalize' %}
+      <a class="btn" href="{{ url_for('work.supply_admin_finalize_view', public_id=work_item.public_id) }}">Back to Finalize</a>
+    {% endif %}
     <a class="btn" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
       Back to Request
     </a>
@@ -172,6 +175,54 @@
           </div>
         {% endif %}
       </section>
+
+      {% if supply_line_edit %}
+        <section class="card" id="admin-line-edit">
+          <h3 style="margin:0 0 4px 0;">Change this line</h3>
+          <div class="muted small" style="margin-bottom: 12px;">
+            {% if return_to == 'finalize' %}
+              Changes here skip the review group. The department sees every change and its reason.
+            {% else %}
+              Quantity changes here go back to the review group. The department sees every change and its reason.
+            {% endif %}
+          </div>
+
+          <form method="post" class="form-narrow" style="margin-bottom: 16px;"
+                action="{{ url_for('work.supply_admin_line_quantity', public_id=work_item.public_id, line_number=line.line_number) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
+            <label class="small" style="display: block; margin-bottom: 8px;">New quantity
+              <input type="number" name="quantity" min="1" max="100000" step="1" required
+                     value="{{ detail.quantity_requested }}" style="width: 8rem;">
+            </label>
+            <label class="small" style="display: block; margin-bottom: 8px;">Reason
+              <textarea name="reason" rows="2" maxlength="1000" required style="width: 100%;"></textarea>
+            </label>
+            <button type="submit" class="btn">Change quantity</button>
+          </form>
+
+          <form method="post" class="form-narrow" style="border-top: 1px solid #eee; padding-top: 12px;"
+                action="{{ url_for('work.supply_admin_line_remove', public_id=work_item.public_id, line_number=line.line_number) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
+            <label class="small" style="display: block; margin-bottom: 8px;">Reason for removing
+              <textarea name="reason" rows="2" maxlength="1000" required style="width: 100%;"></textarea>
+            </label>
+            <button type="submit" class="btn btn-danger" data-confirm-remove="Remove line {{ line.line_number }}? The department sees it struck through with your reason.">Remove line</button>
+          </form>
+        </section>
+        <script nonce="{{ csp_nonce }}">
+        (function() {
+          document.addEventListener('click', function(e) {
+            var btn = e.target.closest('[data-confirm-remove]');
+            if (!btn) return;
+            if (!confirm(btn.getAttribute('data-confirm-remove'))) {
+              e.preventDefault();
+            }
+          });
+        })();
+        </script>
+      {% endif %}
 
       {# Line History — create + review activity #}
       {% if audit_events %}

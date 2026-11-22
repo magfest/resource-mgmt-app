@@ -1,0 +1,51 @@
+{# templates/supply/admin_line_add.html #}
+{# Add a line to a submitted Supply order. Expects work_item, return_to
+   ("finalize" or "order"), cancel_url, admin_items, error and values (the
+   posted form, kept when a refusal re-renders the page). #}
+{% extends "layout/base.html" %}
+
+{% block title %}Add line to {{ work_item.public_id }}{% endblock %}
+
+{% block content %}
+  <h1 style="margin: 0 0 4px 0;">Add line to {{ work_item.public_id }}</h1>
+  <div class="muted small" style="margin-bottom: 16px;">
+    {% if return_to == 'finalize' %}
+      Changes here skip the review group. The department sees every change and its reason.
+    {% else %}
+      Added lines go back to the review group. The department sees every change and its reason.
+    {% endif %}
+  </div>
+
+  {% if error %}
+    <div class="callout callout-danger" role="alert" style="margin-bottom: 12px; padding: 10px 14px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" class="form-narrow card" action="{{ url_for('work.supply_admin_line_add', public_id=work_item.public_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    {% set chosen = values.get('item_id') %}
+    <label class="small" style="display: block; margin-bottom: 12px;">Item
+      <select name="item_id" required>
+        <option value="">Choose an item&hellip;</option>
+        {% for category, items in admin_items %}
+          <optgroup label="{{ category.name }}">
+            {% for item in items %}
+              <option value="{{ item.id }}"{% if chosen == item.id|string %} selected{% endif %}>{{ item.item_name }} ({{ item.unit }})</option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="small" style="display: block; margin-bottom: 12px;">Quantity
+      <input type="number" name="quantity" min="1" max="100000" step="1" required
+             value="{{ values.get('quantity', '') }}" style="width: 8rem;">
+    </label>
+    <label class="small" style="display: block; margin-bottom: 16px;">Reason (optional)
+      <input type="text" name="notes" maxlength="1000" value="{{ values.get('notes', '') }}">
+    </label>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <button type="submit" class="btn">Add line</button>
+      <a href="{{ cancel_url }}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

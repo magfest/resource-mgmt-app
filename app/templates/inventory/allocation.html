@@ -115,7 +115,8 @@
 <ul class="alloc-list alloc-assets">
   {% for row in rows %}
   <li>
-    <div><strong>{{ row.number or 'No number yet' }}</strong>{% if row.unit.name %} · {{ row.unit.name }}{% endif %}</div>
+    {% set heading %}<strong>{{ row.number or 'No number yet' }}</strong>{% if row.unit.name %} · {{ row.unit.name }}{% endif %}{% endset %}
+    <div>{% if links_assets %}<a href="{{ url_for('inventory.unit_page', unit_id=row.unit.id) }}">{{ heading }}</a>{% else %}{{ heading }}{% endif %}</div>
     <div class="muted alloc-label">{{ row.details }}</div>
     {% if saving %}
     <input type="hidden" name="was_{{ row.unit.id }}" value="{{ '' if row.was is none else row.was }}">
