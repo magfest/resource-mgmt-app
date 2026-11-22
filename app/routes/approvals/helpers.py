@@ -318,19 +318,38 @@ def can_decide_line(line: WorkLine, user_ctx: UserContext) -> bool:
     )
 
 
+SUPPLY_UNDO_FINALIZED_MESSAGE = (
+    "This order is finalized. Ask a Supply admin to reopen the order first."
+)
+
+
+def _supply_undo_open(line: WorkLine) -> bool:
+    """Return whether a Supply line is in a state where undo is possible."""
+    from app.routes.work.supply.line_state import is_line_removed
+    return (
+        line.supply_detail is not None
+        and line.work_item.status == WORK_ITEM_STATUS_SUBMITTED
+        and not is_line_removed(line.supply_detail)
+    )
+
+
 def can_reopen_line(line: WorkLine, user_ctx: UserContext) -> bool:
     """Return whether the user may send this decided line back to PENDING.
 
-    Group-final work types only, and only someone who could have decided it.
+    Group-final work types, plus Supply while the order is SUBMITTED. Only
+    someone who could have decided the line, or a Supply admin, may.
     """
     from app.routes.work.helpers.review_state import is_group_final
-    if not is_group_final(line.work_item):
-        return False
     review = get_review_for_line(line)
-    return (
-        review is not None
-        and review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)
-        and is_reviewer_for_line(line, user_ctx)
+    if review is None or review.status not in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+        return False
+    if is_group_final(line.work_item):
+        return is_reviewer_for_line(line, user_ctx)
+    if not _supply_undo_open(line):
+        return False
+    from app.routes.work.helpers.context import is_worktype_admin
+    return is_reviewer_for_line(line, user_ctx) or is_worktype_admin(
+        user_ctx, line.work_item.portfolio.work_type_id,
     )
 
 
@@ -442,8 +461,11 @@ def validate_review_transition(
     if action == REVIEW_ACTION_REOPEN:
         from app.routes.work.helpers.review_state import is_group_final
         if not is_group_final(line.work_item):
-            # BUDGET reopens through its admin-final tools instead.
-            return "", "Reopen is not available for this work type."
+            if line.supply_detail is None:
+                # BUDGET reopens through its admin-final tools instead.
+                return "", "Reopen is not available for this work type."
+            if line.work_item.status != WORK_ITEM_STATUS_SUBMITTED:
+                return "", SUPPLY_UNDO_FINALIZED_MESSAGE
 
     key = (current_status, action)
 
@@ -456,13 +478,23 @@ def validate_review_transition(
 
     new_status, note_required, allowed_role = VALID_TRANSITIONS[key]
 
+    # A Supply undo corrects a misclick, so it needs no explanation.
+    if action == REVIEW_ACTION_REOPEN and line.supply_detail is not None:
+        note_required = False
+
     # Check note requirement
     if note_required and not (note or "").strip():
         return "", "A note is required for this action."
 
     # Check role permission
     if allowed_role == "APPROVER":
-        if not is_reviewer_for_line(line, user_ctx):
+        # Supply admins may undo without belonging to the routed group.
+        may_act = (
+            can_reopen_line(line, user_ctx)
+            if action == REVIEW_ACTION_REOPEN and line.supply_detail is not None
+            else is_reviewer_for_line(line, user_ctx)
+        )
+        if not may_act:
             return "", "You do not have permission to perform this action."
         # Once an admin has made a final decision on this line, the approval
         # group can no longer take review actions (comments remain allowed).

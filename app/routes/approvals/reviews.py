@@ -20,6 +20,7 @@ from app.models import (
     REVIEW_ACTION_RESPOND,
     REVIEW_ACTION_REOPEN,
     REVIEW_STATUS_NEEDS_INFO,
+    WORK_ITEM_STATUS_FINALIZED,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     COMMENT_VISIBILITY_PUBLIC,
     COMMENT_VISIBILITY_ADMIN,
@@ -49,6 +50,7 @@ from . import approvals_bp
 from .helpers import (
     can_decide_line,
     can_reopen_line,
+    SUPPLY_UNDO_FINALIZED_MESSAGE,
     is_reviewer_for_line,
     can_respond_to_work_item,
     can_view_work_item_lines,
@@ -330,10 +332,21 @@ def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_
     """Send a decided line on a group-final work type back to PENDING."""
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
-    back = redirect(url_for(
-        "approvals.line_review", event=event, dept=dept, public_id=public_id,
-        line_num=line_num, work_type_slug=work_type_slug,
-    ))
+    # Only the literal value is honored; the form never supplies a URL.
+    if request.form.get("return_to") == "quick_review":
+        back = redirect(url_for(
+            "work.quick_review", event=event, dept=dept, public_id=public_id,
+            work_type_slug=work_type_slug,
+        ))
+    else:
+        back = redirect(url_for(
+            "approvals.line_review", event=event, dept=dept, public_id=public_id,
+            line_num=line_num, work_type_slug=work_type_slug,
+        ))
+
+    if line.supply_detail is not None and work_item.status == WORK_ITEM_STATUS_FINALIZED:
+        flash(SUPPLY_UNDO_FINALIZED_MESSAGE, "error")
+        return back
 
     if not can_reopen_line(line, user_ctx):
         flash("You cannot reopen this line.", "error")
@@ -352,7 +365,7 @@ def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_
     # Decision rationale is public; a reopen is a decision.
     db.session.add(WorkLineComment(
         work_line_id=line.id, visibility=COMMENT_VISIBILITY_PUBLIC,
-        body=f"[REOPENED] {note}", created_by_user_id=user_ctx.user_id,
+        body=f"[REOPENED] {note}".rstrip(), created_by_user_id=user_ctx.user_id,
     ))
     db.session.commit()
     flash(f"Line {line_num} reopened.", "success")

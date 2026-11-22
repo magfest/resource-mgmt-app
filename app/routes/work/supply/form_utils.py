@@ -22,6 +22,11 @@ PICKUP_TIME_OPTIONS = [
 ]
 
 
+# The column is a 32-bit integer on PostgreSQL; an unbounded value fails at
+# commit with a 500.
+MAX_APPROVED_QUANTITY = 100000
+
+
 def parse_approved_quantity(form) -> tuple[int | None, str | None]:
     """Read a reviewer's approved quantity from a POST form.
 
@@ -40,6 +45,8 @@ def parse_approved_quantity(form) -> tuple[int | None, str | None]:
         return None, "Approve needs a quantity of at least 1. Reject the line instead."
     if value < 0:
         return None, "Enter a whole-number quantity to approve."
+    if value > MAX_APPROVED_QUANTITY:
+        return None, "Enter a quantity of 100,000 or less."
     return value, None
 
 

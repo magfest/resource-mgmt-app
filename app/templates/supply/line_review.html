@@ -302,6 +302,13 @@
         </div>
       {% endif %}
 
+      {% if can_reopen %}
+        <form method="post" action="{{ url_for('approvals.line_reopen', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="margin-bottom: 16px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn">Undo this decision</button>
+        </form>
+      {% endif %}
+
       {% include "components/_view_only_notice.html" %}
 
       {# Reviewer Decision Form — unlike TechOps, NEEDS_ADJUSTMENT stays

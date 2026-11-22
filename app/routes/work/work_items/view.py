@@ -41,7 +41,7 @@ from app.routes.admin_final.helpers import (
     get_finalization_summary,
 )
 from .common import get_work_item_by_public_id
-from app.routes.approvals.helpers import can_decide_line
+from app.routes.approvals.helpers import can_decide_line, can_reopen_line
 from app.routes.work.helpers.checkout import STAFF_READ_WORK_TYPES, is_work_type_staffer
 from app.routes.work.helpers.review_state import is_group_final, uses_review_sessions
 
@@ -345,6 +345,7 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
             # quick_review template chooses to render it.
             "group": get_line_routing_approval_group(line),
             "can_decide": can_decide_line(line, user_ctx),
+            "can_reopen": can_reopen_line(line, user_ctx),
         })
 
     # Pick the per-worktype template (same pattern as line_review).

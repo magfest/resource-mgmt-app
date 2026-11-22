@@ -75,6 +75,15 @@ def test_approve_zero_quantity_refused(app, client, seed_workflow_data):
     assert "reject" in data["error"].lower()
 
 
+def test_approve_quantity_above_cap_refused(app, client, seed_workflow_data):
+    cycle, dept, wi, line = _order(app, client, seed_workflow_data)
+    data = _refused(client, cycle, dept, wi, line, "100001")
+    assert data["error"] == "Enter a quantity of 100,000 or less."
+    _post(client, cycle, dept, wi, line, "approve", approved_quantity="100000")
+    db.session.refresh(line)
+    assert line.supply_detail.quantity_reviewed == 100000
+
+
 def test_reject_sets_quantity_reviewed_zero(app, client, seed_workflow_data):
     cycle, dept, wi, line = _order(app, client, seed_workflow_data)
     _post(client, cycle, dept, wi, line, "reject", note="no")
@@ -111,11 +120,14 @@ def test_budget_approve_ignores_approved_quantity_field(client, seed_draft_work_
     login(client, "test:admin")
     base = f"/TST2026/TESTDEPT/budget/item/{d['work_item'].public_id}"
     client.post(f"{base}/checkout")
+    from app.line_details import get_line_amount_cents
+    before = get_line_amount_cents(d["line"])
     resp = client.post(f"{base}/line/1/approve",
                        data={"ajax": "1", "approved_quantity": "abc"})
     assert resp.get_json()["success"] is True
     db.session.refresh(d["line"])
     assert d["line"].status == "APPROVED"
+    assert get_line_amount_cents(d["line"]) == before
 
 
 def test_supply_order_page_hides_stale_checkout_banner(app, client, seed_workflow_data):
