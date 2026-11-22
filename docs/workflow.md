@@ -204,12 +204,14 @@ are not checkoutable at all.
 Rules from `app/routes/work/helpers/checkout.py`:
 
 - Only a SUBMITTED item can be checked out (`:113`). No other status qualifies.
-- A work type without `has_admin_final` has no checkout at all; as of October
-  2026 that is TechOps alone. `can_checkout()` refuses (`checkout.py:118`) and
-  decisions skip the lock (`decision_lock_satisfied`, `approvals/helpers.py:293`).
-  The approval group's decision is final there, so a session would only block
-  the other groups. Row locks on the request and the review take its place
-  (`apply_review_decision`, `approvals/helpers.py:666`).
+- A work type without review sessions has no checkout at all; as of November
+  2026 that is TechOps and Supply. `uses_review_sessions()`
+  (`review_state.py`) decides: it returns False for any work type without
+  `has_admin_final`, and otherwise reads `WorkTypeConfig.uses_review_sessions`.
+  `can_checkout()` refuses and decisions skip the lock (`decision_lock_satisfied`,
+  `approvals/helpers.py`). Row locks on the request and the review take its
+  place (`apply_review_decision`, `approvals/helpers.py`). A missing config
+  keeps the lock.
 - Eligible holders (`:116-123`): a SUPER_ADMIN, anyone with `approval_group_ids`,
   or the WORKTYPE_ADMIN for that item's work type. Work-type admins were added
   because admin-final decisions require the lock.
@@ -305,6 +307,77 @@ release was forced (`work_items/actions.py:250`).
 (`work/helpers/context.py:243-246`), so `can_checkin` covers both admin cases.
 See [Permissions](permissions.md) for the rest of the dict.
 
+## Supply review, finalize and close
+
+Supply reviews without a checkout lock: any member of a line's routed group
+may decide it, and `WorkTypeConfig.uses_review_sessions` is False for SUPPLY.
+A reviewer sets an approved quantity per line, a Supply admin finalizes the
+order in one pass, and an admin may edit, remove, close or reopen it. A closed
+order is not a new status. It is `FINALIZED` with `SupplyOrderDetail.closed_at`
+set, and the derived display status `CLOSED` (label "Closed") is computed in
+`compute_line_status_summary()`. Raw `work_item.status` reads `FINALIZED` for a
+closed order, so any Supply code that cares must check `closed_at`
+(`supply/line_state.py: is_order_closed`).
+
+Order transitions as of November 2026:
+
+| State | Trigger | Next state | Who can do it |
+| --- | --- | --- | --- |
+| DRAFT | Submit | SUBMITTED | Department editor |
+| SUBMITTED | Finalize | FINALIZED | Supply admin |
+| SUBMITTED | Close, reason required | FINALIZED, displayed Closed | Supply admin |
+| FINALIZED | Reopen, reason required | SUBMITTED; line decisions stay as the prefill | Supply admin |
+| Closed | Reopen, reason required | SUBMITTED; every live line returns to PENDING | Supply admin |
+
+Line transitions:
+
+| State | Trigger | Next state | Who can do it |
+| --- | --- | --- | --- |
+| PENDING | Approve with a quantity of 1 or more | APPROVED, `quantity_reviewed` set | Reviewer in the routed group |
+| PENDING | Reject, note required | REJECTED, `quantity_reviewed` 0 | Reviewer in the routed group |
+| PENDING | Request information or adjustment | NEEDS_INFO or NEEDS_ADJUSTMENT | Reviewer in the routed group |
+| APPROVED or REJECTED, order SUBMITTED | Undo, no note needed; without one, the public `[REOPENED]` comment names who undid it | PENDING, `quantity_reviewed` cleared | Reviewer in the routed group, or a Supply admin |
+| Any live line, order SUBMITTED | Remove, reason required | REJECTED, `quantity_approved` 0, shown "Removed by Supply admin" | Supply admin |
+| Any live line | Finalize | APPROVED or REJECTED by the final quantity | Supply admin |
+
+Admin line edits are allowed only on a SUBMITTED order that is not closed.
+Where the edit happens decides whether the review group sees it:
+
+| Edit | From the finalize screen | From the order page |
+| --- | --- | --- |
+| Add a line | Lands approved at the admin's quantity; no group review | Lands PENDING, routed by category to its group |
+| Change requested quantity, reason required | The group's decision stays | The line and its group review reset to PENDING; `quantity_reviewed` and any kickback flag clear |
+| Remove a line, reason required | Immediate | Immediate |
+
+Decisions behind this behavior:
+
+| Decision | Reason |
+| --- | --- |
+| A second decider on a decided line is refused. For reviewers and admins the message names who decided, what, and the quantity; anyone else reads "This line was already decided." | Without a lock, two reviewers can post at once. Row locks on the order and the review settle the race (`apply_review_decision`) |
+| Removed lines stay on the order, struck through | A line that vanishes leaves the department unable to tell a problem from a decision. Removal sets `removed_at`; the status is `REJECTED` |
+| Removal closes any open group review as REJECTED, including kickbacks | A kicked-back removed line would otherwise block finalize with no one able to answer it |
+| A changed requested quantity keeps the department's value in `department_quantity` | Pages and email show "100 → 150" and "Changed by Supply admin". The order page adds the latest reason, who changed it and when, read from the line's FIELD_CHANGE audit row |
+| Admin-added lines show "Added by Supply admin"; the department sees the optional note, who added it and when, on the order page | `requester_notes` holds only the department's words, so the note is stored as a public line comment |
+| A line with NULL `quantity_reviewed` counts at the requested quantity in the finalize prefill and the demand report | Orders decided before the column existed could only be approved as requested. A NULL on a rejected line counts as 0 |
+| The order page labels each live line "Approved {n} of {m}". Under review, n is the group's `quantity_reviewed`. Once finalized, n is `quantity_approved`, and 0 reads "Not approved". A closed order shows no label | The department reads the number that will be filled. Removed lines show their removal instead |
+| Close sets every live line to REJECTED at 0 and emails the reason | The department placed the order in error; nothing will be filled |
+| Reopen cancels this order's unsent finalized and closed emails | Otherwise the department is told "finalized" about an order back in review |
+| Finalize needs a note only when it flips a group decision | Approving a rejected line or zeroing an approved one |
+| A kicked-back line blocks finalize | The requester must answer first |
+
+Finalize prefills each line in this order. A decided admin-final review wins:
+its `quantity_approved`, or 0 when rejected, with its note. This keeps an
+admin's cuts when a reopened order is finalized again. Otherwise the group's
+decision applies: `quantity_reviewed` when approved, 0 when rejected. A line
+still pending prefills its requested quantity. A quantity change on the
+finalize screen moves a decided admin approval to the new quantity. Finalize
+refuses a quantity above 100,000. A closed order's screen shows each line's
+closed quantity, read-only.
+"Finalize and open next" opens the oldest-submitted ready order in the same
+event. Admins edit lines on the same screen. Typed finalize quantities are
+cleared by a line edit, so the page asks for confirmation before submitting an
+edit when a quantity or note box has been changed.
+
 ## Supplementary requests
 
 After the primary budget finalizes, a requester can add supplementary requests in
@@ -329,6 +402,8 @@ retries, and suppression.
 | Line marked NEEDS_INFO or NEEDS_ADJUSTMENT | Department members | `notify_needs_attention` (`:208`) |
 | Requester responded to a kickback | The reviewer who asked | `notify_response_received` (`:229`) |
 | Board release, or finalize after board approval | Department members | `notify_work_item_finalized` (`:286`) |
+| Supply finalize, with a changes list when the order differs from the request | Department members | `notify_supply_finalized` |
+| Supply close, with the reason | Department members | `notify_supply_closed` |
 
 Each row is resolved against a `{work_type}_{kind}` template. A work type with
 no row of its own sends nothing; since `em3315c9a74b` there is no shared
@@ -368,3 +443,7 @@ slash; the admin dashboards do.
 | Derived status computation | `app/routes/work/helpers/computations.py` |
 | Status labels | `app/routes/work/helpers/formatting.py` |
 | Notification enqueue | `app/services/notifications.py` |
+| Supply finalize, queue, event filter | `app/routes/work/supply/admin.py` |
+| Supply line edits | `app/routes/work/supply/admin_lines.py` |
+| Supply close and reopen | `app/routes/work/supply/order_lifecycle.py` |
+| Supply reviewer quantity, Undo, removed-line refusal | `app/routes/approvals/helpers.py` |

@@ -18,8 +18,11 @@ from app.models import (
     WorkItemAuditEvent,
     WorkLine,
     AUDIT_EVENT_VIEW,
+    REVIEW_STAGE_APPROVAL_GROUP,
     COMMENT_VISIBILITY_ADMIN,
     WORK_ITEM_STATUS_DRAFT,
+    WORK_ITEM_STATUS_FINALIZED,
+    WORK_ITEM_STATUS_SUBMITTED,
 )
 from app.routes import get_user_ctx
 from .. import work_bp
@@ -32,6 +35,7 @@ from ..helpers import (
     require_work_item_view,
 )
 from app.models.supply import QUANTITY_CONFIDENCE_OPTIONS
+from app.routes.work.helpers.checkout import is_work_type_staffer
 from .form_utils import PICKUP_TIME_OPTIONS, validate_order_for_submit
 from .order import is_line_kickback_editable
 from .spaces import order_space_choices
@@ -116,10 +120,50 @@ def supply_order_detail(event: str, dept: str, public_id: str):
     is_approver_for_item = _is_approver_for_work_item(work_item, user_ctx)
     can_add_comment = perms.is_worktype_admin or is_approver_for_item
 
+    # Any Supply group member may open Quick Review and line review on a
+    # submitted order; deciding stays limited to the routed group there.
+    is_supply_admin = perms.is_worktype_admin
+    can_quick_review = work_item.status == WORK_ITEM_STATUS_SUBMITTED and (
+        is_supply_admin or is_work_type_staffer(user_ctx, ctx.work_type)
+    )
+
     can_view_audit = user_ctx.is_super_admin or perms.is_worktype_admin
     audit_events = get_unified_audit_events(work_item) if can_view_audit else []
 
     lines = sorted(work_item.lines, key=lambda line: line.line_number)
+
+    from app.routes.work.helpers.review_state import uses_review_sessions
+    from .admin_lines import admin_item_choices
+    from .line_state import (
+        admin_line_notes, final_quantity_label, is_line_removed, is_order_closed,
+        reviewer_quantity_label,
+    )
+
+    # Admin line edits on the order page send changes back to the review group.
+    can_admin_edit_lines = (
+        is_supply_admin
+        and work_item.status == WORK_ITEM_STATUS_SUBMITTED
+        and not is_order_closed(work_item)
+    )
+    # Under review the label is the group's quantity; once finalized it is the
+    # admin's final quantity. A closed order shows none: nothing will be filled.
+    quantity_labels = {}
+    for line in lines:
+        if is_order_closed(work_item) or is_line_removed(line.supply_detail):
+            continue
+        if work_item.status == WORK_ITEM_STATUS_SUBMITTED:
+            ag_review = next(
+                (r for r in line.reviews if r.stage == REVIEW_STAGE_APPROVAL_GROUP), None)
+            label = reviewer_quantity_label(line.supply_detail, ag_review)
+        elif work_item.status == WORK_ITEM_STATUS_FINALIZED:
+            label = final_quantity_label(line.supply_detail)
+        else:
+            label = None
+        if label:
+            quantity_labels[line.line_number] = label
+
+    # The department reads why an admin changed or added a line.
+    admin_change_notes, admin_add_notes = admin_line_notes(lines)
 
     # Kicked-back lines re-open their edit widgets even on a non-DRAFT
     # order. Same predicate as the supply_line_update POST gate (imported
@@ -148,7 +192,19 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         quantity_confidence_options=QUANTITY_CONFIDENCE_OPTIONS,
         space_choices=order_space_choices(work_item) if can_edit else None,
         lines=lines,
+        shows_checkout_banner=uses_review_sessions(work_item),
+        quantity_labels=quantity_labels,
+        admin_change_notes=admin_change_notes,
+        admin_add_notes=admin_add_notes,
         can_edit=can_edit,
+        can_quick_review=can_quick_review,
+        is_supply_admin=is_supply_admin,
+        is_closed=is_order_closed(work_item),
+        # Only a closed order differs from the stored status; others show as before.
+        display_status="CLOSED" if is_order_closed(work_item) else work_item.status,
+        can_admin_edit_lines=can_admin_edit_lines,
+        admin_items=admin_item_choices() if can_admin_edit_lines else [],
+        edit_lines=[line for line in lines if not is_line_removed(line.supply_detail)],
         kickback_editable_line_numbers=kickback_editable_line_numbers,
         submit_errors=submit_errors,
         friendly_status=friendly_status,

@@ -27,14 +27,15 @@ from .context import (
     is_worktype_admin,
     is_worktype_viewer,
 )
-from .review_state import is_group_final
+from .review_state import uses_review_sessions
 
 
 # Permission boundary: on these work types, a member of any of the type's
 # approval groups may read every request and line of it. TechOps teams plan
-# around each other's work. Budget approvers must not read other groups'
-# requests, so BUDGET stays out. Deciding is still limited to the routed group.
-STAFF_READ_WORK_TYPES = frozenset({"TECHOPS"})
+# around each other's work, and Supply groups share one warehouse. Budget
+# approvers must not read other groups' requests, so BUDGET stays out.
+# Deciding is still limited to the routed group.
+STAFF_READ_WORK_TYPES = frozenset({"TECHOPS", "SUPPLY"})
 
 
 def is_work_type_staffer(user_ctx: UserContext, work_type) -> bool:
@@ -137,7 +138,7 @@ def can_checkout(work_item: WorkItem, user_ctx: UserContext) -> tuple[bool, str]
     if work_item.status != WORK_ITEM_STATUS_SUBMITTED:
         return False, "Only SUBMITTED requests can be checked out for review."
 
-    if is_group_final(work_item):
+    if not uses_review_sessions(work_item):
         return False, f"{work_item.portfolio.work_type.name} does not use review sessions."
 
     # Must be a reviewer (approver), a super admin, or a work-type admin of this
@@ -317,8 +318,8 @@ def build_work_item_perms(item: WorkItem, ctx: PortfolioContext) -> WorkItemPerm
         item.checked_out_by_user_id == ctx.user_ctx.user_id
     )
 
-    # Group-final work types have no review sessions, so neither action exists.
-    group_final = is_group_final(item)
+    # Work types without review sessions have neither action.
+    group_final = not uses_review_sessions(item)
 
     # Can checkout: is a reviewer AND item is SUBMITTED AND not already checked out
     can_checkout_item = (

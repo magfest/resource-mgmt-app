@@ -297,6 +297,7 @@ AUDIT_EVENT_AMOUNT_OVERRIDE = "AMOUNT_OVERRIDE"
 AUDIT_EVENT_LINE_CREATED = "LINE_CREATED"
 AUDIT_EVENT_FIELD_CHANGE = "FIELD_CHANGE"
 AUDIT_EVENT_LINE_DELETED = "LINE_DELETED"
+AUDIT_EVENT_LINE_REMOVED = "LINE_REMOVED"
 
 # ============================================================
 # Work item audit event types
@@ -315,6 +316,8 @@ AUDIT_EVENT_CHECKIN = "CHECKIN"
 AUDIT_EVENT_VIEW = "VIEW"
 AUDIT_EVENT_EXTENSION_GRANTED = "EXTENSION_GRANTED"
 AUDIT_EVENT_EXTENSION_REVOKED = "EXTENSION_REVOKED"
+AUDIT_EVENT_ORDER_CLOSED = "ORDER_CLOSED"
+AUDIT_EVENT_ORDER_REOPENED = "ORDER_REOPENED"
 
 # ============================================================
 # Review actions
@@ -327,7 +330,8 @@ REVIEW_ACTION_NEEDS_INFO = "NEEDS_INFO"
 REVIEW_ACTION_NEEDS_ADJUSTMENT = "NEEDS_ADJUSTMENT"
 REVIEW_ACTION_RESET = "RESET"
 REVIEW_ACTION_RESPOND = "RESPOND"
-REVIEW_ACTION_REOPEN = "REOPEN"  # group-final work types only: decided line back to PENDING
+# Decided line back to PENDING: group-final work types, and SUPPLY on a SUBMITTED order.
+REVIEW_ACTION_REOPEN = "REOPEN"
 
 # ============================================================
 # Routing strategy constants

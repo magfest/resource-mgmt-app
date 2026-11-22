@@ -156,6 +156,16 @@ class SupplyOrderLineDetail(db.Model):
     # NULL on a draft line, and on lines submitted before this column existed.
     quantity_confidence = db.Column(db.String(16), nullable=True)
     quantity_approved = db.Column(db.Integer, nullable=True)
+    # Quantity the approval group settled on; NULL until it decides.
+    quantity_reviewed = db.Column(db.Integer, nullable=True)
+    # The requester's quantity before an admin edit; NULL when never edited.
+    department_quantity = db.Column(db.Integer, nullable=True)
+    # A removed line stays in the table so the audit trail keeps its history.
+    removed_at = db.Column(db.DateTime, nullable=True)
+    removed_by_user_id = db.Column(db.String(64), nullable=True)
+    removed_reason = db.Column(db.Text, nullable=True)
+    # Set when an admin, not the requester, added the line.
+    added_by_admin_user_id = db.Column(db.String(64), nullable=True)
     requester_notes = db.Column(db.Text, nullable=True)
 
     work_line = db.relationship("WorkLine", backref=db.backref("supply_detail", uselist=False, cascade="all, delete-orphan"))
@@ -192,6 +202,11 @@ class SupplyOrderDetail(db.Model):
     # old orders show.
     pickup_time = db.Column(db.String(120), nullable=True)
     additional_notes = db.Column(db.Text, nullable=True)
+
+    # A closed order is read-only and shows CLOSED regardless of work item status.
+    closed_at = db.Column(db.DateTime, nullable=True)
+    closed_by_user_id = db.Column(db.String(64), nullable=True)
+    closed_reason = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by_user_id = db.Column(db.String(64), nullable=True)

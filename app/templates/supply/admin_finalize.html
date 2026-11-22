@@ -11,6 +11,17 @@
 {% block title %}Finalize {{ work_item.public_id }}{% endblock %}
 
 {% block content %}
+<style>
+  @media (max-width: 767.98px) {
+    /* A flex cell sizes to its input's intrinsic width; cap the inputs so the card fits the screen. */
+    /* An auto-width table sizes to its widest input and overflows the card; a block table takes the card's width. */
+    table.finalize-table { display: block; width: 100%; }
+    /* .num sets nowrap; "Changed by Supply admin" under a quantity must wrap. */
+    table.finalize-table td.num { white-space: normal; }
+    td.finalize-input-cell input { min-width: 0; max-width: 100%; box-sizing: border-box; }
+    td.cell-stack input[name^="note_"] { width: 100% !important; }
+  }
+</style>
 
   {% set order_detail = order_detail %}
 
@@ -45,7 +56,11 @@
     {% endif %}
   </section>
 
-  {% if is_finalized %}
+  {% if is_closed %}
+    {% with show_banner = true, show_forms = false, return_to = 'finalize' %}
+      {% include "supply/_order_close_reopen.html" %}
+    {% endwith %}
+  {% elif is_finalized %}
     <div class="callout callout-success mb-16">
       <strong>This order is finalized.</strong>
       <div class="muted" style="margin-top:4px;">
@@ -66,7 +81,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <section class="card">
-      <table class="responsive-cards">
+      <table class="responsive-cards finalize-table">
         <thead>
           <tr>
             <th>Item</th>
@@ -80,24 +95,48 @@
         <tbody>
           {% for row in line_rows %}
             {% set line = row.line %}
-            <tr>
-              <td data-label="Item">
+            {% set detail = row.detail %}
+            {% if row.removed %}
+            {# A removed line has no input, so a stale form cannot approve it. #}
+            <tr id="line-{{ line.line_number }}">
+              <td data-label="Item" class="cell-stack">
+                <div style="font-weight: 600; text-decoration: line-through;">{{ row.item.item_name if row.item else '-' }}</div>
+                <div class="small" style="margin-top: 4px; font-weight: 600;">Removed by Supply admin</div>
+                <div class="muted small" style="white-space: pre-wrap;">{{ detail.removed_reason }}</div>
+              </td>
+              <td data-label="Requested" class="right num" style="text-decoration: line-through;">{{ row.requested }}</td>
+              <td data-label="Review group" colspan="4" class="cell-stack muted small">Not part of this order; finalizes at 0.</td>
+            </tr>
+            {% else %}
+            <tr id="line-{{ line.line_number }}">
+              <td data-label="Item" class="cell-stack">
                 <div style="font-weight: 600;">{{ row.item.item_name if row.item else '-' }}</div>
                 {% if row.category %}
                   <div class="muted small">{{ row.category.name }}</div>
                 {% endif %}
+                {% if detail and detail.added_by_admin_user_id %}
+                  <div class="small" style="margin-top: 4px;">Added by Supply admin</div>
+                {% endif %}
               </td>
               <td data-label="Requested" class="right num">
-                {{ row.requested }}
+                {% if detail and detail.department_quantity is not none %}
+                  {{ detail.department_quantity }} → {{ row.requested }}
+                  <div class="muted small">Changed by Supply admin</div>
+                {% else %}
+                  {{ row.requested }}
+                {% endif %}
                 {% if line.supply_detail and line.supply_detail.quantity_confidence_label %}
                   <div class="muted small">{{ line.supply_detail.quantity_confidence_label }}</div>
                 {% endif %}
               </td>
-              <td data-label="Review group">
+              <td data-label="Review group" class="cell-stack">
                 {% if row.ag_review %}
                   {{ render_status_pill(row.ag_review.status, label=friendly_status(row.ag_review.status) if friendly_status else row.ag_review.status) }}
                   {% if row.decided_by %}
                     <div class="muted small">{{ row.decided_by|user_display }}</div>
+                  {% endif %}
+                  {% if row.reviewer_label %}
+                    <div class="small" style="margin-top: 4px; font-weight: 600;">{{ row.reviewer_label }}</div>
                   {% endif %}
                   {% if row.ag_review.note %}
                     <div class="muted small" style="margin-top: 4px; white-space: pre-wrap;">{{ row.ag_review.note }}</div>
@@ -115,18 +154,21 @@
               <td data-label="Unit cost" class="right num">
                 {{ format_currency(row.unit_cost_cents) if row.unit_cost_cents is not none else 'n/a' }}
               </td>
-              <td data-label="Approved qty">
+              <td data-label="Approved qty" class="finalize-input-cell">
                 <input type="number" name="approved_qty_{{ line.line_number }}" min="0"
                        value="{{ row.default_qty }}" style="width: 90px;"
+                       data-default="{{ row.default_qty }}"
                        {% if is_finalized %}disabled{% endif %}>
               </td>
-              <td data-label="Override note">
+              <td data-label="Override note" class="cell-stack finalize-input-cell">
                 <input type="text" name="note_{{ line.line_number }}"
                        placeholder="Required to override review group"
-                       style="width: 100%;"
+                       value="{{ row.default_note }}"
+                       style="width: 100%;" data-default="{{ row.default_note }}"
                        {% if is_finalized %}disabled{% endif %}>
               </td>
             </tr>
+            {% endif %}
           {% endfor %}
         </tbody>
       </table>
@@ -149,6 +191,10 @@
                 {% if has_kickbacks %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
           Finalize Order
         </button>
+        <button type="submit" class="btn btn-primary" name="and_next" value="1"
+                {% if has_kickbacks %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
+          Finalize &amp; next
+        </button>
         {% if has_kickbacks %}
           <span class="muted small" style="align-self: center;">
             Blocked: lines awaiting requester response.
@@ -157,6 +203,16 @@
       </div>
     {% endif %}
   </form>
+
+  {% if can_edit_lines %}
+    {% with return_to = 'finalize' %}
+      {% include "supply/_admin_line_edits.html" %}
+    {% endwith %}
+  {% endif %}
+
+  {% with show_banner = false, show_forms = true, return_to = 'finalize' %}
+    {% include "supply/_order_close_reopen.html" %}
+  {% endwith %}
 
 {% endblock %}
 
@@ -167,6 +223,25 @@
   if (!form) return;
   form.addEventListener('submit', function(e) {
     if (!confirm('Finalize this supply order? This locks the approved quantities.')) {
+      e.preventDefault();
+    }
+  });
+
+  // A line edit reloads this page from the server, which drops unsaved
+  // finalize quantities and notes; warn rather than let Finalize use defaults.
+  function hasUnsavedFinalizeInput() {
+    var inputs = form.querySelectorAll('input[name^="approved_qty_"], input[name^="note_"]');
+    for (var i = 0; i < inputs.length; i++) {
+      if (inputs[i].value !== inputs[i].getAttribute('data-default')) return true;
+    }
+    return false;
+  }
+  document.addEventListener('submit', function(e) {
+    if (!e.target.matches('form[data-line-edit]')) return;
+    if (hasUnsavedFinalizeInput() && !confirm(
+      'You have typed finalize quantities or notes that are not saved yet. ' +
+      'Adding, changing or removing a line reloads this page and clears them. Continue?'
+    )) {
       e.preventDefault();
     }
   });

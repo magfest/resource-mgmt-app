@@ -26,6 +26,12 @@
   .quick-action:disabled {
     cursor: not-allowed;
   }
+  @media (max-width: 767.98px) {
+    /* The stacked Actions cell must not outgrow the card; inputs shrink to fit. */
+    .qr-item { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+    td.line-actions .quick-action-row { min-width: 0; }
+    td.line-actions .line-note { min-width: 0 !important; width: 100%; box-sizing: border-box; }
+  }
 </style>
 
   {# Header #}
@@ -52,7 +58,8 @@
   </div>
 
   {# Checkout Status #}
-  {% if is_checked_out %}
+  {% if uses_sessions is defined and not uses_sessions %}
+  {% elif is_checked_out %}
     {% if has_checkout %}
       <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
@@ -92,7 +99,7 @@
 
   {# Lines Table #}
   <section class="card">
-    <table style="table-layout: auto;">
+    <table class="responsive-cards" style="table-layout: auto;">
       <thead>
         <tr>
           <th style="width: 50px;">#</th>
@@ -113,42 +120,47 @@
           {% set unit_cost_cents = item.unit_cost_cents if item else None %}
           {% set line_cost_cents = (unit_cost_cents * detail.quantity_requested) if (unit_cost_cents is not none and detail) else None %}
           {% set status = line.status | upper %}
-          <tr id="line-{{ line.line_number }}" data-line-num="{{ line.line_number }}" data-status="{{ status }}">
-            <td>
+          {% set is_removed = detail and detail.removed_at %}
+          <tr id="line-{{ line.line_number }}" data-line-num="{{ line.line_number }}" data-status="{{ status }}" data-requested-qty="{{ detail.quantity_requested if detail else '' }}">
+            <td data-label="Line">
               <a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}">
                 {{ line.line_number }}
               </a>
             </td>
-            <td>
+            <td data-label="Item">
+              <div class="qr-item">
               {% if item %}
-                <strong style="font-size: 13px;">{{ item.item_name }}</strong>
+                <strong class="line-item-name" style="font-size: 13px;{% if is_removed %} text-decoration: line-through;{% endif %}">{{ item.item_name }}</strong>
                 {% if item.category %}
                   <div class="muted small">{{ item.category.name }}</div>
                 {% endif %}
               {% else %}
                 <span class="muted">-</span>
               {% endif %}
+              </div>
             </td>
-            <td>
+            <td class="cell-stack" data-label="Notes">
               {% if detail and detail.requester_notes %}
                 <div style="font-size: 13px; max-width: 320px;">{{ detail.requester_notes[:120] }}{% if detail.requester_notes|length > 120 %}...{% endif %}</div>
               {% else %}
                 <span class="muted">-</span>
               {% endif %}
             </td>
-            <td>
+            <td data-label="Qty">
+              <div class="qr-item">
               {{ detail.quantity_requested if detail else '-' }}
               {% if item %}<div class="muted small">{{ item.unit }}</div>{% endif %}
               {% if detail and detail.quantity_confidence_label %}<div class="muted small">{{ detail.quantity_confidence_label }}</div>{% endif %}
+              </div>
             </td>
-            <td class="num">
+            <td class="num" data-label="Cost">
               {% if line_cost_cents is not none %}
                 {{ format_currency(line_cost_cents) }}
               {% else %}
                 <span class="muted small">cost not on file</span>
               {% endif %}
             </td>
-            <td>
+            <td data-label="Status">
               {# Render via the macro so the status → pill-class mapping
                  stays in one place. The extra_class adds line-status-pill
                  so the AJAX post-action JS can locate this exact pill
@@ -156,14 +168,21 @@
               {% set status_label = friendly_status(status) if friendly_status else status %}
               {{ render_status_pill(status, label=status_label, extra_class="line-status-pill", extra_style="font-size: 11px;") }}
             </td>
-            <td class="line-actions">
-              {# Note input + action buttons are gated on has_checkout
-                 only — typing without a checkout meant the user lost
-                 their note when the checkout POST replaced the page.
-                 See user feedback: prefer to prevent work over trying
-                 to preserve client state across redirects. #}
-              {% if status == 'PENDING' and has_checkout %}
+            <td class="line-actions cell-stack" data-label="Actions">
+              {# Buttons render from can_decide alone, which already includes the
+                 lock when the work type uses one. Typing a note before
+                 checkout lost it when the checkout POST replaced the page. #}
+              {% if is_removed %}
+                <div class="small"><strong>Removed by Supply admin</strong></div>
+                <div class="muted small" style="white-space: pre-wrap;">{{ detail.removed_reason }}</div>
+              {% elif status == 'PENDING' and row.can_decide %}
                 <div class="quick-action-row" style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
+                  <label class="small" style="font-weight: 600; display: flex; align-items: center; gap: 4px; width: 100%;">
+                    Approve qty
+                    <input type="number" class="line-approve-qty" min="1" step="1"
+                           value="{{ detail.quantity_requested if detail else 1 }}"
+                           style="width: 80px; padding: 4px 8px; font-size: 12px;">
+                  </label>
                   <input type="text" class="line-note" placeholder="Note (required for reject/info)"
                          style="flex: 1; min-width: 120px; padding: 4px 8px; font-size: 12px;">
                   <div class="ag-actions" style="display: flex; gap: 4px;">
@@ -181,14 +200,28 @@
                     </button>
                   </div>
                 </div>
-              {% elif status == 'PENDING' %}
+              {% elif status == 'PENDING' and (uses_sessions is not defined or uses_sessions) %}
                 <span class="muted small">Start a review session above to act on this line.</span>
               {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}
                 <span class="muted small">Awaiting requester response</span>
               {% elif status == 'APPROVED' %}
                 <span class="muted small">Approved</span>
+                {% if row.can_reopen %}
+                  <form method="post" action="{{ url_for('approvals.line_reopen', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="return_to" value="quick_review">
+                    <button type="submit" class="btn" style="padding: 2px 8px; font-size: 12px;">Undo</button>
+                  </form>
+                {% endif %}
               {% elif status == 'REJECTED' %}
                 <span class="muted small">Rejected</span>
+                {% if row.can_reopen %}
+                  <form method="post" action="{{ url_for('approvals.line_reopen', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="return_to" value="quick_review">
+                    <button type="submit" class="btn" style="padding: 2px 8px; font-size: 12px;">Undo</button>
+                  </form>
+                {% endif %}
               {% else %}
                 <span class="muted small">-</span>
               {% endif %}
@@ -303,6 +336,11 @@
       formData.append('note', note);
     }
     formData.append('ajax', '1');
+    var qtyInput = row.querySelector('.line-approve-qty');
+    if (action === 'approve' && qtyInput) {
+      formData.append('approved_quantity', qtyInput.value.trim());
+    }
+    var requestedQty = row.getAttribute('data-requested-qty');
 
     fetch(url, {
       method: 'POST',
@@ -331,11 +369,20 @@
 
         var actionsCell = row.querySelector('.line-actions');
         if (newStatus === 'APPROVED') {
-          actionsCell.innerHTML = '<span class="muted small">Approved</span>';
+          var approvedText = 'Approved';
+          if (qtyInput && requestedQty) {
+            approvedText = 'Approved ' + qtyInput.value.trim() + ' of ' + requestedQty;
+          }
+          actionsCell.innerHTML = '<span class="muted small"></span>';
+          actionsCell.firstChild.textContent = approvedText;
         } else if (newStatus === 'REJECTED') {
           actionsCell.innerHTML = '<span class="muted small">Rejected</span>';
         } else if (newStatus === 'NEEDS_INFO') {
           actionsCell.innerHTML = '<span class="muted small">Awaiting requester response</span>';
+        }
+
+        if (data.can_undo && (newStatus === 'APPROVED' || newStatus === 'REJECTED')) {
+          actionsCell.appendChild(buildUndoForm(lineNum));
         }
 
         updateSummaryCounts();
@@ -343,6 +390,18 @@
         feedbackSpinner.style.display = 'none';
         feedbackText.textContent = 'Done!';
         feedback.style.color = '#059669';
+      } else if (data.removed) {
+        // A Supply admin removed the line after this page loaded; redraw it as removed.
+        row.setAttribute('data-status', 'REJECTED');
+        var removedPill = row.querySelector('.line-status-pill');
+        removedPill.textContent = friendlyStatusLabels['REJECTED'];
+        removedPill.className = 'pill line-status-pill pill-rejected';
+        var name = row.querySelector('.line-item-name');
+        if (name) name.style.textDecoration = 'line-through';
+        var cell = row.querySelector('.line-actions');
+        cell.innerHTML = '<div class="small" style="color: #dc3545;"></div>';
+        cell.firstChild.textContent = data.error;
+        updateSummaryCounts();
       } else {
         feedbackSpinner.style.display = 'none';
         feedbackText.textContent = data.error || 'Error occurred';
@@ -363,6 +422,29 @@
       });
     });
   });
+
+  // Mirrors the Undo form the server renders for decided rows.
+  function buildUndoForm(lineNum) {
+    var form = document.createElement('form');
+    form.method = 'post';
+    form.action = '/' + eventCode + '/' + deptCode + '/supply/item/' + publicId + '/line/' + lineNum + '/reopen';
+    form.style.display = 'inline';
+    [['csrf_token', csrfToken], ['return_to', 'quick_review']].forEach(function(pair) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = pair[0];
+      input.value = pair[1];
+      form.appendChild(input);
+    });
+    var button = document.createElement('button');
+    button.type = 'submit';
+    button.className = 'btn';
+    button.style.padding = '2px 8px';
+    button.style.fontSize = '12px';
+    button.textContent = 'Undo';
+    form.appendChild(button);
+    return form;
+  }
 
   function updateSummaryCounts() {
     var rows = document.querySelectorAll('tr[data-status]');

@@ -20,6 +20,7 @@ from app.models import (
     REVIEW_ACTION_RESPOND,
     REVIEW_ACTION_REOPEN,
     REVIEW_STATUS_NEEDS_INFO,
+    WORK_ITEM_STATUS_FINALIZED,
     REVIEW_STATUS_NEEDS_ADJUSTMENT,
     COMMENT_VISIBILITY_PUBLIC,
     COMMENT_VISIBILITY_ADMIN,
@@ -43,12 +44,13 @@ from app.routes.work.helpers import (
 )
 from app.routes.work.helpers.checkout import is_work_type_staffer, user_holds_checkout
 from app.routes.work.helpers.review_state import (
-    get_line_review_state, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP, AWAITING_REQUESTER,
+    get_line_review_state, uses_review_sessions, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP, AWAITING_REQUESTER,
 )
 from . import approvals_bp
 from .helpers import (
     can_decide_line,
     can_reopen_line,
+    SUPPLY_UNDO_FINALIZED_MESSAGE,
     is_reviewer_for_line,
     can_respond_to_work_item,
     can_view_work_item_lines,
@@ -56,6 +58,7 @@ from .helpers import (
     get_or_create_review,
     apply_review_decision,
     audit_line_field_changes,
+    removed_line_refusal,
 )
 from app.routes.admin_final.helpers import (
     get_admin_final_review,
@@ -269,6 +272,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         can_review=can_review,
         can_comment=_can_comment_on_line(line, work_item, user_ctx),
         has_checkout=has_checkout,
+        uses_sessions=uses_review_sessions(work_item),
         can_decide=can_decide,
         can_reopen=can_reopen_line(line, user_ctx),
         can_admin_decide=can_admin_decide,
@@ -326,13 +330,29 @@ def line_needs_adjustment(event: str, dept: str, public_id: str, line_num: int, 
 
 @approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reopen")
 def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str):
-    """Send a decided line on a group-final work type back to PENDING."""
+    """Send a decided line back to PENDING on a group-final work type, or on a SUBMITTED Supply order."""
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
-    back = redirect(url_for(
-        "approvals.line_review", event=event, dept=dept, public_id=public_id,
-        line_num=line_num, work_type_slug=work_type_slug,
-    ))
+    # Only the literal value is honored; the form never supplies a URL.
+    if request.form.get("return_to") == "quick_review":
+        back = redirect(url_for(
+            "work.quick_review", event=event, dept=dept, public_id=public_id,
+            work_type_slug=work_type_slug,
+        ))
+    else:
+        back = redirect(url_for(
+            "approvals.line_review", event=event, dept=dept, public_id=public_id,
+            line_num=line_num, work_type_slug=work_type_slug,
+        ))
+
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        flash(removal, "error")
+        return back
+
+    if line.supply_detail is not None and work_item.status == WORK_ITEM_STATUS_FINALIZED:
+        flash(SUPPLY_UNDO_FINALIZED_MESSAGE, "error")
+        return back
 
     if not can_reopen_line(line, user_ctx):
         flash("You cannot reopen this line.", "error")
@@ -348,7 +368,11 @@ def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_
         flash(error, "error")
         return back
 
-    # Decision rationale is public; a reopen is a decision.
+    # Decision rationale is public; a reopen is a decision. A Supply undo needs
+    # no note, so the comment names who undid it instead.
+    if not note:
+        name = (user_ctx.user.display_name if user_ctx.user else None) or user_ctx.user_id
+        note = f"Decision undone by {name}."
     db.session.add(WorkLineComment(
         work_line_id=line.id, visibility=COMMENT_VISIBILITY_PUBLIC,
         body=f"[REOPENED] {note}", created_by_user_id=user_ctx.user_id,
@@ -369,6 +393,19 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
     # Check if this is an AJAX request
     is_ajax = request.form.get("ajax") == "1"
 
+    # A removed line may have no routed group, so refuse before looking for one.
+    # apply_review_decision repeats this check under the request lock.
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        if is_ajax:
+            return jsonify({"success": False, "error": removal, "removed": True,
+                            "current_status": line.status})
+        flash(removal, "error")
+        return redirect(url_for(
+            "approvals.line_review", event=event, dept=dept, public_id=public_id,
+            line_num=line_num, work_type_slug=work_type_slug,
+        ))
+
     # Get or create review
     review, _created = get_or_create_review(line, user_ctx)
 
@@ -386,17 +423,28 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
         except (ValueError, InvalidOperation):
             pass  # Ignore invalid amounts
 
+    # Only Supply carries a reviewer quantity; Budget and TechOps ignore the field.
+    quantity = None
+    quantity_error = None
+    if work_type_slug == "supply" and action == REVIEW_ACTION_APPROVE:
+        from app.routes.work.supply.form_utils import parse_approved_quantity
+        quantity, quantity_error = parse_approved_quantity(request.form)
+
     # Apply the decision
-    success, error = apply_review_decision(
-        review=review,
-        line=line,
-        work_item=work_item,
-        action=action,
-        note=note,
-        amount_cents=amount_cents,
-        user_ctx=user_ctx,
-        ctx=ctx,
-    )
+    if quantity_error:
+        success, error = False, quantity_error
+    else:
+        success, error = apply_review_decision(
+            review=review,
+            line=line,
+            work_item=work_item,
+            action=action,
+            note=note,
+            amount_cents=amount_cents,
+            user_ctx=user_ctx,
+            ctx=ctx,
+            quantity=quantity,
+        )
 
     if not success:
         # Discard the review get_or_create_review may have flushed above; a
@@ -406,7 +454,10 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
         if is_ajax:
             # current_status lets quick review redraw a row someone else decided.
             # The review was re-read under its lock; the line may predate that.
-            return jsonify({"success": False, "error": error, "current_status": current_status})
+            return jsonify({
+                "success": False, "error": error, "current_status": current_status,
+                "removed": removed_line_refusal(line) is not None,
+            })
         flash(error, "error")
     else:
         action_labels = {
@@ -457,6 +508,8 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
                 "success": True,
                 "line_num": line_num,
                 "new_status": line.status,
+                # Quick Review draws Undo from this; the server rule stays the one source.
+                "can_undo": can_reopen_line(line, user_ctx),
                 "message": f"Line {line_num} {action_labels.get(action, 'updated')}."
             })
 
@@ -484,6 +537,14 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
     """
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
+
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        flash(removal, "error")
+        return redirect(url_for(
+            "approvals.line_review", event=event, dept=dept, public_id=public_id,
+            line_num=line_num, work_type_slug=work_type_slug,
+        ))
 
     # Route to whichever review stage actually kicked the line back —
     # not always the APPROVAL_GROUP review (an ADMIN_FINAL kickback must
@@ -587,6 +648,14 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
 
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
+
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        flash(removal, "error")
+        return redirect(url_for(
+            "approvals.line_review", event=event, dept=dept, public_id=public_id,
+            line_num=line_num, work_type_slug=work_type_slug,
+        ))
 
     # Hard guard: this handler manipulates budget_detail directly. The
     # TechOps line_review template hides the NEEDS_ADJUSTMENT button so

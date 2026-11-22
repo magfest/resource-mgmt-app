@@ -22,6 +22,56 @@ PICKUP_TIME_OPTIONS = [
 ]
 
 
+# Supply quantity columns are 32-bit integers on PostgreSQL; an unbounded value
+# fails at commit with a 500. The cap does not bound `approved_amount_cents`,
+# also 32-bit, which is quantity times unit cost.
+MAX_APPROVED_QUANTITY = 100000
+
+
+QUANTITY_NOT_WHOLE = "not_whole"
+QUANTITY_ZERO = "zero"
+QUANTITY_TOO_LARGE = "too_large"
+
+
+def parse_whole_quantity(raw: str | None) -> tuple[int | None, str | None]:
+    """Parse a quantity of 1 to MAX_APPROVED_QUANTITY.
+
+    Returns (value, None), or (None, code) with one of the QUANTITY_* codes so
+    each caller words its own refusal. Blank, decimal and negative input are
+    QUANTITY_NOT_WHOLE.
+    """
+    try:
+        value = int((raw or "").strip())
+    except ValueError:
+        return None, QUANTITY_NOT_WHOLE
+    if value == 0:
+        return None, QUANTITY_ZERO
+    if value < 0:
+        return None, QUANTITY_NOT_WHOLE
+    if value > MAX_APPROVED_QUANTITY:
+        return None, QUANTITY_TOO_LARGE
+    return value, None
+
+
+def parse_approved_quantity(form) -> tuple[int | None, str | None]:
+    """Read a reviewer's approved quantity from a POST form.
+
+    Returns (None, None) when the field is absent, so a page cached before the
+    field existed approves the requested amount. A present but blank or invalid
+    value is refused; approving it as requested would hide a cleared box.
+    """
+    if "approved_quantity" not in form:
+        return None, None
+    value, code = parse_whole_quantity(form.get("approved_quantity"))
+    if code == QUANTITY_ZERO:
+        return None, "Approve needs a quantity of at least 1. Reject the line instead."
+    if code == QUANTITY_TOO_LARGE:
+        return None, "Enter a quantity of 100,000 or less."
+    if code is not None:
+        return None, "Enter a whole-number quantity to approve."
+    return value, None
+
+
 def validate_order_for_submit(work_item) -> list[str]:
     errors: list[str] = []
     detail = work_item.supply_order_detail

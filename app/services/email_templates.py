@@ -89,6 +89,17 @@ EMAIL_TEMPLATE_VARIABLES = {
         'work_item.portfolio.event_cycle.name': 'Event name',
         'work_item.portfolio.event_cycle.code': 'Event code',
         'base_url': 'Base URL of the application',
+        'changes': 'Supply only: lines that differ from the request (line_number, item_name, unit, kind, department_quantity, requested, final, reason)',
+    },
+    'closed': {
+        'work_item': 'The WorkItem that was closed',
+        'work_item.public_id': 'Public ID of the request',
+        'work_item.portfolio.department.name': 'Department name',
+        'work_item.portfolio.department.code': 'Department code',
+        'work_item.portfolio.event_cycle.name': 'Event name',
+        'work_item.portfolio.event_cycle.code': 'Event code',
+        'base_url': 'Base URL of the application',
+        'reason': 'Why Supply closed the order',
     },
     'submission_reminder': {
         'department': 'The Department being reminded',
@@ -348,6 +359,16 @@ def get_sample_context() -> dict[str, Any]:
         'line_count': 12,
         'total_requested_dollars': 4820.50,
         'reason': 'Ballroom A is listed twice; please merge the two room cards.',
+        # Supply finalized: one removed line and one cut line, so the preview
+        # shows the "What changed" block.
+        'changes': [
+            {'line_number': 1, 'item_name': 'Sample Markers', 'unit': 'box',
+             'kind': 'removed', 'department_quantity': None, 'requested': 4,
+             'final': 0, 'reason': 'Venue supplies these'},
+            {'line_number': 2, 'item_name': 'Sample Tape', 'unit': 'roll',
+             'kind': 'cut', 'department_quantity': None, 'requested': 10,
+             'final': 6, 'reason': ''},
+        ],
         # Supplied by the drainer on every send, undocumented but reachable.
         'work_type': MockWorkType(),
         'recipient_email': 'volunteer@example.org',

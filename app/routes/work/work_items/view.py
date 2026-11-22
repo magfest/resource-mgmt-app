@@ -41,8 +41,9 @@ from app.routes.admin_final.helpers import (
     get_finalization_summary,
 )
 from .common import get_work_item_by_public_id
-from app.routes.approvals.helpers import can_decide_line
-from app.routes.work.helpers.review_state import is_group_final
+from app.routes.approvals.helpers import can_decide_line, can_reopen_line
+from app.routes.work.helpers.checkout import STAFF_READ_WORK_TYPES, is_work_type_staffer
+from app.routes.work.helpers.review_state import is_group_final, uses_review_sessions
 
 
 # ============================================================
@@ -264,8 +265,12 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
     work_item, ctx = get_work_item_by_public_id(event, dept, public_id, work_type_slug)
     perms = require_work_item_view(work_item, ctx)
 
-    # Must be a reviewer or admin to use quick review
-    if not (perms.is_worktype_admin or _is_approver_for_work_item(work_item, user_ctx)):
+    staffer = is_work_type_staffer(user_ctx, work_item.portfolio.work_type)
+
+    # Must be a reviewer or admin to use quick review. A staffer in a group
+    # with no line on this order can read it but not decide anything.
+    if not (perms.is_worktype_admin or staffer
+            or _is_approver_for_work_item(work_item, user_ctx)):
         flash("You don't have permission to review this request.", "error")
         return redirect(url_for(
             "work.work_item_detail",
@@ -282,9 +287,14 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
     # Filter lines for approval group users
     all_lines = list(work_item.lines)
     # On group-final work types an admin can decide every line, so they see
-    # every line. Elsewhere only super admins skip the group filter.
+    # every line. Elsewhere only super admins skip the group filter. Staff-read
+    # work types also show every line to any of their group members, and to
+    # their work-type admins, who would otherwise see only routed lines.
     sees_all_lines = (
-        perms.is_worktype_admin if is_group_final(work_item) else user_ctx.is_super_admin
+        (perms.is_worktype_admin if is_group_final(work_item) else user_ctx.is_super_admin)
+        or staffer
+        or (perms.is_worktype_admin
+            and work_item.portfolio.work_type.code in STAFF_READ_WORK_TYPES)
     )
     visible_lines, lines_filtered = filter_lines_for_user(
         all_lines,
@@ -335,6 +345,7 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
             # quick_review template chooses to render it.
             "group": get_line_routing_approval_group(line),
             "can_decide": can_decide_line(line, user_ctx),
+            "can_reopen": can_reopen_line(line, user_ctx),
         })
 
     # Pick the per-worktype template (same pattern as line_review).
@@ -363,6 +374,7 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
         summary=summary,
         is_checked_out=checked_out,
         has_checkout=has_checkout,
+        uses_sessions=uses_review_sessions(work_item),
         can_checkout=can_checkout,
         format_currency=format_currency,
         friendly_status=friendly_status,

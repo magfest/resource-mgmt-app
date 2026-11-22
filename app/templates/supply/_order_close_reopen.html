@@ -1,0 +1,66 @@
+{# templates/supply/_order_close_reopen.html #}
+{# Closed banner for everyone, and Close or Reopen for Supply admins, shared by
+   the order page and the finalize screen. Expects work_item, order_detail,
+   is_closed, is_supply_admin, return_to ("finalize" or "order"), and
+   show_banner or show_forms to pick the part. The routes lock the order and
+   re-check its status; these forms only offer the action. #}
+{% if show_banner and is_closed %}
+  <div class="callout mb-16" id="order-closed">
+    <strong>Closed</strong>
+    <div class="muted small" style="margin-top: 4px;">
+      Closed{% if order_detail.closed_by_user_id %} by {{ order_detail.closed_by_user_id|user_display }}{% endif %}
+      on {{ order_detail.closed_at.strftime('%Y-%m-%d %H:%M') }}
+    </div>
+    <div style="white-space: pre-wrap; margin-top: 4px;">{{ order_detail.closed_reason }}</div>
+  </div>
+{% endif %}
+
+{% if show_forms and is_supply_admin %}
+  {% if work_item.status == 'SUBMITTED' and not is_closed %}
+    <section class="card mb-16" id="order-close">
+      <h3 style="margin: 0 0 4px 0;">Close order</h3>
+      <div class="muted small" style="margin-bottom: 8px;">
+        For an order placed by mistake. Every line is rejected and the department is emailed this reason. Reopen undoes it.
+      </div>
+      <form method="post" action="{{ url_for('work.supply_admin_close', public_id=work_item.public_id) }}"
+            data-confirm-submit="Close this order? Every line is rejected and the department is emailed the reason.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ return_to }}">
+        <label class="small" style="display: block; margin-bottom: 8px;">Reason (the department sees this)
+          <textarea name="reason" rows="2" maxlength="1000" required style="width: 100%;"></textarea>
+        </label>
+        <button type="submit" class="btn btn-danger">Close order</button>
+      </form>
+    </section>
+  {% elif work_item.status == 'FINALIZED' %}
+    <section class="card mb-16" id="order-reopen">
+      <h3 style="margin: 0 0 4px 0;">Reopen order</h3>
+      <div class="muted small" style="margin-bottom: 8px;">
+        {% if is_closed %}
+          Every line goes back to its review group. The reason is posted as a public comment; no email is sent.
+        {% else %}
+          Line decisions stay as they are. The reason is posted as a public comment; no email is sent.
+        {% endif %}
+      </div>
+      <form method="post" action="{{ url_for('work.supply_admin_reopen', public_id=work_item.public_id) }}"
+            data-confirm-submit="Reopen this order for review?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ return_to }}">
+        <label class="small" style="display: block; margin-bottom: 8px;">Reason (the department sees this)
+          <textarea name="reason" rows="2" maxlength="1000" required style="width: 100%;"></textarea>
+        </label>
+        <button type="submit" class="btn">Reopen order</button>
+      </form>
+    </section>
+  {% endif %}
+  {# Not data-confirm: base.html confirms every click inside an element with
+     that attribute, so a form carrying it would ask on each click. #}
+  <script nonce="{{ csp_nonce }}">
+  document.addEventListener('submit', function(e) {
+    var message = e.target.getAttribute && e.target.getAttribute('data-confirm-submit');
+    if (message && !confirm(message)) {
+      e.preventDefault();
+    }
+  });
+  </script>
+{% endif %}

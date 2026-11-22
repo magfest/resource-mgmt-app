@@ -12,3 +12,4 @@ from . import view
 from . import catalog
 from . import submit
 from . import admin
+from . import reports

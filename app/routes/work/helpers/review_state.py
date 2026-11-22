@@ -58,6 +58,23 @@ def is_group_final(work_item) -> bool:
     return bool(config) and not config.has_admin_final
 
 
+def uses_review_sessions(work_item) -> bool:
+    """Return whether reviewers must check out this item before deciding.
+
+    Group-final work types never use sessions, whatever the flag says; the
+    TechOps test fixtures leave the flag at its default. A missing config
+    keeps the lock rather than dropping it silently.
+    """
+    if is_group_final(work_item):
+        return False
+    portfolio = work_item.portfolio if work_item else None
+    work_type = portfolio.work_type if portfolio else None
+    config = work_type.config if work_type else None
+    if config is None:
+        return True
+    return bool(config.uses_review_sessions)
+
+
 def get_line_review_state(line: WorkLine) -> LineReviewState:
     ag = WorkLineReview.query.filter_by(
         work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP).first()

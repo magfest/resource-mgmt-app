@@ -15,9 +15,12 @@ The three tests pin:
   3. a line still PENDING at APPROVAL_GROUP auto-approves at its requested
      quantity when finalized (BUDGET auto-approve semantics = the qty default).
 """
+from datetime import datetime, timedelta, timezone
+
 from app import db
 from app.models import (
     ApprovalGroup,
+    Department,
     SupplyCategory,
     SupplyItem,
     SupplyOrderDetail,
@@ -277,6 +280,36 @@ class TestSupplyFinalizeOverrideNeedsNote:
         assert work_item.status == WORK_ITEM_STATUS_SUBMITTED
 
         # Nothing written: no ADMIN_FINAL review, no approved quantity.
+        assert WorkLineReview.query.filter_by(
+            stage=REVIEW_STAGE_ADMIN_FINAL,
+        ).count() == 0
+        d1 = SupplyOrderLineDetail.query.filter_by(work_line_id=line1.id).one()
+        assert d1.quantity_approved is None
+
+    def test_quantity_above_cap_refused(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category, unit_cost_cents=500)
+
+        work_item = _make_draft_order(wt, cycle, dept)
+        line1 = _add_line(work_item, item, quantity=4, line_number=1)
+        _set_pickup_details(work_item)
+
+        _login(client, "test:admin")
+        _submit(client, cycle, dept, work_item)
+
+        resp = client.post(
+            f"/admin/supply/order/{work_item.public_id}/finalize",
+            data={"approved_qty_1": "100001", "note_1": ""},
+        )
+        assert resp.status_code == 200
+        assert b"100,000 or less" in resp.data
+
+        db.session.refresh(work_item)
+        assert work_item.status == WORK_ITEM_STATUS_SUBMITTED
         assert WorkLineReview.query.filter_by(
             stage=REVIEW_STAGE_ADMIN_FINAL,
         ).count() == 0
@@ -555,3 +588,250 @@ class TestSupplyAdminHome:
         resp = client.get("/admin/supply/")
 
         assert resp.status_code == 403
+
+
+class TestSupplyFinalizeForGroupCall:
+    """Prefill from the reviewer's quantity, finalize-and-next, event filter."""
+
+    def _env(self, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category, unit_cost_cents=500)
+        return wt, item
+
+    def _order(self, client, wt, cycle, dept, item, public_id, quantities=(5,),
+               submitted_at=None):
+        work_item = _make_draft_order(wt, cycle, dept, public_id=public_id)
+        for n, qty in enumerate(quantities, start=1):
+            _add_line(work_item, item, quantity=qty, line_number=n)
+        _set_pickup_details(work_item)
+        _submit(client, cycle, dept, work_item)
+        if submitted_at is not None:
+            work_item.submitted_at = submitted_at
+            db.session.commit()
+        return work_item
+
+    def _decide(self, work_item, status=REVIEW_STATUS_APPROVED, reviewed=None):
+        for line in work_item.lines:
+            review = WorkLineReview.query.filter_by(
+                work_line_id=line.id, stage=REVIEW_STAGE_APPROVAL_GROUP,
+            ).one()
+            review.status = status
+            review.decided_by_user_id = "test:reviewer"
+            review.note = "Reviewer says <b>ok</b>"
+            line.supply_detail.quantity_reviewed = reviewed
+        db.session.commit()
+
+    def _other_dept(self, seed_workflow_data):
+        base = seed_workflow_data["department"]
+        dept = Department(code="OTHERDEPT", name="Other Department",
+                          is_active=True, division_id=base.division_id)
+        db.session.add(dept)
+        db.session.commit()
+        return dept
+
+    def test_finalize_prefills_reviewer_quantity(self, app, client, seed_workflow_data):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-A", quantities=(100,))
+        self._decide(order, reviewed=40)
+        body = client.get(f"/admin/supply/order/{order.public_id}/finalize").get_data(as_text=True)
+        assert 'name="approved_qty_1" min="0"\n                       value="40"' in body
+        assert "Approved 40 of 100" in body
+        assert "Test Reviewer" in body
+        assert "Reviewer says &lt;b&gt;ok&lt;/b&gt;" in body
+
+    def test_finalize_prefills_zero_for_rejected_and_requested_for_pending(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-B", quantities=(7, 9))
+        reviews = {
+            l.line_number: WorkLineReview.query.filter_by(
+                work_line_id=l.id, stage=REVIEW_STAGE_APPROVAL_GROUP).one()
+            for l in order.lines
+        }
+        reviews[1].status = REVIEW_STATUS_REJECTED
+        db.session.commit()
+        body = client.get(f"/admin/supply/order/{order.public_id}/finalize").get_data(as_text=True)
+        assert 'name="approved_qty_1" min="0"\n                       value="0"' in body
+        assert 'name="approved_qty_2" min="0"\n                       value="9"' in body
+
+    def test_legacy_approved_line_with_null_reviewed_prefills_requested(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-C", quantities=(12,))
+        self._decide(order, reviewed=None)
+        body = client.get(f"/admin/supply/order/{order.public_id}/finalize").get_data(as_text=True)
+        assert 'name="approved_qty_1" min="0"\n                       value="12"' in body
+        assert "Approved 12 of" not in body
+        # Missing field falls back to the same default and finalizes as before.
+        resp = client.post(f"/admin/supply/order/{order.public_id}/finalize", data={})
+        assert resp.status_code == 302
+        detail = SupplyOrderLineDetail.query.filter_by(
+            work_line_id=order.lines[0].id).one()
+        assert detail.quantity_approved == 12
+
+    def test_post_missing_field_uses_reviewer_quantity(self, app, client, seed_workflow_data):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-D", quantities=(100,))
+        self._decide(order, reviewed=40)
+        resp = client.post(f"/admin/supply/order/{order.public_id}/finalize", data={})
+        assert resp.status_code == 302
+        detail = SupplyOrderLineDetail.query.filter_by(
+            work_line_id=order.lines[0].id).one()
+        assert detail.quantity_approved == 40
+
+    def test_finalize_and_next_redirects_to_next_ready_order_same_event(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        alt = seed_workflow_data["second_event_cycle"]
+        dept = seed_workflow_data["department"]
+        other = self._other_dept(seed_workflow_data)
+        _login(client, "test:admin")
+        now = datetime.now(timezone.utc)
+        first = self._order(client, wt, cycle, dept, item, "TST-1",
+                            submitted_at=now - timedelta(hours=5))
+        # Older, but in another event: must be skipped.
+        alt_order = self._order(client, wt, alt, dept, item, "ALT-1",
+                                submitted_at=now - timedelta(hours=9))
+        # Newer and not ready: skipped.
+        self._order(client, wt, cycle, other, item, "TST-NOTREADY",
+                    submitted_at=now - timedelta(hours=3))
+        for o in (first, alt_order):
+            self._decide(o)
+        second_dept = Department(code="THIRD", name="Third", is_active=True,
+                                 division_id=dept.division_id)
+        db.session.add(second_dept)
+        db.session.commit()
+        second = self._order(client, wt, cycle, second_dept, item, "TST-2",
+                             submitted_at=now - timedelta(hours=1))
+        self._decide(second)
+
+        resp = client.post(
+            f"/admin/supply/order/{first.public_id}/finalize",
+            data={"and_next": "1"},
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith(
+            f"/admin/supply/order/{second.public_id}/finalize")
+
+    def test_finalize_and_next_returns_to_queue_when_none_ready(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-ONLY")
+        self._decide(order)
+        resp = client.post(
+            f"/admin/supply/order/{order.public_id}/finalize",
+            data={"and_next": "1"},
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith(
+            f"/admin/supply/queue/?event={cycle.code}")
+
+    def test_and_next_not_applied_on_validation_failure(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-BAD")
+        self._decide(order)
+        resp = client.post(
+            f"/admin/supply/order/{order.public_id}/finalize",
+            data={"and_next": "1", "approved_qty_1": "0", "note_1": ""},
+        )
+        assert resp.status_code == 200
+        db.session.refresh(order)
+        assert order.status == WORK_ITEM_STATUS_SUBMITTED
+
+    def test_queue_filters_by_event(self, app, client, seed_workflow_data):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        alt = seed_workflow_data["second_event_cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        self._order(client, wt, cycle, dept, item, "TST-IN")
+        self._order(client, wt, alt, dept, item, "ALT-OUT")
+        body = client.get(f"/admin/supply/queue/?event={cycle.code}").get_data(as_text=True)
+        assert "TST-IN" in body and "ALT-OUT" not in body
+        body = client.get("/admin/supply/queue/").get_data(as_text=True)
+        assert "TST-IN" in body and "ALT-OUT" in body
+
+    def test_queue_unknown_event_shows_error_and_empty_list(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        self._order(client, wt, cycle, dept, item, "TST-IN")
+        body = client.get("/admin/supply/queue/?event=NOPE99").get_data(as_text=True)
+        assert "NOPE99" in body
+        assert "TST-IN" not in body
+
+    def test_quantity_change_at_finalize_needs_no_note(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-Q", quantities=(100,))
+        self._decide(order, reviewed=40)
+        resp = client.post(
+            f"/admin/supply/order/{order.public_id}/finalize",
+            data={"approved_qty_1": "30", "note_1": ""},
+        )
+        assert resp.status_code == 302
+        detail = SupplyOrderLineDetail.query.filter_by(
+            work_line_id=order.lines[0].id).one()
+        assert detail.quantity_approved == 30
+
+    def test_flipping_group_decision_still_needs_note(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-F", quantities=(100,))
+        self._decide(order, reviewed=40)
+        resp = client.post(
+            f"/admin/supply/order/{order.public_id}/finalize",
+            data={"approved_qty_1": "0", "note_1": ""},
+        )
+        assert resp.status_code == 200
+        assert b"requires a note" in resp.data
+
+    def test_order_page_shows_finalize_button_to_supply_admin(
+        self, app, client, seed_workflow_data
+    ):
+        wt, item = self._env(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        _login(client, "test:admin")
+        order = self._order(client, wt, cycle, dept, item, "TST-BTN")
+        url = f"/{cycle.code}/{dept.code}/supply/order/{order.public_id}"
+        body = client.get(url).get_data(as_text=True)
+        assert f"/admin/supply/order/{order.public_id}/finalize" in body

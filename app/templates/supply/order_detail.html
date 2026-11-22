@@ -9,8 +9,17 @@
 {% block title %}{{ work_item.public_id }} - Supply Order{% endblock %}
 
 {% block content %}
+<style>
+  @media (max-width: 767.98px) {
+    /* A line without an image would render as an empty card row. */
+    td.line-thumb-empty { display: none; }
+    td.line-thumb { justify-content: flex-start; }
+    .line-qty-cell { text-align: right; }
+    td.cell-stack form select, td.cell-stack form input[type="text"] { max-width: 100%; box-sizing: border-box; }
+  }
+</style>
 
-  {% set status = work_item.status | upper %}
+  {% set status = display_status | upper %}
 
   {# Breadcrumb #}
   <nav class="muted small" style="margin-bottom: 12px;">
@@ -55,7 +64,14 @@
     </div>
   </div>
 
-  {{ render_checkout_banner(work_item, perms) }}
+  {% with show_banner = true, show_forms = false, return_to = 'order' %}
+    {% include "supply/_order_close_reopen.html" %}
+  {% endwith %}
+
+  {# A lock taken before Supply dropped review sessions blocks nothing and nobody can release it; hide its banner. #}
+  {% if shows_checkout_banner is not defined or shows_checkout_banner %}
+    {{ render_checkout_banner(work_item, perms) }}
+  {% endif %}
 
   {# Navigation back to the portfolio. #}
   <div class="btn-row mb-16">
@@ -72,6 +88,14 @@
       <button type="submit" form="order-form" name="action" value="catalog" class="btn btn-primary">
         Add more items
       </button>
+    {% endif %}
+    {% if is_supply_admin and work_item.status == 'SUBMITTED' %}
+      <a class="btn" href="{{ url_for('work.supply_admin_finalize_view', public_id=work_item.public_id) }}">Finalize</a>
+    {% endif %}
+    {% if can_quick_review %}
+      <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='supply') }}">
+        Quick Review
+      </a>
     {% endif %}
   </div>
 
@@ -178,7 +202,7 @@
       {# Only a submitted order reaches this table; a draft uses the order
          form above. Kicked-back lines are the one editable case here. #}
       {% set show_actions_column = kickback_editable_line_numbers %}
-      <table>
+      <table class="responsive-cards">
         <thead>
           <tr>
             <th style="width: 50px;">#</th>
@@ -186,7 +210,7 @@
             <th>Item</th>
             <th style="width: 90px;">Qty</th>
             <th>Notes</th>
-            {% if show_actions_column %}
+            {% if show_actions_column or can_quick_review %}
               <th style="width: 90px;"></th>
             {% endif %}
           </tr>
@@ -196,25 +220,38 @@
             {% set detail = line.supply_detail %}
             {% set item = detail.item if detail else None %}
             {% set is_kickback = line.line_number in kickback_editable_line_numbers %}
+            {% set is_removed = detail and detail.removed_at %}
             {# Matches the is_line_kickback_editable gate on
                work.supply_line_update. #}
             {% set row_editable = is_kickback %}
+            {% macro review_link() %}{% if can_quick_review %}<a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}">Review</a>{% endif %}{% endmacro %}
             <tr id="line-{{ line.line_number }}">
-              <td>{{ line.line_number }}</td>
-              <td>
+              <td data-label="#">{{ line.line_number }}</td>
+              <td class="line-thumb{% if not (item and item.image_url) %} line-thumb-empty{% endif %}">
                 {% if item and item.image_url %}
                   <img src="{{ item.image_url }}" alt="" style="max-height: 40px; max-width: 40px;">
                 {% endif %}
               </td>
-              <td>
+              <td class="cell-stack" data-label="Item">
                 {% if item %}
-                  <strong>{{ item.item_name }}</strong>
+                  <strong{% if is_removed %} style="text-decoration: line-through;"{% endif %}>{{ item.item_name }}</strong>
                   <span class="muted small">({{ item.unit }})</span>
                   {% if not item.is_expendable %}
                     <span class="pill pill-info pill-sm">Must be returned</span>
                   {% endif %}
                 {% else %}
                   <span class="muted">-</span>
+                {% endif %}
+                {% if is_removed %}
+                  <div class="small" style="margin-top: 4px;"><strong>Removed by Supply admin</strong></div>
+                  <div class="muted small" style="white-space: pre-wrap;">{{ detail.removed_reason }}</div>
+                {% elif detail and detail.added_by_admin_user_id %}
+                  <div class="small" style="margin-top: 4px;"><strong>Added by Supply admin</strong></div>
+                  {% set add_note = admin_add_notes.get(line.line_number) %}
+                  {% if add_note %}
+                    <div class="muted small" style="white-space: pre-wrap;">{{ add_note.text }}</div>
+                    <div class="muted small">{{ add_note.by|user_display }}, {{ add_note.at.strftime('%Y-%m-%d %H:%M') }}</div>
+                  {% endif %}
                 {% endif %}
                 {% if is_kickback %}
                   <div style="margin-top: 4px;">
@@ -224,7 +261,7 @@
               </td>
 
               {% if row_editable %}
-                <td colspan="2">
+                <td colspan="2" class="cell-stack" data-label="Update this line">
                   <form method="post"
                         action="{{ url_for('work.supply_line_update', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_number=line.line_number) }}"
                         style="display:flex; gap:8px; align-items:flex-start; flex-wrap: wrap;">
@@ -245,23 +282,38 @@
                   </form>
                 </td>
                 {# A kicked-back line is fixed, never removed. #}
-                <td></td>
+                <td>{{ review_link() }}</td>
               {% else %}
-                <td>
-                  {{ detail.quantity_requested if detail else '-' }}
+                <td data-label="Qty"{% if is_removed %} style="text-decoration: line-through;"{% endif %}>
+                  <div class="line-qty-cell">
+                  {% if detail and detail.department_quantity is not none %}
+                    {{ detail.department_quantity }} → {{ detail.quantity_requested }}
+                    <div class="muted small">Changed by Supply admin</div>
+                    {% set change_note = admin_change_notes.get(line.line_number) %}
+                    {% if change_note %}
+                      <div class="muted small" style="white-space: pre-wrap;">{{ change_note.text }}</div>
+                      <div class="muted small">{{ change_note.by|user_display }}, {{ change_note.at.strftime('%Y-%m-%d %H:%M') }}</div>
+                    {% endif %}
+                  {% else %}
+                    {{ detail.quantity_requested if detail else '-' }}
+                  {% endif %}
+                  {% if quantity_labels.get(line.line_number) %}
+                    <div class="small"><strong>{{ quantity_labels[line.line_number] }}</strong></div>
+                  {% endif %}
                   {% if detail and detail.quantity_confidence_label %}
                     <div class="muted small">{{ detail.quantity_confidence_label }}</div>
                   {% endif %}
+                  </div>
                 </td>
-                <td>
+                <td class="cell-stack" data-label="Notes">
                   {% if detail and detail.requester_notes %}
                     {{ detail.requester_notes }}
                   {% else %}
                     <span class="muted">-</span>
                   {% endif %}
                 </td>
-                {% if show_actions_column %}
-                  <td></td>
+                {% if show_actions_column or can_quick_review %}
+                  <td>{{ review_link() }}</td>
                 {% endif %}
               {% endif %}
             </tr>
@@ -274,6 +326,16 @@
       </div>
     {% endif %}
   </section>
+
+  {% if can_admin_edit_lines %}
+    {% with return_to = 'order' %}
+      {% include "supply/_admin_line_edits.html" %}
+    {% endwith %}
+  {% endif %}
+
+  {% with show_banner = false, show_forms = true, return_to = 'order' %}
+    {% include "supply/_order_close_reopen.html" %}
+  {% endwith %}
 
   {% endif %}
 

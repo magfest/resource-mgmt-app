@@ -48,7 +48,24 @@ def test_quick_review_buttons_follow_the_decide_rule(client, techops_review):
     login(client, "test:techopsadmin")
     admin_html = client.get(QUICK_URL).get_data(as_text=True)
 
-    # The NET reviewer sees only the NET line; the admin sees and decides both.
+    # TechOps staff read every line, but the NET reviewer decides only the NET
+    # line; the admin sees and decides both.
     assert net_html.count('data-action="approve"') == 1
-    assert 'data-line-num="1"' not in net_html
+    assert 'data-line-num="1"' in net_html
     assert admin_html.count('data-action="approve"') == 2
+
+
+def test_member_with_no_routed_line_sees_no_decision_buttons(client, techops_review):
+    net = ApprovalGroup.query.filter_by(code="TECHOPS_NET").one()
+    db.session.add(User(id="test:net", email="net@test.local",
+                        display_name="Net Reviewer", is_active=True))
+    db.session.flush()
+    db.session.add(UserRole(user_id="test:net", role_code=ROLE_APPROVER,
+                            approval_group_id=net.id))
+    db.session.commit()
+    login(client, "test:net")
+
+    resp = client.get(QUICK_URL)
+
+    assert resp.status_code == 200
+    assert 'data-action="' not in resp.get_data(as_text=True)

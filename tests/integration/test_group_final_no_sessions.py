@@ -25,7 +25,7 @@ def test_second_decision_says_the_line_was_already_decided(client, techops_revie
                        data={"ajax": "1", "note": "too late"}).get_json()
 
     assert data["success"] is False
-    assert data["error"] == "This line was already decided."
+    assert data["error"].startswith("Already approved by Test Reviewer at ")
     assert data["current_status"] == "APPROVED"
 
 
@@ -65,7 +65,8 @@ def test_a_decision_racing_a_stale_copy_is_refused(app, techops_review):
         action=REVIEW_ACTION_REJECT, note="late", amount_cents=None, user_ctx=reviewer,
     )
 
-    assert (ok, error) == (False, "This line was already decided.")
+    assert ok is False
+    assert error.startswith("Already approved")
     assert stale.status != REVIEW_STATUS_REJECTED
 
 
@@ -123,7 +124,7 @@ def test_a_refusal_reports_the_review_status_not_a_stale_line(client, techops_re
 
     data = client.post(line_url(1, "approve"), data={"ajax": "1"}).get_json()
 
-    assert data["error"] == "This line was already decided."
+    assert data["error"].startswith("Already approved")
     assert data["current_status"] == "APPROVED"
 
 

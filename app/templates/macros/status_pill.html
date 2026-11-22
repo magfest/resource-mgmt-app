@@ -17,6 +17,7 @@
    - AWAITING_DISPATCH → pill-warning    (item-level)
    - PENDING_BOARD_APPROVAL → pill-warning (display-only, budget-only; see computations.py)
    - FINALIZED         → pill-approved   (subtle green, terminal "settled" state)
+   - CLOSED            → pill-muted      (display-only, Supply-only; a closed order is FINALIZED)
    - SUBMITTED         → pill-submitted  (subtle blue, in-flight state)
    - else (DRAFT/PENDING/unknown) → pill-draft (gray)
 
@@ -40,6 +41,7 @@
     else "pill-rejected" if status_upper == "REJECTED"
     else "pill-warning" if status_upper in ["UNDER_REVIEW", "NEEDS_INFO", "NEEDS_ADJUSTMENT", "PAUSED", "AWAITING_DISPATCH", "PENDING_BOARD_APPROVAL"]
     else "pill-approved" if status_upper == "FINALIZED"
+    else "pill-muted" if status_upper == "CLOSED"
     else "pill-submitted" if status_upper == "SUBMITTED"
     else "pill-draft" -%}
 {%- set display_label = label if label is not none else status_upper -%}

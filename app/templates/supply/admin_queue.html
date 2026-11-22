@@ -17,6 +17,16 @@
         {{ rows|length }} submitted order{{ '' if rows|length == 1 else 's' }} awaiting finalization
       </div>
     </div>
+    <form method="get" action="{{ url_for('work.supply_admin_queue') }}" style="display:flex; gap:8px; align-items:center;">
+      <label for="queue-event" class="muted small">Event</label>
+      <select id="queue-event" name="event">
+        <option value="">All events</option>
+        {% for ev in event_options %}
+          <option value="{{ ev.code }}" {% if ev.code == selected_event %}selected{% endif %}>{{ ev.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn">Show</button>
+    </form>
   </div>
 
   <section class="card">

@@ -294,11 +294,11 @@ def require_checkout_for_review(work_item: WorkItem, user_ctx: UserContext) -> N
 def decision_lock_satisfied(work_item: WorkItem, user_ctx: UserContext) -> bool:
     """Return whether the checkout rule allows this user to decide now.
 
-    Group-final work types have no review sessions; everywhere else the
+    Work types without review sessions need no lock; everywhere else the
     decider must hold the checkout.
     """
-    from app.routes.work.helpers.review_state import is_group_final
-    if is_group_final(work_item):
+    from app.routes.work.helpers.review_state import uses_review_sessions
+    if not uses_review_sessions(work_item):
         return True
     return work_item.checked_out_by_user_id == user_ctx.user_id
 
@@ -312,25 +312,52 @@ def can_decide_line(line: WorkLine, user_ctx: UserContext) -> bool:
         AWAITING_REVIEWER_GROUP, get_line_review_state,
     )
     return (
-        get_line_review_state(line).awaiting == AWAITING_REVIEWER_GROUP
+        removed_line_refusal(line) is None
+        and get_line_review_state(line).awaiting == AWAITING_REVIEWER_GROUP
         and is_reviewer_for_line(line, user_ctx)
         and decision_lock_satisfied(line.work_item, user_ctx)
+    )
+
+
+SUPPLY_UNDO_FINALIZED_MESSAGE = (
+    "This order is finalized. Ask a Supply admin to reopen the order first."
+)
+
+
+def _supply_undo_open(line: WorkLine) -> bool:
+    """Return whether a Supply line is in a state where undo is possible."""
+    from app.routes.work.supply.line_state import is_line_removed
+    return (
+        line.supply_detail is not None
+        and line.work_item.status == WORK_ITEM_STATUS_SUBMITTED
+        and not is_line_removed(line.supply_detail)
     )
 
 
 def can_reopen_line(line: WorkLine, user_ctx: UserContext) -> bool:
     """Return whether the user may send this decided line back to PENDING.
 
-    Group-final work types only, and only someone who could have decided it.
+    Group-final work types, plus Supply while the order is SUBMITTED. Only
+    someone who could have decided the line, or a Supply admin, may.
     """
     from app.routes.work.helpers.review_state import is_group_final
-    if not is_group_final(line.work_item):
-        return False
     review = get_review_for_line(line)
-    return (
-        review is not None
-        and review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)
-        and is_reviewer_for_line(line, user_ctx)
+    if review is None or review.status not in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+        return False
+    if is_group_final(line.work_item):
+        return is_reviewer_for_line(line, user_ctx)
+    if not _supply_undo_open(line):
+        return False
+    # A reopened finalized order keeps its admin decisions, and the transition
+    # check refuses group actions under one; hide Undo rather than fail it.
+    admin_final = WorkLineReview.query.filter_by(
+        work_line_id=line.id, stage=REVIEW_STAGE_ADMIN_FINAL,
+    ).first()
+    if admin_final and admin_final.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+        return False
+    from app.routes.work.helpers.context import is_worktype_admin
+    return is_reviewer_for_line(line, user_ctx) or is_worktype_admin(
+        user_ctx, line.work_item.portfolio.work_type_id,
     )
 
 
@@ -391,6 +418,62 @@ def get_review_for_line(line: WorkLine) -> Optional[WorkLineReview]:
 # Transition Validation
 # ============================================================
 
+def _describe_removal(detail) -> str:
+    text = "Removed by Supply admin"
+    user = db.session.get(User, detail.removed_by_user_id) if detail.removed_by_user_id else None
+    if user is not None:
+        text += f" {user.display_name}"
+    text += f" at {detail.removed_at:%Y-%m-%d %H:%M}"
+    return f"{text}: {detail.removed_reason}"
+
+
+def removed_line_refusal(line: WorkLine) -> Optional[str]:
+    """Return the refusal for any decision or response on a removed Supply line."""
+    from app.routes.work.supply.line_state import is_line_removed
+    detail = line.supply_detail
+    if detail is None or not is_line_removed(detail):
+        return None
+    return _describe_removal(detail)
+
+
+def describe_decided_review(review: Optional[WorkLineReview], line: WorkLine) -> str:
+    """Say who decided this line, what they decided, and when (UTC).
+
+    A removed Supply line reports the removal, whatever its review says.
+    """
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        return removal
+    verbs = {
+        REVIEW_STATUS_APPROVED: "approved",
+        REVIEW_STATUS_APPROVED_NEEDS_REVIEW: "recommended for approval",
+        REVIEW_STATUS_REJECTED: "rejected",
+        REVIEW_STATUS_NEEDS_INFO: "sent back for information",
+        REVIEW_STATUS_NEEDS_ADJUSTMENT: "sent back for adjustment",
+    }
+    text = f"Already {verbs.get(review.status, review.status.lower())}"
+    detail = get_line_detail(line)
+    quantity = getattr(detail, "quantity_reviewed", None)
+    if quantity is not None and review.status in (
+        REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW,
+    ):
+        text += f" (qty {quantity})"
+    user = db.session.get(User, review.decided_by_user_id) if review.decided_by_user_id else None
+    if user is not None:
+        text += f" by {user.display_name}"
+    if review.decided_at is not None:
+        text += f" at {review.decided_at:%Y-%m-%d %H:%M}"
+    return text + "."
+
+
+def _may_see_decision_detail(line: WorkLine, user_ctx: UserContext) -> bool:
+    """Return whether a refusal may name the decider: a reviewer of the line or a work-type admin."""
+    from app.routes.work.helpers.context import is_worktype_admin
+    return is_reviewer_for_line(line, user_ctx) or is_worktype_admin(
+        user_ctx, line.work_item.portfolio.work_type_id,
+    )
+
+
 def validate_review_transition(
     current_status: str,
     action: str,
@@ -418,8 +501,11 @@ def validate_review_transition(
     if action == REVIEW_ACTION_REOPEN:
         from app.routes.work.helpers.review_state import is_group_final
         if not is_group_final(line.work_item):
-            # BUDGET reopens through its admin-final tools instead.
-            return "", "Reopen is not available for this work type."
+            if line.supply_detail is None:
+                # BUDGET reopens through its admin-final tools instead.
+                return "", "Reopen is not available for this work type."
+            if line.work_item.status != WORK_ITEM_STATUS_SUBMITTED:
+                return "", SUPPLY_UNDO_FINALIZED_MESSAGE
 
     key = (current_status, action)
 
@@ -427,10 +513,16 @@ def validate_review_transition(
         if current_status in (
             REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW, REVIEW_STATUS_REJECTED,
         ):
-            return "", "This line was already decided."
+            if not _may_see_decision_detail(line, user_ctx):
+                return "", "This line was already decided."
+            return "", describe_decided_review(review, line)
         return "", f"Invalid transition: {current_status} -> {action}"
 
     new_status, note_required, allowed_role = VALID_TRANSITIONS[key]
+
+    # A Supply undo corrects a misclick, so it needs no explanation.
+    if action == REVIEW_ACTION_REOPEN and line.supply_detail is not None:
+        note_required = False
 
     # Check note requirement
     if note_required and not (note or "").strip():
@@ -438,7 +530,13 @@ def validate_review_transition(
 
     # Check role permission
     if allowed_role == "APPROVER":
-        if not is_reviewer_for_line(line, user_ctx):
+        # Supply admins may undo without belonging to the routed group.
+        may_act = (
+            can_reopen_line(line, user_ctx)
+            if action == REVIEW_ACTION_REOPEN and line.supply_detail is not None
+            else is_reviewer_for_line(line, user_ctx)
+        )
+        if not may_act:
             return "", "You do not have permission to perform this action."
         # Once an admin has made a final decision on this line, the approval
         # group can no longer take review actions (comments remain allowed).
@@ -673,6 +771,7 @@ def apply_review_decision(
     amount_cents: Optional[int],
     user_ctx: UserContext,
     ctx=None,
+    quantity: Optional[int] = None,
 ) -> Tuple[bool, Optional[str]]:
     """
     Apply a review decision atomically.
@@ -686,15 +785,22 @@ def apply_review_decision(
         amount_cents: Approved amount (for approvals)
         user_ctx: Current user context
         ctx: PortfolioContext (optional, improves permission check efficiency)
+        quantity: Supply only. Approved quantity; None approves the requested one.
 
     Returns (success, error_message) tuple.
     """
-    # 1. Verify checkout (except for requester responses)
+    # 1. A removed Supply line refuses before anything else, so a stale page
+    # learns why. Step 2b repeats the check under the lock.
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        return False, removal
+
+    # 2. Verify checkout (except for requester responses)
     if action != REVIEW_ACTION_RESPOND:
         if not decision_lock_satisfied(work_item, user_ctx):
             return False, "You must checkout this work item before making review decisions."
 
-    # 2. Re-read the request, then the review, under row locks. Without review
+    # 2a. Re-read the request, then the review, under row locks. Without review
     # sessions two reviewers can decide at once: the review lock refuses a second
     # decision on one line, and the request lock lets the later of two last-line
     # decisions see the earlier one and finalize. Lock the request first, always.
@@ -703,6 +809,14 @@ def apply_review_decision(
     # joinedload of portfolio, and PostgreSQL refuses a bare FOR UPDATE across
     # that outer join; OF limits the lock to the request row.
     db.session.refresh(work_item, with_for_update={"of": WorkItem})
+
+    # 2b. A Supply admin removal takes the same request lock, so the line
+    # detail re-read here is current.
+    if line.supply_detail is not None:
+        db.session.refresh(line.supply_detail)
+        removal = removed_line_refusal(line)
+        if removal is not None:
+            return False, removal
 
     # A TechOps send-back or pull-back deletes this item's reviews and leaves
     # it DRAFT. A reviewer's stale page can still post here, and without this
@@ -734,6 +848,19 @@ def apply_review_decision(
         REVIEW_ACTION_APPROVE, REVIEW_ACTION_APPROVE_NEEDS_REVIEW
     ):
         review.approved_amount_cents = amount_cents
+
+    # Supply records what the group approved; a reject is 0 and anything that
+    # sends the line back to PENDING or the requester clears it.
+    supply_detail = line.supply_detail
+    if supply_detail is not None:
+        if action in (REVIEW_ACTION_APPROVE, REVIEW_ACTION_APPROVE_NEEDS_REVIEW):
+            supply_detail.quantity_reviewed = (
+                quantity if quantity is not None else supply_detail.quantity_requested
+            )
+        elif action == REVIEW_ACTION_REJECT:
+            supply_detail.quantity_reviewed = 0
+        else:
+            supply_detail.quantity_reviewed = None
 
     # 5. Sync line status
     sync_line_status(line, review)

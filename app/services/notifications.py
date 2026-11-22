@@ -338,6 +338,42 @@ def notify_work_item_finalized(work_item: WorkItem) -> int:
     return queued
 
 
+def notify_supply_finalized(work_item: WorkItem, changes: list, finalized_at) -> int:
+    """Tell the department a Supply admin finalized the order.
+
+    finalized_at keys the dedup, so a re-finalize after a reopen queues again.
+    `changes` is the JSON-safe list from build_finalize_changes.
+    """
+    recipients = _get_department_member_emails(
+        department_id=work_item.portfolio.department_id,
+        event_cycle_id=work_item.portfolio.event_cycle_id,
+    )
+    return _enqueue_emails(
+        recipients=recipients,
+        kind='finalized',
+        work_item=work_item,
+        empty_recipients_msg="No department member recipients found for supply finalized notification",
+        extra_context={"changes": changes},
+        event_stamp=finalized_at,
+    )
+
+
+def notify_supply_closed(work_item: WorkItem, reason: str, closed_at) -> int:
+    """Tell the department a Supply admin closed the order, with the reason."""
+    recipients = _get_department_member_emails(
+        department_id=work_item.portfolio.department_id,
+        event_cycle_id=work_item.portfolio.event_cycle_id,
+    )
+    return _enqueue_emails(
+        recipients=recipients,
+        kind='closed',
+        work_item=work_item,
+        empty_recipients_msg="No department member recipients found for supply closed notification",
+        extra_context={"reason": reason},
+        event_stamp=closed_at,
+    )
+
+
 # ============================================================
 # Email + Slack send helpers
 # ============================================================
