@@ -330,7 +330,7 @@ def line_needs_adjustment(event: str, dept: str, public_id: str, line_num: int, 
 
 @approvals_bp.post("/<event>/<dept>/<work_type_slug>/item/<public_id>/line/<int:line_num>/reopen")
 def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_slug: str):
-    """Send a decided line on a group-final work type back to PENDING."""
+    """Send a decided line back to PENDING on a group-final work type, or on a SUBMITTED Supply order."""
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
     # Only the literal value is honored; the form never supplies a URL.
