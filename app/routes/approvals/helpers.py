@@ -466,6 +466,14 @@ def describe_decided_review(review: Optional[WorkLineReview], line: WorkLine) ->
     return text + "."
 
 
+def _may_see_decision_detail(line: WorkLine, user_ctx: UserContext) -> bool:
+    """Return whether a refusal may name the decider: a reviewer of the line or a work-type admin."""
+    from app.routes.work.helpers.context import is_worktype_admin
+    return is_reviewer_for_line(line, user_ctx) or is_worktype_admin(
+        user_ctx, line.work_item.portfolio.work_type_id,
+    )
+
+
 def validate_review_transition(
     current_status: str,
     action: str,
@@ -505,6 +513,8 @@ def validate_review_transition(
         if current_status in (
             REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW, REVIEW_STATUS_REJECTED,
         ):
+            if not _may_see_decision_detail(line, user_ctx):
+                return "", "This line was already decided."
             return "", describe_decided_review(review, line)
         return "", f"Invalid transition: {current_status} -> {action}"
 

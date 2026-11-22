@@ -173,3 +173,71 @@ def test_missing_uses_sessions_keeps_the_lock_ui(app, client, seed_workflow_data
 
     for url in (f"{base}/quick-review", f"{base}/line/1/review"):
         assert "Under Active Review" in client.get(url).get_data(as_text=True)
+
+
+def _department_member(work_type, data):
+    from app.models import DepartmentMembership, DepartmentMembershipWorkTypeAccess
+    _user("test:member")
+    membership = DepartmentMembership(
+        user_id="test:member", department_id=data["department"].id,
+        event_cycle_id=data["cycle"].id,
+    )
+    db.session.add(membership)
+    db.session.flush()
+    db.session.add(DepartmentMembershipWorkTypeAccess(
+        department_membership_id=membership.id, work_type_id=work_type.id,
+        can_view=True, can_edit=True,
+    ))
+    db.session.commit()
+
+
+GENERIC_DECIDED = "This line was already decided."
+
+
+def test_decided_supply_line_detail_only_for_reviewers(app, client, seed_workflow_data):
+    wt, cycle, dept, group, item, work_item, line = setup_submitted_order(
+        app, client, seed_workflow_data)
+    login(client, "test:reviewer")
+    client.post(_line_url(cycle, dept, work_item, line, "approve"))
+    _department_member(wt, seed_workflow_data)
+
+    login(client, "test:member")
+    data = client.post(_line_url(cycle, dept, work_item, line, "approve"),
+                       data={"ajax": "1"}).get_json()
+    assert data["success"] is False
+    assert data["error"] == GENERIC_DECIDED
+    assert "Test Reviewer" not in data["error"]
+
+    login(client, "test:reviewer")
+    data = client.post(_line_url(cycle, dept, work_item, line, "approve"),
+                       data={"ajax": "1"}).get_json()
+    assert data["error"].startswith("Already approved") and "Test Reviewer" in data["error"]
+
+
+def test_decided_budget_line_detail_only_for_reviewers(client, seed_draft_work_item):
+    from app.models import ROLE_APPROVER, UserRole
+    d = seed_draft_work_item
+    d["work_item"].status = WORK_ITEM_STATUS_SUBMITTED
+    db.session.add(WorkLineReview(
+        work_line_id=d["line"].id, stage=REVIEW_STAGE_APPROVAL_GROUP,
+        approval_group_id=d["approval_group"].id, status="APPROVED",
+        decided_by_user_id="test:reviewer", decided_at=datetime(2026, 11, 22, 14, 2),
+        created_by_user_id=d["admin"].id))
+    db.session.add(UserRole(user_id="test:reviewer", role_code=ROLE_APPROVER,
+                            approval_group_id=d["approval_group"].id))
+    db.session.commit()
+    _department_member(d["work_type"], d)
+    url = f"/TST2026/TESTDEPT/budget/item/{d['work_item'].public_id}/line/1/approve"
+
+    for user_id in ("test:member", "test:reviewer"):
+        # Holding the lock lets the request reach the transition check.
+        d["work_item"].checked_out_by_user_id = user_id
+        d["work_item"].checked_out_expires_at = datetime.utcnow() + timedelta(minutes=20)
+        db.session.commit()
+        login(client, user_id)
+        data = client.post(url, data={"ajax": "1"}).get_json()
+        assert data["success"] is False
+        if user_id == "test:member":
+            assert data["error"] == GENERIC_DECIDED
+        else:
+            assert data["error"] == "Already approved by Test Reviewer at 2026-11-22 14:02."
