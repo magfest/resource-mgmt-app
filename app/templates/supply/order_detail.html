@@ -76,6 +76,9 @@
         Add more items
       </button>
     {% endif %}
+    {% if is_supply_admin and work_item.status == 'SUBMITTED' %}
+      <a class="btn" href="{{ url_for('work.supply_admin_finalize_view', public_id=work_item.public_id) }}">Finalize</a>
+    {% endif %}
     {% if can_quick_review %}
       <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='supply') }}">
         Quick Review

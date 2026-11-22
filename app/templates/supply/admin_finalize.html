@@ -99,6 +99,9 @@
                   {% if row.decided_by %}
                     <div class="muted small">{{ row.decided_by|user_display }}</div>
                   {% endif %}
+                  {% if row.reviewer_label %}
+                    <div class="small" style="margin-top: 4px; font-weight: 600;">{{ row.reviewer_label }}</div>
+                  {% endif %}
                   {% if row.ag_review.note %}
                     <div class="muted small" style="margin-top: 4px; white-space: pre-wrap;">{{ row.ag_review.note }}</div>
                   {% endif %}
@@ -148,6 +151,10 @@
         <button type="submit" class="btn btn-primary" id="finalize-submit"
                 {% if has_kickbacks %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
           Finalize Order
+        </button>
+        <button type="submit" class="btn btn-primary" name="and_next" value="1"
+                {% if has_kickbacks %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
+          Finalize &amp; next
         </button>
         {% if has_kickbacks %}
           <span class="muted small" style="align-self: center;">

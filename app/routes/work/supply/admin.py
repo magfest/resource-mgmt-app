@@ -58,6 +58,7 @@ from app.routes.work.helpers import (
     is_worktype_admin,
 )
 from .. import work_bp
+from .line_state import reviewer_quantity_label
 
 _PER_PAGE = 25
 
@@ -247,17 +248,26 @@ def _ag_reviews_by_line(line_ids: list[int]) -> dict[int, WorkLineReview]:
     return {r.work_line_id: r for r in reviews}
 
 
-@work_bp.get("/admin/supply/queue/")
-def supply_admin_queue():
-    """FestOps finalize queue: SUBMITTED supply orders, oldest-submitted first.
+def _ready_counts(lines, ag_reviews) -> tuple[int, int, bool]:
+    """(decided, total, ready) over lines that have an APPROVAL_GROUP review.
 
-    Per order, surfaces decided/total APPROVAL_GROUP review progress and a
-    ready-to-finalize badge when every line has a terminal review decision.
+    Ready means at least one such line and every one APPROVED or REJECTED.
     """
-    user_ctx = get_user_ctx()
-    supply_wt = _require_supply_admin(user_ctx)
+    total = 0
+    decided = 0
+    for line in lines:
+        review = ag_reviews.get(line.id)
+        if review is None:
+            continue
+        total += 1
+        if review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+            decided += 1
+    return decided, total, total > 0 and decided == total
 
-    orders = (
+
+def _submitted_supply_orders(supply_wt: WorkType, event_cycle_id: int | None = None):
+    """SUBMITTED, unarchived Supply orders, optionally limited to one event."""
+    query = (
         WorkItem.query
         .filter(
             WorkItem.is_archived == False,  # noqa: E712
@@ -265,12 +275,85 @@ def supply_admin_queue():
         )
         .join(WorkPortfolio, WorkItem.portfolio_id == WorkPortfolio.id)
         .filter(WorkPortfolio.work_type_id == supply_wt.id)
-        .options(
-            joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
-            joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
-            joinedload(WorkItem.supply_order_detail),
-            selectinload(WorkItem.lines),
+    )
+    if event_cycle_id is not None:
+        query = query.filter(WorkPortfolio.event_cycle_id == event_cycle_id)
+    return query
+
+
+def _queue_sort_key(order: WorkItem):
+    return (order.submitted_at is None, order.submitted_at or order.created_at)
+
+
+def next_ready_order(event_cycle_id: int, exclude_id: int) -> WorkItem | None:
+    """Oldest-submitted ready order in the event with no kicked-back line."""
+    supply_wt = WorkType.query.filter_by(code="SUPPLY").first()
+    if supply_wt is None:
+        return None
+    orders = (
+        _submitted_supply_orders(supply_wt, event_cycle_id)
+        .filter(WorkItem.id != exclude_id)
+        .options(selectinload(WorkItem.lines))
+        .all()
+    )
+    ag_reviews = _ag_reviews_by_line([l.id for o in orders for l in o.lines])
+    for order in sorted(orders, key=_queue_sort_key):
+        if not _ready_counts(order.lines, ag_reviews)[2]:
+            continue
+        if any(_is_line_kicked_back(l, ag_reviews.get(l.id)) for l in order.lines):
+            continue
+        return order
+    return None
+
+
+@work_bp.get("/admin/supply/queue/")
+def supply_admin_queue():
+    """FestOps finalize queue: SUBMITTED supply orders, oldest-submitted first.
+
+    Per order, surfaces decided/total APPROVAL_GROUP review progress and a
+    ready-to-finalize badge when every line has a terminal review decision.
+    `?event=CODE` limits the list to one event; an unknown code shows an
+    empty list and an error, never all events.
+    """
+    user_ctx = get_user_ctx()
+    supply_wt = _require_supply_admin(user_ctx)
+
+    event_code = (request.args.get("event") or "").strip()
+    event_cycle_id = None
+    unknown_event = False
+    if event_code:
+        cycle = EventCycle.query.filter_by(code=event_code).first()
+        if cycle is None:
+            unknown_event = True
+            flash(f"Unknown event: {event_code}", "error")
+        else:
+            event_cycle_id = cycle.id
+
+    if unknown_event:
+        orders = []
+    else:
+        orders = (
+            _submitted_supply_orders(supply_wt, event_cycle_id)
+            .options(
+                joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.department),
+                joinedload(WorkItem.portfolio).joinedload(WorkPortfolio.event_cycle),
+                joinedload(WorkItem.supply_order_detail),
+                selectinload(WorkItem.lines),
+            )
+            .all()
         )
+
+    event_options = (
+        db.session.query(EventCycle)
+        .join(WorkPortfolio, WorkPortfolio.event_cycle_id == EventCycle.id)
+        .join(WorkItem, WorkItem.portfolio_id == WorkPortfolio.id)
+        .filter(
+            WorkPortfolio.work_type_id == supply_wt.id,
+            WorkItem.status == WORK_ITEM_STATUS_SUBMITTED,
+            WorkItem.is_archived == False,  # noqa: E712
+        )
+        .distinct()
+        .order_by(EventCycle.code)
         .all()
     )
 
@@ -281,15 +364,7 @@ def supply_admin_queue():
 
     rows = []
     for order in orders:
-        total = 0
-        decided = 0
-        for line in order.lines:
-            review = ag_reviews.get(line.id)
-            if review is None:
-                continue
-            total += 1
-            if review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
-                decided += 1
+        decided, total, ready = _ready_counts(order.lines, ag_reviews)
         order_detail = order.supply_order_detail
         rows.append({
             "work_item": order,
@@ -298,20 +373,19 @@ def supply_admin_queue():
             "pickup_time": order_detail.pickup_time if order_detail else None,
             "decided": decided,
             "total": total,
-            "ready": total > 0 and decided == total,
+            "ready": ready,
         })
 
     # Oldest-submitted first. No pickup-slot urgency sorting — warehouse
     # staging tools are Phase 2 (spec: 2026-07-08 pickup-time design).
-    rows.sort(key=lambda r: (
-        r["work_item"].submitted_at is None,
-        r["work_item"].submitted_at or r["work_item"].created_at,
-    ))
+    rows.sort(key=lambda r: _queue_sort_key(r["work_item"]))
 
     return render_template(
         "supply/admin_queue.html",
         user_ctx=user_ctx,
         rows=rows,
+        event_options=event_options,
+        selected_event=event_code,
         friendly_status=friendly_status,
     )
 
@@ -330,6 +404,26 @@ def _is_line_kicked_back(line: WorkLine, ag_review: WorkLineReview | None) -> bo
     )
 
 
+def _default_approved_qty(detail, ag_review) -> int:
+    """Prefill for the finalize form and the POST fallback.
+
+    Orders decided before quantity_reviewed existed have it NULL; they keep
+    the requested quantity.
+    """
+    requested = detail.quantity_requested if detail else 0
+    if ag_review is None:
+        return requested
+    if ag_review.status == REVIEW_STATUS_REJECTED:
+        return 0
+    if (
+        ag_review.status == REVIEW_STATUS_APPROVED
+        and detail is not None
+        and detail.quantity_reviewed is not None
+    ):
+        return detail.quantity_reviewed
+    return requested
+
+
 def _build_finalize_view(work_item: WorkItem):
     """Assemble per-line rows for the finalize screen (GET + POST re-render)."""
     lines = sorted(work_item.lines, key=lambda l: l.line_number)
@@ -342,12 +436,7 @@ def _build_finalize_view(work_item: WorkItem):
         ag_review = ag_reviews.get(line.id)
         requested = detail.quantity_requested if detail else 0
 
-        # Default approved qty: requested for approved/pending lines, 0 for
-        # a line the review group rejected.
-        if ag_review is not None and ag_review.status == REVIEW_STATUS_REJECTED:
-            default_qty = 0
-        else:
-            default_qty = requested
+        default_qty = _default_approved_qty(detail, ag_review)
 
         unit_cost = item.unit_cost_cents if item else None
         line_rows.append({
@@ -360,6 +449,7 @@ def _build_finalize_view(work_item: WorkItem):
             "ag_review": ag_review,
             "decided_by": ag_review.decided_by_user_id if ag_review else None,
             "kicked_back": _is_line_kicked_back(line, ag_review),
+            "reviewer_label": reviewer_quantity_label(detail, ag_review),
         })
     return line_rows
 
@@ -437,15 +527,11 @@ def supply_admin_finalize(public_id: str):
     for line in lines:
         detail = line.supply_detail
         ag_review = ag_reviews.get(line.id)
-        requested = detail.quantity_requested if detail else 0
 
         raw = request.form.get(f"approved_qty_{line.line_number}")
         if raw is None or raw.strip() == "":
             # Missing field -> fall back to the same default the form shows.
-            if ag_review is not None and ag_review.status == REVIEW_STATUS_REJECTED:
-                qty = 0
-            else:
-                qty = requested
+            qty = _default_approved_qty(detail, ag_review)
         else:
             try:
                 qty = int(raw)
@@ -488,6 +574,8 @@ def supply_admin_finalize(public_id: str):
             is_finalized=False,
         )
 
+    event_code = work_item.portfolio.event_cycle.code
+    event_cycle_id = work_item.portfolio.event_cycle_id
     now = datetime.utcnow()
     for line, qty, note in plan:
         prior_status = line.status
@@ -537,4 +625,12 @@ def supply_admin_finalize(public_id: str):
     db.session.commit()
 
     flash(f"Supply order {work_item.public_id} finalized.", "success")
+    if request.form.get("and_next"):
+        following = next_ready_order(event_cycle_id, work_item.id)
+        if following is not None:
+            return redirect(url_for(
+                "work.supply_admin_finalize_view", public_id=following.public_id,
+            ))
+        flash(f"No more orders are ready to finalize in {event_code}.", "info")
+        return redirect(url_for("work.supply_admin_queue", event=event_code))
     return redirect(url_for("work.supply_admin_queue"))
