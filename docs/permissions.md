@@ -86,6 +86,32 @@ work-type admin also decides, reopens and comments on every line of that type,
 including lines routed to groups they are not in. Staff who only need to read
 get `WORKTYPE_VIEWER` instead; giving them admin grants approval rights.
 
+## Supply review and admin edits
+
+As of November 2026, a member of any active Supply approval group may read
+every Supply order and line, because SUPPLY is in `STAFF_READ_WORK_TYPES`.
+Deciding and undoing a decision stay limited to the line's routed group. A
+Supply admin may also undo a decision and edit, remove, add, close and reopen.
+Quick Review shows every line to group members and to Supply admins; rows
+outside the user's group render without decision buttons. The same read rule
+now gives TechOps group members Quick Review on any TechOps request, read-only
+outside their group. Supply has no read-only viewer role.
+
+| Role | Scope | Granted by | Revoked by |
+| --- | --- | --- | --- |
+| Supply reviewer (`APPROVER` on a Supply group) | Read every Supply order and line; decide and undo lines routed to the group; read both Supply reports | Admin → Users → Edit User, the box for that group | Same form with the box cleared |
+| Supply admin (`WORKTYPE_ADMIN` for SUPPLY) | Finalize, add, change, remove, close and reopen; undo any decision; read reports | Admin → Users → Edit User, the SUPPLY box | Same form with the box cleared |
+| `SUPER_ADMIN` | Everything a Supply admin can do | Admin → Users → Edit User, "Super Admin" box | Same form with the box cleared |
+| Department member | Read own orders; see line changes, removal reasons and closure; answer kickbacks | Department membership with SUPPLY view and edit access | Delete the member row |
+
+The Supply routes enforce this in three places.
+
+| Action | Guard |
+| --- | --- |
+| Finalize, line edits, close, reopen, queue | `_require_supply_admin` (`work/supply/admin.py`), which calls `is_worktype_admin` |
+| Demand and one-item reports | `_require_report_reader` (`work/supply/reports.py`): Supply admin, or a member of an active Supply group |
+| Reviewer Undo | `can_reopen_line` (`approvals/helpers.py`): the routed group or a Supply admin, only while the order is SUBMITTED |
+
 ## Guards: the module decides how you call it
 
 `app/routes/admin/helpers.py` exports decorators. `app/routes/admin_final/helpers.py`

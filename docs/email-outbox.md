@@ -89,6 +89,31 @@ and not a bug in this app. The next step is the SES console, which holds the
 bounce and complaint data this app does not receive. Whoever administers the
 MAGFest AWS account has that access.
 
+## Supply finalized and closed emails
+
+Supply queues two department emails from its admin routes, in the same
+transaction as the change: `supply_finalized` when an admin finalizes an order,
+and `supply_closed` when an admin closes one. Admin edits and reopens send
+nothing. A queue failure is logged and does not undo the finalize or close; the
+department then has to be told by hand. As of November 2026 the staging drain
+of all three cases (plain finalize, finalize with changes, close) is a manual
+check by the owner.
+
+| Template key | Context variable | Content | Dedup key stamp |
+| --- | --- | --- | --- |
+| `supply_finalized` | `changes` | List of dicts with `line_number`, `item_name`, `unit`, `kind`, `department_quantity`, `requested`, `final`, `reason`. `kind` is `removed`, `added`, `requested_changed`, `cut` or `raised`. The body prints "What changed from your request" only when the list is non-empty | `finalized_at`, so a second finalize after a reopen sends a second email |
+| `supply_closed` | `reason` | The admin's closing reason | `closed_at` |
+
+Both kinds are in `_ONCE_PER_EVENT_KINDS` (`app/services/email_enqueue.py`), and
+both are documented in `EMAIL_TEMPLATE_VARIABLES`. The `changes` list always
+compares against the department's original request, so a raised request reads
+"requested quantity changed from 100 to 150", not as a cut or a raise.
+Migration `sm7p2c9x4f6b` inserts `supply_closed`, and replaces the
+`supply_finalized` body only while it still matches the originally seeded text.
+An edited body is left alone and the migration logs a warning, so an admin who
+edited it must add the `changes` block by hand. A reopen cancels this order's
+unsent finalized and closed rows.
+
 ## Scheduler entries
 
 Both commands run under Heroku Scheduler. **Adding and maintaining these

@@ -11,7 +11,7 @@ State as of August 2026. Slugs are the seeded `WorkTypeConfig.url_slug` values
 | Work type | URL slug | State | What exists | Contact |
 | --- | --- | --- | --- | --- |
 | BUDGET | `budget` | Complete | The full pipeline: dispatch, admin final, reports, comments, supplementary requests. The reference implementation | biz@magfest.org |
-| SUPPLY | `supply` | Partial | Ordering, catalog, and admin final. No warehouse, fulfillment, or returns | festops@magfest.org |
+| SUPPLY | `supply` | Partial | Ordering, catalog, review without a lock, admin final, line edits, close and reopen, demand reports. No warehouse, fulfillment, or returns | festops@magfest.org |
 | TECHOPS | `techops` | Partial | Request entry and line review. No dispatch stage, no admin final. Deployed to production so the team can do test runs and give feedback, not for general use | techops@magfest.org |
 | CONTRACT | `contracts` | Model only | Data model and an admin configuration page. No route package, no templates | biz@magfest.org |
 | AV | `av` | Not built | Not present on this branch | av@magfest.org |
@@ -63,16 +63,22 @@ WorkTypeConfig(
 
 ### Lifecycle flags
 
-Three flags on `WorkTypeConfig` decide which stages a request passes through.
+Four flags on `WorkTypeConfig` decide which stages a request passes through.
 
 | Flag | Controls |
 | --- | --- |
 | `uses_dispatch` | Whether submit lands in AWAITING_DISPATCH, where an admin assigns approval groups per line |
 | `has_admin_final` | Whether an admin sets the authoritative amounts and finalizes. Without it the item auto-finalizes when the last line is decided (`app/routes/work/helpers/lifecycle.py`) |
 | `uses_board_release` | Whether a finished item waits for board sign-off before its department is told. See [Workflow: Board release](./workflow.md#board-release) |
+| `uses_review_sessions` | Whether a reviewer must check out the item before deciding. Default `True`; BUDGET keeps it. SUPPLY and TECHOPS are set to `False` by migration `sr4k8w2q6n1d` and by `app/seeds/bootstrap.py` |
 
-All three default to `False` (`app/models/workflow.py:102`, `:103`, `:108`). A new
-work type opts into every stage explicitly. TECHOPS has neither dispatch nor admin
+The first three default to `False` (`app/models/workflow.py:102`, `:103`,
+`:108`). A new work type opts into every stage explicitly. `uses_review_sessions`
+is the one flag that defaults to `True`, so a work type with no config row keeps
+the lock rather than losing it silently. `uses_review_sessions()`
+(`app/routes/work/helpers/review_state.py`) also returns False for any work type
+without `has_admin_final`, whatever the column says. Supply sets the flag
+False because several groups review one order and a lock would serialize them. TECHOPS has neither dispatch nor admin
 final because nobody turned them on.
 
 [Workflow: Stages by work type](./workflow.md#stages-by-work-type) carries the
@@ -127,7 +133,15 @@ quantity_approved       # How many approved (may be less)
 needed_by_date          # When needed
 delivery_location       # Where to deliver
 routed_approval_group_id  # Computed from item.category
+quantity_reviewed       # What the approval group settled on; NULL until it decides
+department_quantity     # Department's original when an admin changed the request
+removed_at, removed_by_user_id, removed_reason   # A removed line stays, struck through
+added_by_admin_user_id  # Set when a Supply admin added the line
 ```
+
+`SupplyOrderDetail` carries `closed_at`, `closed_by_user_id` and `closed_reason`.
+A closed order stays `FINALIZED`; see
+[Workflow: Supply review, finalize and close](./workflow.md#supply-review-finalize-and-close).
 
 ## Routing Strategies
 
