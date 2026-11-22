@@ -114,7 +114,7 @@
           {% set unit_cost_cents = item.unit_cost_cents if item else None %}
           {% set line_cost_cents = (unit_cost_cents * detail.quantity_requested) if (unit_cost_cents is not none and detail) else None %}
           {% set status = line.status | upper %}
-          <tr id="line-{{ line.line_number }}" data-line-num="{{ line.line_number }}" data-status="{{ status }}">
+          <tr id="line-{{ line.line_number }}" data-line-num="{{ line.line_number }}" data-status="{{ status }}" data-requested-qty="{{ detail.quantity_requested if detail else '' }}">
             <td>
               <a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}">
                 {{ line.line_number }}
@@ -163,6 +163,12 @@
                  checkout lost it when the checkout POST replaced the page. #}
               {% if status == 'PENDING' and row.can_decide %}
                 <div class="quick-action-row" style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
+                  <label class="small" style="font-weight: 600; display: flex; align-items: center; gap: 4px; width: 100%;">
+                    Approve qty
+                    <input type="number" class="line-approve-qty" min="1" step="1"
+                           value="{{ detail.quantity_requested if detail else 1 }}"
+                           style="width: 80px; padding: 4px 8px; font-size: 12px;">
+                  </label>
                   <input type="text" class="line-note" placeholder="Note (required for reject/info)"
                          style="flex: 1; min-width: 120px; padding: 4px 8px; font-size: 12px;">
                   <div class="ag-actions" style="display: flex; gap: 4px;">
@@ -302,6 +308,11 @@
       formData.append('note', note);
     }
     formData.append('ajax', '1');
+    var qtyInput = row.querySelector('.line-approve-qty');
+    if (action === 'approve' && qtyInput) {
+      formData.append('approved_quantity', qtyInput.value.trim());
+    }
+    var requestedQty = row.getAttribute('data-requested-qty');
 
     fetch(url, {
       method: 'POST',
@@ -330,7 +341,12 @@
 
         var actionsCell = row.querySelector('.line-actions');
         if (newStatus === 'APPROVED') {
-          actionsCell.innerHTML = '<span class="muted small">Approved</span>';
+          var approvedText = 'Approved';
+          if (qtyInput && requestedQty) {
+            approvedText = 'Approved ' + qtyInput.value.trim() + ' of ' + requestedQty;
+          }
+          actionsCell.innerHTML = '<span class="muted small"></span>';
+          actionsCell.firstChild.textContent = approvedText;
         } else if (newStatus === 'REJECTED') {
           actionsCell.innerHTML = '<span class="muted small">Rejected</span>';
         } else if (newStatus === 'NEEDS_INFO') {

@@ -18,6 +18,7 @@ from app.models import (
     WorkItemAuditEvent,
     WorkLine,
     AUDIT_EVENT_VIEW,
+    REVIEW_STAGE_APPROVAL_GROUP,
     COMMENT_VISIBILITY_ADMIN,
     WORK_ITEM_STATUS_DRAFT,
     WORK_ITEM_STATUS_SUBMITTED,
@@ -130,6 +131,16 @@ def supply_order_detail(event: str, dept: str, public_id: str):
 
     lines = sorted(work_item.lines, key=lambda line: line.line_number)
 
+    from app.routes.work.helpers.review_state import uses_review_sessions
+    from .line_state import reviewer_quantity_label
+    reviewer_quantity_labels = {}
+    for line in lines:
+        ag_review = next(
+            (r for r in line.reviews if r.stage == REVIEW_STAGE_APPROVAL_GROUP), None)
+        label = reviewer_quantity_label(line.supply_detail, ag_review)
+        if label:
+            reviewer_quantity_labels[line.line_number] = label
+
     # Kicked-back lines re-open their edit widgets even on a non-DRAFT
     # order. Same predicate as the supply_line_update POST gate (imported
     # from order.py) so the UI and the route gate can't drift apart.
@@ -157,6 +168,8 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         quantity_confidence_options=QUANTITY_CONFIDENCE_OPTIONS,
         space_choices=order_space_choices(work_item) if can_edit else None,
         lines=lines,
+        shows_checkout_banner=uses_review_sessions(work_item),
+        reviewer_quantity_labels=reviewer_quantity_labels,
         can_edit=can_edit,
         can_quick_review=can_quick_review,
         is_supply_admin=is_supply_admin,

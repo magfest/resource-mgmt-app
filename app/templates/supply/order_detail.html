@@ -55,7 +55,10 @@
     </div>
   </div>
 
-  {{ render_checkout_banner(work_item, perms) }}
+  {# A lock taken before Supply dropped review sessions blocks nothing and nobody can release it; hide its banner. #}
+  {% if shows_checkout_banner is not defined or shows_checkout_banner %}
+    {{ render_checkout_banner(work_item, perms) }}
+  {% endif %}
 
   {# Navigation back to the portfolio. #}
   <div class="btn-row mb-16">
@@ -255,6 +258,9 @@
               {% else %}
                 <td>
                   {{ detail.quantity_requested if detail else '-' }}
+                  {% if reviewer_quantity_labels is defined and reviewer_quantity_labels.get(line.line_number) %}
+                    <div class="small"><strong>{{ reviewer_quantity_labels[line.line_number] }}</strong></div>
+                  {% endif %}
                   {% if detail and detail.quantity_confidence_label %}
                     <div class="muted small">{{ detail.quantity_confidence_label }}</div>
                   {% endif %}

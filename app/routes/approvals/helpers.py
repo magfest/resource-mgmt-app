@@ -697,6 +697,7 @@ def apply_review_decision(
     amount_cents: Optional[int],
     user_ctx: UserContext,
     ctx=None,
+    quantity: Optional[int] = None,
 ) -> Tuple[bool, Optional[str]]:
     """
     Apply a review decision atomically.
@@ -710,6 +711,7 @@ def apply_review_decision(
         amount_cents: Approved amount (for approvals)
         user_ctx: Current user context
         ctx: PortfolioContext (optional, improves permission check efficiency)
+        quantity: Supply only. Approved quantity; None approves the requested one.
 
     Returns (success, error_message) tuple.
     """
@@ -758,6 +760,19 @@ def apply_review_decision(
         REVIEW_ACTION_APPROVE, REVIEW_ACTION_APPROVE_NEEDS_REVIEW
     ):
         review.approved_amount_cents = amount_cents
+
+    # Supply records what the group approved; a reject is 0 and anything that
+    # sends the line back to PENDING or the requester clears it.
+    supply_detail = line.supply_detail
+    if supply_detail is not None:
+        if action in (REVIEW_ACTION_APPROVE, REVIEW_ACTION_APPROVE_NEEDS_REVIEW):
+            supply_detail.quantity_reviewed = (
+                quantity if quantity is not None else supply_detail.quantity_requested
+            )
+        elif action == REVIEW_ACTION_REJECT:
+            supply_detail.quantity_reviewed = 0
+        else:
+            supply_detail.quantity_reviewed = None
 
     # 5. Sync line status
     sync_line_status(line, review)

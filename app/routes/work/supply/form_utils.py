@@ -22,6 +22,27 @@ PICKUP_TIME_OPTIONS = [
 ]
 
 
+def parse_approved_quantity(form) -> tuple[int | None, str | None]:
+    """Read a reviewer's approved quantity from a POST form.
+
+    Returns (None, None) when the field is absent, so a page cached before the
+    field existed approves the requested amount. A present but blank or invalid
+    value is refused; approving it as requested would hide a cleared box.
+    """
+    if "approved_quantity" not in form:
+        return None, None
+    raw = (form.get("approved_quantity") or "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return None, "Enter a whole-number quantity to approve."
+    if value == 0:
+        return None, "Approve needs a quantity of at least 1. Reject the line instead."
+    if value < 0:
+        return None, "Enter a whole-number quantity to approve."
+    return value, None
+
+
 def validate_order_for_submit(work_item) -> list[str]:
     errors: list[str] = []
     detail = work_item.supply_order_detail

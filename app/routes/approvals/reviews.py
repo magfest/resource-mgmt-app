@@ -387,17 +387,28 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
         except (ValueError, InvalidOperation):
             pass  # Ignore invalid amounts
 
+    # Only Supply carries a reviewer quantity; Budget and TechOps ignore the field.
+    quantity = None
+    quantity_error = None
+    if work_type_slug == "supply" and action == REVIEW_ACTION_APPROVE:
+        from app.routes.work.supply.form_utils import parse_approved_quantity
+        quantity, quantity_error = parse_approved_quantity(request.form)
+
     # Apply the decision
-    success, error = apply_review_decision(
-        review=review,
-        line=line,
-        work_item=work_item,
-        action=action,
-        note=note,
-        amount_cents=amount_cents,
-        user_ctx=user_ctx,
-        ctx=ctx,
-    )
+    if quantity_error:
+        success, error = False, quantity_error
+    else:
+        success, error = apply_review_decision(
+            review=review,
+            line=line,
+            work_item=work_item,
+            action=action,
+            note=note,
+            amount_cents=amount_cents,
+            user_ctx=user_ctx,
+            ctx=ctx,
+            quantity=quantity,
+        )
 
     if not success:
         # Discard the review get_or_create_review may have flushed above; a

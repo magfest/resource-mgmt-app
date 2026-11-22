@@ -325,6 +325,9 @@
             <form method="post" action="{{ url_for('approvals.line_approve', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}" style="display: inline;">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="note" class="note-field" />
+              <label for="approved_quantity" class="small" style="font-weight: 600;">Approve qty</label>
+              <input type="number" id="approved_quantity" name="approved_quantity" min="1" step="1"
+                     value="{{ detail.quantity_requested if detail else 1 }}" required style="width: 80px;">
               <button type="submit" class="btn btn-primary" data-supply-action="Approve this line?">
                 Approve
               </button>
