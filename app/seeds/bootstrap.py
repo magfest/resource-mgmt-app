@@ -348,30 +348,30 @@ def seed_supply_items(categories: dict[str, SupplyCategory]) -> None:
     idempotency contract; prod catalogs load via the admin bulk import."""
     print("Seeding supply items...")
     # (category_code, item_name, unit, notes, unit_cost_cents, is_popular,
-    #  is_limited, notes_required, qty_on_hand, is_expendable,
+    #  is_limited, notes_required, is_expendable,
     #  order_guidance)
     # order_guidance is populated on a handful of items with realistic,
     # non-anchoring guidance text; most items leave it None.
     items_data = [
-        ("OFFICE", "Ballpoint pens (box of 12)", "box", "Blue ink", 350, True, False, False, 200, True, None),
-        ("OFFICE", "Gaffer tape (roll)", "each", "2-inch black", 1200, True, False, False, 150, True, "1 roll covers roughly one booth setup"),
-        ("OFFICE", "Sharpies (box of 12)", "box", None, 900, False, False, False, 80, True, None),
-        ("EVENT", "Zip ties (bag of 100)", "bag", "8-inch", 700, True, False, False, 300, True, None),
-        ("EVENT", "Table covers", "each", "Black, fits 6ft table", 1500, False, False, False, 60, True, None),
-        ("TECH", "HDMI cable 25ft", "each", None, 2500, False, True, True, 12, True, None),
-        ("SAFETY", "First aid kit (small)", "each", None, 3000, False, True, False, 10, True, None),
-        ("SIGNAGE", "Foam board 24x36", "each", "White", 800, False, False, True, 40, True, None),
-        ("OFFICE", "Clipboards", "each", "Letter size", 400, False, False, False, 75, True, None),
-        ("OFFICE", "Painter's tape (roll)", "each", "1-inch blue, safe for hotel walls", 600, True, False, False, 120, True, None),
-        ("EVENT", "Extension cord 25ft", "each", "12-gauge, grounded", 2200, True, False, False, 45, True, None),
-        ("EVENT", "Trash bags (box of 50)", "box", "55-gallon contractor", 1800, False, False, False, 90, True, "1 box per trash station per day"),
-        ("EVENT", "AA batteries (pack of 24)", "pack", None, 1400, True, False, False, 100, True, "1 pack covers a weekend of wireless mics"),
-        ("TECH", "Power strip (6-outlet)", "each", "Surge protected", 1600, False, False, False, 30, True, None),
-        ("SAFETY", "Nitrile gloves (box of 100)", "box", "Size L", 1100, False, False, False, 40, True, None),
-        ("SIGNAGE", "Easel stand", "each", "Folding tripod", 2000, False, True, True, 15, False, "Most booths need just one"),
+        ("OFFICE", "Ballpoint pens (box of 12)", "box", "Blue ink", 350, True, False, False, True, None),
+        ("OFFICE", "Gaffer tape (roll)", "each", "2-inch black", 1200, True, False, False, True, "1 roll covers roughly one booth setup"),
+        ("OFFICE", "Sharpies (box of 12)", "box", None, 900, False, False, False, True, None),
+        ("EVENT", "Zip ties (bag of 100)", "bag", "8-inch", 700, True, False, False, True, None),
+        ("EVENT", "Table covers", "each", "Black, fits 6ft table", 1500, False, False, False, True, None),
+        ("TECH", "HDMI cable 25ft", "each", None, 2500, False, True, True, True, None),
+        ("SAFETY", "First aid kit (small)", "each", None, 3000, False, True, False, True, None),
+        ("SIGNAGE", "Foam board 24x36", "each", "White", 800, False, False, True, True, None),
+        ("OFFICE", "Clipboards", "each", "Letter size", 400, False, False, False, True, None),
+        ("OFFICE", "Painter's tape (roll)", "each", "1-inch blue, safe for hotel walls", 600, True, False, False, True, None),
+        ("EVENT", "Extension cord 25ft", "each", "12-gauge, grounded", 2200, True, False, False, True, None),
+        ("EVENT", "Trash bags (box of 50)", "box", "55-gallon contractor", 1800, False, False, False, True, "1 box per trash station per day"),
+        ("EVENT", "AA batteries (pack of 24)", "pack", None, 1400, True, False, False, True, "1 pack covers a weekend of wireless mics"),
+        ("TECH", "Power strip (6-outlet)", "each", "Surge protected", 1600, False, False, False, True, None),
+        ("SAFETY", "Nitrile gloves (box of 100)", "box", "Size L", 1100, False, False, False, True, None),
+        ("SIGNAGE", "Easel stand", "each", "Folding tripod", 2000, False, True, True, False, "Most booths need just one"),
     ]
     items_created = 0
-    for cat_code, name, unit, notes, cost, popular, limited, notes_req, on_hand, expendable, guidance in items_data:
+    for cat_code, name, unit, notes, cost, popular, limited, notes_req, expendable, guidance in items_data:
         cat = categories.get(cat_code)
         if cat is None:
             continue
@@ -382,7 +382,7 @@ def seed_supply_items(categories: dict[str, SupplyCategory]) -> None:
         db.session.add(SupplyItem(
             category_id=cat.id, item_name=name, unit=unit, notes=notes,
             unit_cost_cents=cost, is_popular=popular, is_limited=limited,
-            notes_required=notes_req, qty_on_hand=on_hand,
+            notes_required=notes_req,
             is_active=True, is_expendable=expendable,
             order_guidance=guidance,
         ))
@@ -786,13 +786,17 @@ def create_expense_account(
     return account
 
 
-def run_bootstrap() -> None:
+def run_bootstrap(skip_supply_items: bool = False) -> None:
     """Run the full bootstrap seed.
 
     Order matters: worktypes → approval groups → configs → typed children
     (contracts, supply, techops) → spend types → reference data → hotel
     accounts. Each function commits via db.session.flush(); the final
     commit happens here.
+
+    skip_supply_items exists for the migrations job, which seeds at a pinned
+    revision: the checked-out SupplyItem model names columns that revision
+    lacks, so its inserts fail there.
     """
     print("=" * 60)
     print("Bootstrap seed (required structural data)...")
@@ -803,7 +807,8 @@ def run_bootstrap() -> None:
     seed_work_type_configs(work_types)
     seed_contract_types(approval_groups)
     supply_categories = seed_supply_categories(approval_groups)
-    seed_supply_items(supply_categories)
+    if not skip_supply_items:
+        seed_supply_items(supply_categories)
     seed_techops_service_types(approval_groups)
     spend_types = seed_spend_types()
     seed_reference_data()

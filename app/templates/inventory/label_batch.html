@@ -1,0 +1,46 @@
+{% extends "layout/base.html" %}
+{% block title %}Print labels - Inventory{% endblock %}
+{% block content %}
+<h1>{{ specs|length }} label{{ '' if specs|length == 1 else 's' }} at {{ dpi }} dpi</h1>
+{% if unknown %}
+<div class="card mb-16"><strong>Not printed, no record holds these numbers:</strong> {{ unknown|join(', ') }}</div>
+{% endif %}
+{% if unprintable %}
+<div class="card mb-16"><strong>Not printed, a barcode cannot hold these numbers:</strong> {{ unprintable|join(', ') }}</div>
+{% endif %}
+{% if overflow %}
+<div class="card mb-16"><strong>Not printed, over the limit of {{ max_batch }}:</strong> {{ overflow|join(', ') }}</div>
+{% endif %}
+{% if specs %}
+<form method="post" action="{{ url_for('inventory.queue_labels') }}" class="mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="codes" value="{{ specs|map(attribute='code')|join('\n') }}">
+  <input type="hidden" name="send_token" value="{{ send_token }}">
+  <input type="hidden" name="dpi" value="{{ dpi }}">
+  <button type="submit" class="btn btn-primary">Send to print queue</button>
+</form>
+<div class="mb-16">
+  <button type="button" class="btn" id="download-zpl">Download .zpl</button>
+</div>
+<div class="muted small mb-16">
+  If the print station is down: download the file and send it to the printer with Zebra Setup Utilities.
+</div>
+{% else %}
+<p>Nothing to print.</p>
+{% endif %}
+<ul>{% for s in specs %}<li><code>{{ s.code }}</code> {{ s.rows|map('last')|join(', ') }}</li>{% endfor %}</ul>
+<textarea id="zpl" hidden>{{ zpl }}</textarea>
+{% if specs %}
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    var zpl = document.getElementById('zpl').value;
+    document.getElementById('download-zpl').addEventListener('click', function () {
+      var link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([zpl], { type: 'text/plain' }));
+      link.download = 'labels.zpl';
+      link.click();
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

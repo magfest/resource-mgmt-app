@@ -1,0 +1,47 @@
+{% extends "layout/base.html" %}
+{% block title %}Items - Inventory{% endblock %}
+{% block content %}
+<h1>Items</h1>
+<div class="muted mb-16">
+  Items tracked as assets are followed one piece at a time. Items that are not
+  orderable never appear in the Supply catalog.
+  {% if show_inactive %}<a href="{{ url_for('inventory.items') }}">Show active items</a>
+  {% else %}<a href="{{ url_for('inventory.items', show='inactive') }}">Show inactive items</a>{% endif %}
+</div>
+{% if rights.can_edit_shared %}
+<form id="add-item" method="post" action="{{ url_for('inventory.create_deploy_item') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <strong>Add an item</strong>
+  <div class="row">
+    <label>Name <input type="text" name="item_name" required maxlength="256"></label>
+    <label>Category
+      <select name="category_id" required>
+        {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Unit of measure <input type="text" name="unit" value="each" maxlength="32" style="width: 90px;"></label>
+    {% if rights.can_set_orderable %}<label><input type="checkbox" name="is_orderable" value="1"> Departments can order this</label>{% endif %}
+    {% if rights.can_set_tracked %}<label><input type="checkbox" name="is_serialized" value="1"> Track each piece as an asset</label>{% endif %}
+  </div>
+  <button type="submit" class="btn btn-primary">Add item</button>
+</form>
+{% endif %}
+<div style="overflow-x: auto;">
+<table>
+  <thead><tr><th>Item</th><th>Category</th><th>Orderable</th><th>Tracking</th><th>Asset type</th></tr></thead>
+  <tbody>
+  {% for i in items %}
+    <tr>
+      <td><a href="{{ url_for('inventory.item_page', item_id=i.id) }}">{{ i.item_name }}</a></td>
+      <td>{{ i.category.name }}</td>
+      <td>{{ 'Yes' if i.is_orderable else 'No' }}</td>
+      <td>{{ 'Tracked as assets' if i.is_serialized else 'Counted' }}</td>
+      <td>{{ i.gear_kind.name if i.gear_kind else '' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">No items here.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -23,8 +23,12 @@ def register_cli(app: Flask) -> None:
         type=click.Choice(["bootstrap", "demo", "all"], case_sensitive=False),
         default="all",
     )
+    @click.option(
+        "--skip-supply-items", is_flag=True,
+        help="Leave out Supply items; for seeding a database below head.",
+    )
     @with_appcontext
-    def seed_command(target):
+    def seed_command(target, skip_supply_items):
         """Seed the database. TARGET is one of: bootstrap, demo, all (default).
 
         \b
@@ -44,7 +48,7 @@ def register_cli(app: Flask) -> None:
         target = target.lower()
 
         if target in ("bootstrap", "all"):
-            run_bootstrap()
+            run_bootstrap(skip_supply_items=skip_supply_items)
 
         if target in ("demo", "all"):
             run_demo_data()
@@ -301,3 +305,21 @@ def register_cli(app: Flask) -> None:
             )
 
         sys.exit(0)
+
+    @app.cli.command("inv-check-balances")
+    @with_appcontext
+    def inv_check_balances_command():
+        """Compare cached inventory balances with the movement log.
+
+        Reports only and exits 1 on any mismatch. A mismatch means a write
+        bypassed the ledger; resolve it with a count, never an edit to inv_stock.
+        """
+        from app.inventory.checks import find_balance_mismatches
+
+        mismatches = find_balance_mismatches()
+        for m in mismatches:
+            click.echo(f"item {m['item_id']} in container {m['container_id']}: "
+                       f"cached {m['cached']}, log {m['from_log']}")
+        click.echo(f"inv-check-balances: {len(mismatches)} mismatch(es).")
+        if mismatches:
+            raise SystemExit(1)

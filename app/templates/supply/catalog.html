@@ -168,7 +168,7 @@
                     <span class="pill pill-success">Commonly ordered</span>
                   {% endif %}
                   {% if item.is_limited %}
-                    <span class="pill pill-warning">Limited{% if item.qty_on_hand is not none %} &mdash; {{ item.qty_on_hand }} on hand{% endif %}</span>
+                    <span class="pill pill-warning">Limited</span>
                   {% endif %}
                   {% if not item.is_expendable %}
                     <span class="pill pill-info">Must be returned</span>

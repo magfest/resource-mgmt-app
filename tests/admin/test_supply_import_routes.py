@@ -174,6 +174,18 @@ def test_download_template_is_valid_xlsx_with_expected_headers(app, client):
     assert header_row == EXPECTED_COLUMNS
 
 
+def test_template_download_has_no_retired_columns(app, client):
+    _seed_admin_and_category(app)
+    _login(client, "test:admin")
+
+    resp = client.get(TEMPLATE_URL)
+
+    sheet = openpyxl.load_workbook(io.BytesIO(resp.data)).active
+    header_row = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    for name in ("qty_on_hand", "location_zone", "bin_location"):
+        assert name not in header_row
+
+
 def test_data_upload_index_links_to_supply_items_import(app, client):
     """Part C: the catalog import entry point moved to the central Data
     Upload hub — its index page must advertise the supply-items import."""
@@ -223,3 +235,49 @@ def test_plain_user_still_403s_on_supply_admin_pages(app, client):
 
     assert client.get("/admin/config/supply-items/").status_code == 403
     assert client.get(IMPORT_URL).status_code == 403
+
+
+def _seed_list_items(app):
+    category_id = _seed_admin_and_category(app)
+    with app.app_context():
+        db.session.add_all([
+            SupplyItem(category_id=category_id, item_name="Blue Pens", unit="box"),
+            SupplyItem(category_id=category_id, item_name="Lobby TV", unit="each",
+                       is_orderable=False),
+        ])
+        db.session.commit()
+
+
+def test_supply_items_list_marks_and_filters_models(app, client):
+    _seed_list_items(app)
+    _login(client, "test:admin")
+
+    everything = client.get("/admin/config/supply-items/").data.decode()
+    assert "Blue Pens" in everything and "Lobby TV" in everything
+    assert everything.count('class="pill pill-info"') == 1
+
+    models = client.get("/admin/config/supply-items/?orderable=0").data.decode()
+    assert "Lobby TV" in models and "Blue Pens" not in models
+
+    orderable = client.get("/admin/config/supply-items/?orderable=1").data.decode()
+    assert "Blue Pens" in orderable and "Lobby TV" not in orderable
+    assert 'class="pill pill-info"' not in orderable
+
+
+def test_supply_items_list_says_when_a_filter_matches_nothing(app, client):
+    category_id = _seed_admin_and_category(app)
+    with app.app_context():
+        db.session.add(SupplyItem(category_id=category_id, item_name="Blue Pens", unit="box"))
+        db.session.commit()
+    _login(client, "test:admin")
+
+    filtered = client.get("/admin/config/supply-items/?orderable=0").data.decode()
+    assert "No items match this filter." in filtered
+    assert "Create a category first" not in filtered
+
+
+def test_template_example_row_fills_every_column(app, client):
+    from app.routes.admin.supply_items import _TEMPLATE_EXAMPLE_ROW
+
+    assert len(_TEMPLATE_EXAMPLE_ROW) == len(EXPECTED_COLUMNS)
+    assert _TEMPLATE_EXAMPLE_ROW[EXPECTED_COLUMNS.index("is_orderable")] == "true"

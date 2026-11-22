@@ -1,0 +1,231 @@
+{% extends "layout/base.html" %}
+{% from "components/_request_tabs.html" import request_tabs with context %}
+{% block title %}{{ item.item_name }} - Items - Inventory{% endblock %}
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .item-page, .item-page td { overflow-wrap: anywhere; }
+  .item-page .pair { width: 100%; border-collapse: collapse; }
+  .item-page .pair th { text-align: left; font-weight: normal; color: #666; padding: 4px 12px 4px 0; vertical-align: top; }
+  .item-page .pair td { padding: 4px 0; }
+  .item-page .stack > label, .item-page .stack > div { display: block; margin-bottom: 12px; }
+  .item-page .stack label:has(> input[type=checkbox]) { display: flex; align-items: center; gap: 8px; }
+  .item-page .stack input[type=text], .item-page .stack input[type=number],
+  .item-page .stack select, .item-page .stack textarea { display: block; max-width: 100%; margin-top: 4px; }
+  .item-page ul.plain { list-style: none; margin: 0; padding: 0; }
+</style>
+<div class="item-page">
+<div style="margin-bottom: 16px;">
+  <h1 style="margin: 0;">{{ item.item_name }} <span class="muted" style="font-weight: normal; font-size: 0.6em;">{{ item.category.name }}</span></h1>
+  <div class="muted" style="margin-top: 4px;">{{ status_line }}</div>
+  <div class="muted" style="margin-top: 4px;"><a href="{{ url_for('inventory.items') }}">Items</a></div>
+</div>
+{% call(tab) request_tabs(tabs, active=active_tab) %}
+  {% if tab == 'about' %}
+  {% if rights.can_edit_shared %}
+  <form method="post" action="{{ url_for('inventory.save_item_about', item_id=item.id) }}" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Name <input type="text" name="item_name" value="{{ item.item_name }}" required maxlength="256"></label>
+    <label>Category
+      <select name="category_id" required>
+        {% for c in categories %}<option value="{{ c.id }}" {% if c.id == item.category_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        {% if item.category not in categories %}<option value="{{ item.category_id }}" selected>{{ item.category.name }}</option>{% endif %}
+      </select>
+    </label>
+    <label>Unit of measure <input type="text" name="unit" value="{{ item.unit }}" required maxlength="32"></label>
+    <div>
+      {% if item.image_url %}<img src="{{ item.image_url }}" alt="" style="max-width: 120px; display: block;">
+      <label><input type="checkbox" name="remove_image" value="1"> Remove picture</label>{% endif %}
+      <label>Picture <input type="file" name="image_file" accept="image/jpeg,image/png,image/webp"></label>
+      <div class="muted">JPEG, PNG or WebP, up to 5 MB.</div>
+    </div>
+    <label><input type="checkbox" name="is_active" value="1" {% if item.is_active %}checked{% endif %}> Active</label>
+    {% if rights.can_set_orderable %}
+    <label><input type="checkbox" name="is_orderable" value="1" {% if item.is_orderable %}checked{% endif %}> Departments can order this</label>
+    {% endif %}
+    {% if rights.can_set_tracked %}
+    <label><input type="checkbox" name="is_serialized" value="1" {% if item.is_serialized %}checked{% endif %}> Track each piece as an asset</label>
+    <label><input type="checkbox" name="needs_pre_allocation" value="1" {% if item.needs_pre_allocation %}checked{% endif %}> Needs pre-allocation</label>
+    <label>Fills TechOps service
+      <select name="techops_service_type_id">
+        <option value="">None</option>
+        {% for s in techops_services %}<option value="{{ s.id }}" {% if s.id == item.techops_service_type_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <table class="pair">
+      {% if not rights.can_set_orderable %}<tr><th>Departments can order this</th><td>{{ 'Yes' if item.is_orderable else 'No' }}</td></tr>{% endif %}
+      {% if not rights.can_set_tracked %}<tr><th>Track each piece as an asset</th><td>{{ 'Yes' if item.is_serialized else 'No' }}</td></tr>
+      <tr><th>Needs pre-allocation</th><td>{{ 'Yes' if item.needs_pre_allocation else 'No' }}</td></tr>
+      <tr><th>Fills TechOps service</th><td>{{ item.techops_service_type.name if item.techops_service_type else 'None' }}</td></tr>{% endif %}
+    </table>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+  {% else %}
+  <table class="pair">
+    <tr><th>Name</th><td>{{ item.item_name }}</td></tr>
+    <tr><th>Category</th><td>{{ item.category.name }}</td></tr>
+    <tr><th>Unit of measure</th><td>{{ item.unit }}</td></tr>
+    <tr><th>Departments can order this</th><td>{{ 'Yes' if item.is_orderable else 'No' }}</td></tr>
+    <tr><th>Track each piece as an asset</th><td>{{ 'Yes' if item.is_serialized else 'No' }}</td></tr>
+    <tr><th>Needs pre-allocation</th><td>{{ 'Yes' if item.needs_pre_allocation else 'No' }}</td></tr>
+    <tr><th>Fills TechOps service</th><td>{{ item.techops_service_type.name if item.techops_service_type else 'None' }}</td></tr>
+    <tr><th>Active</th><td>{{ 'Yes' if item.is_active else 'No' }}</td></tr>
+  </table>
+  {% endif %}
+  {% elif tab == 'ordering' %}
+  <form method="post" action="{{ url_for('inventory.save_item_ordering', item_id=item.id) }}" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Cost each in dollars <input type="number" name="unit_cost" min="0" step="0.01" inputmode="decimal" value="{{ '%.2f' % (item.unit_cost_cents / 100) if item.unit_cost_cents is not none else '' }}"></label>
+    <label>Order guidance <input type="text" name="order_guidance" maxlength="160" value="{{ item.order_guidance or '' }}"></label>
+    <label>Notes <textarea name="notes" rows="3">{{ item.notes or '' }}</textarea></label>
+    <label><input type="checkbox" name="notes_required" value="1" {% if item.notes_required %}checked{% endif %}> Notes required</label>
+    <label><input type="checkbox" name="is_popular" value="1" {% if item.is_popular %}checked{% endif %}> Popular (show first)</label>
+    <label><input type="checkbox" name="is_limited" value="1" {% if item.is_limited %}checked{% endif %}> Limited availability</label>
+    <label><input type="checkbox" name="is_expendable" value="1" {% if item.is_expendable %}checked{% endif %}> Expendable</label>
+    <label>Sort order <input type="number" name="sort_order" value="{{ item.sort_order if item.sort_order is not none else '' }}"></label>
+    <label>Internal type <input type="text" name="internal_type" maxlength="32" value="{{ item.internal_type or '' }}"></label>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+  {% elif tab == 'inventory' %}
+  {% set edit = rights.can_edit_inventory %}
+  {% if edit %}
+  <form method="post" action="{{ url_for('inventory.save_item_inventory', item_id=item.id) }}" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label><input type="checkbox" name="needs_asset_tag" value="1" {% if item.needs_asset_tag %}checked{% endif %}> Needs an asset tag</label>
+    <label>Barcode <input type="text" name="barcode" value="{{ item.barcode or '' }}" maxlength="64"></label>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+  <form method="post" action="{{ url_for('inventory.set_gear_kind', item_id=item.id) }}" class="stack mt-16">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Asset type
+      <select name="gear_kind_id">
+        <option value=""></option>
+        {% for k in gear_kinds %}<option value="{{ k.id }}" {% if item.gear_kind_id == k.id %}selected{% endif %}>{{ k.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-small">Save asset type</button>
+  </form>
+  {% else %}
+  <table class="pair">
+    <tr><th>Needs an asset tag</th><td>{{ 'Yes' if item.needs_asset_tag else 'No' }}</td></tr>
+    <tr><th>Barcode</th><td>{{ item.barcode or 'None' }}</td></tr>
+    <tr><th>Asset type</th><td>{{ item.gear_kind.name if item.gear_kind else 'None' }}</td></tr>
+  </table>
+  {% endif %}
+  {% if defaults %}
+  <h2>Defaults for new assets</h2>
+  {% if edit %}
+  <form method="post" action="{{ url_for('inventory.set_model_defaults', item_id=item.id) }}" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% for field, text, choices in defaults %}
+    <label>{{ field.name }}
+      {% if field.field_type == 'CHOICE' %}
+      <select name="field_{{ field.id }}"><option value=""></option>
+        {% for label in choices %}<option value="{{ label }}" {% if text == label %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      {% elif field.field_type == 'BOOL' %}
+      <select name="field_{{ field.id }}"><option value=""></option>
+        <option value="Yes" {% if text == 'Yes' %}selected{% endif %}>Yes</option>
+        <option value="No" {% if text == 'No' %}selected{% endif %}>No</option>
+      </select>
+      {% elif field.field_type == 'NUMBER' %}
+      <input type="text" inputmode="decimal" name="field_{{ field.id }}" value="{{ text[:-(field.unit_label|length + 1)] if field.unit_label and text.endswith(' ' ~ field.unit_label) else text }}" maxlength="16" style="width: 8em; max-width: 100%;">{% if field.unit_label %} {{ field.unit_label }}{% endif %}
+      {% else %}
+      <input type="text" name="field_{{ field.id }}" value="{{ text }}" maxlength="128">
+      {% endif %}
+    </label>
+    {% endfor %}
+    <button type="submit" class="btn btn-small">Save defaults</button>
+    <div class="muted">New assets copy these once. Changing them later does not change existing assets.</div>
+  </form>
+  {% else %}
+  <table class="pair">
+    {% for field, text, choices in defaults %}<tr><th>{{ field.name }}</th><td>{{ text or 'None' }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+  {% endif %}
+  <h2>Checklist</h2>
+  <div class="muted mb-16">Each line is a yes/no question a volunteer answers for every asset of this item.</div>
+  {% if edit %}
+  {% for line in lines %}
+  <form method="post" action="{{ url_for('inventory.update_check_line', line_id=line.id) }}" class="card stack mb-16">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="back" value="item">
+    <label>Prompt <input type="text" name="prompt" value="{{ line.prompt }}" maxlength="{{ prompt_max }}" required></label>
+    <label>A missing answer
+      <select name="missing_means">
+        <option value="FAIL" {% if line.missing_means == 'FAIL' %}selected{% endif %}>FAIL</option>
+        <option value="NOTE" {% if line.missing_means == 'NOTE' %}selected{% endif %}>NOTE</option>
+      </select>
+    </label>
+    <label><input type="checkbox" name="is_active" value="1" {% if line.is_active %}checked{% endif %}> Active</label>
+    <button type="submit" class="btn btn-small">Save line</button>
+  </form>
+  <div class="mb-16">
+    {% for direction, label in (('up', 'Move up'), ('down', 'Move down')) %}
+    <form method="post" action="{{ url_for('inventory.move_check_line', line_id=line.id) }}" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="item">
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <button type="submit" class="btn btn-small">{{ label }}</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="muted mb-16">No lines yet. This item gets the pass-or-fail check.</div>
+  {% endfor %}
+  <form method="post" action="{{ url_for('inventory.add_check_line', item_id=item.id) }}" class="card stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="back" value="item">
+    <label>Prompt <input type="text" name="prompt" required maxlength="{{ prompt_max }}"></label>
+    <label>A missing answer
+      <select name="missing_means">
+        <option value="FAIL">FAIL</option>
+        <option value="NOTE">NOTE</option>
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary">Add line</button>
+  </form>
+  {% else %}
+  <ol>
+    {% for line in lines %}<li {% if not line.is_active %}class="muted"{% endif %}>{{ line.prompt }} <span class="muted">({{ line.missing_means }}{% if not line.is_active %}, off{% endif %})</span></li>
+    {% else %}<li class="muted">No lines yet.</li>{% endfor %}
+  </ol>
+  {% endif %}
+  {% elif tab == 'assets' %}
+  {% if assets %}
+  <ul class="plain">
+    {% for a in assets %}
+    <li><a href="{{ url_for('inventory.unit_page', unit_id=a.unit.id) }}">{{ a.unit.name or 'Unnamed asset' }}</a>{% if a.number %} <span class="muted">{{ a.number }}</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="muted">No assets yet.</div>
+  {% endif %}
+  {% elif tab == 'on_hand' %}
+  {% if stock %}
+  <table class="pair">
+    <tr><th>Total</th><td>{{ stock.total }}{% if stock.approximate %} (approximate){% endif %} {{ stock.unit }}</td></tr>
+    <tr><th>Last counted</th><td>{{ stock.counted_text }}</td></tr>
+    <tr><th>Where</th><td>{% for name, qty, approx in stock.places %}{{ name }}: {{ qty }}{% if approx %} (approximate){% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
+  </table>
+  {% else %}
+  <div class="muted mb-16">None on hand.</div>
+  {% endif %}
+  {% if not rights.can_edit_inventory %}
+  <table class="pair">
+    <tr><th>Barcode</th><td>{{ item.barcode or 'None' }}</td></tr>
+    <tr><th>Pack size</th><td>{{ item.pack_size if item.pack_size is not none else 'None' }}</td></tr>
+  </table>
+  {% else %}
+  <form method="post" action="{{ url_for('inventory.save_item_on_hand', item_id=item.id) }}" class="stack mt-16">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Barcode <input type="text" name="barcode" value="{{ item.barcode or '' }}" maxlength="64"></label>
+    <label>Pack size <input type="number" name="pack_size" value="{{ item.pack_size if item.pack_size is not none else '' }}" min="1" step="1"></label>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+  {% endif %}
+  {% endif %}
+{% endcall %}
+</div>
+{% endblock %}

@@ -5,7 +5,8 @@ import os
 import secrets as stdlib_secrets  # Avoid conflict with app.secrets
 import threading
 from datetime import timedelta
-from flask import Flask, session, render_template, g
+from flask import Flask, session, render_template, g, request
+from flask.sessions import SecureCookieSessionInterface
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
@@ -19,8 +20,22 @@ csrf = CSRFProtect()
 KNOWN_APP_ENVS = ("production", "development", "testing")
 
 
+class _SessionInterface(SecureCookieSessionInterface):
+    """Session cookies, except that scanner and print station calls never renew one."""
+
+    def should_set_cookie(self, app, session):
+        # Station polling runs for days and must not extend a user's login.
+        if request.path.startswith("/inv/scan/print/"):
+            return False
+        # Scanner calls must not extend a user's login.
+        if request.path.startswith("/inv/scan/api/"):
+            return False
+        return super().should_set_cookie(app, session)
+
+
 def create_app() -> Flask:
     app = Flask(__name__, instance_relative_config=True)
+    app.session_interface = _SessionInterface()
     os.makedirs(app.instance_path, exist_ok=True)
 
     # --- AWS Secrets Manager (optional) ---
@@ -370,6 +385,11 @@ def create_app() -> Flask:
             "base-uri 'self'",
             "object-src 'none'",
         ]
+        # Zebra Browser Print listens on localhost. Only the print station page
+        # opts in; every other page keeps default-src 'self' for fetches.
+        connect_extra = getattr(g, "csp_connect_src_extra", None)
+        if connect_extra:
+            csp_directives.append("connect-src 'self' " + " ".join(connect_extra))
         if not self_policing:
             response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
 
@@ -394,6 +414,8 @@ def create_app() -> Flask:
         Usage: <script nonce="{{ csp_nonce }}">...</script>
         """
         g.csp_nonce = stdlib_secrets.token_urlsafe(32)
+        # Test clients share one app context, so g outlives a request there.
+        g.csp_connect_src_extra = None
 
     # --- Scanner / bot flood protection ---
     # Two layers:
@@ -644,6 +666,7 @@ def create_app() -> Flask:
                 "nav_admin_work_types": [],
                 "nav_viewer_work_types": [],
                 "nav_is_space_admin": False,
+                "nav_is_inventory": False,
                 "nav_review_groups": {},
                 "nav_event_cycle": None,
                 "nav_dept_memberships": [],
@@ -665,6 +688,7 @@ def create_app() -> Flask:
         nav_admin_work_types: list[str] = []
         nav_viewer_work_types: list[str] = []
         nav_is_space_admin = False
+        nav_is_inventory = False
         nav_review_groups: dict[str, list] = {}
         nav_event_cycle = None
         nav_dept_memberships = []
@@ -675,6 +699,7 @@ def create_app() -> Flask:
                 UserRole, WorkType, ApprovalGroup, EventCycle,
                 DepartmentMembership, DivisionMembership, Department, Division,
                 ROLE_WORKTYPE_ADMIN, ROLE_WORKTYPE_VIEWER, ROLE_SPACE_ADMIN,
+                ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR,
             )
 
             # nav_admin_work_types is the codes of work types this user can
@@ -725,6 +750,8 @@ def create_app() -> Flask:
                 ]
 
             nav_is_space_admin = _is_super or (ROLE_SPACE_ADMIN in roles)
+            nav_is_inventory = _is_super or bool(
+                {ROLE_INVENTORY_ADMIN, ROLE_INVENTORY_OPERATOR} & set(roles))
 
             from .routes.admin.helpers import sort_with_override as _sort_override
 
@@ -806,6 +833,7 @@ def create_app() -> Flask:
             "nav_admin_work_types": nav_admin_work_types,
             "nav_viewer_work_types": nav_viewer_work_types,
             "nav_is_space_admin": nav_is_space_admin,
+            "nav_is_inventory": nav_is_inventory,
             "nav_review_groups": nav_review_groups,
             "nav_event_cycle": nav_event_cycle,
             "nav_dept_memberships": nav_dept_memberships,

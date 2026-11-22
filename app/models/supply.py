@@ -76,6 +76,38 @@ class SupplyItem(db.Model):
     notes_required = db.Column(db.Boolean, nullable=False, default=False)
     internal_type = db.Column(db.String(32), nullable=True)
 
+    # Inventory flags. A deploy-only item such as a wireless access point has
+    # is_orderable False: it is tracked in inventory but never shown in the
+    # Supply catalog.
+    is_serialized = db.Column(db.Boolean, nullable=False, default=False)
+    is_orderable = db.Column(db.Boolean, nullable=False, default=True)
+    # A manufacturer UPC or a FestOps I- label code, stored normalized.
+    barcode = db.Column(db.String(64), nullable=True, index=True)
+    # Base units per pack, such as 12 for a box of Sharpies. NULL means the
+    # model is never counted in packs.
+    pack_size = db.Column(db.Integer, nullable=True)
+    # The Unit station asks for an asset tag instead of offering a U- number.
+    needs_asset_tag = db.Column(db.Boolean, nullable=False, default=False,
+                                server_default=db.false())
+    # Unused since the Unit station replaced the per-model check stations.
+    check_station = db.Column(db.String(16), nullable=True)
+    # The kind whose typed fields describe this model's units; NULL for none.
+    gear_kind_id = db.Column(
+        db.Integer,
+        db.ForeignKey("inv_gear_kinds.id", name="fk_supply_items_gear_kind_id"),
+        nullable=True,
+    )
+    # Leads reserve this item's assets for department order lines.
+    needs_pre_allocation = db.Column(db.Boolean, nullable=False, default=False,
+                                     server_default=db.false())
+    # Allocations of this item also fill TechOps lines for this service; Supply lines accept it either way.
+    techops_service_type_id = db.Column(
+        db.Integer,
+        db.ForeignKey("techops_service_types.id",
+                      name="fk_supply_items_techops_service_type_id"),
+        nullable=True,
+    )
+
     unit_cost_cents = db.Column(db.Integer, nullable=True)
     qty_on_hand = db.Column(db.Integer, nullable=True)
     location_zone = db.Column(db.String(32), nullable=True)
@@ -89,6 +121,8 @@ class SupplyItem(db.Model):
     updated_by_user_id = db.Column(db.String(64), nullable=True)
 
     category = db.relationship("SupplyCategory", backref="items")
+    gear_kind = db.relationship("InvGearKind")
+    techops_service_type = db.relationship("TechOpsServiceType")
 
 
 class SupplyOrderLineDetail(db.Model):

@@ -1,0 +1,148 @@
+/* Scan shell for the CT60. Large touch targets; the capture field is invisible but focused. */
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; font-size: 18px; background: #fff; color: #111; }
+body.flash-ok { background: #c8f5d0; }
+body.flash-error { background: #f9c9c9; }
+body.not-saved-on { background: #f9c9c9; }
+.band { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #fff; background: #455a64; }
+.station-LOOKUP .band { background: #455a64; }
+.station-COUNT .band { background: #1565c0; }
+.station-RECEIVE .band { background: #e65100; }
+.station-UNIT .band { background: #6a1b9a; }
+/* At 390 px the band holds the station name, the volunteer's name, Flag and Sign out on one row.
+   The station name keeps its width; a long volunteer name gives way with an ellipsis. */
+.band-station { font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
+.band-who { opacity: 0.9; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.band-flag, .band-done { flex: 0 0 auto; font-size: 1rem; padding: 10px; border: 1px solid #fff; background: transparent; color: #fff; border-radius: 6px; white-space: nowrap; }
+.band-flag { margin-left: auto; }
+/* Fixed so it never moves the page; it ignores taps so a button under it still gets them.
+   Any tap refocuses the scan field through the document click handler. */
+.paused { position: fixed; top: 0; left: 0; right: 0; z-index: 20; pointer-events: none; padding: 12px; text-align: center; background: rgba(97, 97, 97, 0.92); color: #fff; font-size: 1.1rem; }
+.paused[hidden] { display: none; }
+.msg { margin: 0; padding: 10px 14px; min-height: 0; font-weight: 600; }
+.msg:empty { padding: 0; }
+.msg.ok { color: #1b5e20; }
+.msg.error { color: #b71c1c; }
+.msg.info { color: #263238; }
+.panel { padding: 12px 14px; }
+.hint { color: #607d8b; }
+.muted { color: #78909c; }
+/* At the top: a keyboard left open by Chrome's address bar pans the page to reveal this
+   field, which moves the card off screen if the field sits at the bottom. CT60 XP, 2026-11-07. */
+.capture { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
+.card { border: 1px solid #cfd8dc; border-radius: 8px; padding: 12px; }
+.card h2 { margin: 0 0 4px; font-size: 1.3rem; }
+.card .tag { font-family: ui-monospace, monospace; color: #455a64; }
+.card .path { margin: 8px 0; color: #37474f; }
+.card ul { margin: 8px 0; padding-left: 20px; }
+.card h3 { margin: 12px 0 4px; font-size: 1rem; }
+.card .notes { margin: 6px 0; color: #37474f; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card .history { font-size: 0.9rem; color: #455a64; }
+.card .history .who { color: #78909c; }
+.choice, .pad button, .actions button { display: block; width: 100%; margin: 0 0 10px; padding: 16px; font-size: 1.2rem; text-align: left; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.pad .keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pad .keys button { text-align: center; margin: 0; }
+.pad-line { margin: 0 0 8px; font-size: 1.2rem; font-weight: 600; overflow-wrap: anywhere; }
+.pad .readout { font-size: 2rem; text-align: right; padding: 8px; min-height: 3rem; }
+.text-ask input { width: 100%; font-size: 1.3rem; padding: 12px; }
+.not-saved { margin: 12px 14px; border: 3px solid #b71c1c; padding: 12px; border-radius: 8px; background: #fff; }
+.not-saved[hidden] { display: none; }
+.not-saved h2 { margin: 0 0 8px; color: #b71c1c; }
+/* Receive. Big step text sits at the top; a keyboard may cover the bottom half. */
+.rcv-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; }
+.rcv-head { color: #455a64; }
+.rcv-progress { font-size: 1.2rem; font-weight: 600; margin-bottom: 6px; }
+.rcv-progress.over { color: #b71c1c; }
+.rcv-bar { height: 10px; margin-bottom: 8px; border-radius: 5px; background: #cfd8dc; overflow: hidden; }
+.rcv-bar i { display: block; height: 100%; background: #e65100; }
+.rcv-bar.over i { background: #b71c1c; }
+.rcv-flag { font-weight: 700; }
+.rcv-step { font-size: 2.2rem; font-weight: 800; line-height: 1.15; margin: 8px 0 12px; }
+.rcv-step.bad { color: #b71c1c; }
+.rcv-held { font-size: 1.2rem; color: #1b5e20; margin-bottom: 10px; }
+.rcv-sub { color: #455a64; margin-bottom: 6px; }
+.rcv-note { margin: 12px 0; }
+.rcv-note-line { font-weight: 600; }
+.rcv-wait { font-size: 1.3rem; font-weight: 700; color: #e65100; }
+.rcv-skip, .rcv-big, .rcv-go { display: block; width: 100%; min-height: 64px; margin: 0 0 12px; font-size: 1.4rem; font-weight: 700; border: 2px solid #90a4ae; border-radius: 10px; background: #eceff1; }
+.rcv-go { background: #e65100; border-color: #e65100; color: #fff; margin-top: 12px; }
+.rcv-row { margin-bottom: 12px; }
+.rcv-label { color: #607d8b; font-size: 0.9rem; margin-bottom: 4px; }
+.rcv-pick { display: block; width: 100%; min-height: 52px; margin: 0 0 6px; padding: 10px 14px; font-size: 1.15rem; text-align: left; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.rcv-pick.on { border: 3px solid #e65100; background: #fff3e0; font-weight: 700; }
+.rcv-link { display: block; margin: 4px 0 8px; padding: 10px 0; background: none; border: 0; color: #1565c0; font-size: 1rem; text-decoration: underline; }
+.rcv-foot { display: flex; gap: 10px; margin-top: 16px; }
+.rcv-small { flex: 1; min-height: 52px; font-size: 1.1rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.rcv-small:disabled { opacity: 0.4; }
+.choice.primary { background: #e65100; border-color: #e65100; color: #fff; font-weight: 700; }
+.choice.on { border: 3px solid #e65100; background: #fff3e0; font-weight: 700; }
+.lbl-line { font-weight: 600; }
+.lbl-wait { font-size: 1.3rem; font-weight: 700; color: #e65100; }
+.lbl-warn { color: #b71c1c; font-weight: 600; }
+/* Count. The header and Submit stay in view on a 4.7 in screen; the usual items scroll in a box. */
+.cnt-head { position: sticky; top: 0; z-index: 5; padding: 6px 0; background: #fff; border-bottom: 2px solid #1565c0; }
+.cnt-title { font-size: 1.3rem; font-weight: 700; }
+.cnt-sub { color: #455a64; }
+.cnt-usual { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 34vh; overflow-y: auto; margin: 8px 0; }
+.cnt-item { min-height: 56px; padding: 8px; font-size: 1.05rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.cnt-item.done { background: #e3f2fd; border: 2px solid #1565c0; }
+.cnt-search { font-weight: 700; }
+.cnt-section { margin: 10px 0 4px; font-weight: 700; color: #455a64; }
+.cnt-row { padding: 8px 0; border-bottom: 1px solid #cfd8dc; }
+.cnt-name { font-weight: 600; }
+.cnt-note { color: #455a64; }
+.cnt-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cnt-cancel { display: block; width: 100%; margin-top: 8px; }
+.cnt-small { flex: 1; min-height: 44px; padding: 6px 8px; font-size: 1rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.cnt-foot { position: sticky; bottom: 0; padding: 8px 0; background: #fff; }
+.cnt-submit { display: block; width: 100%; min-height: 60px; font-size: 1.3rem; font-weight: 700; border: 0; border-radius: 10px; background: #1565c0; color: #fff; }
+.cnt-step { font-size: 1.6rem; font-weight: 700; margin: 12px 0; }
+.cnt-stale { color: #b71c1c; font-weight: 600; margin-bottom: 6px; }
+/* Check. The unit name and number stay at the top; YES and NO sit side by side; Finish stays in reach. */
+.chk-head { position: sticky; top: 0; z-index: 5; padding: 6px 0; background: #fff; border-bottom: 2px solid #6a1b9a; }
+.chk-name { font-size: 1.3rem; font-weight: 700; }
+.chk-code { font-family: ui-monospace, monospace; font-size: 1.6rem; font-weight: 700; }
+.chk-sub { color: #455a64; }
+.chk-idle, .chk-blocked { font-size: 1.3rem; font-weight: 600; }
+.chk-blocked { color: #b71c1c; }
+.chk-step { font-size: 1.6rem; font-weight: 700; margin: 12px 0; }
+.chk-line { padding: 8px 0; border-bottom: 1px solid #cfd8dc; }
+.chk-prompt { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; }
+.chk-yn { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.chk-btn { min-height: 56px; font-size: 1.3rem; font-weight: 700; border: 2px solid #90a4ae; border-radius: 10px; background: #eceff1; }
+.chk-yes.on { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+.chk-no.on { background: #c62828; border-color: #c62828; color: #fff; }
+.chk-foot { position: sticky; bottom: 0; padding: 8px 0; background: #fff; }
+.chk-finish { display: block; width: 100%; min-height: 60px; font-size: 1.3rem; font-weight: 700; border: 0; border-radius: 10px; background: #6a1b9a; color: #fff; }
+.chk-big { display: block; width: 100%; min-height: 64px; margin: 0 0 12px; font-size: 1.3rem; font-weight: 700; border: 2px solid #90a4ae; border-radius: 10px; background: #eceff1; }
+.chk-small { display: block; width: 100%; min-height: 48px; margin-top: 8px; font-size: 1.05rem; border: 1px solid #90a4ae; border-radius: 8px; background: #eceff1; }
+.chk-result { font-size: 2rem; font-weight: 800; margin: 12px 0; }
+.chk-result.pass { color: #2e7d32; }
+.chk-result.fail { color: #c62828; }
+.chk-warn { color: #b71c1c; font-weight: 600; margin-bottom: 8px; }
+.undo { padding: 0 14px; }
+.undo[hidden] { display: none; }
+.undo-btn { background: #fff3e0; border-color: #e65100; }
+.undo-btn:disabled { opacity: 0.6; }
+
+.station-TAG .band { background: #2e7d32; }
+.choice-main, .choice-sub { display: block; }
+.choice-main { font-size: 1.4rem; font-weight: 700; }
+.choice-sub { font-size: 1rem; color: #455a64; }
+.tag-step { font-size: 1.4rem; font-weight: 700; margin: 12px 0; }
+.tag-done { font-weight: 600; color: #1b5e20; }
+.tag-wait { font-weight: 700; color: #e65100; }
+/* Sign-in. The PIN field is filled only by the keypad below it. */
+.sign-title { margin: 4px 0 12px; font-size: 1.8rem; }
+.pin-label { display: block; margin-bottom: 6px; font-weight: 600; }
+.pin-field { width: 100%; margin-bottom: 10px; padding: 10px; font-size: 2rem; text-align: center; letter-spacing: 0.4em; border: 2px solid #90a4ae; border-radius: 8px; }
+.pin-pad .keys button { min-height: 64px; font-size: 1.6rem; }
+.pin-pad .keys .pin-go { font-size: 1.2rem; font-weight: 700; background: #455a64; border-color: #455a64; color: #fff; }
+/* The name is the largest type on any scanner screen, so the right person is easy to confirm. */
+.signed-label { margin: 8px 0 0; font-size: 1.2rem; color: #455a64; }
+.signed-name { margin: 4px 0 20px; font-size: 2.8rem; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
+.signed-go { text-decoration: none; text-align: center; }
+/* Covers the station, so nothing under it is tapped and Keep finds the screen unchanged. */
+.switch-ask { position: fixed; inset: 0; z-index: 30; padding: 24px 14px; background: #fff; }
+.switch-ask[hidden] { display: none; }
+.switch-text { margin: 0 0 20px; font-size: 1.6rem; font-weight: 700; overflow-wrap: anywhere; }

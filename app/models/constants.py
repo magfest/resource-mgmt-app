@@ -73,6 +73,146 @@ ROLE_APPROVER = "APPROVER"              # approver (typically scoped to approval
 # ix_user_roles_global_unique already covers it.
 ROLE_SPACE_ADMIN = "SPACE_ADMIN"
 
+# Inventory roles. Unscoped, like SPACE_ADMIN. They are not WORKTYPE_ADMIN
+# because network leads scan and configure gear without administering the
+# Supply catalog.
+ROLE_INVENTORY_ADMIN = "INVENTORY_ADMIN"
+ROLE_INVENTORY_OPERATOR = "INVENTORY_OPERATOR"
+
+# Movement actions. A movement never changes after it is written.
+INV_ACTION_ADD = "ADD"
+INV_ACTION_MOVE = "MOVE"
+INV_ACTION_ADJUST = "ADJUST"
+INV_ACTION_DISCARD = "DISCARD"
+
+# A unit's lasting condition across events. Per-event pipeline state is a
+# separate record with a separate lifetime.
+INV_CONDITION_IN_SERVICE = "IN_SERVICE"
+INV_CONDITION_REPAIR = "REPAIR"
+INV_CONDITION_RETIRED = "RETIRED"
+INV_CONDITION_LOST = "LOST"
+INV_CONDITION_FOUND = "FOUND"
+
+INV_OWNERSHIP_OWNED = "OWNED"
+INV_OWNERSHIP_RENTED = "RENTED"
+
+# What an InvAllocationEvent row records.
+INV_ALLOCATION_ALLOCATE = "ALLOCATE"
+INV_ALLOCATION_MOVE = "MOVE"
+INV_ALLOCATION_RELEASE = "RELEASE"
+
+# FESTOPS_LABEL and MAGFEST_TAG are the kinds that must be unique among active
+# identifiers. A rental's vendor serial is a SERIAL on a unit whose ownership
+# is RENTED; serials repeat across vendors, so they are never unique.
+INV_IDENT_FESTOPS_LABEL = "FESTOPS_LABEL"
+INV_IDENT_MAGFEST_TAG = "MAGFEST_TAG"
+INV_IDENT_VENDOR_TAG = "VENDOR_TAG"
+INV_IDENT_SERIAL = "SERIAL"
+INV_IDENT_MAC = "MAC"
+INV_IDENT_UNIQUE_KINDS = (INV_IDENT_FESTOPS_LABEL, INV_IDENT_MAGFEST_TAG)
+
+INV_DISCARD_REASONS = ("DRIED_OUT", "BROKEN", "EXPIRED", "OTHER")
+
+# A scanner station. Look up shows what a scan is. Count records quantities in
+# a container. Unit runs a per-model checklist on one unit. Move places
+# containers and assets by scan and moves loose supplies between places.
+INV_STATION_LOOKUP = "LOOKUP"
+INV_STATION_COUNT = "COUNT"
+INV_STATION_MOVE = "MOVE"
+# TV_CHECK, PRINTER_CHECK and TAG stations no longer exist. Old check and
+# movement rows keep their codes, so the names stay for history display.
+INV_STATION_TV_CHECK = "TV_CHECK"
+INV_STATION_PRINTER_CHECK = "PRINTER_CHECK"
+# Print station collects label jobs for the warehouse printers. Receive is
+# the dock station that books incoming stock.
+INV_STATION_PRINT = "PRINT"
+INV_STATION_RECEIVE = "RECEIVE"
+INV_STATION_TAG = "TAG"
+# Unit does the whole per-unit job in one pass: identify, tag, check, print.
+INV_STATION_UNIT = "UNIT"
+INV_STATIONS = (
+    INV_STATION_LOOKUP, INV_STATION_COUNT, INV_STATION_MOVE, INV_STATION_PRINT, INV_STATION_RECEIVE,
+    INV_STATION_UNIT,
+)
+INV_CHECK_STATIONS = (INV_STATION_UNIT,)
+INV_STATION_NAMES = {
+    INV_STATION_LOOKUP: "Look up",
+    INV_STATION_COUNT: "Count",
+    INV_STATION_TV_CHECK: "TV check",
+    INV_STATION_PRINTER_CHECK: "Printer check",
+    INV_STATION_PRINT: "Print station",
+    INV_STATION_RECEIVE: "Receive",
+    INV_STATION_TAG: "Tag",
+    INV_STATION_UNIT: "Check",
+    INV_STATION_MOVE: "Move",
+}
+
+# Typed fields a gear kind defines for its units. CHOICE values come from
+# InvFieldChoice rows; the other types store one value column.
+INV_FIELD_CHOICE = "CHOICE"
+INV_FIELD_NUMBER = "NUMBER"
+INV_FIELD_BOOL = "BOOL"
+INV_FIELD_TEXT = "TEXT"
+INV_FIELD_TYPES = (INV_FIELD_CHOICE, INV_FIELD_NUMBER, INV_FIELD_BOOL, INV_FIELD_TEXT)
+
+# Label print jobs. The job type picks the printer; a SCAN job is collected
+# ahead of a BATCH job so a person at a printer never waits behind a batch.
+INV_JOB_OWNED_UNIT = "OWNED_UNIT"
+INV_JOB_RENTED_UNIT = "RENTED_UNIT"
+INV_JOB_CONTAINER = "CONTAINER"
+INV_JOB_ITEM = "ITEM"
+INV_JOB_SIGNIN_CARD = "SIGNIN_CARD"
+INV_JOB_TYPES = (INV_JOB_OWNED_UNIT, INV_JOB_RENTED_UNIT, INV_JOB_CONTAINER, INV_JOB_ITEM,
+                 INV_JOB_SIGNIN_CARD)
+INV_JOB_SOURCE_SCAN = "SCAN"
+INV_JOB_SOURCE_BATCH = "BATCH"
+INV_JOB_QUEUED = "QUEUED"
+INV_JOB_CLAIMED = "CLAIMED"
+INV_JOB_SENT = "SENT"
+INV_JOB_FAILED = "FAILED"
+INV_JOB_CANCELLED = "CANCELLED"
+
+# Per-event prep status of a unit. The newest row for a unit and event wins.
+INV_PREP_CHECKED = "CHECKED"
+INV_PREP_FAILED_CHECK = "FAILED_CHECK"
+INV_PREP_VOIDED = "VOIDED"
+
+INV_CHECK_OPEN = "OPEN"
+INV_CHECK_PASSED = "PASSED"
+INV_CHECK_FAILED = "FAILED"
+INV_CHECK_SET_ASIDE = "SET_ASIDE"
+INV_CHECK_VOIDED = "VOIDED"
+
+# What a NO answer means on a check line: FAIL fails the check; NOTE passes it
+# and records the line's prompt as a note.
+INV_MISSING_FAIL = "FAIL"
+INV_MISSING_NOTE = "NOTE"
+INV_ANSWER_YES = "YES"
+INV_ANSWER_NO = "NO"
+
+INV_SHIFT_END_ENDED = "ENDED"
+INV_SHIFT_END_REPLACED = "REPLACED"
+INV_SHIFT_END_IDLE = "IDLE"
+INV_SHIFT_END_REVOKED = "REVOKED"
+
+INV_FLAG_REASONS = ("WRONG_DATA", "DAMAGED", "UNKNOWN_ITEM", "OTHER")
+
+INV_COUNT_LINE_APPLIED = "APPLIED"
+INV_COUNT_LINE_STALE = "STALE"
+INV_COUNT_LINE_UNCHANGED = "UNCHANGED"
+INV_COUNT_LINE_UNDONE = "UNDONE"
+
+# Unit note audiences. PUBLIC shows to anyone who can see the unit; ADMIN and
+# PICKER are for staff. EARLIER and IMPORT mark text copied from the old
+# overwritable notes column and the old tech export.
+INV_NOTE_PUBLIC = "PUBLIC"
+INV_NOTE_ADMIN = "ADMIN"
+INV_NOTE_PICKER = "PICKER"
+INV_NOTE_TYPES = (INV_NOTE_ADMIN, INV_NOTE_PUBLIC, INV_NOTE_PICKER)
+INV_NOTE_SOURCE_PERSON = "PERSON"
+INV_NOTE_SOURCE_IMPORT = "IMPORT"
+INV_NOTE_SOURCE_EARLIER = "EARLIER"
+
 # Space kinds. A SLICE is part of a room. A FREEFORM space has no parent and
 # uses location_note for where it sits. Combining two slices for one event is
 # not a kind; it is SpaceEventOverride.combined_into_space_id.

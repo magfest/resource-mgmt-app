@@ -10,13 +10,15 @@
    duplicate stacked layout underneath for everyone else. Two copies of the
    same content drift apart. Testing the audience per tab leaves one
    layout. #}
-{% macro request_tabs(tabs) %}
+{% macro request_tabs(tabs, active=None) %}
 {% set shown = tabs | selectattr_visible %}
+{% set shown_ids = shown | map(attribute='id') | list %}
+{% set active_id = active if active in shown_ids else (shown_ids[0] if shown_ids else none) %}
 <nav class="request-tab-nav" role="tablist">
   {% for tab in shown %}
     <button type="button" role="tab"
-            class="tab-btn{{ ' active' if loop.first }}"
-            aria-selected="{{ 'true' if loop.first else 'false' }}"
+            class="tab-btn{{ ' active' if tab.id == active_id }}"
+            aria-selected="{{ 'true' if tab.id == active_id else 'false' }}"
             aria-controls="panel-{{ tab.id }}"
             data-tab="{{ tab.id }}">
       {{ tab.label }}
@@ -27,8 +29,8 @@
   {% endfor %}
 </nav>
 {% for tab in shown %}
-  <div class="tab-panel{{ ' active' if loop.first }}" id="panel-{{ tab.id }}"
-       role="tabpanel" {% if not loop.first %}hidden{% endif %}>
+  <div class="tab-panel{{ ' active' if tab.id == active_id }}" id="panel-{{ tab.id }}"
+       role="tabpanel" {% if tab.id != active_id %}hidden{% endif %}>
     {{ caller(tab.id) }}
   </div>
 {% endfor %}

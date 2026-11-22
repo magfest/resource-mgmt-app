@@ -1,0 +1,92 @@
+{% extends "layout/base.html" %}
+{% block title %}Assets - Inventory{% endblock %}
+{% block content %}
+<h1>Assets</h1>
+{% macro page_link(n) %}{{ url_for('inventory.units', page=n, **keep) }}{% endmacro %}
+<form method="get" class="card mb-16">
+  <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;">
+    <label style="flex: 2 1 220px;">Find an asset by name, number, serial number or MAC
+      <input type="text" name="q" value="{{ q }}" maxlength="128" autofocus>
+    </label>
+    <label style="flex: 1 1 140px;">Asset type
+      <select name="kind" id="kind-select">
+        <option value="">Any</option>
+        {% for k in kinds %}<option value="{{ k.code }}"{% if kind and kind.id == k.id %} selected{% endif %}>{{ k.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-small">Search</button>
+    <label style="flex: 1 1 140px;">Since
+      <input type="date" name="since" value="{{ since }}">
+    </label>
+    {% for value, word in show_buttons %}
+    <button type="submit" name="show" value="{{ value }}" class="btn btn-small"{% if show == value %} aria-pressed="true" style="font-weight: bold;"{% endif %}>{{ word }}</button>
+    {% endfor %}
+  </div>
+  {% if filter_fields %}
+  <details class="mt-8">
+    <summary>More filters</summary>
+    {% for f in filter_fields %}
+    <label>{{ f.name }}
+      <select name="f_{{ f.id }}">
+        <option value="">Any</option>
+        {% if f.field_type == 'BOOL' %}
+          <option value="yes"{% if chosen.get(f.id) == 'yes' %} selected{% endif %}>Yes</option>
+          <option value="no"{% if chosen.get(f.id) == 'no' %} selected{% endif %}>No</option>
+        {% else %}
+          {% for c in f.choices %}<option value="{{ c.id }}"{% if chosen.get(f.id) == c.id|string %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
+        {% endif %}
+      </select>
+    </label>
+    {% endfor %}
+  </details>
+  {% else %}
+  <details class="mt-8">
+    <summary>More filters</summary>
+    <p class="muted">Pick an asset type to filter on its fields.</p>
+  </details>
+  {% endif %}
+</form>
+<script nonce="{{ csp_nonce }}">
+  document.getElementById('kind-select').addEventListener('change', function () {
+    this.form.submit();
+  });
+</script>
+{% if fell_back %}<p class="muted">That date could not be used, so this shows the last 30 days.</p>{% endif %}
+{% if not q %}<p class="muted">Retired assets are hidden.</p>{% endif %}
+<p>{{ total }} asset{{ '' if total == 1 else 's' }}, {{ checked }} of {{ counted }} checked since {{ since_word }}, {{ broken }} broken
+  &middot; <a href="{{ url_for('inventory.units', format='csv', **keep) }}">Download CSV</a></p>
+<style nonce="{{ csp_nonce }}">
+  .units-table { table-layout: auto; width: max-content; min-width: 100%; }
+  .units-table th, .units-table td { overflow-wrap: normal; word-wrap: normal; }
+  .units-table th, .units-table .nowrap { white-space: nowrap; }
+</style>
+<div style="overflow-x: auto;">
+<table class="units-table">
+  <thead><tr><th>Name</th><th>Number</th><th>Item</th><th>Last checked</th><th>Last seen</th><th>Condition</th><th>Where</th><th>Flags</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    {% set page_url = url_for('inventory.unit_page', unit_id=r.unit.id) %}
+    <tr class="unit-row">
+      <td>{% if r.unit.name %}<a href="{{ page_url }}">{{ r.unit.name }}</a>{% endif %}</td>
+      <td>{% if r.number %}{% if r.unit.name %}{{ r.number }}{% else %}<a href="{{ page_url }}">{{ r.number }}</a>{% endif %}{% elif r.unit.name %}<span class="muted">No number yet</span>{% else %}<a href="{{ page_url }}"><span class="muted">No number yet</span></a>{% endif %}</td>
+      <td>{{ r.unit.item.item_name }}</td>
+      <td class="nowrap">{% if r.check_word %}{{ r.check_word }} · {{ r.checked_day }}{% else %}Never{% endif %}</td>
+      <td class="nowrap">{{ r.seen_day or 'Never' }}</td>
+      <td>{{ condition_words.get(r.unit.condition, r.unit.condition) }}</td>
+      <td>{{ r.where }}</td>
+      <td>{% if r.open_flags %}{{ r.open_flags }} open{% else %}<span class="muted">None</span>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">No asset matches.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if pages > 1 %}
+<p>
+  {% if page > 1 %}<a href="{{ page_link(page - 1) }}">Previous</a>{% endif %}
+  Page {{ page }} of {{ pages }}
+  {% if page < pages %}<a href="{{ page_link(page + 1) }}">Next</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

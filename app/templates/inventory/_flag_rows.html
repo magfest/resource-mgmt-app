@@ -1,0 +1,16 @@
+{% macro subject(r, link_unit=True) %}
+  {% if r.unit %}
+    {% if link_unit %}<a href="{{ url_for('inventory.unit_page', unit_id=r.unit.id) }}">{{ r.unit_text }}</a>{% else %}{{ r.unit_text }}{% endif %}
+  {% elif r.container %}
+    <a href="{{ url_for('inventory.containers', edit=r.container.id) }}">{{ r.container.label_code }}</a>{% if r.container.name %} {{ r.container.name }}{% endif %}
+  {% endif %}
+{% endmacro %}
+
+{% macro resolve_form(r, next_url='') %}
+  <form method="post" action="{{ url_for('inventory.resolve_flag_route', flag_id=r.flag.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+    <input type="text" name="note" required maxlength="256" placeholder="What was done" aria-label="Resolution note" style="min-width: 160px;">
+    <button type="submit" class="btn btn-small">Resolve</button>
+  </form>
+{% endmacro %}

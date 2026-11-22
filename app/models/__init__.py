@@ -14,6 +14,7 @@ Module organization:
 - techops.py: TechOpsServiceType, TechOpsLineDetail, TechOpsRequestDetail
 - telemetry.py: ActivityEvent, NotificationLog, SecurityAuditLog, ConfigAuditEvent
 - email_outbox.py: EmailOutbox, EmailSuppression, EmailMessageBody
+- inventory.py: FestOps inventory containers, units, stock, movements
 """
 
 # Re-export all constants
@@ -53,6 +54,8 @@ from .constants import (
     ROLE_WORKTYPE_VIEWER,
     ROLE_APPROVER,
     ROLE_SPACE_ADMIN,
+    ROLE_INVENTORY_ADMIN,
+    ROLE_INVENTORY_OPERATOR,
     # Spend type modes
     SPEND_TYPE_MODE_SINGLE_LOCKED,
     SPEND_TYPE_MODE_ALLOW_LIST,
@@ -209,6 +212,17 @@ from .constants import (
     SPACE_KINDS,
 )
 
+# Re-export inventory models
+from .inventory import (
+    InvContainerKind, InvContainer, InvUnit, InvUnitIdentifier, InvUnitNote, InvStock,
+    InvCredential, InvDevice, InvEnrollCode, InvShift, InvCount, InvCountLine, InvMovement,
+    InvCheckItem, InvCheck, InvCheckAnswer, InvPrepStatus, InvFlag, InvStationItem,
+    InvScanRequest, InvLabelSequence,
+    InvPrinter, InvPrintRoute, InvPrintJob, InvItemTotal,
+    InvGearKind, InvField, InvFieldChoice, InvUnitValue, InvModelDefault, InvTagLink,
+    InvAllocation, InvAllocationEvent,
+)
+
 # Re-export telemetry models
 from .telemetry import (
     ActivityEvent,
@@ -264,6 +278,8 @@ __all__ = [
     "ROLE_WORKTYPE_VIEWER",
     "ROLE_APPROVER",
     "ROLE_SPACE_ADMIN",
+    "ROLE_INVENTORY_ADMIN",
+    "ROLE_INVENTORY_OPERATOR",
     # Constants - Spend type modes
     "SPEND_TYPE_MODE_SINGLE_LOCKED",
     "SPEND_TYPE_MODE_ALLOW_LIST",
@@ -399,6 +415,38 @@ __all__ = [
     "SPACE_KIND_SLICE",
     "SPACE_KIND_FREEFORM",
     "SPACE_KINDS",
+    # Inventory models
+    "InvContainerKind",
+    "InvContainer",
+    "InvCredential",
+    "InvUnit",
+    "InvUnitIdentifier",
+    "InvUnitNote",
+    "InvStock",
+    "InvDevice",
+    "InvEnrollCode",
+    "InvShift",
+    "InvCount",
+    "InvCountLine",
+    "InvMovement",
+    "InvCheckItem",
+    "InvCheck",
+    "InvCheckAnswer",
+    "InvPrepStatus",
+    "InvFlag",
+    "InvStationItem",
+    "InvScanRequest",
+    "InvLabelSequence",
+    "InvPrinter",
+    "InvPrintRoute",
+    "InvPrintJob",
+    "InvItemTotal",
+    "InvGearKind",
+    "InvField",
+    "InvFieldChoice",
+    "InvUnitValue",
+    "InvModelDefault",
+    "InvTagLink",
     # Telemetry models
     "ActivityEvent",
     "NotificationLog",

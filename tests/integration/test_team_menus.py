@@ -81,3 +81,34 @@ def test_reports_index_lists_reports_for_budget_admins_only(client, seed_workflo
 
     _login(client, "test:reviewer")
     assert client.get("/admin/budget/reports/").status_code == 403
+
+
+def test_techops_admin_sees_the_allocation_links(client, seed_workflow_data):
+    _seed_teams(seed_workflow_data)
+    techops = WorkType.query.filter_by(code="TECHOPS").one()
+    db.session.add(User(id="test:techopsadmin", email="techopsadmin@test.local",
+                        display_name="TechOps Lead", is_active=True))
+    db.session.flush()
+    db.session.add(UserRole(user_id="test:techopsadmin", role_code=ROLE_WORKTYPE_ADMIN,
+                            work_type_id=techops.id))
+    db.session.commit()
+    _login(client, "test:techopsadmin")
+    html = client.get("/").get_data(as_text=True)
+    assert "/inv/allocation" in html and "/inv/allocation/report" in html
+
+
+def test_supply_admin_sees_allocation_links_but_not_inventory_home(client, seed_workflow_data):
+    _seed_teams(seed_workflow_data)
+    _login(client, "test:supplyadmin")
+    html = client.get("/").get_data(as_text=True)
+    assert 'href="/inv/allocation"' in html and 'href="/inv/allocation/report"' in html
+    assert "Inventory Home" not in html
+
+
+def test_budget_reviewer_sees_no_allocation_links(client, seed_workflow_data):
+    db.session.add(UserRole(user_id="test:reviewer", role_code=ROLE_APPROVER,
+                            approval_group_id=seed_workflow_data["approval_group"].id))
+    db.session.commit()
+    _login(client, "test:reviewer")
+    html = client.get("/").get_data(as_text=True)
+    assert "/inv/allocation" not in html

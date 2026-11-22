@@ -1,0 +1,253 @@
+{% extends "layout/base.html" %}
+{% from "inventory/_flag_rows.html" import resolve_form %}
+{% from "components/_request_tabs.html" import request_tabs with context %}
+{% block title %}{{ unit.name or number or "No number yet" }} - Assets - Inventory{% endblock %}
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .unit-page h2 { margin: 24px 0 8px; font-size: 1.15em; }
+  .unit-page, .unit-page td, .unit-page .note-body { overflow-wrap: anywhere; }
+  .unit-page .pair { width: 100%; border-collapse: collapse; }
+  .unit-page .pair th { text-align: left; font-weight: normal; color: #666; padding: 4px 12px 4px 0; vertical-align: top; }
+  .unit-page .pair td { padding: 4px 0; }
+  .unit-page .works { color: #1a7f37; font-weight: 600; }
+  .unit-page .broken { color: #c62828; font-weight: 600; }
+  .unit-page .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: #eee; font-size: 0.85em; }
+  .unit-page .note { padding: 8px 0; border-bottom: 1px solid #eee; }
+  .unit-page .note-body, .unit-page .history-note { white-space: pre-wrap; }
+  .unit-page .hist { padding: 6px 0; }
+  .unit-page .scroll-x { overflow-x: auto; }
+  .unit-page .field { display: block; margin-bottom: 8px; }
+  .unit-page textarea, .unit-page input[type="text"] { max-width: 100%; box-sizing: border-box; }
+</style>
+{% macro note_row(n) %}
+  <div class="note">
+    <span class="badge">{{ n.badge }}</span>
+    <div class="note-body">{{ n.body }}</div>
+    {% if n.byline %}<div class="muted">{{ n.byline }}</div>{% endif %}
+  </div>
+{% endmacro %}
+{% macro hist_row(h) %}
+  <div class="hist">{{ h.stamp }} &middot; {{ h.who }} {{ h.text }}
+    {% if h.note %}<div class="muted history-note">{{ h.note }}</div>{% endif %}</div>
+{% endmacro %}
+<div class="unit-page">
+<div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+  <div>
+    <h1 style="margin:0;">{% if unit.name or number %}{{ unit.name or number }}{% else %}<span class="muted">No number yet</span>{% endif %}
+      <span class="pill {{ condition_pills.get(unit.condition, 'pill-draft') }}" style="margin-left: 8px; font-weight: normal;">{{ condition_words.get(unit.condition, unit.condition) }}</span></h1>
+    {% if subline %}<div class="muted" style="margin-top:4px;">{{ subline }}</div>{% endif %}
+    <div class="muted" style="margin-top:4px;">{{ added }}{% if last_seen %} &middot; Last seen {{ last_seen }}{% endif %}</div>
+    <div class="muted" style="margin-top:4px;"><a href="{{ url_for('inventory.units') }}">Assets</a></div>
+  </div>
+  {% if unit.name and number %}
+  <div style="text-align:right;">
+    <div style="font-size: 24px; font-weight:700;">{{ number }}</div>
+  </div>
+  {% endif %}
+</div>
+{% if open_flags %}
+<div class="callout callout-action mb-16"><a href="{{ url_for('inventory.unit_page', unit_id=unit.id) }}#flags" data-show-tab="about">{{ open_flags }} open flag{{ '' if open_flags == 1 else 's' }}</a></div>
+<script nonce="{{ csp_nonce }}">
+  // The flags list sits on About; open it first so the #flags jump has a visible target.
+  document.querySelector('a[data-show-tab]').addEventListener('click', function () {
+    var tab = document.querySelector('.tab-btn[data-tab="' + this.getAttribute('data-show-tab') + '"]');
+    if (tab) tab.click();
+  });
+</script>
+{% endif %}
+
+{% call(tab) request_tabs([
+     {'id': 'about', 'label': 'About'},
+     {'id': 'notes', 'label': 'Notes', 'count': notes | length},
+     {'id': 'history', 'label': 'History'},
+     {'id': 'edit', 'label': 'Edit'},
+   ], active=active_tab) %}
+{% if tab == 'about' %}
+<h2>Last checked</h2>
+<div>{% if check.word == 'WORKS' %}<span class="works">Works</span> &middot; {% elif check.word == 'BROKEN' %}<span class="broken">Broken</span> &middot; {% endif %}{{ check.text }}</div>
+
+<h2 id="where">Where it is</h2>
+<div>{{ where }}</div>
+{% if placed %}<div class="muted">{{ placed }}</div>{% endif %}
+
+<h2 id="who">Who has it</h2>
+<div class="muted">Assigned to: not tracked yet</div>
+<div class="muted">{{ allocation }}</div>
+<div class="muted">Checked out to: not tracked yet</div>
+
+<h2 id="find-by">Find it by</h2>
+{% if find_by %}
+<table class="pair">{% for label, value in find_by %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+{% else %}<div class="muted">No numbers yet.</div>{% endif %}
+
+<h2 id="details">Details</h2>
+<table class="pair">{% for label, value in details %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+
+{% if open_rows %}
+<h2 id="flags">Open flags</h2>
+<div class="scroll-x">
+<table>
+  <thead><tr><th>When</th><th>Reason</th><th>Raised by</th><th>Note</th><th>Resolve</th></tr></thead>
+  <tbody>
+  {% for r in open_rows %}
+    <tr><td class="muted">{{ r.when }}</td><td>{{ r.reason }}</td><td>{{ r.raised_by }}</td><td>{{ r.flag.note or '' }}</td>
+      <td>{{ resolve_form(r, url_for('inventory.unit_page', unit_id=unit.id)) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% elif tab == 'notes' %}
+{% if note_types %}
+<h2>Add a note</h2>
+<form method="post" action="{{ url_for('inventory.unit_add_note', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <select name="note_type" aria-label="Kind of note">
+    {% for t in note_types %}<option value="{{ t }}"{% if t == 'ADMIN' %} selected{% endif %}>{{ note_type_words[t] }}</option>{% endfor %}
+  </select>
+  <textarea name="body" rows="3" maxlength="2000" required aria-label="Note" style="width: 100%; max-width: 480px;"></textarea>
+  <button type="submit" class="btn btn-small">Add note</button>
+</form>
+{% endif %}
+
+<h2 id="notes">Notes</h2>
+{% for n in notes %}{{ note_row(n) }}{% else %}<div class="muted">No notes yet.</div>{% endfor %}
+{% elif tab == 'history' %}
+<h2 id="history">History</h2>
+{% for h in history[:10] %}{{ hist_row(h) }}{% else %}<div class="muted">Nothing recorded yet.</div>{% endfor %}
+{% if history|length > 10 %}
+<details><summary>Show all ({{ history|length }})</summary>
+  {% for h in history[10:] %}{{ hist_row(h) }}{% endfor %}
+</details>
+{% endif %}
+{% elif tab == 'edit' %}
+{% if is_inv_admin %}
+<h2>Details</h2>
+<form method="post" action="{{ url_for('inventory.unit_set_details', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label class="field">Name
+    <input type="text" name="name" value="{{ unit.name or '' }}" maxlength="64" style="width: 100%; max-width: 360px;">
+  </label>
+  {% for f in field_inputs %}
+  <label class="field">{{ f.field.name }}{% if not f.field.is_active %} (retired){% endif %}
+    {% if f.is_choice %}
+    <select name="field_{{ f.field.id }}">
+      <option value=""></option>
+      {% for label in f.choices %}<option value="{{ label }}" {% if f.value == label %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% elif f.is_bool %}
+    <select name="field_{{ f.field.id }}">
+      <option value=""></option>
+      <option value="Yes" {% if f.value == 'Yes' %}selected{% endif %}>Yes</option>
+      <option value="No" {% if f.value == 'No' %}selected{% endif %}>No</option>
+    </select>
+    {% elif f.is_number %}
+    <input type="text" inputmode="decimal" name="field_{{ f.field.id }}" value="{{ f.value }}" maxlength="16" style="width: 8em;">{% if f.field.unit_label %} {{ f.field.unit_label }}{% endif %}
+    {% else %}
+    <input type="text" name="field_{{ f.field.id }}" value="{{ f.value }}" maxlength="128" style="width: 100%; max-width: 360px;">
+    {% endif %}
+  </label>
+  {% endfor %}
+  {% if not has_gear_kind %}<div class="muted">Set this item's asset type on the Items page to add fields.</div>{% endif %}
+  <button type="submit" class="btn btn-small">Save details</button>
+</form>
+{% endif %}
+
+{% if is_inv_admin %}
+<h2>Numbers</h2>
+<div class="scroll-x">
+<table>
+  <thead><tr><th>Kind</th><th>Number</th><th></th></tr></thead>
+  <tbody>
+  {% for i in identifiers %}
+    <tr {% if i.retired_at %}class="muted" style="opacity: 0.55;"{% endif %}>
+      <td>{{ kind_words.get(i.kind, i.kind) }}{% if i.retired_at %} (retired){% endif %}</td>
+      <td>{{ i.value }}</td>
+      <td>
+        {% if not i.retired_at %}
+        <form method="post" action="{{ url_for('inventory.unit_retire_identifier', unit_id=unit.id, identifier_id=i.id) }}" data-confirm="Retire {{ i.value }}? It stops finding this asset.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Retire</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<form method="post" action="{{ url_for('inventory.unit_add_identifier', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <strong>Add a number</strong>
+  <div class="row">
+    <label>Kind
+      <select name="kind">{% for kind, words in kinds %}<option value="{{ kind }}">{{ words }}</option>{% endfor %}</select>
+    </label>
+    <label>Number <input type="text" name="value" required maxlength="128"></label>
+  </div>
+  <button type="submit" class="btn btn-small">Add</button>
+  <div class="muted">A new asset tag or U- number replaces the asset's current number. To change a serial, add the new one, then retire the old one.</div>
+</form>
+{% if can_give_number %}
+<form method="post" action="{{ url_for('inventory.unit_give_number', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit" class="btn btn-small">Give this asset a U- number and print</button>
+  <div class="muted">This asset has no number to scan.</div>
+</form>
+{% endif %}
+
+<h2>Condition and item</h2>
+<form method="post" action="{{ url_for('inventory.unit_set_condition', unit_id=unit.id) }}" class="card mb-16" data-retire-value="{{ retired_condition }}" data-retire-confirm="Retire this asset? Every number on it stops finding it.">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Condition
+    <select name="condition">
+      {% for c in conditions %}<option value="{{ c }}" {% if unit.condition == c %}selected{% endif %}>{{ condition_words.get(c, c) }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Save condition</button>
+</form>
+<form method="post" action="{{ url_for('inventory.unit_set_item', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Item
+    <select name="item_id">
+      {% for i in items %}<option value="{{ i.id }}" {% if unit.item_id == i.id %}selected{% endif %}>{{ i.item_name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-small">Change item</button>
+</form>
+
+{% endif %}
+
+<h2>Print label</h2>
+<form method="post" action="{{ url_for('inventory.unit_print', unit_id=unit.id) }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <select name="mode" aria-label="How to print">
+    {% for mode, words in print_modes %}<option value="{{ mode }}">{{ words }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn btn-small">Print label</button>
+  {% if print_options.details_changed %}<div class="muted">The details changed since the last label.</div>{% endif %}
+</form>
+
+<div class="muted">Internal database ID: {{ unit.id }}. For troubleshooting only; it is never printed or scanned.</div>
+{% if is_inv_admin %}
+<script nonce="{{ csp_nonce }}">
+  // Capture phase: on Cancel, stopPropagation keeps the app-wide submit guard from disabling Save.
+  document.addEventListener('submit', function (e) {
+    var form = e.target.closest('form[data-retire-confirm]');
+    if (!form) return;
+    var only = form.getAttribute('data-retire-value');
+    var select = form.querySelector('select[name="condition"]');
+    if (only && select && select.value !== only) return;
+    if (!window.confirm(form.getAttribute('data-retire-confirm'))) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+</script>
+{% endif %}
+{% endif %}
+{% endcall %}
+</div>
+{% endblock %}

@@ -89,9 +89,6 @@ def test_classify_creates_updates_and_errors(app, import_seed):
         "item_name",  # case differs from the seeded name
         "is_popular",
         "unit_cost_cents",
-        "qty_on_hand",
-        "location_zone",
-        "bin_location",
     }
 
     assert len(preview.errors) == 1
@@ -191,13 +188,12 @@ def test_blank_notes_cell_creates_item_with_none_notes(app, import_seed):
 
     item = db.session.query(SupplyItem).filter_by(item_name="Whiteboard").one()
     assert item.notes is None
-    assert item.location_zone == "A9"
+    assert item.location_zone is None  # retired column in the sheet is ignored
 
 
 def test_blank_numeric_cells_classify_as_create_not_error(app, import_seed):
-    """Blank unit_cost and qty_on_hand are documented as optional: the row
-    must classify as a valid create with those fields None, not be rejected
-    with a NaN conversion error."""
+    """A blank unit_cost is optional: the row must classify as a valid create
+    with the field None, not be rejected with a NaN conversion error."""
     text = (
         CSV_HEADER + "\n"
         "OFFICE,Corkboard,each,,,,,,false,false,false,false,true\n"
@@ -210,7 +206,7 @@ def test_blank_numeric_cells_classify_as_create_not_error(app, import_seed):
     create = preview.creates[0]
     assert create["item_name"] == "Corkboard"
     assert create["unit_cost_cents"] is None
-    assert create["qty_on_hand"] is None
+    assert "qty_on_hand" not in create
     assert create["notes"] is None
 
 
@@ -308,3 +304,120 @@ def test_parse_bool_and_int_stay_loud_for_junk_tokens():
         _parse_int("nan")
     with pytest.raises(ValueError):
         _parse_cents("nan")
+
+
+def _model_item(import_seed) -> SupplyItem:
+    item = import_seed["item"]
+    item.is_orderable = False
+    db.session.commit()
+    return item
+
+
+def _import(text: str):
+    preview = classify_rows(parse_catalog_upload(_csv_upload(text)))
+    apply_import(preview.creates, preview.updates, user_id="test:admin")
+    db.session.commit()
+    return preview
+
+
+def test_reimport_without_the_column_keeps_models_unorderable(app, import_seed):
+    item = _model_item(import_seed)
+    text = (
+        CSV_HEADER + "\n"
+        "OFFICE,Ballpoint pens (box of 12),box,,3.00,,,,false,false,false,false,true\n"
+    )
+    preview = _import(text)
+
+    assert len(preview.updates) == 1
+    assert "is_orderable" not in preview.updates[0]["changed_fields"]
+    db.session.refresh(item)
+    assert item.is_orderable is False
+
+
+def test_reimport_with_a_blank_cell_keeps_models_unorderable(app, import_seed):
+    item = _model_item(import_seed)
+    text = (
+        CSV_HEADER + ",is_orderable\n"
+        "OFFICE,Ballpoint pens (box of 12),box,,3.00,,,,false,false,false,false,true,\n"
+    )
+    preview = _import(text)
+
+    assert "is_orderable" not in preview.updates[0]["changed_fields"]
+    db.session.refresh(item)
+    assert item.is_orderable is False
+
+
+def test_new_item_without_the_column_takes_the_model_default(app, import_seed):
+    text = (
+        CSV_HEADER + "\n"
+        "OFFICE,Corkboard,each,,,,,,false,false,false,false,true\n"
+    )
+    _import(text)
+
+    item = db.session.query(SupplyItem).filter_by(item_name="Corkboard").one()
+    assert item.is_orderable is True
+
+
+def test_import_with_the_column_creates_an_unorderable_item(app, import_seed):
+    text = (
+        CSV_HEADER + ",is_orderable\n"
+        "OFFICE,Lobby TV,each,,,,,,false,false,false,false,true,false\n"
+    )
+    preview = _import(text)
+
+    assert preview.errors == []
+    item = db.session.query(SupplyItem).filter_by(item_name="Lobby TV").one()
+    assert item.is_orderable is False
+
+
+def test_import_with_the_column_updates_an_existing_item(app, import_seed):
+    item = _model_item(import_seed)
+    text = (
+        CSV_HEADER + ",is_orderable\n"
+        "OFFICE,Ballpoint pens (box of 12),box,,3.00,,,,false,false,false,false,true,yes\n"
+    )
+    preview = _import(text)
+
+    assert "is_orderable" in preview.updates[0]["changed_fields"]
+    db.session.refresh(item)
+    assert item.is_orderable is True
+
+
+def test_invalid_is_orderable_value_is_a_row_error(app, import_seed):
+    text = (
+        CSV_HEADER + ",is_orderable\n"
+        "OFFICE,Lobby TV,each,,,,,,false,false,false,false,true,maybe\n"
+    )
+    preview = classify_rows(parse_catalog_upload(_csv_upload(text)))
+
+    assert preview.creates == []
+    assert len(preview.errors) == 1
+    assert any("Invalid boolean value" in p for p in preview.errors[0]["problems"])
+
+
+def test_import_ignores_the_retired_columns(app, import_seed):
+    """A sheet that still carries the retired stock columns imports cleanly
+    and leaves the stored values alone."""
+    item = import_seed["item"]
+    item.qty_on_hand = 7
+    db.session.commit()
+    text = (
+        CSV_HEADER + "\n"
+        "OFFICE,Ballpoint pens (box of 12),box,,3.50,99,A9,B9,false,true,true,false,true\n"
+        "OFFICE,Whiteboard,each,,5.00,3,A9,B9,false,false,false,false,true\n"
+    )
+    preview = classify_rows(parse_catalog_upload(_csv_upload(text)))
+
+    assert preview.errors == []
+    assert "qty_on_hand" not in preview.updates[0]["changed_fields"]
+
+    apply_import(preview.creates, preview.updates, user_id="test:admin")
+    db.session.commit()
+
+    db.session.refresh(item)
+    assert item.qty_on_hand == 7
+    assert item.location_zone is None
+    created = db.session.query(SupplyItem).filter_by(item_name="Whiteboard").one()
+    assert created.qty_on_hand is None
+    assert created.location_zone is None
+    assert created.bin_location is None

@@ -49,24 +49,28 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # These four steps build a new database in the order it needs.
+      # These five steps build a new database in the order it needs.
       # tr7742b1c8e5 refuses to run unless the TECHOPS_NET and TECHOPS_GEN
       # approval groups exist, and only `flask seed bootstrap` creates them.
       # The pinned revision is the one just before tr7742b1c8e5. If a later
       # migration needs seeded rows, pin to the revision before that one.
       #
       # Both seeds use the models in the checked-out code, so a seed run at the
-      # pin fails on any table that gains a column after it. Bootstrap reads
-      # none of those tables; the demo seed reads event_cycles, so it runs
-      # after head.
+      # pin fails on any table that gains a column after it. supply_items gains
+      # inventory columns after it, so bootstrap skips Supply items at the pin
+      # and runs again after head to add them; it inserts only missing rows.
+      # The demo seed reads event_cycles, so it runs after head.
       - name: Upgrade to the last migration that needs no seeded data
         run: flask db upgrade sp5539947d06
 
       - name: Seed bootstrap reference data
-        run: flask seed bootstrap
+        run: flask seed bootstrap --skip-supply-items
 
       - name: Upgrade to head
         run: flask db upgrade
+
+      - name: Seed bootstrap Supply items against the full schema
+        run: flask seed bootstrap
 
       - name: Seed demo data against the full schema
         run: flask seed demo

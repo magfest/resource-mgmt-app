@@ -485,6 +485,29 @@ class TestSupplyCatalog:
         assert b"<h2>Popular</h2>" not in response.data
         assert b"Commonly ordered" in response.data
 
+    def test_catalog_shows_limited_without_a_count(
+        self, app, client, seed_workflow_data
+    ):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, _popular, _plain = _seed_catalog()
+        db.session.add(SupplyItem(
+            category_id=category.id, item_name="Spare Cable", unit="each",
+            is_active=True, is_limited=True, qty_on_hand=7,
+        ))
+        db.session.commit()
+
+        _login(client, "test:admin")
+        response = client.get(
+            f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}/catalog"
+        )
+
+        assert response.status_code == 200
+        assert b"Limited" in response.data
+        assert b"7 on hand" not in response.data
+
     def test_add_item_creates_line_and_redirects(
         self, app, client, seed_workflow_data
     ):
@@ -599,6 +622,28 @@ def _add_line(work_item, item, quantity=1, notes=None, line_number=None, status=
     ))
     db.session.commit()
     return line
+
+
+class TestDeployOnlyItemsHidden:
+    """is_orderable=False items are inventory-only and never reach an order."""
+
+    def test_catalog_omits_and_refuses_unorderable_item(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        work_item = _make_draft_order(wt, cycle, dept)
+        category, popular_item, plain_item = _seed_catalog()
+        plain_item.is_orderable = False
+        db.session.commit()
+
+        _login(client, "test:admin")
+        base = f"/{cycle.code}/{dept.code}/supply/order/{work_item.public_id}"
+        html = client.get(f"{base}/catalog").get_data(as_text=True)
+        assert "Sharpie Markers" not in html
+        assert "Gaffer Tape" in html
+
+        client.post(f"{base}/lines/add", data={"item_id": str(plain_item.id), "quantity": "1"})
+        assert SupplyOrderLineDetail.query.filter_by(item_id=plain_item.id).count() == 0
 
 
 class TestSupplyCatalogBrowse:

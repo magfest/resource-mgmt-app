@@ -1,0 +1,103 @@
+{% extends "layout/base.html" %}
+{% block title %}Scanners and print stations - Inventory{% endblock %}
+{% block content %}
+<h1>Scanners and print stations</h1>
+{% if new_code %}
+<div class="card mb-16" role="status">
+  <div class="muted">Enrollment code</div>
+  <div style="font-size: 2.5rem; font-weight: 700; letter-spacing: 0.1em; font-family: monospace;">{{ new_code }}</div>
+  <div>Type this on the device within 10 minutes. It works once.</div>
+  <div class="muted">This code is not shown again.</div>
+</div>
+{% endif %}
+<div class="muted mb-16">
+  To enroll a scanner, create a code here, then open
+  <code>{{ url_for('inventory.scan_enroll', _external=True) }}</code> on the
+  device and type it. Revoke a lost scanner here; its next scan is refused.
+</div>
+<form method="post" action="{{ url_for('inventory.device_code') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Scanner name <input type="text" name="name" required maxlength="64" placeholder="Scanner 3"></label>
+  <label>Station
+    <select name="station_code">
+      {% for code in stations %}
+      <option value="{{ code }}" {{ 'selected' if code == 'LOOKUP' }}>{{ station_names[code] }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Home location label (optional)
+    <input type="text" name="home_container_code" maxlength="32" autocapitalize="characters">
+    <span class="muted">Needed for a Check station: scan or type the warehouse label.</span>
+  </label>
+  <button type="submit" class="btn btn-primary">Create enrollment code</button>
+</form>
+<table class="devices-table">
+  <thead><tr><th>Name</th><th>Station</th><th>Who</th><th>Last seen</th><th>Home location</th><th></th></tr></thead>
+  <tbody>
+  {% for r in active %}
+    {% set d = r.device %}
+    <tr>
+      <td data-label="Name">{{ d.name }}</td>
+      <td data-label="Station">{{ r.station_name }}
+        <details>
+          <summary>Change</summary>
+          <form method="post" action="{{ url_for('inventory.device_station', device_id=d.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select name="station_code" aria-label="Station for {{ d.name }}">
+              {% for code in stations %}
+              <option value="{{ code }}" {{ 'selected' if code == d.station_code }}>{{ station_names[code] }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="home_container_code" maxlength="32" placeholder="Home label"
+                   value="{{ d.home_container.label_code if d.home_container else '' }}" aria-label="Home location for {{ d.name }}">
+            <button type="submit" class="btn btn-small">Save</button>
+          </form>
+        </details>
+      </td>
+      <td data-label="Who">
+        {% if r.is_print_station %}Print station
+          {% for p in r.printers %}<div class="muted">{{ p.name }}: {{ 'Online' if p.online else 'Offline' }}, {{ p.waiting }} waiting</div>{% endfor %}
+        {% elif r.person %}{{ r.person }}, since {{ r.since }}
+        {% else %}<span class="muted">Nobody signed in</span>{% endif %}
+      </td>
+      <td data-label="Last seen">{% if r.stale %}<span class="pill pill-warning">{{ r.seen_text }}</span>{% else %}{{ r.seen_text }}{% endif %}</td>
+      <td data-label="Home location" class="muted">{{ d.home_container.label_code if d.home_container else 'Top level' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('inventory.revoke_device_route', device_id=d.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small">Revoke</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No scanners enrolled.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if revoked %}
+<details class="mt-16">
+  <summary>Revoked ({{ revoked|length }})</summary>
+  <table>
+    <thead><tr><th>Name</th><th>Station</th><th>Enrolled</th><th>Last seen</th></tr></thead>
+    <tbody>
+    {% for r in revoked %}
+      <tr>
+        <td>{{ r.device.name }}</td>
+        <td>{{ r.station_name }}</td>
+        <td class="muted">{{ r.device.enrolled_at.strftime('%Y-%m-%d') }}</td>
+        <td class="muted">{{ r.seen_text }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+<style>
+  @media (max-width: 640px) {
+    .devices-table thead { display: none; }
+    .devices-table tr { display: block; border-bottom: 1px solid #ddd; padding: 8px 0; }
+    .devices-table td { display: block; padding: 2px 0; }
+    .devices-table td[data-label]::before { content: attr(data-label) ": "; color: #6b7280; }
+  }
+</style>
+{% endblock %}

@@ -1,0 +1,272 @@
+"""ZPL for FestOps labels on 2 in x 3 in direct-thermal stock.
+
+The roll is 2 in wide across the printhead and 3 in long. Fields use rotation R,
+so a label reads 3 in wide by 2 in tall once turned. ZPL positions are printer
+dots, so layout here is in inches and converted per print station: GX430t is
+300 dpi, the GX420 series is 203 dpi. Rotated fields run along the Y axis; the
+top of the turned label sits at the highest X.
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from datetime import date
+
+SUPPORTED_DPI = (203, 300)
+SUPPORTED_SIZES = {(2.0, 3.0)}
+
+# Narrow bar width in dots, about 0.01 in at each resolution.
+_MODULE_DOTS = {203: 2, 300: 3}
+# Code 128 in subset B takes 11 modules a character plus 35 for start, check,
+# stop and the final bar. Twenty characters at 3 dots a module is 765 dots; with
+# a 10-module quiet zone each side that fits the 840 printable dots at 300 dpi.
+# At 203 dpi, 2-dot modules need 550 of 569.
+MAX_CODE_LENGTH = 20
+_QUIET_MODULES = 10
+
+# A row value past this many characters prints smaller so it still fits one line.
+ROW_FULL_CHARS = 22
+_NUMBER_FULL_CHARS = 14
+_TITLE_FULL_CHARS = 14
+_FOOTER_FULL_CHARS = 40
+_MAX_FIELD_CHARS = 64
+# Font 0 width per character over height, measured from a GX430t print of mixed-case
+# and capital text. Only the last line uses it; rows keep their older, wider budget.
+_LAST_LINE_WIDTH_RATIO = 0.5
+
+# Layout in inches, measured from the top of the turned label.
+_MARGIN = 0.1
+_BAR_H = 0.33
+_NUMBER_H = 0.2
+_TITLE_H = 0.22
+_ROW_H = 0.15
+_ROW_PITCH = 0.2
+_FOOTER_H = 0.12
+_RULE_H = 0.02
+_GAP = 0.05
+# Sign-in card bands. The name is the largest type on the card.
+_CARD_CAPTION_H = 0.15
+_CARD_NAME_H = 0.4
+_CARD_NAME_FULL_CHARS = 12
+CARD_CAPTION = "FestOps inventory sign-in"
+
+
+@dataclass(frozen=True)
+class LabelSpec:
+    code: str
+    rows: tuple[tuple[str, str], ...]
+    footer: str | None
+    title: str | None = None
+    # Printed headerless after the rows and never dropped: the spec text at the
+    # left, the date right-justified. The date is never cut.
+    last_line: str | None = None
+    last_date: str | None = None
+
+
+def _dots(inches: float, dpi: int) -> int:
+    return round(inches * dpi)
+
+
+def _field(text: str) -> str:
+    """Replace ^, ~ and control characters with spaces; cut to 64 characters.
+
+    ZPL reads ^ and ~ as commands even inside field data.
+    """
+    for ch in ("^", "~", "\r", "\n", "\t"):
+        text = text.replace(ch, " ")
+    return text[:_MAX_FIELD_CHARS]
+
+
+def _barcode_data(code: str) -> str:
+    """Return the code for the barcode, refusing any value the barcode
+    would encode differently.
+    """
+    if (
+        not code
+        or len(code) > MAX_CODE_LENGTH
+        or any(not 33 <= ord(ch) <= 126 for ch in code)
+        or any(ch in code for ch in "^~>")
+    ):
+        raise ValueError(f"Label code {code!r} cannot be printed as a barcode.")
+    return code
+
+
+def can_print_code(code: str) -> bool:
+    """Return whether the barcode can encode this code exactly."""
+    try:
+        _barcode_data(code)
+    except ValueError:
+        return False
+    return True
+
+
+def _fitted(height: int, text: str, full_chars: int) -> int:
+    """Return the font height that keeps `text` as wide as `full_chars` characters."""
+    if len(text) <= full_chars:
+        return height
+    return max(1, height * full_chars // len(text))
+
+
+def _fit_rows(rows, keep: int):
+    """Trim rows to `keep`. Serial and Printed stay; Model and Item go first, then Vendor tag.
+
+    Other rows go from the end. A scanned serial and the print date identify the unit.
+    Type is the pre-rename name of Item, kept so queued jobs drop the same row first.
+    Printed appears only on jobs stored before labels carried a spec line.
+    """
+    rows = list(rows)
+    for label in ("Model", "Item", "Type", "Vendor tag"):
+        if len(rows) <= keep:
+            break
+        for row in rows:
+            if row[0] == label:
+                rows.remove(row)
+                break
+    index = len(rows) - 1
+    while len(rows) > keep and index >= 0:
+        if rows[index][0] in ("Serial", "Printed"):
+            index -= 1
+        else:
+            del rows[index]
+            index -= 1
+    return rows
+
+
+def _fit_last_line(text: str, room: int, height: int, floor: int) -> tuple[str, int]:
+    """Shrink text from `height` to fit `room` dots; below `floor`, cut it instead."""
+    fitted = int(room / (len(text) * _LAST_LINE_WIDTH_RATIO)) if text else height
+    if fitted >= floor:
+        return text, min(height, fitted)
+    return text[:int(room / (floor * _LAST_LINE_WIDTH_RATIO))], floor
+
+
+def render_label(spec: LabelSpec, dpi: int, width_in: float = 2.0,
+                 height_in: float = 3.0) -> str:
+    if dpi not in SUPPORTED_DPI:
+        raise ValueError(f"Unsupported dpi {dpi}; expected one of {SUPPORTED_DPI}")
+    if (float(width_in), float(height_in)) not in SUPPORTED_SIZES:
+        raise ValueError(f"Unsupported label size {width_in} x {height_in} in.")
+    code = _barcode_data(spec.code)
+    pw, ll = _dots(width_in, dpi), _dots(height_in, dpi)
+    margin = _dots(_MARGIN, dpi)
+    span = ll - 2 * margin
+    module = _MODULE_DOTS[dpi]
+
+    def x_for(top_in: float, band_in: float) -> int:
+        # The turned label's top is the highest X; a band's origin is its lower edge.
+        return pw - _dots(top_in + band_in, dpi)
+
+    lines = ["^XA", "^CI28", f"^PW{pw}", f"^LL{ll}", "^LH0,0"]
+
+    bar_h = _dots(_BAR_H, dpi)
+    bar_width = (11 * len(code) + 35) * module
+    bar_y = (ll - bar_width) // 2
+    lines.append(f"^FO{x_for(_MARGIN, _BAR_H)},{bar_y}^BY{module},3,{bar_h}"
+                 f"^BCR,{bar_h},N,N,N^FD{code}^FS")
+
+    number_top = _MARGIN + _BAR_H + _GAP
+    number = _field(code)
+    number_h = _fitted(_dots(_NUMBER_H, dpi), number, _NUMBER_FULL_CHARS)
+    lines.append(f"^FO{x_for(number_top, _NUMBER_H)},{margin}^A0R,{number_h},{number_h}"
+                 f"^FB{span},1,0,C^FD{number}^FS")
+
+    row_h = _dots(_ROW_H, dpi)
+    row_top = number_top + _NUMBER_H + _GAP
+    if spec.title:
+        title = _field(spec.title)
+        title_h = _fitted(_dots(_TITLE_H, dpi), title, _TITLE_FULL_CHARS)
+        lines.append(f"^FO{x_for(row_top, _TITLE_H)},{margin}^A0R,{title_h},{title_h}"
+                     f"^FB{span},1,0,C^FD{title}^FS")
+        row_top += _TITLE_H + _GAP
+
+    # A row must end above the footer rule, or above the bottom margin with no
+    # footer. Only a titled label is trimmed; an untitled one keeps its output.
+    rows = spec.rows
+    if spec.title:
+        limit = float(width_in) - _MARGIN
+        if spec.footer:
+            limit -= _FOOTER_H + _GAP + _RULE_H + _GAP
+        fits = int((limit - row_top - _ROW_H) / _ROW_PITCH + 1e-9) + 1
+        if spec.last_line or spec.last_date:
+            fits -= 1
+        rows = _fit_rows(rows, max(0, fits))
+    for index, (label, value) in enumerate(rows):
+        x = x_for(row_top + index * _ROW_PITCH, _ROW_H)
+        value = _field(value)
+        value_h = _fitted(row_h, value, ROW_FULL_CHARS)
+        lines.append(f"^FO{x},{margin}^A0R,{row_h},{row_h}^FD{_field(label)}^FS")
+        lines.append(f"^FO{x},{margin}^A0R,{value_h},{value_h}"
+                     f"^FB{span},1,0,R^FD{value}^FS")
+    if spec.last_line or spec.last_date:
+        x = x_for(row_top + len(rows) * _ROW_PITCH, _ROW_H)
+        room = span
+        if spec.last_date:
+            date = _field(spec.last_date)
+            lines.append(f"^FO{x},{margin}^A0R,{row_h},{row_h}^FB{span},1,0,R^FD{date}^FS")
+            room -= math.ceil(len(date) * _LAST_LINE_WIDTH_RATIO * row_h) + _dots(_GAP, dpi)
+        if spec.last_line:
+            text, text_h = _fit_last_line(_field(spec.last_line), room, row_h,
+                                          _dots(_FOOTER_H, dpi))
+            lines.append(f"^FO{x},{margin}^A0R,{text_h},{text_h}"
+                         f"^FB{room},1,0,L^FD{text}^FS")
+
+    if spec.footer:
+        footer_top = float(width_in) - _MARGIN - _FOOTER_H
+        rule_top = footer_top - _GAP - _RULE_H
+        rule = _dots(_RULE_H, dpi)
+        footer = _field(spec.footer)
+        footer_h = _fitted(_dots(_FOOTER_H, dpi), footer, _FOOTER_FULL_CHARS)
+        lines.append(f"^FO{x_for(rule_top, _RULE_H)},{margin}^GB{rule},{span},{rule}^FS")
+        lines.append(f"^FO{x_for(footer_top, _FOOTER_H)},{margin}^A0R,{footer_h},{footer_h}"
+                     f"^FB{span},1,0,C^FD{footer}^FS")
+    lines.append("^XZ")
+    return "\n".join(lines)
+
+
+def render_card(name: str, code: str, printed: date, dpi: int, width_in: float = 2.0,
+                height_in: float = 3.0) -> str:
+    """Render a sign-in card: barcode, caption, name, print date.
+
+    The code appears only as barcode data. Printing it as text would let anyone
+    who sees the card read the credential.
+    """
+    if dpi not in SUPPORTED_DPI:
+        raise ValueError(f"Unsupported dpi {dpi}; expected one of {SUPPORTED_DPI}")
+    if (float(width_in), float(height_in)) not in SUPPORTED_SIZES:
+        raise ValueError(f"Unsupported label size {width_in} x {height_in} in.")
+    code = _barcode_data(code)
+    pw, ll = _dots(width_in, dpi), _dots(height_in, dpi)
+    margin = _dots(_MARGIN, dpi)
+    span = ll - 2 * margin
+    module = _MODULE_DOTS[dpi]
+
+    def x_for(top_in: float, band_in: float) -> int:
+        return pw - _dots(top_in + band_in, dpi)
+
+    bar_h = _dots(_BAR_H, dpi)
+    bar_y = (ll - (11 * len(code) + 35) * module) // 2
+    lines = ["^XA", "^CI28", f"^PW{pw}", f"^LL{ll}", "^LH0,0",
+             f"^FO{x_for(_MARGIN, _BAR_H)},{bar_y}^BY{module},3,{bar_h}"
+             f"^BCR,{bar_h},N,N,N^FD{code}^FS"]
+
+    top = _MARGIN + _BAR_H + _GAP
+    cap_h = _dots(_CARD_CAPTION_H, dpi)
+    lines.append(f"^FO{x_for(top, _CARD_CAPTION_H)},{margin}^A0R,{cap_h},{cap_h}"
+                 f"^FB{span},1,0,C^FD{CARD_CAPTION}^FS")
+    top += _CARD_CAPTION_H + _GAP
+
+    text = _field(name)
+    name_h = _fitted(_dots(_CARD_NAME_H, dpi), text, _CARD_NAME_FULL_CHARS)
+    lines.append(f"^FO{x_for(top, _CARD_NAME_H)},{margin}^A0R,{name_h},{name_h}"
+                 f"^FB{span},1,0,C^FD{text}^FS")
+    top += _CARD_NAME_H + _GAP
+
+    lines.append(f"^FO{x_for(top, _CARD_CAPTION_H)},{margin}^A0R,{cap_h},{cap_h}"
+                 f"^FB{span},1,0,C^FDPrinted {printed.isoformat()}^FS")
+    lines.append("^XZ")
+    return "\n".join(lines)
+
+
+def render_batch(specs: list[LabelSpec], dpi: int, width_in: float = 2.0,
+                 height_in: float = 3.0) -> str:
+    return "\n".join(render_label(spec, dpi, width_in, height_in) for spec in specs)

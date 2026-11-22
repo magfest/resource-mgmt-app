@@ -1,0 +1,36 @@
+{% extends "layout/base.html" %}
+{% block title %}My scanner sign-in - Inventory{% endblock %}
+{% block content %}
+<style nonce="{{ csp_nonce }}">
+  .signin-card { max-width: 420px; }
+  .signin-pin { font-size: 2.6em; letter-spacing: 0.15em; font-weight: bold; margin: 8px 0; }
+  .signin-card .btn { width: 100%; margin-top: 8px; }
+</style>
+<h1>My scanner sign-in</h1>
+<div class="muted mb-16">Sign in on a shared scanner with a PIN or a printed card. Both are tied to your account.</div>
+
+{% if pin %}
+<div class="card mb-16 signin-card">
+  <div>Your PIN is shown once. Write it down.</div>
+  <div class="signin-pin" data-pin="{{ pin }}">{{ pin }}</div>
+</div>
+{% endif %}
+
+<div class="card mb-16 signin-card">
+  <h2>PIN</h2>
+  <p>{% if pin_day %}PIN made {{ pin_day }}{% else %}No PIN yet{% endif %}</p>
+  <form method="post" action="{{ url_for('inventory.my_new_pin') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-primary">{% if pin_day %}Get a new PIN{% else %}Get my PIN{% endif %}</button>
+  </form>
+</div>
+
+<div class="card mb-16 signin-card">
+  <h2>Card</h2>
+  <p>{% if card_day %}Card printed {{ card_day }}{% else %}No card yet{% endif %}</p>
+  <form method="post" action="{{ url_for('inventory.my_new_card') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-primary">Print my card</button>
+  </form>
+</div>
+{% endblock %}

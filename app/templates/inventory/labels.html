@@ -1,0 +1,53 @@
+{% extends "layout/base.html" %}
+{% block title %}Labels - Inventory{% endblock %}
+{% block content %}
+<h1>Labels</h1>
+<div class="muted mb-16">
+  New labels reserve the next numbers and are bound when first scanned.
+  Reprint replaces a faded label with the same number.
+  To print a label for an existing location or container, use Reprint. Use removable stock for
+  rental and smooth assets, and permanent stock for containers; removable stock does not hold on recycled cardboard.
+</div>
+{% set new_form %}{% if is_inv_admin %}
+<form method="post" action="{{ url_for('inventory.new_labels') }}" class="card mb-16">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <strong>New labels</strong>
+  <div class="row">
+    <label>Label for
+      <select name="prefix">
+        <option value="C">C- location or container</option>
+        <option value="U">U- asset</option>
+        <option value="I">I- item</option>
+      </select>
+    </label>
+    <label>How many <input type="number" name="count" min="1" max="{{ max_batch }}" value="10" style="width: 90px;"></label>
+    <label>Printer <select name="dpi" class="dpi-select">
+      <option value="300">GX430t (300 dpi)</option><option value="203">GX420 (203 dpi)</option>
+    </select></label>
+  </div>
+  <button type="submit" class="btn btn-primary">Reserve and show</button>
+</form>
+{% endif %}{% endset %}
+{% set reprint_form %}
+<form method="post" action="{{ url_for('inventory.reprint_labels') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <strong>Reprint</strong>
+  <label>Numbers, one per line<br>
+    <textarea name="codes" rows="6" cols="30">{{ prefill }}</textarea></label>
+  <label>Printer <select name="dpi" class="dpi-select">
+    <option value="300">GX430t (300 dpi)</option><option value="203">GX420 (203 dpi)</option>
+  </select></label>
+  <button type="submit" class="btn btn-primary">Show labels</button>
+</form>
+{% endset %}
+{% if prefill %}{{ reprint_form }}{{ new_form }}{% else %}{{ new_form }}{{ reprint_form }}{% endif %}
+<script nonce="{{ csp_nonce }}">
+  // Each print station remembers its own printer resolution.
+  document.querySelectorAll('.dpi-select').forEach(function (sel) {
+    try { var saved = localStorage.getItem('inv-dpi'); if (saved) sel.value = saved; } catch (e) {}
+    sel.addEventListener('change', function () {
+      try { localStorage.setItem('inv-dpi', sel.value); } catch (e) {}
+    });
+  });
+</script>
+{% endblock %}

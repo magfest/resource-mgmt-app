@@ -1,0 +1,70 @@
+{% extends "layout/base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block content %}
+<h1>Inventory</h1>
+<div class="muted mb-16">FestOps stock, locations and containers, and labels.</div>
+<style nonce="{{ csp_nonce }}">
+  .count-tiles { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+  .count-tile { display: block; flex: 1 1 140px; max-width: 100%; padding: 12px 16px;
+    border: 1px solid #ddd; border-radius: 6px; text-decoration: none; color: inherit; }
+  .count-tile strong { display: block; font-size: 1.4em; }
+</style>
+<form method="get" class="mb-16">
+  <label>Since <input type="date" name="since" value="{{ since }}"></label>
+  <button type="submit" class="btn btn-small">Show</button>
+</form>
+{% if fell_back %}<p class="muted">That date could not be used, so this shows the last 30 days.</p>{% endif %}
+<div class="count-tiles">
+  <a class="count-tile" href="{{ url_for('inventory.units', show='checked', since=since) }}">Checked since {{ since_word }}<strong>{{ totals.checked }} of {{ totals.counted }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.units', show='not_checked', since=since) }}">Not checked since {{ since_word }}<strong>{{ totals.not_checked }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.units', show='broken', since=since) }}">Broken<strong>{{ totals.broken }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.units', show='no_number', since=since) }}">No number yet<strong>{{ totals.no_number }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.units', show='found') }}">Found<strong>{{ totals.found }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.flags') }}">Open flags<strong>{{ open_flags }}</strong></a>
+  <a class="count-tile" href="{{ url_for('inventory.print_queue') }}">Print queue<strong>{{ queue.waiting }} waiting</strong>{% if not queue.station_online %}<span class="pill pill-warning">Print station offline</span>{% endif %}</a>
+</div>
+
+<h2>Day to day</h2>
+<ul>
+  <li><a href="{{ url_for('inventory.where') }}">Where things are</a></li>
+  <li><a href="{{ url_for('inventory.units') }}">Assets</a></li>
+  <li><a href="{{ url_for('inventory.supplies') }}">Supplies on hand</a></li>
+  <li><a href="{{ url_for('inventory.flags') }}">Flags ({{ open_flags }})</a></li>
+  <li><a href="{{ url_for('inventory.print_queue') }}">Print queue</a></li>
+  <li><a href="{{ url_for('inventory.scan_home') }}">Open the scanner</a></li>
+  <li><a href="{{ url_for('inventory.my_sign_in') }}">My scanner sign-in</a></li>
+</ul>
+
+<h2>Planning</h2>
+<ul>
+  <li><a href="{{ url_for('inventory.allocation') }}">Allocation</a></li>
+  <li><a href="{{ url_for('inventory.deployment_report') }}">Deployment report</a></li>
+</ul>
+
+<h2>Set up</h2>
+<ul>
+  <li><a href="{{ url_for('inventory.items') }}">Items</a></li>
+  {% if is_inv_admin %}
+  <li><a href="{{ url_for('inventory.checklists') }}">Checklists</a></li>
+  <li><a href="{{ url_for('inventory.containers') }}">Locations and containers</a></li>
+  <li><a href="{{ url_for('inventory.kinds') }}">Location and container kinds</a></li>
+  <li><a href="{{ url_for('inventory.devices') }}">Scanners and print stations</a></li>
+  <li><a href="{{ url_for('inventory.printers') }}">Printers</a></li>
+  {% endif %}
+  <li><a href="{{ url_for('inventory.labels') }}">Labels</a></li>
+  {% if is_inv_admin %}
+  <li><a href="{{ url_for('inventory.operators') }}">Operators</a></li>
+  <li><a href="{{ url_for('inventory.legacy_import_page') }}">Import old tech lists</a></li>
+  {% else %}
+  <li class="muted">An inventory admin manages the other pages here.</li>
+  {% endif %}
+</ul>
+
+{% if is_inv_admin %}
+<h2>History</h2>
+<ul>
+  <li><a href="{{ url_for('inventory.movements') }}">Movements</a></li>
+  <li><a href="{{ url_for('inventory.movements', action='MOVE', since=since) }}">Moved since {{ since_word }}</a></li>
+</ul>
+{% endif %}
+{% endblock %}

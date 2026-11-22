@@ -19,6 +19,8 @@ from app.models import (
     ROLE_WORKTYPE_VIEWER,
     ROLE_APPROVER,
     ROLE_SPACE_ADMIN,
+    ROLE_INVENTORY_ADMIN,
+    ROLE_INVENTORY_OPERATOR,
     CONFIG_AUDIT_CREATE,
     CONFIG_AUDIT_UPDATE,
     CONFIG_AUDIT_ARCHIVE,
@@ -88,6 +90,8 @@ def _get_role_context():
             (ROLE_APPROVER, "Approver", "Can review/approve lines in assigned approval groups"),
             (ROLE_SPACE_ADMIN, "Space Admin", "Manages venues and spaces (Event Ops)"),
             (ROLE_WORKTYPE_VIEWER, "Work Type Viewer", "Read-only access to one work type (TechOps)"),
+            (ROLE_INVENTORY_ADMIN, "Inventory Admin", "Containers, labels, devices, and scanner operators"),
+            (ROLE_INVENTORY_OPERATOR, "Inventory Operator", "Uses the scanner under their own name"),
         ],
     }
 
@@ -347,6 +351,8 @@ def _update_user_roles(user: User, form_data) -> None:
     Form fields:
     - role_super_admin: "1" if checked
     - role_space_admin: "1" if checked
+    - role_inventory_admin: "1" if checked
+    - role_inventory_operator: "1" if checked
     - role_worktype_admin_<work_type_id>: "1" if checked
     - role_worktype_viewer_<work_type_id>: "1" if checked (TechOps only)
     - role_approver_<approval_group_id>: "1" if checked
@@ -377,6 +383,13 @@ def _update_user_roles(user: User, form_data) -> None:
             role_code=ROLE_SPACE_ADMIN,
         )
         db.session.add(role)
+
+    # Inventory roles. Unscoped. This form clears every role before re-adding
+    # checked ones, so a role missing from the form is silently revoked.
+    for field, code in (("role_inventory_admin", ROLE_INVENTORY_ADMIN),
+                        ("role_inventory_operator", ROLE_INVENTORY_OPERATOR)):
+        if form_data.get(field) == "1":
+            db.session.add(UserRole(user_id=user.id, role_code=code))
 
     # Work Type Admin roles
     work_types = db.session.query(WorkType).filter(WorkType.is_active == True).all()
