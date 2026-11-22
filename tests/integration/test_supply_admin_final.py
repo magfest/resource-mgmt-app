@@ -286,6 +286,36 @@ class TestSupplyFinalizeOverrideNeedsNote:
         d1 = SupplyOrderLineDetail.query.filter_by(work_line_id=line1.id).one()
         assert d1.quantity_approved is None
 
+    def test_quantity_above_cap_refused(self, app, client, seed_workflow_data):
+        wt = _seed_supply(seed_workflow_data)
+        cycle = seed_workflow_data["cycle"]
+        dept = seed_workflow_data["department"]
+        group = _seed_approval_group(wt)
+        category = _seed_category(approval_group=group)
+        item = _seed_item(category, unit_cost_cents=500)
+
+        work_item = _make_draft_order(wt, cycle, dept)
+        line1 = _add_line(work_item, item, quantity=4, line_number=1)
+        _set_pickup_details(work_item)
+
+        _login(client, "test:admin")
+        _submit(client, cycle, dept, work_item)
+
+        resp = client.post(
+            f"/admin/supply/order/{work_item.public_id}/finalize",
+            data={"approved_qty_1": "100001", "note_1": ""},
+        )
+        assert resp.status_code == 200
+        assert b"100,000 or less" in resp.data
+
+        db.session.refresh(work_item)
+        assert work_item.status == WORK_ITEM_STATUS_SUBMITTED
+        assert WorkLineReview.query.filter_by(
+            stage=REVIEW_STAGE_ADMIN_FINAL,
+        ).count() == 0
+        d1 = SupplyOrderLineDetail.query.filter_by(work_line_id=line1.id).one()
+        assert d1.quantity_approved is None
+
 
 class TestSupplyFinalizeAutoApprovesPending:
     """A line still PENDING at APPROVAL_GROUP auto-approves at its requested

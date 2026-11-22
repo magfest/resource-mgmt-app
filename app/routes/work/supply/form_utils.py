@@ -22,8 +22,9 @@ PICKUP_TIME_OPTIONS = [
 ]
 
 
-# The column is a 32-bit integer on PostgreSQL; an unbounded value fails at
-# commit with a 500.
+# Supply quantity columns are 32-bit integers on PostgreSQL; an unbounded value
+# fails at commit with a 500. The cap does not bound `approved_amount_cents`,
+# also 32-bit, which is quantity times unit cost.
 MAX_APPROVED_QUANTITY = 100000
 
 

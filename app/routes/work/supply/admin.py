@@ -70,6 +70,7 @@ from .admin_lines import (
     parse_admin_quantity,
     require_editable_order,
 )
+from .form_utils import MAX_APPROVED_QUANTITY
 from .line_state import (
     build_finalize_changes, is_line_removed, is_order_closed, reviewer_quantity_label,
 )
@@ -638,6 +639,9 @@ def supply_admin_finalize(public_id: str):
 
         if qty < 0:
             errors.append(f"Line {line.line_number}: approved quantity cannot be negative.")
+            continue
+        if qty > MAX_APPROVED_QUANTITY:
+            errors.append(f"Line {line.line_number}: enter an approved quantity of 100,000 or less.")
             continue
 
         # Only an absent field falls back; a posted blank is the admin clearing the note.
