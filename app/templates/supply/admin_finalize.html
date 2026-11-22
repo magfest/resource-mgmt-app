@@ -142,12 +142,13 @@
               <td data-label="Approved qty">
                 <input type="number" name="approved_qty_{{ line.line_number }}" min="0"
                        value="{{ row.default_qty }}" style="width: 90px;"
+                       data-default="{{ row.default_qty }}"
                        {% if is_finalized %}disabled{% endif %}>
               </td>
               <td data-label="Override note">
                 <input type="text" name="note_{{ line.line_number }}"
                        placeholder="Required to override review group"
-                       style="width: 100%;"
+                       style="width: 100%;" data-default=""
                        {% if is_finalized %}disabled{% endif %}>
               </td>
             </tr>
@@ -202,6 +203,25 @@
   if (!form) return;
   form.addEventListener('submit', function(e) {
     if (!confirm('Finalize this supply order? This locks the approved quantities.')) {
+      e.preventDefault();
+    }
+  });
+
+  // A line edit reloads this page from the server, which drops unsaved
+  // finalize quantities and notes; warn rather than let Finalize use defaults.
+  function hasUnsavedFinalizeInput() {
+    var inputs = form.querySelectorAll('input[name^="approved_qty_"], input[name^="note_"]');
+    for (var i = 0; i < inputs.length; i++) {
+      if (inputs[i].value !== inputs[i].getAttribute('data-default')) return true;
+    }
+    return false;
+  }
+  document.addEventListener('submit', function(e) {
+    if (!e.target.matches('form[data-line-edit]')) return;
+    if (hasUnsavedFinalizeInput() && !confirm(
+      'You have typed finalize quantities or notes that are not saved yet. ' +
+      'Adding, changing or removing a line reloads this page and clears them. Continue?'
+    )) {
       e.preventDefault();
     }
   });

@@ -428,6 +428,28 @@ def test_finalize_screen_has_line_controls_and_strikes_removed(app, client, seed
     assert "Foam Board" in body
 
 
+def test_finalize_marks_line_edit_forms_and_rendered_defaults(app, client, seed_workflow_data):
+    """The unsaved-input warning finds edit forms by data-line-edit and compares
+    each finalize input with its data-default; the confirm itself is a browser check."""
+    env = _env(client, seed_workflow_data, quantities=(100, 5))
+    assert _reviewer_decides(client, env, 1, "approve", approved_quantity="40")["success"]
+    body = client.get(f"{env.admin_url}/finalize").get_data(as_text=True)
+    edit_forms = re.findall(r'<form method="post" data-line-edit\s+action="([^"]+)"', body)
+    assert sorted(edit_forms) == sorted([
+        f"{env.admin_url}/lines/add",
+        f"{env.admin_url}/lines/1/quantity", f"{env.admin_url}/lines/1/remove",
+        f"{env.admin_url}/lines/2/quantity", f"{env.admin_url}/lines/2/remove",
+    ])
+    for number, default in ((1, "40"), (2, "5")):
+        match = re.search(rf'<input type="number" name="approved_qty_{number}"[^>]*>', body)
+        assert match, f"approved_qty_{number} not rendered"
+        tag = match.group(0)
+        assert f'value="{default}"' in tag and f'data-default="{default}"' in tag
+        note = re.search(rf'<input type="text" name="note_{number}"[^>]*>', body).group(0)
+        assert 'data-default=""' in note
+    assert "form[data-line-edit]" in body
+
+
 def test_quick_review_and_line_review_strike_removed_line(app, client, seed_workflow_data):
     env = _env(client, seed_workflow_data, quantities=(100, 5))
     _remove(client, env, 2)

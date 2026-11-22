@@ -14,7 +14,7 @@
     {% endif %}
   </div>
 
-  <form method="post" action="{{ url_for('work.supply_admin_line_add', public_id=work_item.public_id) }}"
+  <form method="post" data-line-edit action="{{ url_for('work.supply_admin_line_add', public_id=work_item.public_id) }}"
         style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="return_to" value="{{ return_to }}">
@@ -47,7 +47,7 @@
         <span class="muted small">(asks for {{ detail.quantity_requested if detail else '-' }})</span>
       </div>
       <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-        <form method="post"
+        <form method="post" data-line-edit
               action="{{ url_for('work.supply_admin_line_quantity', public_id=work_item.public_id, line_number=line.line_number) }}"
               style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; flex: 1 1 300px;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -61,7 +61,7 @@
           </label>
           <button type="submit" class="btn">Change qty</button>
         </form>
-        <form method="post"
+        <form method="post" data-line-edit
               action="{{ url_for('work.supply_admin_line_remove', public_id=work_item.public_id, line_number=line.line_number) }}"
               style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; flex: 1 1 300px;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
