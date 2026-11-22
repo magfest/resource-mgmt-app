@@ -1,5 +1,6 @@
 """Supply admins close a department's order with a reason, and reopen finalized or closed orders."""
 import json
+import re
 
 from sqlalchemy import inspect as sa_inspect
 
@@ -435,3 +436,57 @@ def test_supply_finalized_not_closed_still_finalized(app, client, seed_workflow_
     order = _order(env)
     assert compute_line_status_summary(order).effective_status == "FINALIZED"
     assert supply_display_status(order) == "FINALIZED"
+
+
+def test_close_and_reopen_forms_confirm_on_submit_only(app, client, seed_workflow_data):
+    """base.html confirms any click inside a [data-confirm] element, so the forms must not carry it."""
+    env = _ready(client, seed_workflow_data)
+
+    def form_tag(body, action):
+        match = re.search(rf'<form[^>]*action="{re.escape(env.admin_url)}/{action}"[^>]*>', body)
+        assert match, action
+        return match.group(0)
+
+    for url in (env.order_url, f"{env.admin_url}/finalize"):
+        tag = form_tag(client.get(url).get_data(as_text=True), "close")
+        assert "data-confirm=" not in tag and "data-confirm-submit=" in tag, url
+    _close(client, env)
+    for url in (env.order_url, f"{env.admin_url}/finalize"):
+        tag = form_tag(client.get(url).get_data(as_text=True), "reopen")
+        assert "data-confirm=" not in tag and "data-confirm-submit=" in tag, url
+
+
+def test_kicked_back_line_survives_close_reopen_and_finalizes(app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data, quantities=(10, 4))
+    assert _reviewer_decides(client, env, 1, "needs-info", note="which booth?")["success"]
+    line = _line(env, 1)
+    assert _ag(line).status == "NEEDS_INFO" and line.status == "NEEDS_INFO"
+    assert line.needs_requester_action is True
+
+    _close(client, env)
+    line = _line(env, 1)
+    review = _ag(line)
+    assert review.status == "REJECTED" and review.note == f"Order closed: {REASON}"
+    assert line.status == "REJECTED" and line.needs_requester_action is False
+    assert line.supply_detail.quantity_approved == 0
+
+    _reopen(client, env)
+    line = _line(env, 1)
+    review = _ag(line)
+    assert review.status == "PENDING" and review.decided_at is None and review.note is None
+    assert line.status == "PENDING" and line.needs_requester_action is False
+    assert line.supply_detail.quantity_approved is None
+
+    assert _reviewer_decides(client, env, 1, "approve", approved_quantity="8")["success"]
+    line = _line(env, 1)
+    assert _ag(line).status == "APPROVED" and line.status == "APPROVED"
+    assert line.needs_requester_action is False
+    assert line.supply_detail.quantity_approved is None
+
+    _finalize(client, env)
+    order = _order(env)
+    assert order.status == WORK_ITEM_STATUS_FINALIZED and supply_display_status(order) == "FINALIZED"
+    line = _line(env, 1)
+    assert line.status == "APPROVED" and line.needs_requester_action is False
+    assert line.supply_detail.quantity_approved == 8
+    assert _admin_review(line).status == "APPROVED"

@@ -23,7 +23,7 @@
         For an order placed by mistake. Every line is rejected and the department is emailed this reason. Reopen undoes it.
       </div>
       <form method="post" action="{{ url_for('work.supply_admin_close', public_id=work_item.public_id) }}"
-            data-confirm="Close this order? Every line is rejected and the department is emailed the reason.">
+            data-confirm-submit="Close this order? Every line is rejected and the department is emailed the reason.">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="return_to" value="{{ return_to }}">
         <label class="small" style="display: block; margin-bottom: 8px;">Reason (the department sees this)
@@ -43,7 +43,7 @@
         {% endif %}
       </div>
       <form method="post" action="{{ url_for('work.supply_admin_reopen', public_id=work_item.public_id) }}"
-            data-confirm="Reopen this order for review?">
+            data-confirm-submit="Reopen this order for review?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="return_to" value="{{ return_to }}">
         <label class="small" style="display: block; margin-bottom: 8px;">Reason (the department sees this)
@@ -53,9 +53,11 @@
       </form>
     </section>
   {% endif %}
+  {# Not data-confirm: base.html confirms every click inside an element with
+     that attribute, so a form carrying it would ask on each click. #}
   <script nonce="{{ csp_nonce }}">
   document.addEventListener('submit', function(e) {
-    var message = e.target.getAttribute && e.target.getAttribute('data-confirm');
+    var message = e.target.getAttribute && e.target.getAttribute('data-confirm-submit');
     if (message && !confirm(message)) {
       e.preventDefault();
     }
