@@ -20,6 +20,7 @@ from app.models import (
     AUDIT_EVENT_VIEW,
     COMMENT_VISIBILITY_ADMIN,
     WORK_ITEM_STATUS_DRAFT,
+    WORK_ITEM_STATUS_SUBMITTED,
 )
 from app.routes import get_user_ctx
 from .. import work_bp
@@ -32,6 +33,7 @@ from ..helpers import (
     require_work_item_view,
 )
 from app.models.supply import QUANTITY_CONFIDENCE_OPTIONS
+from app.routes.work.helpers.checkout import is_work_type_staffer
 from .form_utils import PICKUP_TIME_OPTIONS, validate_order_for_submit
 from .order import is_line_kickback_editable
 from .spaces import order_space_choices
@@ -116,6 +118,13 @@ def supply_order_detail(event: str, dept: str, public_id: str):
     is_approver_for_item = _is_approver_for_work_item(work_item, user_ctx)
     can_add_comment = perms.is_worktype_admin or is_approver_for_item
 
+    # Any Supply group member may open Quick Review and line review on a
+    # submitted order; deciding stays limited to the routed group there.
+    is_supply_admin = perms.is_worktype_admin
+    can_quick_review = work_item.status == WORK_ITEM_STATUS_SUBMITTED and (
+        is_supply_admin or is_work_type_staffer(user_ctx, ctx.work_type)
+    )
+
     can_view_audit = user_ctx.is_super_admin or perms.is_worktype_admin
     audit_events = get_unified_audit_events(work_item) if can_view_audit else []
 
@@ -149,6 +158,8 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         space_choices=order_space_choices(work_item) if can_edit else None,
         lines=lines,
         can_edit=can_edit,
+        can_quick_review=can_quick_review,
+        is_supply_admin=is_supply_admin,
         kickback_editable_line_numbers=kickback_editable_line_numbers,
         submit_errors=submit_errors,
         friendly_status=friendly_status,

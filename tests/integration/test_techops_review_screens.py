@@ -48,7 +48,8 @@ def test_quick_review_buttons_follow_the_decide_rule(client, techops_review):
     login(client, "test:techopsadmin")
     admin_html = client.get(QUICK_URL).get_data(as_text=True)
 
-    # The NET reviewer sees only the NET line; the admin sees and decides both.
+    # TechOps staff read every line, but the NET reviewer decides only the NET
+    # line; the admin sees and decides both.
     assert net_html.count('data-action="approve"') == 1
-    assert 'data-line-num="1"' not in net_html
+    assert 'data-line-num="1"' in net_html
     assert admin_html.count('data-action="approve"') == 2

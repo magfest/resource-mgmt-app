@@ -73,6 +73,11 @@
         Add more items
       </button>
     {% endif %}
+    {% if can_quick_review %}
+      <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='supply') }}">
+        Quick Review
+      </a>
+    {% endif %}
   </div>
 
   {# Comments and history sit behind tabs so a draft's checkout is not
@@ -186,7 +191,7 @@
             <th>Item</th>
             <th style="width: 90px;">Qty</th>
             <th>Notes</th>
-            {% if show_actions_column %}
+            {% if show_actions_column or can_quick_review %}
               <th style="width: 90px;"></th>
             {% endif %}
           </tr>
@@ -199,6 +204,7 @@
             {# Matches the is_line_kickback_editable gate on
                work.supply_line_update. #}
             {% set row_editable = is_kickback %}
+            {% macro review_link() %}{% if can_quick_review %}<a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}">Review</a>{% endif %}{% endmacro %}
             <tr id="line-{{ line.line_number }}">
               <td>{{ line.line_number }}</td>
               <td>
@@ -245,7 +251,7 @@
                   </form>
                 </td>
                 {# A kicked-back line is fixed, never removed. #}
-                <td></td>
+                <td>{{ review_link() }}</td>
               {% else %}
                 <td>
                   {{ detail.quantity_requested if detail else '-' }}
@@ -260,8 +266,8 @@
                     <span class="muted">-</span>
                   {% endif %}
                 </td>
-                {% if show_actions_column %}
-                  <td></td>
+                {% if show_actions_column or can_quick_review %}
+                  <td>{{ review_link() }}</td>
                 {% endif %}
               {% endif %}
             </tr>

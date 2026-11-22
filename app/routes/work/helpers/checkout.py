@@ -32,9 +32,10 @@ from .review_state import is_group_final
 
 # Permission boundary: on these work types, a member of any of the type's
 # approval groups may read every request and line of it. TechOps teams plan
-# around each other's work. Budget approvers must not read other groups'
-# requests, so BUDGET stays out. Deciding is still limited to the routed group.
-STAFF_READ_WORK_TYPES = frozenset({"TECHOPS"})
+# around each other's work, and Supply groups share one warehouse. Budget
+# approvers must not read other groups' requests, so BUDGET stays out.
+# Deciding is still limited to the routed group.
+STAFF_READ_WORK_TYPES = frozenset({"TECHOPS", "SUPPLY"})
 
 
 def is_work_type_staffer(user_ctx: UserContext, work_type) -> bool:
