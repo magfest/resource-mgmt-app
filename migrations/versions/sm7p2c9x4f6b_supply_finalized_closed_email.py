@@ -109,9 +109,11 @@ def _insert(conn, row, body):
 
 
 def _set_body(conn, key, body):
+    # The version bump flags per-event overrides of the old body as stale, as
+    # the admin template editor does on every save.
     conn.execute(
-        sa.text("UPDATE email_templates SET body_text = :b, updated_at = :now "
-                "WHERE template_key = :k"),
+        sa.text("UPDATE email_templates SET body_text = :b, updated_at = :now, "
+                "version = version + 1 WHERE template_key = :k"),
         {"b": body, "k": key, "now": datetime.utcnow()},
     )
 

@@ -161,6 +161,8 @@
                   {% set status = wt_status.effective_status %}
                   {% if status == "FINALIZED" %}
                     <a href="{{ wt_url }}" class="pill pill-approved pill-link">Finalized</a>
+                  {% elif status == "CLOSED" %}
+                    <a href="{{ wt_url }}" class="pill pill-muted pill-link">Closed</a>
                   {% elif status == "DRAFT" %}
                     <a href="{{ wt_url }}" class="pill pill-draft pill-link">Draft</a>
                   {% elif status == "AWAITING_DISPATCH" %}

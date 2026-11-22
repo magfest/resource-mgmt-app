@@ -348,6 +348,13 @@ def can_reopen_line(line: WorkLine, user_ctx: UserContext) -> bool:
         return is_reviewer_for_line(line, user_ctx)
     if not _supply_undo_open(line):
         return False
+    # A reopened finalized order keeps its admin decisions, and the transition
+    # check refuses group actions under one; hide Undo rather than fail it.
+    admin_final = WorkLineReview.query.filter_by(
+        work_line_id=line.id, stage=REVIEW_STAGE_ADMIN_FINAL,
+    ).first()
+    if admin_final and admin_final.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED):
+        return False
     from app.routes.work.helpers.context import is_worktype_admin
     return is_reviewer_for_line(line, user_ctx) or is_worktype_admin(
         user_ctx, line.work_item.portfolio.work_type_id,

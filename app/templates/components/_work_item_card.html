@@ -8,6 +8,7 @@
 {% set status_label = friendly_status(status) if friendly_status else status %}
 {% set status_pill_class =
   "pill-approved" if status == "FINALIZED"
+  else "pill-muted" if status == "CLOSED"
   else "pill-submitted" if status == "SUBMITTED"
   else "pill-submitted" if status == "UNDER_REVIEW"
   else "pill-needs" if status == "NEEDS_INFO"
@@ -35,10 +36,10 @@
         <span class="pill {{ status_pill_class }}" style="margin-left: 8px; font-weight: normal;">{{ status_label }}</span>
         {% if extension_badge is defined %}{{ extension_badge(item, users_by_id=users_by_id if users_by_id is defined else None) }}{% endif %}
         {# Show approval stage breakdown if there are approved lines. A held
-           budget (PENDING_BOARD_APPROVAL) is locked the same as FINALIZED;
-           only the department notification is pending, not the review. #}
+           budget (PENDING_BOARD_APPROVAL) and a closed order are locked the
+           same as FINALIZED; neither is still under review. #}
         {% if line_summary and line_summary.approved_count > 0
-              and status not in ("FINALIZED", "PENDING_BOARD_APPROVAL") %}
+              and status not in ("FINALIZED", "PENDING_BOARD_APPROVAL", "CLOSED") %}
           {% if line_summary.final_approved_count > 0 and line_summary.ag_approved_count == 0 %}
             <span class="pill pill-approved" style="margin-left: 4px; font-weight: normal;">{{ line_summary.final_approved_count }} APPROVED</span>
           {% elif line_summary.ag_approved_count > 0 and line_summary.final_approved_count == 0 %}

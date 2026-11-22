@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -58,7 +58,7 @@ from app.routes.work.helpers import (
     friendly_status,
     is_worktype_admin,
 )
-from app.services.notifications import notify_supply_finalized
+from app.services.notifications import enqueue_savepoint, notify_supply_finalized
 from .. import work_bp
 from .admin_lines import (
     SupplyAdminError,
@@ -73,6 +73,7 @@ from .admin_lines import (
 from .line_state import (
     build_finalize_changes, is_line_removed, is_order_closed, reviewer_quantity_label,
 )
+from .order_lifecycle import close_order, reopen_order
 
 _PER_PAGE = 25
 
@@ -197,6 +198,8 @@ def supply_all_orders():
             "line_count": len(wi.lines),
             "item_mix": item_mix,
             "pickup_time": order_detail.pickup_time if order_detail else None,
+            # Only a closed order differs from the stored status.
+            "display_status": "CLOSED" if is_order_closed(wi) else wi.status,
         })
 
     event_cycles = get_active_event_cycles()
@@ -529,6 +532,9 @@ def _render_finalize(work_item: WorkItem, user_ctx, *, is_finalized: bool):
         friendly_status=friendly_status,
         format_currency=format_currency,
         is_finalized=is_finalized,
+        is_closed=is_order_closed(work_item),
+        # The finalize screen is reached only by Supply admins.
+        is_supply_admin=True,
         can_edit_lines=can_edit_lines,
         admin_items=admin_item_choices() if can_edit_lines else [],
         edit_lines=[row["line"] for row in line_rows if not row["removed"]],
@@ -557,7 +563,7 @@ def supply_admin_finalize(public_id: str):
     # or an admin removed or added a line, before the lock was taken.
     work_item = _lock_supply_order(public_id, supply_wt)
 
-    if work_item.status != WORK_ITEM_STATUS_SUBMITTED:
+    if work_item.status != WORK_ITEM_STATUS_SUBMITTED or is_order_closed(work_item):
         flash("Only submitted supply orders can be finalized.", "error")
         return redirect(url_for("work.supply_admin_queue"))
 
@@ -666,8 +672,17 @@ def supply_admin_finalize(public_id: str):
         created_by_user_id=user_ctx.user_id,
         snapshot={"line_count": len(lines)},
     ))
-    # Queued in this transaction; the commit below sends nothing itself.
-    notify_supply_finalized(work_item, build_finalize_changes(work_item), now)
+    # Queued in this transaction; the commit below sends nothing itself. The
+    # lookups ahead of the per-recipient savepoint can fail too, and an email
+    # failure must not undo the finalize.
+    try:
+        with enqueue_savepoint():
+            notify_supply_finalized(work_item, build_finalize_changes(work_item), now)
+    except Exception:
+        current_app.logger.exception(
+            f"Could not queue the finalized email for {work_item.public_id}; "
+            f"the finalize stands and the department must be told by hand."
+        )
     db.session.commit()
 
     flash(f"Supply order {work_item.public_id} finalized.", "success")
@@ -774,3 +789,34 @@ def supply_admin_line_remove(public_id: str, line_number: int):
     return _run_line_edit(
         public_id, edit, lambda line: f"Line {line.line_number} removed.",
     )
+
+
+# Close and reopen. Same lock, re-check and single commit as the line edits.
+
+def _run_order_action(public_id: str, action, success_message: str):
+    """Lock the order, apply close or reopen, and commit it or roll it back."""
+    user_ctx = get_user_ctx()
+    supply_wt = _require_supply_admin(user_ctx)
+    work_item = _lock_supply_order(public_id, supply_wt)
+    back = _line_edit_redirect(work_item, request.form.get("return_to") == "finalize")
+    try:
+        action(work_item, request.form.get("reason"), user_ctx)
+    except SupplyAdminError as exc:
+        db.session.rollback()
+        flash(str(exc), "error")
+        return back
+    db.session.commit()
+    flash(success_message.format(public_id=work_item.public_id), "success")
+    return back
+
+
+@work_bp.post("/admin/supply/order/<public_id>/close")
+def supply_admin_close(public_id: str):
+    """Close a submitted order the department placed by mistake; the department is emailed the reason."""
+    return _run_order_action(public_id, close_order, "Supply order {public_id} closed.")
+
+
+@work_bp.post("/admin/supply/order/<public_id>/reopen")
+def supply_admin_reopen(public_id: str):
+    """Reopen a finalized or closed order for review; the reason is posted as a public comment."""
+    return _run_order_action(public_id, reopen_order, "Supply order {public_id} reopened.")

@@ -83,6 +83,8 @@ STATUS_LABELS = {
     # Display-only. Never written to work_item.status; derived from
     # board_released_at being null on a FINALIZED item.
     "PENDING_BOARD_APPROVAL": "Pending FY Budget Approval",
+    # Display-only. A Supply order that is FINALIZED with closed_at set.
+    "CLOSED": "Closed",
     "PAUSED": "Paused",
     "PENDING": "Pending",
 }

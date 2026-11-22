@@ -10,7 +10,7 @@
 
 {% block content %}
 
-  {% set status = work_item.status | upper %}
+  {% set status = display_status | upper %}
 
   {# Breadcrumb #}
   <nav class="muted small" style="margin-bottom: 12px;">
@@ -54,6 +54,10 @@
       <div style="font-size: 24px; font-weight:700;">{{ lines|length }}</div>
     </div>
   </div>
+
+  {% with show_banner = true, show_forms = false, return_to = 'order' %}
+    {% include "supply/_order_close_reopen.html" %}
+  {% endwith %}
 
   {# A lock taken before Supply dropped review sessions blocks nothing and nobody can release it; hide its banner. #}
   {% if shows_checkout_banner is not defined or shows_checkout_banner %}
@@ -307,6 +311,10 @@
       {% include "supply/_admin_line_edits.html" %}
     {% endwith %}
   {% endif %}
+
+  {% with show_banner = false, show_forms = true, return_to = 'order' %}
+    {% include "supply/_order_close_reopen.html" %}
+  {% endwith %}
 
   {% endif %}
 

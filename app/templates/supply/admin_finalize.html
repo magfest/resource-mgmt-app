@@ -45,7 +45,11 @@
     {% endif %}
   </section>
 
-  {% if is_finalized %}
+  {% if is_closed %}
+    {% with show_banner = true, show_forms = false, return_to = 'finalize' %}
+      {% include "supply/_order_close_reopen.html" %}
+    {% endwith %}
+  {% elif is_finalized %}
     <div class="callout callout-success mb-16">
       <strong>This order is finalized.</strong>
       <div class="muted" style="margin-top:4px;">
@@ -193,6 +197,10 @@
       {% include "supply/_admin_line_edits.html" %}
     {% endwith %}
   {% endif %}
+
+  {% with show_banner = false, show_forms = true, return_to = 'finalize' %}
+    {% include "supply/_order_close_reopen.html" %}
+  {% endwith %}
 
 {% endblock %}
 

@@ -51,6 +51,8 @@
           {% set status = card.status_summary.effective_status %}
           {% if status == "FINALIZED" %}
             <span class="pill pill-approved">Finalized</span>
+          {% elif status == "CLOSED" %}
+            <span class="pill pill-muted">Closed</span>
           {% elif status == "DRAFT" %}
             <span class="pill pill-draft">Draft</span>
           {% elif status == "NEEDS_INFO" or status == "NEEDS_ADJUSTMENT" or status == "NEEDS_RESPONSE" %}

@@ -183,6 +183,9 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         can_edit=can_edit,
         can_quick_review=can_quick_review,
         is_supply_admin=is_supply_admin,
+        is_closed=is_order_closed(work_item),
+        # Only a closed order differs from the stored status; others show as before.
+        display_status="CLOSED" if is_order_closed(work_item) else work_item.status,
         can_admin_edit_lines=can_admin_edit_lines,
         admin_items=admin_item_choices() if can_admin_edit_lines else [],
         edit_lines=[line for line in lines if not is_line_removed(line.supply_detail)],

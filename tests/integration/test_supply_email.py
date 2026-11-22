@@ -122,10 +122,9 @@ def test_finalize_succeeds_without_department_members(app, client, seed_workflow
 def test_refinalize_after_reopen_queues_second_email(app, client, seed_workflow_data):
     env = _ready(client, seed_workflow_data)
     _finalize(client, env)
-    # Task 9 builds the real reopen; this stands in for it.
-    item = WorkItem.query.get(env.order.id)
-    item.status = WORK_ITEM_STATUS_SUBMITTED
-    db.session.commit()
+    client.post(f"{env.admin_url}/reopen", data={"reason": "One more item"})
+    db.session.expire_all()
+    assert WorkItem.query.get(env.order.id).status == WORK_ITEM_STATUS_SUBMITTED
     _finalize(client, env)
     assert len(_rows("supply_finalized")) == 2
 
@@ -197,9 +196,13 @@ def test_migration_updates_untouched_finalized_body(app):
     seed_work_type_templates(db.session.connection())
     db.session.commit()
     assert _template("supply_finalized").body_text == FINALIZED_BODY_OLD
+    version = _template("supply_finalized").version
     update_finalized_template(db.session.connection())
     db.session.commit()
+    db.session.expire_all()
     assert _template("supply_finalized").body_text == FINALIZED_BODY_NEW
+    # A new version marks per-event overrides of the old body as stale.
+    assert _template("supply_finalized").version == version + 1
 
 
 def test_migration_inserts_finalized_when_absent(app):
@@ -242,9 +245,12 @@ def test_downgrade_restores_only_untouched_rows(app):
     update_finalized_template(db.session.connection())
     seed_closed_template(db.session.connection())
     db.session.commit()
+    version = _template("supply_finalized").version
     downgrade_templates(db.session.connection())
     db.session.commit()
+    db.session.expire_all()
     assert _template("supply_finalized").body_text == FINALIZED_BODY_OLD
+    assert _template("supply_finalized").version == version + 1
     assert EmailTemplate.query.filter_by(template_key="supply_closed").count() == 0
 
     update_finalized_template(db.session.connection())
