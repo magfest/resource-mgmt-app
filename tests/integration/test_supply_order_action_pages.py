@@ -60,3 +60,75 @@ def test_stale_add_after_finalize_rerenders_and_writes_nothing(app, client, seed
     assert resp.status_code == 200 and "Only submitted orders can be edited." in body
     db.session.expire_all()
     assert WorkLine.query.filter_by(work_item_id=env.order.id).count() == 1
+
+
+def test_close_page_renders_consequence_and_confirm(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    body = client.get(f"{env.admin_url}/close?return_to=finalize").get_data(as_text=True)
+    assert "Every line is rejected and the department is emailed this reason." in body
+    assert "data-confirm-submit" in body and f'action="{env.admin_url}/close"' in body
+    assert 'name="return_to" value="finalize"' in body
+    assert f'href="{env.admin_url}/finalize"' in body
+
+
+def test_reopen_page_only_for_finalized_orders(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    resp = client.get(f"{env.admin_url}/reopen")
+    assert resp.status_code == 302 and resp.headers["Location"].endswith(env.order_url)
+    assert client.post(f"{env.admin_url}/finalize", data={}).status_code == 302
+    resp = client.get(f"{env.admin_url}/reopen")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Line decisions stay as they are." in body
+    assert f'action="{env.admin_url}/reopen"' in body
+
+
+def test_reopen_page_for_a_closed_order_uses_the_closed_copy(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    client.post(f"{env.admin_url}/close", data={"reason": "Placed by mistake"})
+    body = client.get(f"{env.admin_url}/reopen").get_data(as_text=True)
+    assert "Every line goes back to its review group." in body
+
+
+def test_close_page_on_a_finalized_order_returns_with_a_message(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    assert client.post(f"{env.admin_url}/finalize", data={}).status_code == 302
+    resp = client.get(f"{env.admin_url}/close")
+    assert resp.status_code == 302 and resp.headers["Location"].endswith(env.order_url)
+
+
+def test_close_and_reopen_pages_refuse_non_admins(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    login(client, "test:reviewer")
+    assert client.get(f"{env.admin_url}/close").status_code == 403
+    assert client.get(f"{env.admin_url}/reopen").status_code == 403
+
+
+def test_close_page_ignores_a_url_in_return_to(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    body = client.get(
+        f"{env.admin_url}/close?return_to=https://evil.example").get_data(as_text=True)
+    assert 'name="return_to" value="order"' in body and "evil.example" not in body
+
+
+def test_close_refusal_keeps_the_typed_reason(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    long_reason = "x" * 1001
+    resp = client.post(f"{env.admin_url}/close", data={"reason": long_reason})
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200 and "1000 characters or fewer" in body
+    assert long_reason in body
+    db.session.expire_all()
+    assert env.order.status == "SUBMITTED"
+
+
+def test_reopen_refusal_keeps_the_typed_reason(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    assert client.post(f"{env.admin_url}/finalize", data={}).status_code == 302
+    long_reason = "y" * 1001
+    resp = client.post(f"{env.admin_url}/reopen", data={"reason": long_reason})
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200 and "1000 characters or fewer" in body
+    assert long_reason in body
+    db.session.expire_all()
+    assert env.order.status == "FINALIZED"

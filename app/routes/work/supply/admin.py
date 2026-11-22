@@ -879,30 +879,79 @@ def supply_admin_line_remove(public_id: str, line_number: int):
 
 # Close and reopen. Same lock, re-check and single commit as the line edits.
 
-def _run_order_action(public_id: str, action, success_message: str):
-    """Lock the order, apply close or reopen, and commit it or roll it back."""
+def _render_reason_form(work_item: WorkItem, action: str, return_to: str, *,
+                        error: str | None = None, reason: str = ""):
+    """Render the Close order or Reopen order page; `action` is "close" or "reopen"."""
+    return render_template(
+        "supply/admin_order_reason.html",
+        work_item=work_item,
+        action=action,
+        return_to=return_to,
+        cancel_url=_origin_url(work_item, return_to == "finalize"),
+        is_closed=is_order_closed(work_item),
+        error=error,
+        reason=reason,
+    )
+
+
+def _reason_form_page(public_id: str, action: str, allowed):
+    """Show a reason page, or flash and return to the origin when the order cannot take it."""
+    supply_wt = _require_supply_admin(get_user_ctx())
+    work_item = _load_supply_order(public_id, supply_wt)
+    return_to = _return_to_value(request.args.get("return_to"))
+    if not allowed(work_item):
+        message = ("Only a submitted order that is not closed can be closed."
+                   if action == "close" else "Only a finalized or closed order can be reopened.")
+        return _flash_and_return(work_item, return_to == "finalize", message)
+    return _render_reason_form(work_item, action, return_to)
+
+
+def _run_order_action(public_id: str, action_name: str, action, success_message: str):
+    """Lock the order, apply close or reopen, and commit it or roll it back.
+
+    A refusal rolls back and re-renders the page with the typed reason.
+    """
     user_ctx = get_user_ctx()
     supply_wt = _require_supply_admin(user_ctx)
     work_item = _lock_supply_order(public_id, supply_wt)
-    back = _line_edit_redirect(work_item, request.form.get("return_to") == "finalize")
+    return_to = _return_to_value(request.form.get("return_to"))
     try:
         action(work_item, request.form.get("reason"), user_ctx)
     except SupplyAdminError as exc:
         db.session.rollback()
-        flash(str(exc), "error")
-        return back
+        return _render_reason_form(
+            work_item, action_name, return_to,
+            error=str(exc), reason=request.form.get("reason", ""),
+        )
     db.session.commit()
     flash(success_message.format(public_id=work_item.public_id), "success")
-    return back
+    return _line_edit_redirect(work_item, return_to == "finalize")
+
+
+@work_bp.get("/admin/supply/order/<public_id>/close")
+def supply_admin_close_form(public_id: str):
+    """Show the Close order page for a submitted order that is not closed."""
+    return _reason_form_page(
+        public_id, "close",
+        lambda wi: wi.status == WORK_ITEM_STATUS_SUBMITTED and not is_order_closed(wi),
+    )
+
+
+@work_bp.get("/admin/supply/order/<public_id>/reopen")
+def supply_admin_reopen_form(public_id: str):
+    """Show the Reopen order page; a closed order is FINALIZED with a closed marker."""
+    return _reason_form_page(
+        public_id, "reopen", lambda wi: wi.status == WORK_ITEM_STATUS_FINALIZED,
+    )
 
 
 @work_bp.post("/admin/supply/order/<public_id>/close")
 def supply_admin_close(public_id: str):
     """Close a submitted order the department placed by mistake; the department is emailed the reason."""
-    return _run_order_action(public_id, close_order, "Supply order {public_id} closed.")
+    return _run_order_action(public_id, "close", close_order, "Supply order {public_id} closed.")
 
 
 @work_bp.post("/admin/supply/order/<public_id>/reopen")
 def supply_admin_reopen(public_id: str):
     """Reopen a finalized or closed order for review; the reason is posted as a public comment."""
-    return _run_order_action(public_id, reopen_order, "Supply order {public_id} reopened.")
+    return _run_order_action(public_id, "reopen", reopen_order, "Supply order {public_id} reopened.")
