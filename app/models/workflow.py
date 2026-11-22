@@ -113,6 +113,12 @@ class WorkTypeConfig(db.Model):
     # derivation in computations.py from marking other work types as held.
     uses_board_release = db.Column(db.Boolean, nullable=False, default=False)
 
+    # True for work types whose reviewers hold a checkout lock while deciding
+    # (BUDGET). False for SUPPLY and TECHOPS, which review without a session.
+    uses_review_sessions = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.true(),
+    )
+
     # Display labels
     item_singular = db.Column(db.String(32), nullable=False, default="Request")
     item_plural = db.Column(db.String(32), nullable=False, default="Requests")
