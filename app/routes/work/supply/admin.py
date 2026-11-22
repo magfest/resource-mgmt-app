@@ -776,6 +776,29 @@ def _flash_and_return(work_item: WorkItem, at_finalize: bool, message: str):
     return _line_edit_redirect(work_item, at_finalize)
 
 
+def _line_page_redirect(work_item: WorkItem, line_number: int, at_finalize: bool):
+    """Redirect to the line page, keeping the finalize origin when there is one."""
+    extra = {"return_to": "finalize"} if at_finalize else {}
+    portfolio = work_item.portfolio
+    return redirect(url_for(
+        "approvals.line_review",
+        event=portfolio.event_cycle.code,
+        dept=portfolio.department.code,
+        work_type_slug="supply",
+        public_id=work_item.public_id,
+        line_num=line_number,
+        **extra,
+    ))
+
+
+def _line_page_error(line_number: int):
+    """Build an `on_error` that flashes a refusal and returns to the line page."""
+    def on_error(work_item: WorkItem, at_finalize: bool, message: str):
+        flash(message, "error")
+        return _line_page_redirect(work_item, line_number, at_finalize)
+    return on_error
+
+
 def _run_line_edit(public_id: str, edit, success_message, on_error):
     """Lock the order, apply one edit, and commit it or roll it back.
 
@@ -859,7 +882,7 @@ def supply_admin_line_quantity(public_id: str, line_number: int):
     return _run_line_edit(
         public_id, edit,
         lambda line: f"Line {line.line_number} now asks for {line.supply_detail.quantity_requested}.",
-        _flash_and_return,
+        _line_page_error(line_number),
     )
 
 
@@ -873,7 +896,7 @@ def supply_admin_line_remove(public_id: str, line_number: int):
 
     return _run_line_edit(
         public_id, edit, lambda line: f"Line {line.line_number} removed.",
-        _flash_and_return,
+        _line_page_error(line_number),
     )
 
 

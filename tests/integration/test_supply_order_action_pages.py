@@ -5,7 +5,7 @@ from app import db
 from app.models import WorkLine
 from tests.integration.supply_helpers import login
 from tests.integration.test_supply_admin_lines import (
-    _add, _env, _flashes, _member,
+    _add, _change, _env, _flashes, _member, _remove,
 )
 
 
@@ -132,3 +132,67 @@ def test_reopen_refusal_keeps_the_typed_reason(app, client, seed_workflow_data):
     assert long_reason in body
     db.session.expire_all()
     assert env.order.status == "FINALIZED"
+
+
+def test_admin_sees_change_card_with_origin(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    body = client.get(f"{env.line_url}/1/review?return_to=finalize").get_data(as_text=True)
+    assert f'action="{env.admin_url}/lines/1/quantity"' in body
+    assert f'action="{env.admin_url}/lines/1/remove"' in body
+    assert body.count('name="return_to" value="finalize"') == 2
+    assert "Changes here skip the review group." in body
+
+
+def test_change_card_defaults_to_the_order_origin(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    body = client.get(f"{env.line_url}/1/review?return_to=https://evil.example").get_data(as_text=True)
+    assert body.count('name="return_to" value="order"') == 2
+    assert "evil.example" not in body
+    assert "Changes here go back to the review group." in body
+
+
+def test_no_change_card_for_reviewer_removed_line_closed_or_finalized_order(
+        app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data, quantities=(100, 10))
+    url = f"{env.line_url}/1/review"
+    login(client, "test:reviewer")
+    assert "/lines/1/quantity" not in client.get(url).get_data(as_text=True)
+    login(client, "test:admin")
+    assert "/lines/1/quantity" in client.get(url).get_data(as_text=True)
+
+    assert _remove(client, env, 1).status_code == 302
+    assert "/lines/1/quantity" not in client.get(url).get_data(as_text=True)
+    assert "/lines/2/quantity" in client.get(f"{env.line_url}/2/review").get_data(as_text=True)
+
+    assert client.post(f"{env.admin_url}/close", data={"reason": "Placed by mistake"}).status_code == 302
+    assert "/lines/2/quantity" not in client.get(f"{env.line_url}/2/review").get_data(as_text=True)
+
+
+def test_no_change_card_on_a_finalized_order(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    assert client.post(f"{env.admin_url}/finalize", data={}).status_code == 302
+    body = client.get(f"{env.line_url}/1/review").get_data(as_text=True)
+    assert "/lines/1/quantity" not in body
+
+
+def test_line_page_refusal_returns_to_line_page_keeping_origin(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    resp = client.post(f"{env.admin_url}/lines/1/quantity",
+                       data={"quantity": "5", "reason": "", "return_to": "finalize"})
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith(f"{env.line_url}/1/review?return_to=finalize")
+    assert "Give a reason; the department sees it." in _flashes(client)
+
+
+def test_line_page_refusal_from_the_order_origin_has_no_query(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    resp = client.post(f"{env.admin_url}/lines/1/remove",
+                       data={"reason": "", "return_to": "order"})
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith(f"{env.line_url}/1/review")
+
+
+def test_line_page_change_success_returns_to_origin(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    resp = _change(client, env, 1, 50, return_to="finalize")
+    assert resp.headers["Location"].endswith(f"{env.admin_url}/finalize")

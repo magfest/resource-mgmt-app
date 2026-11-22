@@ -127,6 +127,17 @@ def require_editable_order(work_item) -> None:
         raise SupplyAdminError("This order is closed. Reopen it before editing lines.")
 
 
+def can_admin_edit_line(work_item, line: WorkLine) -> bool:
+    """Return True when an admin may change this line: open submitted order, live line."""
+    detail = line.supply_detail
+    return (
+        work_item.status == WORK_ITEM_STATUS_SUBMITTED
+        and not is_order_closed(work_item)
+        and detail is not None
+        and not is_line_removed(detail)
+    )
+
+
 def _require_live_line(line: WorkLine) -> SupplyOrderLineDetail:
     detail = line.supply_detail
     if detail is None:
