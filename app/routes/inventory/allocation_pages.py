@@ -13,14 +13,16 @@ from app.inventory.demand import (
     allocation_events, asset_warning, demand_lines, find_selection, line_label, pick_event,
     selection_assets, selections, shortfall,
 )
-from app.inventory.unit_fields import label_line
+from app.inventory.unit_fields import details_line
 from app import db
 from app.inventory.ledger import InventoryError
 from app.models import InvAllocation, InvUnit, WorkLine
 from app.routes import get_user_ctx
 
 from . import inventory_bp
-from .helpers import render_inventory_page, require_allocation_reader, require_allocator
+from .helpers import (
+    is_inventory_operator, render_inventory_page, require_allocation_reader, require_allocator,
+)
 
 
 def _int(value):
@@ -73,7 +75,16 @@ def _held_option(row: InvAllocation, event) -> str:
     return f"{row.event_cycle.code} · {text}"
 
 
-def _asset_rows(assets, held, lines, event, choices, picked=None, was=None):
+def _asset_detail(unit: InvUnit, names_item: bool) -> str:
+    """Return the asset's own fields, led by its item name when the list mixes items."""
+    details = details_line(unit)
+    # With no fields set, the item name keeps a row from showing only a number.
+    if not details:
+        return unit.item.item_name
+    return f"{unit.item.item_name} · {details}" if names_item else details
+
+
+def _asset_rows(assets, held, lines, event, choices, picked=None, was=None, names_item=False):
     """Build each asset row: reader text, and the dropdown's options, choice and rendered value.
 
     After a refused save, `picked` and `was` hold the posted values so no pick is lost.
@@ -108,8 +119,8 @@ def _asset_rows(assets, held, lines, event, choices, picked=None, was=None):
             elif line_id == current:
                 extra.append((line_id, _held_option(row, event)))
         removed = current == REMOVED_LINE
-        rows.append({"unit": unit, "number": unit_code(unit), "details": label_line(unit),
-                     "text": text, "warning": warning, "removed": removed,
+        rows.append({"unit": unit, "number": unit_code(unit),
+                     "details": _asset_detail(unit, names_item), "text": text, "warning": warning, "removed": removed,
                      "choices": [] if warning else choices, "extra": extra,
                      "selected": selected, "was": rendered})
     return rows
@@ -124,6 +135,8 @@ def _render_allocation(error=None, picked=None, was=None):
     ctx = dict(unit_code=unit_code, short_count=short_count, events=events, event=event,
                options=options, selection=selection,
                can_allocate=can_allocate(get_user_ctx()),
+               # Allocation readers include Supply and TechOps admins, who cannot open asset pages.
+               links_assets=is_inventory_operator(get_user_ctx()),
                unallocated_only=request.values.get("show") == "unallocated",
                error=error, picked=picked, was=was)
     if event is None or selection is None:
@@ -151,7 +164,8 @@ def _render_allocation(error=None, picked=None, was=None):
         filters["show"] = "unallocated"
     shown = filter_lines(lines, dept_id, lines_show)
     # The Lines tab needs no asset rows, so they are built only when the Assets tab shows.
-    rows = (_asset_rows(assets, held, lines, event, asset_choices(lines, dept_id), picked, was)
+    rows = (_asset_rows(assets, held, lines, event, asset_choices(lines, dept_id), picked, was,
+                        names_item=len(selection.item_ids) > 1)
             if tab == "assets" else [])
     return render_inventory_page(
         "inventory/allocation.html", totals=shortfall(selection, lines), rows=rows,

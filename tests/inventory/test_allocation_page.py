@@ -124,12 +124,24 @@ def test_person_text_is_escaped(client, alloc):
 
 
 def test_asset_rows_run_in_a_fixed_number_of_selects(client, alloc):
+    from app.inventory.unit_fields import set_unit_value
+    from app.models.constants import INV_FIELD_CHOICE, INV_FIELD_TEXT
+    from tests.inventory.helpers import seed_gear_kind
     login(client, "test:admin")
+    # Field values exercise each row's details line, which reads values, fields and choices.
+    kind = seed_gear_kind("TV", "TV", [("BRAND", "Brand", INV_FIELD_TEXT, None),
+                                       ("RESOLUTION", "Resolution", INV_FIELD_CHOICE, ["4k"])])
+    alloc.tv.gear_kind_id = kind.id
+    db.session.flush()
+    brand, resolution = kind.fields
 
     def selects_for(n):
         for i in range(n):
             line = supply_line(alloc, alloc.alpha, 2, event=alloc.other_event)
-            make_allocation(make_asset(alloc.tv, f"U-{n}{i:03d}"), line)
+            unit = make_asset(alloc.tv, f"U-{n}{i:03d}")
+            set_unit_value(unit, brand, "Samsung")
+            set_unit_value(unit, resolution, "4k")
+            make_allocation(unit, line)
         db.session.commit()
         seen = [0]
 
@@ -493,3 +505,88 @@ def test_dropdown_escapes_notes(client, alloc):
     login(client, "test:admin")
     page = _assets_page(client, alloc)
     assert "&lt;b&gt;4 TVs&lt;/b&gt;" in _select(page, unit) and "<b>4 TVs</b>" not in page
+
+
+def _label(page, unit):
+    """The text of the unit's second line, under its number and name."""
+    found = re.search(
+        rf'<li>\s*<div>(?:(?!</li>).)*?<div class="muted alloc-label">([^<]*)</div>'
+        rf'(?:(?!</li>).)*?name="to_{unit.id}"', page, re.S)
+    assert found, page
+    return html.unescape(found.group(1))
+
+
+def _tv_with_fields(alloc):
+    from app.inventory.unit_fields import set_unit_value
+    from app.models.constants import INV_FIELD_CHOICE, INV_FIELD_NUMBER, INV_FIELD_TEXT
+    from tests.inventory.helpers import seed_gear_kind
+    kind = seed_gear_kind("TV", "TV", [
+        ("BRAND", "Brand", INV_FIELD_TEXT, None),
+        ("SIZE", "Size", INV_FIELD_NUMBER, "in"),
+        ("RESOLUTION", "Resolution", INV_FIELD_CHOICE, ["1080p", "4k"])])
+    alloc.tv.gear_kind_id = kind.id
+    db.session.flush()
+    unit = make_asset(alloc.tv, "U-0001", name="MAG-TV-131")
+    brand, size, resolution = kind.fields
+    set_unit_value(unit, brand, "TCL S571 Series")
+    set_unit_value(unit, size, "58")
+    set_unit_value(unit, resolution, "4k")
+    return unit
+
+
+def test_asset_row_shows_its_details_not_the_item_name(client, alloc):
+    supply_line(alloc, alloc.alpha, 1)
+    unit = _tv_with_fields(alloc)
+    db.session.commit()
+    login(client, "test:admin")
+    page = _assets_page(client, alloc)
+    assert _label(page, unit) == "TCL S571 Series, 58 in, 4k"
+
+
+def test_a_list_of_several_items_names_the_item_before_its_details(client, alloc):
+    from app.inventory.unit_fields import set_unit_value
+    from app.models import SupplyItem
+    from app.models.constants import INV_FIELD_TEXT
+    from tests.inventory.helpers import seed_gear_kind
+    supply_line(alloc, alloc.alpha, 1)
+    kind = seed_gear_kind("LABEL_PRINTER", "Label printer", [("MODEL", "Model", INV_FIELD_TEXT, None)])
+    other = SupplyItem(category_id=alloc.printer.category_id, item_name="Label Printer",
+                       unit="each", is_serialized=True, is_expendable=False,
+                       needs_pre_allocation=True, gear_kind_id=kind.id,
+                       techops_service_type_id=alloc.printer_service.id)
+    db.session.add(other)
+    db.session.flush()
+    named = make_asset(other, "U-0002", name="MAG-LP-001")
+    set_unit_value(named, kind.fields[0], "Zebra ZD421")
+    bare = make_asset(alloc.printer, "U-0003")
+    db.session.commit()
+    login(client, "test:admin")
+    page = _page(client, alloc, event=alloc.event.id, service=alloc.printer_service.id)
+    assert _label(page, named) == "Label Printer · Zebra ZD421"
+    # No fields set: the item name alone, so the row is never just a number.
+    assert _label(page, bare) == "Test Printer"
+
+
+def test_asset_number_links_to_the_asset_page_for_operators_only(client, alloc):
+    supply_line(alloc, alloc.alpha, 1)
+    unit = _tv_with_fields(alloc)
+    db.session.commit()
+    href = f'href="/inv/admin/units/{unit.id}"'
+    login(client, "test:operator")
+    assert href in _assets_page(client, alloc)
+    login(client, "test:admin")
+    assert href in _assets_page(client, alloc)
+    # A Supply admin allocates but cannot open the asset page, so gets no link.
+    login(client, "test:supplyadmin")
+    page = _assets_page(client, alloc)
+    assert "MAG-TV-131" in page and href not in page
+
+
+def test_asset_heading_escapes_the_asset_name(client, alloc):
+    supply_line(alloc, alloc.alpha, 1)
+    make_asset(alloc.tv, "U-0001", name='<b>A&B "TV"</b>')
+    db.session.commit()
+    login(client, "test:operator")
+    page = _assets_page(client, alloc)
+    assert "&lt;b&gt;A&amp;B &#34;TV&#34;&lt;/b&gt;" in page
+    assert "<b>A&B" not in page and "&amp;amp;" not in page
