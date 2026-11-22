@@ -46,7 +46,7 @@ from .form_utils import (
     QUANTITY_ZERO,
     parse_whole_quantity,
 )
-from .line_state import is_line_removed, is_order_closed
+from .line_state import ADDED_COMMENT_PREFIX, is_line_removed, is_order_closed
 
 MAX_REASON_LENGTH = 1000
 
@@ -284,7 +284,7 @@ def admin_add_line(work_item, item: SupplyItem, quantity: int, notes: str | None
         db.session.add(WorkLineComment(
             work_line_id=line.id,
             visibility=COMMENT_VISIBILITY_PUBLIC,
-            body=f"[ADDED BY SUPPLY ADMIN] {notes}",
+            body=f"{ADDED_COMMENT_PREFIX}{notes}",
             created_by_user_id=user_ctx.user_id,
         ))
     return line

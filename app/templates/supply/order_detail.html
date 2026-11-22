@@ -247,6 +247,11 @@
                   <div class="muted small" style="white-space: pre-wrap;">{{ detail.removed_reason }}</div>
                 {% elif detail and detail.added_by_admin_user_id %}
                   <div class="small" style="margin-top: 4px;"><strong>Added by Supply admin</strong></div>
+                  {% set add_note = admin_add_notes.get(line.line_number) %}
+                  {% if add_note %}
+                    <div class="muted small" style="white-space: pre-wrap;">{{ add_note.text }}</div>
+                    <div class="muted small">{{ add_note.by|user_display }}, {{ add_note.at.strftime('%Y-%m-%d %H:%M') }}</div>
+                  {% endif %}
                 {% endif %}
                 {% if is_kickback %}
                   <div style="margin-top: 4px;">
@@ -284,6 +289,11 @@
                   {% if detail and detail.department_quantity is not none %}
                     {{ detail.department_quantity }} → {{ detail.quantity_requested }}
                     <div class="muted small">Changed by Supply admin</div>
+                    {% set change_note = admin_change_notes.get(line.line_number) %}
+                    {% if change_note %}
+                      <div class="muted small" style="white-space: pre-wrap;">{{ change_note.text }}</div>
+                      <div class="muted small">{{ change_note.by|user_display }}, {{ change_note.at.strftime('%Y-%m-%d %H:%M') }}</div>
+                    {% endif %}
                   {% else %}
                     {{ detail.quantity_requested if detail else '-' }}
                   {% endif %}

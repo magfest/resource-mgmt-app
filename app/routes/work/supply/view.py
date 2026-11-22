@@ -135,7 +135,8 @@ def supply_order_detail(event: str, dept: str, public_id: str):
     from app.routes.work.helpers.review_state import uses_review_sessions
     from .admin_lines import admin_item_choices
     from .line_state import (
-        final_quantity_label, is_line_removed, is_order_closed, reviewer_quantity_label,
+        admin_line_notes, final_quantity_label, is_line_removed, is_order_closed,
+        reviewer_quantity_label,
     )
 
     # Admin line edits on the order page send changes back to the review group.
@@ -160,6 +161,9 @@ def supply_order_detail(event: str, dept: str, public_id: str):
             label = None
         if label:
             quantity_labels[line.line_number] = label
+
+    # The department reads why an admin changed or added a line.
+    admin_change_notes, admin_add_notes = admin_line_notes(lines)
 
     # Kicked-back lines re-open their edit widgets even on a non-DRAFT
     # order. Same predicate as the supply_line_update POST gate (imported
@@ -190,6 +194,8 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         lines=lines,
         shows_checkout_banner=uses_review_sessions(work_item),
         quantity_labels=quantity_labels,
+        admin_change_notes=admin_change_notes,
+        admin_add_notes=admin_add_notes,
         can_edit=can_edit,
         can_quick_review=can_quick_review,
         is_supply_admin=is_supply_admin,

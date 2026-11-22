@@ -436,6 +436,56 @@ def test_department_sees_finalize_cut(app, client, seed_workflow_data):
     assert "Approved 100 of 100" not in row
 
 
+def test_department_sees_change_reason_and_add_note(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    _change(client, env, 1, 150, reason="UNIQUE-REASON-TOKEN <i>x</i>")
+    _change(client, env, 1, 120, reason="SECOND-REASON-TOKEN")
+    _add(client, env, env.board, 3, notes="UNIQUE-NOTE-TOKEN\r\nfor the info desk")
+    _member(env, seed_workflow_data)
+    login(client, "test:member")
+    body = client.get(env.order_url).get_data(as_text=True)
+    changed = _row(body, 1)
+    # The latest reason explains the current quantity.
+    assert "SECOND-REASON-TOKEN" in changed and "UNIQUE-REASON-TOKEN" not in changed
+    assert "Test Admin" in changed
+    added = _row(body, 2)
+    assert "UNIQUE-NOTE-TOKEN\nfor the info desk" in added and "Test Admin" in added
+    assert "[ADDED BY SUPPLY ADMIN]" not in added
+
+
+def test_change_reason_is_escaped_for_department(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    _change(client, env, 1, 150, reason="UNIQUE-REASON-TOKEN <i>x</i>")
+    _member(env, seed_workflow_data)
+    login(client, "test:member")
+    row = _row(client.get(env.order_url).get_data(as_text=True), 1)
+    assert "UNIQUE-REASON-TOKEN &lt;i&gt;x&lt;/i&gt;" in row and "<i>x</i>" not in row
+
+
+def test_order_page_reads_admin_notes_in_two_queries(app, client, seed_workflow_data):
+    from sqlalchemy import event
+    env = _env(client, seed_workflow_data, quantities=(100, 5, 7))
+    for number in (1, 2, 3):
+        _change(client, env, number, 50 + number)
+    _add(client, env, env.board, 3, notes="desk")
+    _add(client, env, env.board, 4, notes="booth")
+    # A department member: the admin's History tab reads audit rows too.
+    _member(env, seed_workflow_data)
+    login(client, "test:member")
+    statements = []
+
+    def record(conn, cursor, statement, *args):
+        statements.append(statement)
+
+    event.listen(db.engine, "before_cursor_execute", record)
+    try:
+        client.get(env.order_url)
+    finally:
+        event.remove(db.engine, "before_cursor_execute", record)
+    assert sum("FROM work_line_audit_events" in s for s in statements) == 1
+    assert sum("FROM work_line_comments" in s for s in statements) == 1
+
+
 def test_order_page_shows_admin_line_controls_only_to_supply_admin(app, client, seed_workflow_data):
     env = _env(client, seed_workflow_data)
     body = client.get(env.order_url).get_data(as_text=True)

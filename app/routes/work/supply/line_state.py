@@ -1,5 +1,8 @@
 """Shared Supply line and order state, read by the review, admin and report cabs."""
 
+# Prefix of the public line comment that carries an admin's add note.
+ADDED_COMMENT_PREFIX = "[ADDED BY SUPPLY ADMIN] "
+
 
 def is_line_removed(detail) -> bool:
     """A removed line keeps its row; `removed_at` is the only marker."""
@@ -36,6 +39,60 @@ def final_quantity_label(detail) -> str | None:
     if detail.quantity_approved == 0:
         return "Not approved"
     return f"Approved {detail.quantity_approved} of {detail.quantity_requested}"
+
+
+def admin_line_notes(lines) -> tuple[dict, dict]:
+    """Return the latest quantity-change reason and the add note per line number.
+
+    Each value is a dict of text, by and at. One query per kind for the whole
+    page; the reason lives on the FIELD_CHANGE audit row and the add note on
+    the line's public comment.
+    """
+    # Imported here: the models package imports this one.
+    from app.models import (
+        AUDIT_EVENT_FIELD_CHANGE, COMMENT_VISIBILITY_PUBLIC,
+        WorkLineAuditEvent, WorkLineComment,
+    )
+
+    numbers = {line.id: line.line_number for line in lines}
+    changed_ids = [line.id for line in lines
+                   if line.supply_detail is not None
+                   and line.supply_detail.department_quantity is not None]
+    added_ids = [line.id for line in lines
+                 if line.supply_detail is not None
+                 and line.supply_detail.added_by_admin_user_id]
+
+    changes = {}
+    if changed_ids:
+        rows = (
+            WorkLineAuditEvent.query
+            .filter(WorkLineAuditEvent.work_line_id.in_(changed_ids),
+                    WorkLineAuditEvent.event_type == AUDIT_EVENT_FIELD_CHANGE,
+                    WorkLineAuditEvent.field_name == "quantity_requested")
+            .order_by(WorkLineAuditEvent.id)
+            .all()
+        )
+        for row in rows:
+            changes[numbers[row.work_line_id]] = {
+                "text": row.note or "", "by": row.created_by_user_id, "at": row.created_at,
+            }
+
+    notes = {}
+    if added_ids:
+        rows = (
+            WorkLineComment.query
+            .filter(WorkLineComment.work_line_id.in_(added_ids),
+                    WorkLineComment.visibility == COMMENT_VISIBILITY_PUBLIC,
+                    WorkLineComment.body.startswith(ADDED_COMMENT_PREFIX))
+            .order_by(WorkLineComment.id)
+            .all()
+        )
+        for row in rows:
+            notes.setdefault(numbers[row.work_line_id], {
+                "text": row.body[len(ADDED_COMMENT_PREFIX):],
+                "by": row.created_by_user_id, "at": row.created_at,
+            })
+    return changes, notes
 
 
 def build_finalize_changes(work_item) -> list[dict]:
