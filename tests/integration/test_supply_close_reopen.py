@@ -490,3 +490,91 @@ def test_kicked_back_line_survives_close_reopen_and_finalizes(app, client, seed_
     assert line.status == "APPROVED" and line.needs_requester_action is False
     assert line.supply_detail.quantity_approved == 8
     assert _admin_review(line).status == "APPROVED"
+
+
+# Refinalizing a reopened order starts from the admin's last decisions
+
+def _finalize_inputs(client, env):
+    """Map each finalize input name to the value the screen prefills."""
+    body = client.get(f"{env.admin_url}/finalize").get_data(as_text=True)
+    values = {}
+    for tag in re.findall(r'<input[^>]*name="(?:approved_qty|note)_\d+"[^>]*>', body):
+        name = re.search(r'name="([^"]+)"', tag).group(1)
+        value = re.search(r'\svalue="([^"]*)"', tag)
+        values[name] = value.group(1) if value else ""
+    return values
+
+
+def _latest_changes():
+    rows = sorted(_rows("supply_finalized"), key=lambda r: r.id)
+    return {c["line_number"]: c for c in json.loads(rows[-1].context_json)["changes"]}
+
+
+def _pre_deploy_reopened_order(client, data):
+    """Finalized with a cut and a zero, as orders decided before quantity_reviewed existed."""
+    env = _ready(client, data, quantities=(8, 5))
+    _reviewer_decides(client, env, 1, "approve", approved_quantity="8")
+    _reviewer_decides(client, env, 2, "approve", approved_quantity="5")
+    _finalize(client, env, approved_qty_1="7", note_1="short on stock",
+              approved_qty_2="0", note_2="none left")
+    for number in (1, 2):
+        _line(env, number).supply_detail.quantity_reviewed = None
+    db.session.commit()
+    _reopen(client, env)
+    assert _order(env).status == WORK_ITEM_STATUS_SUBMITTED
+    return env
+
+
+def _assert_pre_deploy_decisions_kept(env):
+    line1, line2 = _line(env, 1), _line(env, 2)
+    assert line1.supply_detail.quantity_approved == 7 and line1.status == "APPROVED"
+    assert line2.supply_detail.quantity_approved == 0 and line2.status == "REJECTED"
+    assert _admin_review(line1).note == "short on stock"
+    assert _admin_review(line2).note == "none left"
+    changes = _latest_changes()
+    assert (changes[1]["kind"], changes[1]["final"]) == ("cut", 7)
+    assert (changes[2]["kind"], changes[2]["final"]) == ("cut", 0)
+
+
+def test_reopened_pre_deploy_order_prefills_admin_decisions(app, client, seed_workflow_data):
+    env = _pre_deploy_reopened_order(client, seed_workflow_data)
+    shown = _finalize_inputs(client, env)
+    assert shown == {
+        "approved_qty_1": "7", "note_1": "short on stock",
+        "approved_qty_2": "0", "note_2": "none left",
+    }
+    _finalize(client, env, **shown)
+    _assert_pre_deploy_decisions_kept(env)
+
+
+def test_reopened_pre_deploy_order_finalized_with_no_fields_keeps_decisions(
+        app, client, seed_workflow_data):
+    env = _pre_deploy_reopened_order(client, seed_workflow_data)
+    _finalize(client, env)
+    _assert_pre_deploy_decisions_kept(env)
+
+
+def test_reopened_order_refinalized_as_shown_keeps_admin_quantity(app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data, quantities=(12,))
+    _reviewer_decides(client, env, 1, "approve", approved_quantity="10")
+    _finalize(client, env, approved_qty_1="8")
+    _reopen(client, env)
+    shown = _finalize_inputs(client, env)
+    assert shown == {"approved_qty_1": "8", "note_1": ""}
+    _finalize(client, env, **shown)
+    assert _line(env, 1).supply_detail.quantity_approved == 8
+    assert (_latest_changes()[1]["kind"], _latest_changes()[1]["final"]) == ("cut", 8)
+
+
+def test_reopened_closed_order_prefills_from_review_group(app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data, quantities=(12,))
+    _reviewer_decides(client, env, 1, "approve", approved_quantity="10")
+    _finalize(client, env, approved_qty_1="8", note_1="tight budget")
+    _reopen(client, env)
+    _close(client, env)
+    _reopen(client, env)
+    # The admin decision was reset with the close, so the group decides again.
+    assert _admin_review(_line(env, 1)).status == "PENDING"
+    assert _finalize_inputs(client, env) == {"approved_qty_1": "12", "note_1": ""}
+    _reviewer_decides(client, env, 1, "approve", approved_quantity="9")
+    assert _finalize_inputs(client, env) == {"approved_qty_1": "9", "note_1": ""}

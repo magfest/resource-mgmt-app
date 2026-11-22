@@ -268,15 +268,19 @@ def _lock_supply_order(public_id: str, supply_wt: WorkType) -> WorkItem:
     return _load_supply_order(public_id, supply_wt)
 
 
-def _ag_reviews_by_line(line_ids: list[int]) -> dict[int, WorkLineReview]:
-    """Map work_line_id -> its APPROVAL_GROUP review (one per line per stage)."""
+def _reviews_by_line(line_ids: list[int], stage: str) -> dict[int, WorkLineReview]:
+    """Map work_line_id -> its review at `stage` (one per line per stage)."""
     if not line_ids:
         return {}
     reviews = WorkLineReview.query.filter(
         WorkLineReview.work_line_id.in_(line_ids),
-        WorkLineReview.stage == REVIEW_STAGE_APPROVAL_GROUP,
+        WorkLineReview.stage == stage,
     ).all()
     return {r.work_line_id: r for r in reviews}
+
+
+def _ag_reviews_by_line(line_ids: list[int]) -> dict[int, WorkLineReview]:
+    return _reviews_by_line(line_ids, REVIEW_STAGE_APPROVAL_GROUP)
 
 
 def _ready_counts(lines, ag_reviews) -> tuple[int, int, bool]:
@@ -446,8 +450,26 @@ def _is_line_kicked_back(line: WorkLine, ag_review: WorkLineReview | None) -> bo
     )
 
 
+def _finalize_defaults(detail, ag_review, admin_review) -> tuple[int, str]:
+    """Return the (approved quantity, note) prefill for the finalize form and the POST fallback.
+
+    A decided admin review wins, so refinalizing a reopened order as shown keeps
+    the admin's cuts and notes. A review reset to PENDING by a close or an
+    order-page change falls through to the review group's decision.
+    """
+    if (admin_review is not None and admin_review.decided_at is not None
+            and admin_review.status in (REVIEW_STATUS_APPROVED, REVIEW_STATUS_REJECTED)):
+        note = admin_review.note or ""
+        if admin_review.status == REVIEW_STATUS_REJECTED:
+            return 0, note
+        if detail is not None and detail.quantity_approved is not None:
+            return detail.quantity_approved, note
+        return _default_approved_qty(detail, ag_review), note
+    return _default_approved_qty(detail, ag_review), ""
+
+
 def _default_approved_qty(detail, ag_review) -> int:
-    """Prefill for the finalize form and the POST fallback.
+    """Prefill from the review group's decision alone.
 
     Orders decided before quantity_reviewed existed have it NULL; they keep
     the requested quantity.
@@ -470,6 +492,7 @@ def _build_finalize_view(work_item: WorkItem):
     """Assemble per-line rows for the finalize screen (GET + POST re-render)."""
     lines = sorted(work_item.lines, key=lambda l: l.line_number)
     ag_reviews = _ag_reviews_by_line([line.id for line in lines])
+    admin_reviews = _reviews_by_line([line.id for line in lines], REVIEW_STAGE_ADMIN_FINAL)
 
     line_rows = []
     for line in lines:
@@ -478,7 +501,8 @@ def _build_finalize_view(work_item: WorkItem):
         ag_review = ag_reviews.get(line.id)
         requested = detail.quantity_requested if detail else 0
 
-        default_qty = _default_approved_qty(detail, ag_review)
+        default_qty, default_note = _finalize_defaults(
+            detail, ag_review, admin_reviews.get(line.id))
 
         unit_cost = item.unit_cost_cents if item else None
         line_rows.append({
@@ -489,6 +513,7 @@ def _build_finalize_view(work_item: WorkItem):
             "category": item.category if item else None,
             "requested": requested,
             "default_qty": default_qty,
+            "default_note": default_note,
             "unit_cost_cents": unit_cost,
             "ag_review": ag_review,
             "decided_by": ag_review.decided_by_user_id if ag_review else None,
@@ -569,6 +594,7 @@ def supply_admin_finalize(public_id: str):
 
     lines = sorted(work_item.lines, key=lambda l: l.line_number)
     ag_reviews = _ag_reviews_by_line([line.id for line in lines])
+    admin_reviews = _reviews_by_line([line.id for line in lines], REVIEW_STAGE_ADMIN_FINAL)
 
     errors = []
 
@@ -590,11 +616,13 @@ def supply_admin_finalize(public_id: str):
         if is_line_removed(detail):
             continue
         ag_review = ag_reviews.get(line.id)
+        default_qty, default_note = _finalize_defaults(
+            detail, ag_review, admin_reviews.get(line.id))
 
         raw = request.form.get(f"approved_qty_{line.line_number}")
         if raw is None or raw.strip() == "":
             # Missing field -> fall back to the same default the form shows.
-            qty = _default_approved_qty(detail, ag_review)
+            qty = default_qty
         else:
             try:
                 qty = int(raw)
@@ -606,7 +634,9 @@ def supply_admin_finalize(public_id: str):
             errors.append(f"Line {line.line_number}: approved quantity cannot be negative.")
             continue
 
-        note = (request.form.get(f"note_{line.line_number}") or "").strip()
+        # Only an absent field falls back; a posted blank is the admin clearing the note.
+        raw_note = request.form.get(f"note_{line.line_number}")
+        note = (default_note if raw_note is None else raw_note).strip()
 
         ag_approved = ag_review is not None and ag_review.status == REVIEW_STATUS_APPROVED
         ag_rejected = ag_review is not None and ag_review.status == REVIEW_STATUS_REJECTED

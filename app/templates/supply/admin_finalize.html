@@ -163,7 +163,8 @@
               <td data-label="Override note" class="cell-stack finalize-input-cell">
                 <input type="text" name="note_{{ line.line_number }}"
                        placeholder="Required to override review group"
-                       style="width: 100%;" data-default=""
+                       value="{{ row.default_note }}"
+                       style="width: 100%;" data-default="{{ row.default_note }}"
                        {% if is_finalized %}disabled{% endif %}>
               </td>
             </tr>
