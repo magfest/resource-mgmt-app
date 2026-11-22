@@ -312,7 +312,8 @@ def can_decide_line(line: WorkLine, user_ctx: UserContext) -> bool:
         AWAITING_REVIEWER_GROUP, get_line_review_state,
     )
     return (
-        get_line_review_state(line).awaiting == AWAITING_REVIEWER_GROUP
+        removed_line_refusal(line) is None
+        and get_line_review_state(line).awaiting == AWAITING_REVIEWER_GROUP
         and is_reviewer_for_line(line, user_ctx)
         and decision_lock_satisfied(line.work_item, user_ctx)
     )
@@ -410,8 +411,32 @@ def get_review_for_line(line: WorkLine) -> Optional[WorkLineReview]:
 # Transition Validation
 # ============================================================
 
-def describe_decided_review(review: WorkLineReview, line: WorkLine) -> str:
-    """Say who decided this line, what they decided, and when (UTC)."""
+def _describe_removal(detail) -> str:
+    text = "Removed by Supply admin"
+    user = db.session.get(User, detail.removed_by_user_id) if detail.removed_by_user_id else None
+    if user is not None:
+        text += f" {user.display_name}"
+    text += f" at {detail.removed_at:%Y-%m-%d %H:%M}"
+    return f"{text}: {detail.removed_reason}"
+
+
+def removed_line_refusal(line: WorkLine) -> Optional[str]:
+    """Return the refusal for any decision or response on a removed Supply line."""
+    from app.routes.work.supply.line_state import is_line_removed
+    detail = line.supply_detail
+    if detail is None or not is_line_removed(detail):
+        return None
+    return _describe_removal(detail)
+
+
+def describe_decided_review(review: Optional[WorkLineReview], line: WorkLine) -> str:
+    """Say who decided this line, what they decided, and when (UTC).
+
+    A removed Supply line reports the removal, whatever its review says.
+    """
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        return removal
     verbs = {
         REVIEW_STATUS_APPROVED: "approved",
         REVIEW_STATUS_APPROVED_NEEDS_REVIEW: "recommended for approval",
@@ -747,12 +772,18 @@ def apply_review_decision(
 
     Returns (success, error_message) tuple.
     """
-    # 1. Verify checkout (except for requester responses)
+    # 1. A removed Supply line refuses before anything else, so a stale page
+    # learns why. Step 2b repeats the check under the lock.
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        return False, removal
+
+    # 2. Verify checkout (except for requester responses)
     if action != REVIEW_ACTION_RESPOND:
         if not decision_lock_satisfied(work_item, user_ctx):
             return False, "You must checkout this work item before making review decisions."
 
-    # 2. Re-read the request, then the review, under row locks. Without review
+    # 2a. Re-read the request, then the review, under row locks. Without review
     # sessions two reviewers can decide at once: the review lock refuses a second
     # decision on one line, and the request lock lets the later of two last-line
     # decisions see the earlier one and finalize. Lock the request first, always.
@@ -761,6 +792,14 @@ def apply_review_decision(
     # joinedload of portfolio, and PostgreSQL refuses a bare FOR UPDATE across
     # that outer join; OF limits the lock to the request row.
     db.session.refresh(work_item, with_for_update={"of": WorkItem})
+
+    # 2b. A Supply admin removal takes the same request lock, so the line
+    # detail re-read here is current.
+    if line.supply_detail is not None:
+        db.session.refresh(line.supply_detail)
+        removal = removed_line_refusal(line)
+        if removal is not None:
+            return False, removal
 
     # A TechOps send-back or pull-back deletes this item's reviews and leaves
     # it DRAFT. A reviewer's stale page can still post here, and without this

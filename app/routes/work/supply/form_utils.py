@@ -27,6 +27,31 @@ PICKUP_TIME_OPTIONS = [
 MAX_APPROVED_QUANTITY = 100000
 
 
+QUANTITY_NOT_WHOLE = "not_whole"
+QUANTITY_ZERO = "zero"
+QUANTITY_TOO_LARGE = "too_large"
+
+
+def parse_whole_quantity(raw: str | None) -> tuple[int | None, str | None]:
+    """Parse a quantity of 1 to MAX_APPROVED_QUANTITY.
+
+    Returns (value, None), or (None, code) with one of the QUANTITY_* codes so
+    each caller words its own refusal. Blank, decimal and negative input are
+    QUANTITY_NOT_WHOLE.
+    """
+    try:
+        value = int((raw or "").strip())
+    except ValueError:
+        return None, QUANTITY_NOT_WHOLE
+    if value == 0:
+        return None, QUANTITY_ZERO
+    if value < 0:
+        return None, QUANTITY_NOT_WHOLE
+    if value > MAX_APPROVED_QUANTITY:
+        return None, QUANTITY_TOO_LARGE
+    return value, None
+
+
 def parse_approved_quantity(form) -> tuple[int | None, str | None]:
     """Read a reviewer's approved quantity from a POST form.
 
@@ -36,17 +61,13 @@ def parse_approved_quantity(form) -> tuple[int | None, str | None]:
     """
     if "approved_quantity" not in form:
         return None, None
-    raw = (form.get("approved_quantity") or "").strip()
-    try:
-        value = int(raw)
-    except ValueError:
-        return None, "Enter a whole-number quantity to approve."
-    if value == 0:
+    value, code = parse_whole_quantity(form.get("approved_quantity"))
+    if code == QUANTITY_ZERO:
         return None, "Approve needs a quantity of at least 1. Reject the line instead."
-    if value < 0:
-        return None, "Enter a whole-number quantity to approve."
-    if value > MAX_APPROVED_QUANTITY:
+    if code == QUANTITY_TOO_LARGE:
         return None, "Enter a quantity of 100,000 or less."
+    if code is not None:
+        return None, "Enter a whole-number quantity to approve."
     return value, None
 
 

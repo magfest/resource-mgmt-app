@@ -58,6 +58,7 @@ from .helpers import (
     get_or_create_review,
     apply_review_decision,
     audit_line_field_changes,
+    removed_line_refusal,
 )
 from app.routes.admin_final.helpers import (
     get_admin_final_review,
@@ -344,6 +345,11 @@ def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_
             line_num=line_num, work_type_slug=work_type_slug,
         ))
 
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        flash(removal, "error")
+        return back
+
     if line.supply_detail is not None and work_item.status == WORK_ITEM_STATUS_FINALIZED:
         flash(SUPPLY_UNDO_FINALIZED_MESSAGE, "error")
         return back
@@ -382,6 +388,19 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
 
     # Check if this is an AJAX request
     is_ajax = request.form.get("ajax") == "1"
+
+    # A removed line may have no routed group, so refuse before looking for one.
+    # apply_review_decision repeats this check under the request lock.
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        if is_ajax:
+            return jsonify({"success": False, "error": removal, "removed": True,
+                            "current_status": line.status})
+        flash(removal, "error")
+        return redirect(url_for(
+            "approvals.line_review", event=event, dept=dept, public_id=public_id,
+            line_num=line_num, work_type_slug=work_type_slug,
+        ))
 
     # Get or create review
     review, _created = get_or_create_review(line, user_ctx)
@@ -431,7 +450,10 @@ def _handle_review_action(event: str, dept: str, public_id: str, line_num: int, 
         if is_ajax:
             # current_status lets quick review redraw a row someone else decided.
             # The review was re-read under its lock; the line may predate that.
-            return jsonify({"success": False, "error": error, "current_status": current_status})
+            return jsonify({
+                "success": False, "error": error, "current_status": current_status,
+                "removed": removed_line_refusal(line) is not None,
+            })
         flash(error, "error")
     else:
         action_labels = {
@@ -511,6 +533,14 @@ def line_respond(event: str, dept: str, public_id: str, line_num: int, work_type
     """
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
+
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        flash(removal, "error")
+        return redirect(url_for(
+            "approvals.line_review", event=event, dept=dept, public_id=public_id,
+            line_num=line_num, work_type_slug=work_type_slug,
+        ))
 
     # Route to whichever review stage actually kicked the line back —
     # not always the APPROVAL_GROUP review (an ADMIN_FINAL kickback must
@@ -614,6 +644,14 @@ def line_adjust(event: str, dept: str, public_id: str, line_num: int, work_type_
 
     user_ctx = get_user_ctx()
     work_item, line, ctx = get_work_item_and_line(event, dept, public_id, line_num, work_type_slug)
+
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        flash(removal, "error")
+        return redirect(url_for(
+            "approvals.line_review", event=event, dept=dept, public_id=public_id,
+            line_num=line_num, work_type_slug=work_type_slug,
+        ))
 
     # Hard guard: this handler manipulates budget_detail directly. The
     # TechOps line_review template hides the NEEDS_ADJUSTMENT button so

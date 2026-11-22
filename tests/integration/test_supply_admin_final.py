@@ -609,8 +609,7 @@ class TestSupplyFinalizeForGroupCall:
         order = self._order(client, wt, cycle, dept, item, "TST-A", quantities=(100,))
         self._decide(order, reviewed=40)
         body = client.get(f"/admin/supply/order/{order.public_id}/finalize").get_data(as_text=True)
-        assert 'name="approved_qty_1"' in body
-        assert 'value="40"' in body
+        assert 'name="approved_qty_1" min="0"\n                       value="40"' in body
         assert "Approved 40 of 100" in body
         assert "Test Reviewer" in body
         assert "Reviewer says &lt;b&gt;ok&lt;/b&gt;" in body

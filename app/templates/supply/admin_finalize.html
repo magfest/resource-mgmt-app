@@ -80,15 +80,36 @@
         <tbody>
           {% for row in line_rows %}
             {% set line = row.line %}
-            <tr>
+            {% set detail = row.detail %}
+            {% if row.removed %}
+            {# A removed line has no input, so a stale form cannot approve it. #}
+            <tr id="line-{{ line.line_number }}">
+              <td data-label="Item">
+                <div style="font-weight: 600; text-decoration: line-through;">{{ row.item.item_name if row.item else '-' }}</div>
+                <div class="small" style="margin-top: 4px; font-weight: 600;">Removed by Supply admin</div>
+                <div class="muted small" style="white-space: pre-wrap;">{{ detail.removed_reason }}</div>
+              </td>
+              <td data-label="Requested" class="right num" style="text-decoration: line-through;">{{ row.requested }}</td>
+              <td data-label="Review group" colspan="4" class="muted small">Not part of this order; finalizes at 0.</td>
+            </tr>
+            {% else %}
+            <tr id="line-{{ line.line_number }}">
               <td data-label="Item">
                 <div style="font-weight: 600;">{{ row.item.item_name if row.item else '-' }}</div>
                 {% if row.category %}
                   <div class="muted small">{{ row.category.name }}</div>
                 {% endif %}
+                {% if detail and detail.added_by_admin_user_id %}
+                  <div class="small" style="margin-top: 4px;">Added by Supply admin</div>
+                {% endif %}
               </td>
               <td data-label="Requested" class="right num">
-                {{ row.requested }}
+                {% if detail and detail.department_quantity is not none %}
+                  {{ detail.department_quantity }} → {{ row.requested }}
+                  <div class="muted small">Changed by Supply admin</div>
+                {% else %}
+                  {{ row.requested }}
+                {% endif %}
                 {% if line.supply_detail and line.supply_detail.quantity_confidence_label %}
                   <div class="muted small">{{ line.supply_detail.quantity_confidence_label }}</div>
                 {% endif %}
@@ -130,6 +151,7 @@
                        {% if is_finalized %}disabled{% endif %}>
               </td>
             </tr>
+            {% endif %}
           {% endfor %}
         </tbody>
       </table>
@@ -164,6 +186,12 @@
       </div>
     {% endif %}
   </form>
+
+  {% if can_edit_lines %}
+    {% with return_to = 'finalize' %}
+      {% include "supply/_admin_line_edits.html" %}
+    {% endwith %}
+  {% endif %}
 
 {% endblock %}
 

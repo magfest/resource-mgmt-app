@@ -207,6 +207,7 @@
             {% set detail = line.supply_detail %}
             {% set item = detail.item if detail else None %}
             {% set is_kickback = line.line_number in kickback_editable_line_numbers %}
+            {% set is_removed = detail and detail.removed_at %}
             {# Matches the is_line_kickback_editable gate on
                work.supply_line_update. #}
             {% set row_editable = is_kickback %}
@@ -220,13 +221,19 @@
               </td>
               <td>
                 {% if item %}
-                  <strong>{{ item.item_name }}</strong>
+                  <strong{% if is_removed %} style="text-decoration: line-through;"{% endif %}>{{ item.item_name }}</strong>
                   <span class="muted small">({{ item.unit }})</span>
                   {% if not item.is_expendable %}
                     <span class="pill pill-info pill-sm">Must be returned</span>
                   {% endif %}
                 {% else %}
                   <span class="muted">-</span>
+                {% endif %}
+                {% if is_removed %}
+                  <div class="small" style="margin-top: 4px;"><strong>Removed by Supply admin</strong></div>
+                  <div class="muted small" style="white-space: pre-wrap;">{{ detail.removed_reason }}</div>
+                {% elif detail and detail.added_by_admin_user_id %}
+                  <div class="small" style="margin-top: 4px;"><strong>Added by Supply admin</strong></div>
                 {% endif %}
                 {% if is_kickback %}
                   <div style="margin-top: 4px;">
@@ -259,8 +266,13 @@
                 {# A kicked-back line is fixed, never removed. #}
                 <td>{{ review_link() }}</td>
               {% else %}
-                <td>
-                  {{ detail.quantity_requested if detail else '-' }}
+                <td{% if is_removed %} style="text-decoration: line-through;"{% endif %}>
+                  {% if detail and detail.department_quantity is not none %}
+                    {{ detail.department_quantity }} → {{ detail.quantity_requested }}
+                    <div class="muted small">Changed by Supply admin</div>
+                  {% else %}
+                    {{ detail.quantity_requested if detail else '-' }}
+                  {% endif %}
                   {% if reviewer_quantity_labels is defined and reviewer_quantity_labels.get(line.line_number) %}
                     <div class="small"><strong>{{ reviewer_quantity_labels[line.line_number] }}</strong></div>
                   {% endif %}
@@ -289,6 +301,12 @@
       </div>
     {% endif %}
   </section>
+
+  {% if can_admin_edit_lines %}
+    {% with return_to = 'order' %}
+      {% include "supply/_admin_line_edits.html" %}
+    {% endwith %}
+  {% endif %}
 
   {% endif %}
 

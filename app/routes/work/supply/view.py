@@ -132,7 +132,15 @@ def supply_order_detail(event: str, dept: str, public_id: str):
     lines = sorted(work_item.lines, key=lambda line: line.line_number)
 
     from app.routes.work.helpers.review_state import uses_review_sessions
-    from .line_state import reviewer_quantity_label
+    from .admin_lines import admin_item_choices
+    from .line_state import is_line_removed, is_order_closed, reviewer_quantity_label
+
+    # Admin line edits on the order page send changes back to the review group.
+    can_admin_edit_lines = (
+        is_supply_admin
+        and work_item.status == WORK_ITEM_STATUS_SUBMITTED
+        and not is_order_closed(work_item)
+    )
     reviewer_quantity_labels = {}
     for line in lines:
         ag_review = next(
@@ -173,6 +181,9 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         can_edit=can_edit,
         can_quick_review=can_quick_review,
         is_supply_admin=is_supply_admin,
+        can_admin_edit_lines=can_admin_edit_lines,
+        admin_items=admin_item_choices() if can_admin_edit_lines else [],
+        edit_lines=[line for line in lines if not is_line_removed(line.supply_detail)],
         kickback_editable_line_numbers=kickback_editable_line_numbers,
         submit_errors=submit_errors,
         friendly_status=friendly_status,

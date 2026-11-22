@@ -121,7 +121,7 @@
             <img src="{{ item.image_url }}" alt="" style="max-width: 80px; max-height: 80px; border-radius: 6px;">
           {% endif %}
           <div>
-            <div style="font-size: 16px; font-weight: 700;">{{ item.item_name if item else '-' }}</div>
+            <div style="font-size: 16px; font-weight: 700;{% if detail and detail.removed_at %} text-decoration: line-through;{% endif %}">{{ item.item_name if item else '-' }}</div>
             {% if category %}
               <div class="muted small">{{ category.name }}</div>
             {% endif %}
@@ -223,7 +223,16 @@
     <div>
 
       {# Status-specific notices #}
-      {% if status == "NEEDS_INFO" %}
+      {% if detail and detail.removed_at %}
+        <div class="callout callout-danger mb-16">
+          <strong>Removed by Supply admin</strong>
+          <div class="muted" style="margin-top:4px;">
+            {{ detail.removed_at.strftime('%Y-%m-%d %H:%M') }}
+            {% if detail.removed_by_user_id %}by {{ detail.removed_by_user_id|user_display }}{% endif %}
+          </div>
+          <div style="margin-top: 8px; white-space: pre-wrap;">{{ detail.removed_reason }}</div>
+        </div>
+      {% elif status == "NEEDS_INFO" %}
         <div class="callout callout-action mb-16">
           <strong>Awaiting Requester Response</strong>
           <div class="muted" style="margin-top:4px;">

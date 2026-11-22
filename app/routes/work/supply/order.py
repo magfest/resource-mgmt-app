@@ -24,7 +24,7 @@ from app.models import (
     WORK_LINE_STATUS_NEEDS_ADJUSTMENT,
 )
 from app.routes import get_user_ctx
-from app.routes.approvals.helpers import can_respond_to_work_item
+from app.routes.approvals.helpers import can_respond_to_work_item, removed_line_refusal
 from .. import work_bp
 from ..helpers import (
     generate_public_id_for_portfolio,
@@ -153,6 +153,13 @@ def supply_line_update(event: str, dept: str, public_id: str, line_number: int):
     line = _find_line(work_item, line_number)
     if not line or not line.supply_detail:
         abort(404, f"Line not found: {line_number}")
+
+    removal = removed_line_refusal(line)
+    if removal is not None:
+        flash(removal, "error")
+        return redirect(url_for(
+            "work.supply_order_detail", event=event, dept=dept, public_id=public_id,
+        ))
 
     user_ctx = get_user_ctx()
     is_kickback_editable = is_line_kickback_editable(line, work_item, ctx, user_ctx)

@@ -1,0 +1,88 @@
+{# templates/supply/_admin_line_edits.html #}
+{# Supply admin line edits, shared by the finalize screen and the order page.
+   Expects work_item, edit_lines (live lines only), admin_items (category,
+   items) pairs, and return_to ("finalize" or "order"). The routes decide
+   what return_to means; edits from the order page go back to the review
+   group. Each form posts on its own so it never nests in the finalize form. #}
+<section class="card" style="margin-bottom: 16px;" id="admin-line-edits">
+  <h3 style="margin: 0 0 4px 0;">Change lines</h3>
+  <div class="muted small" style="margin-bottom: 12px;">
+    {% if return_to == 'finalize' %}
+      Changes here skip the review group. The department sees every change and its reason.
+    {% else %}
+      Added and changed lines go back to the review group. The department sees every change and its reason.
+    {% endif %}
+  </div>
+
+  <form method="post" action="{{ url_for('work.supply_admin_line_add', public_id=work_item.public_id) }}"
+        style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label class="small" style="flex: 1 1 220px;">Add item
+      <select name="item_id" required style="width: 100%;">
+        <option value="">Choose an item&hellip;</option>
+        {% for category, items in admin_items %}
+          <optgroup label="{{ category.name }}">
+            {% for item in items %}
+              <option value="{{ item.id }}">{{ item.item_name }} ({{ item.unit }})</option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="small" style="flex: 0 0 90px;">Qty
+      <input type="number" name="quantity" min="1" max="100000" step="1" required style="width: 100%;">
+    </label>
+    <label class="small" style="flex: 1 1 220px;">Reason (optional)
+      <input type="text" name="notes" maxlength="1000" style="width: 100%;">
+    </label>
+    <button type="submit" class="btn">Add line</button>
+  </form>
+
+  {% for line in edit_lines %}
+    {% set detail = line.supply_detail %}
+    <div style="border-top: 1px solid #eee; padding: 12px 0;">
+      <div style="font-weight: 600; margin-bottom: 8px;">
+        Line {{ line.line_number }}: {{ detail.item.item_name if detail and detail.item else '-' }}
+        <span class="muted small">(asks for {{ detail.quantity_requested if detail else '-' }})</span>
+      </div>
+      <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+        <form method="post"
+              action="{{ url_for('work.supply_admin_line_quantity', public_id=work_item.public_id, line_number=line.line_number) }}"
+              style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; flex: 1 1 300px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="return_to" value="{{ return_to }}">
+          <label class="small" style="flex: 0 0 90px;">New qty
+            <input type="number" name="quantity" min="1" max="100000" step="1" required
+                   value="{{ detail.quantity_requested if detail else '' }}" style="width: 100%;">
+          </label>
+          <label class="small" style="flex: 1 1 180px;">Reason
+            <textarea name="reason" rows="1" maxlength="1000" required style="width: 100%;"></textarea>
+          </label>
+          <button type="submit" class="btn">Change qty</button>
+        </form>
+        <form method="post"
+              action="{{ url_for('work.supply_admin_line_remove', public_id=work_item.public_id, line_number=line.line_number) }}"
+              style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; flex: 1 1 300px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="return_to" value="{{ return_to }}">
+          <label class="small" style="flex: 1 1 180px;">Reason
+            <textarea name="reason" rows="1" maxlength="1000" required style="width: 100%;"></textarea>
+          </label>
+          <button type="submit" class="btn btn-danger" data-confirm-remove="Remove line {{ line.line_number }}? The department sees it struck through with your reason.">Remove</button>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+</section>
+<script nonce="{{ csp_nonce }}">
+(function() {
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-confirm-remove]');
+    if (!btn) return;
+    if (!confirm(btn.getAttribute('data-confirm-remove'))) {
+      e.preventDefault();
+    }
+  });
+})();
+</script>

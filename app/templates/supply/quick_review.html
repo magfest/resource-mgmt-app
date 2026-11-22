@@ -114,6 +114,7 @@
           {% set unit_cost_cents = item.unit_cost_cents if item else None %}
           {% set line_cost_cents = (unit_cost_cents * detail.quantity_requested) if (unit_cost_cents is not none and detail) else None %}
           {% set status = line.status | upper %}
+          {% set is_removed = detail and detail.removed_at %}
           <tr id="line-{{ line.line_number }}" data-line-num="{{ line.line_number }}" data-status="{{ status }}" data-requested-qty="{{ detail.quantity_requested if detail else '' }}">
             <td>
               <a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}">
@@ -122,7 +123,7 @@
             </td>
             <td>
               {% if item %}
-                <strong style="font-size: 13px;">{{ item.item_name }}</strong>
+                <strong class="line-item-name" style="font-size: 13px;{% if is_removed %} text-decoration: line-through;{% endif %}">{{ item.item_name }}</strong>
                 {% if item.category %}
                   <div class="muted small">{{ item.category.name }}</div>
                 {% endif %}
@@ -161,7 +162,10 @@
               {# Buttons render from can_decide alone, which already includes the
                  lock when the work type uses one. Typing a note before
                  checkout lost it when the checkout POST replaced the page. #}
-              {% if status == 'PENDING' and row.can_decide %}
+              {% if is_removed %}
+                <div class="small"><strong>Removed by Supply admin</strong></div>
+                <div class="muted small" style="white-space: pre-wrap;">{{ detail.removed_reason }}</div>
+              {% elif status == 'PENDING' and row.can_decide %}
                 <div class="quick-action-row" style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
                   <label class="small" style="font-weight: 600; display: flex; align-items: center; gap: 4px; width: 100%;">
                     Approve qty
@@ -376,6 +380,18 @@
         feedbackSpinner.style.display = 'none';
         feedbackText.textContent = 'Done!';
         feedback.style.color = '#059669';
+      } else if (data.removed) {
+        // A Supply admin removed the line after this page loaded; redraw it as removed.
+        row.setAttribute('data-status', 'REJECTED');
+        var removedPill = row.querySelector('.line-status-pill');
+        removedPill.textContent = friendlyStatusLabels['REJECTED'];
+        removedPill.className = 'pill line-status-pill pill-rejected';
+        var name = row.querySelector('.line-item-name');
+        if (name) name.style.textDecoration = 'line-through';
+        var cell = row.querySelector('.line-actions');
+        cell.innerHTML = '<div class="small" style="color: #dc3545;"></div>';
+        cell.firstChild.textContent = data.error;
+        updateSummaryCounts();
       } else {
         feedbackSpinner.style.display = 'none';
         feedbackText.textContent = data.error || 'Error occurred';
