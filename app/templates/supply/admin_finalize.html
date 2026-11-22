@@ -11,6 +11,17 @@
 {% block title %}Finalize {{ work_item.public_id }}{% endblock %}
 
 {% block content %}
+<style>
+  @media (max-width: 767.98px) {
+    /* A flex cell sizes to its input's intrinsic width; cap the inputs so the card fits the screen. */
+    /* An auto-width table sizes to its widest input and overflows the card; a block table takes the card's width. */
+    table.finalize-table { display: block; width: 100%; }
+    /* .num sets nowrap; "Changed by Supply admin" under a quantity must wrap. */
+    table.finalize-table td.num { white-space: normal; }
+    td.finalize-input-cell input { min-width: 0; max-width: 100%; box-sizing: border-box; }
+    td.cell-stack input[name^="note_"] { width: 100% !important; }
+  }
+</style>
 
   {% set order_detail = order_detail %}
 
@@ -70,7 +81,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <section class="card">
-      <table class="responsive-cards">
+      <table class="responsive-cards finalize-table">
         <thead>
           <tr>
             <th>Item</th>
@@ -88,17 +99,17 @@
             {% if row.removed %}
             {# A removed line has no input, so a stale form cannot approve it. #}
             <tr id="line-{{ line.line_number }}">
-              <td data-label="Item">
+              <td data-label="Item" class="cell-stack">
                 <div style="font-weight: 600; text-decoration: line-through;">{{ row.item.item_name if row.item else '-' }}</div>
                 <div class="small" style="margin-top: 4px; font-weight: 600;">Removed by Supply admin</div>
                 <div class="muted small" style="white-space: pre-wrap;">{{ detail.removed_reason }}</div>
               </td>
               <td data-label="Requested" class="right num" style="text-decoration: line-through;">{{ row.requested }}</td>
-              <td data-label="Review group" colspan="4" class="muted small">Not part of this order; finalizes at 0.</td>
+              <td data-label="Review group" colspan="4" class="cell-stack muted small">Not part of this order; finalizes at 0.</td>
             </tr>
             {% else %}
             <tr id="line-{{ line.line_number }}">
-              <td data-label="Item">
+              <td data-label="Item" class="cell-stack">
                 <div style="font-weight: 600;">{{ row.item.item_name if row.item else '-' }}</div>
                 {% if row.category %}
                   <div class="muted small">{{ row.category.name }}</div>
@@ -118,7 +129,7 @@
                   <div class="muted small">{{ line.supply_detail.quantity_confidence_label }}</div>
                 {% endif %}
               </td>
-              <td data-label="Review group">
+              <td data-label="Review group" class="cell-stack">
                 {% if row.ag_review %}
                   {{ render_status_pill(row.ag_review.status, label=friendly_status(row.ag_review.status) if friendly_status else row.ag_review.status) }}
                   {% if row.decided_by %}
@@ -143,13 +154,13 @@
               <td data-label="Unit cost" class="right num">
                 {{ format_currency(row.unit_cost_cents) if row.unit_cost_cents is not none else 'n/a' }}
               </td>
-              <td data-label="Approved qty">
+              <td data-label="Approved qty" class="finalize-input-cell">
                 <input type="number" name="approved_qty_{{ line.line_number }}" min="0"
                        value="{{ row.default_qty }}" style="width: 90px;"
                        data-default="{{ row.default_qty }}"
                        {% if is_finalized %}disabled{% endif %}>
               </td>
-              <td data-label="Override note">
+              <td data-label="Override note" class="cell-stack finalize-input-cell">
                 <input type="text" name="note_{{ line.line_number }}"
                        placeholder="Required to override review group"
                        style="width: 100%;" data-default=""

@@ -4,6 +4,11 @@
 {% block title %}Supply Demand Report{% endblock %}
 
 {% block content %}
+<style>
+  /* A phone scrolls the wrapper sideways; without a floor the table squeezes columns to one character. */
+  .report-table { min-width: 560px; }
+  .report-table th, .report-table td { white-space: nowrap; }
+</style>
   <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
     <div>
       <h1 style="margin:0;">Supply Demand Report</h1>
@@ -37,7 +42,7 @@
   <section class="card">
     {% if items %}
       <div style="overflow-x:auto;">
-        <table>
+        <table class="report-table">
           <thead>
             <tr>
               <th>Category</th>

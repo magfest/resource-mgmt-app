@@ -26,6 +26,12 @@
   .quick-action:disabled {
     cursor: not-allowed;
   }
+  @media (max-width: 767.98px) {
+    /* The stacked Actions cell must not outgrow the card; inputs shrink to fit. */
+    .qr-item { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+    td.line-actions .quick-action-row { min-width: 0; }
+    td.line-actions .line-note { min-width: 0 !important; width: 100%; box-sizing: border-box; }
+  }
 </style>
 
   {# Header #}
@@ -93,7 +99,7 @@
 
   {# Lines Table #}
   <section class="card">
-    <table style="table-layout: auto;">
+    <table class="responsive-cards" style="table-layout: auto;">
       <thead>
         <tr>
           <th style="width: 50px;">#</th>
@@ -116,12 +122,13 @@
           {% set status = line.status | upper %}
           {% set is_removed = detail and detail.removed_at %}
           <tr id="line-{{ line.line_number }}" data-line-num="{{ line.line_number }}" data-status="{{ status }}" data-requested-qty="{{ detail.quantity_requested if detail else '' }}">
-            <td>
+            <td data-label="Line">
               <a href="{{ url_for('approvals.line_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply') }}">
                 {{ line.line_number }}
               </a>
             </td>
-            <td>
+            <td data-label="Item">
+              <div class="qr-item">
               {% if item %}
                 <strong class="line-item-name" style="font-size: 13px;{% if is_removed %} text-decoration: line-through;{% endif %}">{{ item.item_name }}</strong>
                 {% if item.category %}
@@ -130,27 +137,30 @@
               {% else %}
                 <span class="muted">-</span>
               {% endif %}
+              </div>
             </td>
-            <td>
+            <td class="cell-stack" data-label="Notes">
               {% if detail and detail.requester_notes %}
                 <div style="font-size: 13px; max-width: 320px;">{{ detail.requester_notes[:120] }}{% if detail.requester_notes|length > 120 %}...{% endif %}</div>
               {% else %}
                 <span class="muted">-</span>
               {% endif %}
             </td>
-            <td>
+            <td data-label="Qty">
+              <div class="qr-item">
               {{ detail.quantity_requested if detail else '-' }}
               {% if item %}<div class="muted small">{{ item.unit }}</div>{% endif %}
               {% if detail and detail.quantity_confidence_label %}<div class="muted small">{{ detail.quantity_confidence_label }}</div>{% endif %}
+              </div>
             </td>
-            <td class="num">
+            <td class="num" data-label="Cost">
               {% if line_cost_cents is not none %}
                 {{ format_currency(line_cost_cents) }}
               {% else %}
                 <span class="muted small">cost not on file</span>
               {% endif %}
             </td>
-            <td>
+            <td data-label="Status">
               {# Render via the macro so the status → pill-class mapping
                  stays in one place. The extra_class adds line-status-pill
                  so the AJAX post-action JS can locate this exact pill
@@ -158,7 +168,7 @@
               {% set status_label = friendly_status(status) if friendly_status else status %}
               {{ render_status_pill(status, label=status_label, extra_class="line-status-pill", extra_style="font-size: 11px;") }}
             </td>
-            <td class="line-actions">
+            <td class="line-actions cell-stack" data-label="Actions">
               {# Buttons render from can_decide alone, which already includes the
                  lock when the work type uses one. Typing a note before
                  checkout lost it when the checkout POST replaced the page. #}
