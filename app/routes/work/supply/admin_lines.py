@@ -296,7 +296,7 @@ def admin_change_requested_quantity(line: WorkLine, new_quantity: int, reason: s
 
     From the order page the line goes back to its group as PENDING, because the
     group decided on a quantity that no longer stands. From the finalize screen
-    the group's decision stays.
+    the group's decision stays, and an admin approval moves to the new quantity.
     """
     require_editable_order(line.work_item)
     detail = _require_live_line(line)
@@ -321,6 +321,15 @@ def admin_change_requested_quantity(line: WorkLine, new_quantity: int, reason: s
     ))
 
     if at_finalize:
+        # The finalize screen prefills a decided admin approval's quantity, so
+        # it must follow the change; a rejection stays at 0 until overridden.
+        admin_review = _admin_final_review(line)
+        if (admin_review is not None and admin_review.decided_at is not None
+                and admin_review.status == REVIEW_STATUS_APPROVED):
+            cost = detail.item.unit_cost_cents if detail.item else None
+            detail.quantity_approved = new_quantity
+            admin_review.approved_amount_cents = new_quantity * cost if cost is not None else None
+            line.approved_amount_cents = admin_review.approved_amount_cents
         return
 
     group_review = _group_review(line)

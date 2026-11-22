@@ -578,3 +578,40 @@ def test_reopened_closed_order_prefills_from_review_group(app, client, seed_work
     assert _finalize_inputs(client, env) == {"approved_qty_1": "12", "note_1": ""}
     _reviewer_decides(client, env, 1, "approve", approved_quantity="9")
     assert _finalize_inputs(client, env) == {"approved_qty_1": "9", "note_1": ""}
+
+
+def test_line_added_then_changed_at_finalize_prefills_new_quantity(app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data)
+    _add(client, env, env.board, 3, return_to="finalize")
+    _change(client, env, 2, 5, return_to="finalize")
+    line = _line(env, 2)
+    admin = _admin_review(line)
+    assert line.supply_detail.quantity_approved == 5
+    assert admin.status == "APPROVED" and admin.approved_amount_cents == 5 * 200
+    assert line.approved_amount_cents == 5 * 200
+    assert _finalize_inputs(client, env)["approved_qty_2"] == "5"
+    _finalize(client, env)
+    assert _line(env, 2).supply_detail.quantity_approved == 5
+
+
+def test_reopened_cut_line_changed_at_finalize_prefills_new_quantity(
+        app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data, quantities=(8,))
+    _reviewer_decides(client, env, 1, "approve", approved_quantity="8")
+    _finalize(client, env, approved_qty_1="7", note_1="short on stock")
+    _reopen(client, env)
+    _change(client, env, 1, 10, return_to="finalize")
+    admin = _admin_review(_line(env, 1))
+    assert admin.status == "APPROVED" and admin.note == "short on stock"
+    assert admin.decided_by_user_id == "test:admin"
+    assert _finalize_inputs(client, env) == {"approved_qty_1": "10", "note_1": "short on stock"}
+
+
+def test_rejected_line_changed_at_finalize_still_prefills_zero(app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data, quantities=(8,))
+    _finalize(client, env, approved_qty_1="0", note_1="none left")
+    _reopen(client, env)
+    _change(client, env, 1, 10, return_to="finalize")
+    line = _line(env, 1)
+    assert _admin_review(line).status == "REJECTED" and line.supply_detail.quantity_approved == 0
+    assert _finalize_inputs(client, env)["approved_qty_1"] == "0"
