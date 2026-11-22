@@ -161,3 +161,21 @@ def test_supply_approve_json_says_decider_may_undo(app, client, seed_workflow_da
     resp = client.post(_base(cycle, dept, wi, line) + "/reject",
                        data={"ajax": "1", "note": "no"})
     assert resp.get_json()["can_undo"] is True
+
+
+def _line_comments(line):
+    from app.models import WorkLineComment
+    return [c.body for c in WorkLineComment.query.filter_by(work_line_id=line.id)
+            .order_by(WorkLineComment.id)]
+
+
+def test_undo_without_note_posts_default_comment(app, client, seed_workflow_data):
+    wt, cycle, dept, group, item, wi, line = _approved_order(app, client, seed_workflow_data)
+    _reopen(client, cycle, dept, wi, line)
+    assert _line_comments(line)[-1] == "[REOPENED] Decision undone by Test Reviewer."
+
+
+def test_undo_with_note_keeps_note_comment(app, client, seed_workflow_data):
+    wt, cycle, dept, group, item, wi, line = _approved_order(app, client, seed_workflow_data)
+    _reopen(client, cycle, dept, wi, line, note="Wrong line")
+    assert _line_comments(line)[-1] == "[REOPENED] Wrong line"

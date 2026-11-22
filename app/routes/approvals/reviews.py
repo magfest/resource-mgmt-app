@@ -368,10 +368,14 @@ def line_reopen(event: str, dept: str, public_id: str, line_num: int, work_type_
         flash(error, "error")
         return back
 
-    # Decision rationale is public; a reopen is a decision.
+    # Decision rationale is public; a reopen is a decision. A Supply undo needs
+    # no note, so the comment names who undid it instead.
+    if not note:
+        name = (user_ctx.user.display_name if user_ctx.user else None) or user_ctx.user_id
+        note = f"Decision undone by {name}."
     db.session.add(WorkLineComment(
         work_line_id=line.id, visibility=COMMENT_VISIBILITY_PUBLIC,
-        body=f"[REOPENED] {note}".rstrip(), created_by_user_id=user_ctx.user_id,
+        body=f"[REOPENED] {note}", created_by_user_id=user_ctx.user_id,
     ))
     db.session.commit()
     flash(f"Line {line_num} reopened.", "success")
