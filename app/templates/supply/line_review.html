@@ -55,7 +55,7 @@
   </div>
 
   {# Checkout Status Banner #}
-  {% if not uses_sessions %}
+  {% if uses_sessions is defined and not uses_sessions %}
   {% elif is_checked_out %}
     {% if has_checkout %}
       <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">

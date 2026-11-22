@@ -148,3 +148,28 @@ def test_quick_review_decision_buttons_follow_the_row_group(client, seed_workflo
 
     assert decision_buttons_for_line(body, 1) == []
     assert "approve" in decision_buttons_for_line(body, 2)
+
+
+def test_missing_uses_sessions_keeps_the_lock_ui(app, client, seed_workflow_data, monkeypatch):
+    """A render that omits uses_sessions must show the lock, not hide it."""
+    from app.routes.approvals import reviews
+    from app.routes.work.work_items import view
+    wt, cycle, dept, group, item, work_item, line = setup_submitted_order(
+        app, client, seed_workflow_data)
+    _user("test:other")
+    work_item.checked_out_by_user_id = "test:other"
+    work_item.checked_out_expires_at = datetime.utcnow() + timedelta(minutes=20)
+    db.session.commit()
+
+    for module in (view, reviews):
+        real = module.render_template
+        monkeypatch.setattr(
+            module, "render_template",
+            lambda *a, _real=real, **kw: _real(
+                *a, **{k: v for k, v in kw.items() if k != "uses_sessions"}),
+        )
+    login(client, "test:reviewer")
+    base = f"/{cycle.code}/{dept.code}/supply/item/{work_item.public_id}"
+
+    for url in (f"{base}/quick-review", f"{base}/line/1/review"):
+        assert "Under Active Review" in client.get(url).get_data(as_text=True)

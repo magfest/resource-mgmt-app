@@ -73,6 +73,7 @@ def test_reviewer_reaches_a_decision_by_following_links(client, seed_workflow_da
     assert href is not None
     page = client.get(href)
     assert page.status_code == 200 and b"Sharpie Markers" in page.data
+    assert b"Approve" in page.data
 
 
 def test_order_page_shows_quick_review_and_line_review_links_to_reviewer(client, seed_workflow_data):

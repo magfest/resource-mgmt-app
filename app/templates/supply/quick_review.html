@@ -52,7 +52,7 @@
   </div>
 
   {# Checkout Status #}
-  {% if not uses_sessions %}
+  {% if uses_sessions is defined and not uses_sessions %}
   {% elif is_checked_out %}
     {% if has_checkout %}
       <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
@@ -180,7 +180,7 @@
                     </button>
                   </div>
                 </div>
-              {% elif status == 'PENDING' and uses_sessions %}
+              {% elif status == 'PENDING' and (uses_sessions is not defined or uses_sessions) %}
                 <span class="muted small">Start a review session above to act on this line.</span>
               {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}
                 <span class="muted small">Awaiting requester response</span>
