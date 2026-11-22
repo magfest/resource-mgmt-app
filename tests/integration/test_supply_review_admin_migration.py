@@ -42,3 +42,13 @@ def test_uses_review_sessions_false_for_supply_and_techops_true_for_budget(app, 
 def test_migration_data_step_is_noop_without_work_types(app):
     assert WorkType.query.count() == 0
     _step()(db.session.connection())
+
+
+def test_bootstrap_seeds_review_sessions_off_for_supply_and_techops(app):
+    from app.seeds.bootstrap import seed_work_type_configs, seed_work_types
+
+    seed_work_type_configs(seed_work_types())
+    db.session.commit()
+    assert _cfg("BUDGET").uses_review_sessions is True
+    assert _cfg("SUPPLY").uses_review_sessions is False
+    assert _cfg("TECHOPS").uses_review_sessions is False
