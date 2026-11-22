@@ -245,7 +245,8 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
     if work_type_slug == "supply" and is_admin:
         from app.routes.work.supply.admin_lines import can_admin_edit_line
         supply_line_edit = can_admin_edit_line(work_item, line)
-    return_to = "finalize" if request.args.get("return_to") == "finalize" else "order"
+    from app.routes.work.supply.admin import _return_to_value
+    return_to = _return_to_value(request.args.get("return_to"))
 
     # Get comments for this line (filter admin-only for non-admins)
     comments = line.comments

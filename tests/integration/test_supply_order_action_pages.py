@@ -69,6 +69,7 @@ def test_close_page_renders_consequence_and_confirm(app, client, seed_workflow_d
     assert "data-confirm-submit" in body and f'action="{env.admin_url}/close"' in body
     assert 'name="return_to" value="finalize"' in body
     assert f'href="{env.admin_url}/finalize"' in body
+    assert not re.search(r"<form\s[^>]*\bdata-confirm=", body)
 
 
 def test_reopen_page_only_for_finalized_orders(app, client, seed_workflow_data):
@@ -81,6 +82,8 @@ def test_reopen_page_only_for_finalized_orders(app, client, seed_workflow_data):
     body = resp.get_data(as_text=True)
     assert "Line decisions stay as they are." in body
     assert f'action="{env.admin_url}/reopen"' in body
+    assert "data-confirm-submit" in body
+    assert not re.search(r"<form\s[^>]*\bdata-confirm=", body)
 
 
 def test_reopen_page_for_a_closed_order_uses_the_closed_copy(app, client, seed_workflow_data):
@@ -99,9 +102,11 @@ def test_close_page_on_a_finalized_order_returns_with_a_message(app, client, see
 
 def test_close_and_reopen_pages_refuse_non_admins(app, client, seed_workflow_data):
     env = _env(client, seed_workflow_data)
-    login(client, "test:reviewer")
-    assert client.get(f"{env.admin_url}/close").status_code == 403
-    assert client.get(f"{env.admin_url}/reopen").status_code == 403
+    _member(env, seed_workflow_data)
+    for user in ("test:reviewer", "test:member"):
+        login(client, user)
+        assert client.get(f"{env.admin_url}/close").status_code == 403
+        assert client.get(f"{env.admin_url}/reopen").status_code == 403
 
 
 def test_close_page_ignores_a_url_in_return_to(app, client, seed_workflow_data):
@@ -148,7 +153,26 @@ def test_change_card_defaults_to_the_order_origin(app, client, seed_workflow_dat
     body = client.get(f"{env.line_url}/1/review?return_to=https://evil.example").get_data(as_text=True)
     assert body.count('name="return_to" value="order"') == 2
     assert "evil.example" not in body
-    assert "Changes here go back to the review group." in body
+    assert ("Quantity changes here go back to the review group. "
+            "The department sees every change and its reason.") in body
+
+
+def test_line_page_offers_back_to_finalize_only_from_finalize(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    body = client.get(f"{env.line_url}/1/review?return_to=finalize").get_data(as_text=True)
+    assert f'href="{env.admin_url}/finalize"' in body and "Back to Finalize" in body
+    body = client.get(f"{env.line_url}/1/review").get_data(as_text=True)
+    assert "Back to Finalize" not in body
+
+
+def test_order_page_hints_where_to_change_a_line_for_admins_only(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    _member(env, seed_workflow_data)
+    hint = "To change or remove a line, open it with Review."
+    assert hint in client.get(env.order_url).get_data(as_text=True)
+    for user in ("test:reviewer", "test:member"):
+        login(client, user)
+        assert hint not in client.get(env.order_url).get_data(as_text=True)
 
 
 def test_no_change_card_for_reviewer_removed_line_closed_or_finalized_order(

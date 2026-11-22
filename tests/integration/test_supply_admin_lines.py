@@ -162,15 +162,19 @@ def test_add_refuses_unavailable_items_and_bad_quantities(app, client, seed_work
     hidden = seed_item(env.category, "Deploy Only AP")
     hidden.is_orderable = False
     db.session.commit()
-    bodies = []
-    for item, qty in ((retired, 1), (hidden, 1), (env.board, 0), (env.board, "abc"),
-                      (env.board, 100001), (env.board, -2)):
+    unavailable = "That item is not available to order."
+    for item, qty, message in (
+            (retired, 1, unavailable),
+            (hidden, 1, unavailable),
+            (env.board, 0, "Enter a quantity of at least 1."),
+            (env.board, "abc", "Enter a whole-number quantity."),
+            (env.board, 100001, "Enter a quantity of 100,000 or less."),
+            (env.board, -2, "Enter a whole-number quantity.")):
         resp = _add(client, env, item, qty)
         assert resp.status_code == 200
-        bodies.append(resp.get_data(as_text=True))
+        assert message in resp.get_data(as_text=True), (item.name, qty)
     db.session.expire_all()
     assert WorkLine.query.filter_by(work_item_id=env.order.id).count() == 1
-    assert any("Remove" in body for body in bodies)
 
 
 def test_new_line_number_counts_removed_lines(app, client, seed_workflow_data):

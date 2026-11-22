@@ -85,6 +85,9 @@
 
   {# Navigation #}
   <div class="btn-row mb-16">
+    {% if return_to == 'finalize' %}
+      <a class="btn" href="{{ url_for('work.supply_admin_finalize_view', public_id=work_item.public_id) }}">Back to Finalize</a>
+    {% endif %}
     <a class="btn" href="{{ url_for('work.supply_order_detail', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id) }}">
       Back to Request
     </a>
@@ -180,7 +183,7 @@
             {% if return_to == 'finalize' %}
               Changes here skip the review group. The department sees every change and its reason.
             {% else %}
-              Changes here go back to the review group. The department sees every change and its reason.
+              Quantity changes here go back to the review group. The department sees every change and its reason.
             {% endif %}
           </div>
 

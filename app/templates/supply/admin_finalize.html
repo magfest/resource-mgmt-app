@@ -227,8 +227,8 @@
     }
   });
 
-  // Leaving for a line edit drops unsaved finalize quantities and notes;
-  // warn rather than let Finalize use defaults.
+  // Leaving this screen by any marked link drops unsaved finalize quantities
+  // and notes; warn rather than let Finalize use defaults.
   function hasUnsavedFinalizeInput() {
     var inputs = form.querySelectorAll('input[name^="approved_qty_"], input[name^="note_"]');
     for (var i = 0; i < inputs.length; i++) {

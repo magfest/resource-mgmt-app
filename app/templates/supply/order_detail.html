@@ -103,6 +103,9 @@
       </a>
     {% endif %}
   </div>
+  {% if is_supply_admin and can_admin_edit_lines %}
+    <div class="muted small mb-16">To change or remove a line, open it with Review.</div>
+  {% endif %}
 
   {# Comments and history sit behind tabs so a draft's checkout is not
      followed by two cards a requester does not need while ordering. The
