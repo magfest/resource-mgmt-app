@@ -1,0 +1,73 @@
+{# Supply demand overview: one row per item for one event. Read-only. #}
+{% extends "layout/base.html" %}
+
+{% block title %}Supply Demand Report{% endblock %}
+
+{% block content %}
+  <div style="display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap: wrap; margin-bottom: 16px;">
+    <div>
+      <h1 style="margin:0;">Supply Demand Report</h1>
+      <div class="muted" style="margin-top:4px;">
+        {% if cycle %}{{ cycle.name }}{% else %}No event selected{% endif %}
+        {% if include_drafts %} (drafts included){% endif %}
+      </div>
+    </div>
+    <form method="get" action="{{ url_for('work.supply_report_demand') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <label for="rep-event" class="muted small">Event</label>
+      <select id="rep-event" name="event">
+        {% for ev in event_options %}
+          <option value="{{ ev.code }}" {% if ev.code == selected_event %}selected{% endif %}>{{ ev.name }}</option>
+        {% endfor %}
+      </select>
+      <label for="rep-cat" class="muted small">Category</label>
+      <select id="rep-cat" name="category">
+        <option value="">All categories</option>
+        {% for cat in categories %}
+          <option value="{{ cat.id }}" {% if cat.id == category_id %}selected{% endif %}>{{ cat.name }}</option>
+        {% endfor %}
+      </select>
+      <label class="small"><input type="checkbox" name="drafts" value="1" {% if include_drafts %}checked{% endif %}> Include drafts</label>
+      <button type="submit" class="btn">Show</button>
+      {% if cycle %}
+        <a class="btn" href="{{ url_for('work.supply_report_demand', format='csv', **carry) }}">Download CSV</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <section class="card">
+    {% if items %}
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Item</th>
+              <th>Unit</th>
+              <th style="text-align:right;">Depts</th>
+              <th style="text-align:right;">Requested</th>
+              <th style="text-align:right;">Reviewer</th>
+              <th style="text-align:right;">Final</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for i in items %}
+            <tr>
+              <td>{{ i.category_name }}</td>
+              <td><a href="{{ url_for('work.supply_report_item', item_id=i.item_id, **carry) }}">{{ i.item_name }}</a></td>
+              <td>{{ i.unit }}</td>
+              <td style="text-align:right;">{{ i.departments }}</td>
+              <td style="text-align:right;">{{ i.requested }}</td>
+              <td style="text-align:right;">{{ i.reviewer if i.reviewer is not none else '-' }}</td>
+              <td style="text-align:right;">{{ i.final if i.final is not none else '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% elif unknown_event %}
+      <p class="muted">No report: the event code was not recognized.</p>
+    {% else %}
+      <p class="muted">No orders match these filters.</p>
+    {% endif %}
+  </section>
+{% endblock %}

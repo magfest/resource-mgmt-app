@@ -668,6 +668,7 @@ def create_app() -> Flask:
                 "nav_is_space_admin": False,
                 "nav_is_inventory": False,
                 "nav_review_groups": {},
+                "nav_supply_reports": False,
                 "nav_event_cycle": None,
                 "nav_dept_memberships": [],
                 "nav_div_memberships": [],
@@ -690,6 +691,7 @@ def create_app() -> Flask:
         nav_is_space_admin = False
         nav_is_inventory = False
         nav_review_groups: dict[str, list] = {}
+        nav_supply_reports = False
         nav_event_cycle = None
         nav_dept_memberships = []
         nav_div_memberships = []
@@ -769,6 +771,12 @@ def create_app() -> Flask:
                 ):
                     nav_review_groups.setdefault(group.work_type.code, []).append(group)
 
+            # Supply reports: admins of SUPPLY (super admins included) and members
+            # of an active SUPPLY approval group, matching the report routes.
+            nav_supply_reports = (
+                "SUPPLY" in nav_admin_work_types or bool(nav_review_groups.get("SUPPLY"))
+            )
+
             # User menu: department/division memberships for current event
             # Use session-selected cycle, fallback to default
             selected_id = session.get('selected_event_cycle_id')
@@ -835,6 +843,7 @@ def create_app() -> Flask:
             "nav_is_space_admin": nav_is_space_admin,
             "nav_is_inventory": nav_is_inventory,
             "nav_review_groups": nav_review_groups,
+            "nav_supply_reports": nav_supply_reports,
             "nav_event_cycle": nav_event_cycle,
             "nav_dept_memberships": nav_dept_memberships,
             "nav_div_memberships": nav_div_memberships,

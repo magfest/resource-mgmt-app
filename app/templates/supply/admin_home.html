@@ -79,6 +79,14 @@
       <a class="btn btn-primary" href="{{ url_for('admin_config.supply_items.import_form') }}">Import Catalog</a>
     </section>
 
+    <section class="card">
+      <h3 style="margin:0 0 8px 0;">Demand Report</h3>
+      <p class="muted small" style="margin: 0 0 12px 0;">
+        Requested, reviewed and final quantities per item for one event, with each department's notes.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('work.supply_report_demand') }}">Open Demand Report</a>
+    </section>
+
   </div>
 
 {% endblock %}
