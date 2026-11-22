@@ -493,6 +493,7 @@ def _build_finalize_view(work_item: WorkItem):
     lines = sorted(work_item.lines, key=lambda l: l.line_number)
     ag_reviews = _ag_reviews_by_line([line.id for line in lines])
     admin_reviews = _reviews_by_line([line.id for line in lines], REVIEW_STAGE_ADMIN_FINAL)
+    closed = is_order_closed(work_item)
 
     line_rows = []
     for line in lines:
@@ -501,8 +502,13 @@ def _build_finalize_view(work_item: WorkItem):
         ag_review = ag_reviews.get(line.id)
         requested = detail.quantity_requested if detail else 0
 
-        default_qty, default_note = _finalize_defaults(
-            detail, ag_review, admin_reviews.get(line.id))
+        if closed:
+            # Close books every live line at 0; a reviewer's quantity would read as approved.
+            final = detail.quantity_approved if detail else None
+            default_qty, default_note = (final if final is not None else 0), ""
+        else:
+            default_qty, default_note = _finalize_defaults(
+                detail, ag_review, admin_reviews.get(line.id))
 
         unit_cost = item.unit_cost_cents if item else None
         line_rows.append({
@@ -519,7 +525,7 @@ def _build_finalize_view(work_item: WorkItem):
             "decided_by": ag_review.decided_by_user_id if ag_review else None,
             "kicked_back": _is_line_kicked_back(line, ag_review),
             "reviewer_label": (
-                None if is_line_removed(detail)
+                None if closed or is_line_removed(detail)
                 else reviewer_quantity_label(detail, ag_review)
             ),
         })

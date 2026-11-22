@@ -21,6 +21,7 @@ from app.models import (
     REVIEW_STAGE_APPROVAL_GROUP,
     COMMENT_VISIBILITY_ADMIN,
     WORK_ITEM_STATUS_DRAFT,
+    WORK_ITEM_STATUS_FINALIZED,
     WORK_ITEM_STATUS_SUBMITTED,
 )
 from app.routes import get_user_ctx
@@ -133,7 +134,9 @@ def supply_order_detail(event: str, dept: str, public_id: str):
 
     from app.routes.work.helpers.review_state import uses_review_sessions
     from .admin_lines import admin_item_choices
-    from .line_state import is_line_removed, is_order_closed, reviewer_quantity_label
+    from .line_state import (
+        final_quantity_label, is_line_removed, is_order_closed, reviewer_quantity_label,
+    )
 
     # Admin line edits on the order page send changes back to the review group.
     can_admin_edit_lines = (
@@ -141,15 +144,22 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         and work_item.status == WORK_ITEM_STATUS_SUBMITTED
         and not is_order_closed(work_item)
     )
-    reviewer_quantity_labels = {}
+    # Under review the label is the group's quantity; once finalized it is the
+    # admin's final quantity. A closed order shows none: nothing will be filled.
+    quantity_labels = {}
     for line in lines:
-        ag_review = next(
-            (r for r in line.reviews if r.stage == REVIEW_STAGE_APPROVAL_GROUP), None)
-        if is_line_removed(line.supply_detail):
+        if is_order_closed(work_item) or is_line_removed(line.supply_detail):
             continue
-        label = reviewer_quantity_label(line.supply_detail, ag_review)
+        if work_item.status == WORK_ITEM_STATUS_SUBMITTED:
+            ag_review = next(
+                (r for r in line.reviews if r.stage == REVIEW_STAGE_APPROVAL_GROUP), None)
+            label = reviewer_quantity_label(line.supply_detail, ag_review)
+        elif work_item.status == WORK_ITEM_STATUS_FINALIZED:
+            label = final_quantity_label(line.supply_detail)
+        else:
+            label = None
         if label:
-            reviewer_quantity_labels[line.line_number] = label
+            quantity_labels[line.line_number] = label
 
     # Kicked-back lines re-open their edit widgets even on a non-DRAFT
     # order. Same predicate as the supply_line_update POST gate (imported
@@ -179,7 +189,7 @@ def supply_order_detail(event: str, dept: str, public_id: str):
         space_choices=order_space_choices(work_item) if can_edit else None,
         lines=lines,
         shows_checkout_banner=uses_review_sessions(work_item),
-        reviewer_quantity_labels=reviewer_quantity_labels,
+        quantity_labels=quantity_labels,
         can_edit=can_edit,
         can_quick_review=can_quick_review,
         is_supply_admin=is_supply_admin,

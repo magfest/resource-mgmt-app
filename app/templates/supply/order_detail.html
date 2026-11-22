@@ -287,8 +287,8 @@
                   {% else %}
                     {{ detail.quantity_requested if detail else '-' }}
                   {% endif %}
-                  {% if reviewer_quantity_labels is defined and reviewer_quantity_labels.get(line.line_number) %}
-                    <div class="small"><strong>{{ reviewer_quantity_labels[line.line_number] }}</strong></div>
+                  {% if quantity_labels.get(line.line_number) %}
+                    <div class="small"><strong>{{ quantity_labels[line.line_number] }}</strong></div>
                   {% endif %}
                   {% if detail and detail.quantity_confidence_label %}
                     <div class="muted small">{{ detail.quantity_confidence_label }}</div>

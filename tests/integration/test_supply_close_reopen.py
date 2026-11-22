@@ -25,7 +25,7 @@ from app.routes.work.supply.line_state import supply_display_status
 from tests.integration.supply_helpers import login
 from tests.integration.test_supply_admin_lines import (
     _add, _admin_review, _ag, _change, _env, _flashes, _line, _member, _remove,
-    _reviewer_decides,
+    _reviewer_decides, _row,
 )
 from tests.integration.test_supply_email import _rows, _seed_templates
 
@@ -145,6 +145,26 @@ def test_closed_order_shows_reason_to_department(app, client, seed_workflow_data
     assert "Wrong <b>department</b>" not in body
     # A department member gets no admin controls.
     assert f"{env.admin_url}/reopen" not in body
+
+
+def test_closed_order_shows_no_quantity_label(app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data, quantities=(100,))
+    assert _reviewer_decides(client, env, 1, "approve", approved_quantity="40")["success"]
+    _close(client, env)
+    login(client, "test:member")
+    body = client.get(env.order_url).get_data(as_text=True)
+    assert "Approved" not in _row(body, 1) and "Not approved" not in _row(body, 1)
+
+
+def test_closed_order_finalize_screen_shows_final_quantity(app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data, quantities=(100,))
+    assert _reviewer_decides(client, env, 1, "approve", approved_quantity="40")["success"]
+    _close(client, env)
+    body = client.get(f"{env.admin_url}/finalize").get_data(as_text=True)
+    assert "Approved 40 of 100" not in body
+    tag = re.search(r'<input type="number" name="approved_qty_1"[^>]*>', body).group(0)
+    assert 'value="0"' in tag and "disabled" in tag
+    assert 'value="40"' not in tag
 
 
 def test_closed_order_stays_in_department_and_admin_lists(app, client, seed_workflow_data):

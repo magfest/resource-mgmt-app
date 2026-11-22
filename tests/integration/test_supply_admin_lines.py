@@ -405,6 +405,37 @@ def test_department_sees_removed_added_and_changed_lines(app, client, seed_workf
     assert "/lines/add" not in body
 
 
+def _member_sees_row(client, env, number):
+    login(client, "test:member")
+    row = _row(client.get(env.order_url).get_data(as_text=True), number)
+    login(client, "test:admin")
+    return row
+
+
+def test_department_sees_final_zero_not_reviewer_quantity(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    assert _reviewer_decides(client, env, 1, "approve", approved_quantity="40")["success"]
+    _member(env, seed_workflow_data)
+    assert "Approved 40 of 100" in _member_sees_row(client, env, 1)
+    resp = client.post(f"{env.admin_url}/finalize",
+                       data={"approved_qty_1": "0", "note_1": "Out of stock"})
+    assert resp.status_code == 302
+    row = _member_sees_row(client, env, 1)
+    assert "Not approved" in row
+    assert "Approved 40" not in row
+
+
+def test_department_sees_finalize_cut(app, client, seed_workflow_data):
+    env = _env(client, seed_workflow_data)
+    assert _reviewer_decides(client, env, 1, "approve", approved_quantity="100")["success"]
+    _member(env, seed_workflow_data)
+    resp = client.post(f"{env.admin_url}/finalize", data={"approved_qty_1": "60"})
+    assert resp.status_code == 302
+    row = _member_sees_row(client, env, 1)
+    assert "Approved 60 of 100" in row
+    assert "Approved 100 of 100" not in row
+
+
 def test_order_page_shows_admin_line_controls_only_to_supply_admin(app, client, seed_workflow_data):
     env = _env(client, seed_workflow_data)
     body = client.get(env.order_url).get_data(as_text=True)

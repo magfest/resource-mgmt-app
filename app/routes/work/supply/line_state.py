@@ -29,6 +29,15 @@ def reviewer_quantity_label(detail, ag_review) -> str | None:
     return f"Approved {detail.quantity_reviewed} of {detail.quantity_requested}"
 
 
+def final_quantity_label(detail) -> str | None:
+    """"Approved 6 of 10", or "Not approved" at 0, once finalize sets `quantity_approved`."""
+    if detail is None or detail.quantity_approved is None:
+        return None
+    if detail.quantity_approved == 0:
+        return "Not approved"
+    return f"Approved {detail.quantity_approved} of {detail.quantity_requested}"
+
+
 def build_finalize_changes(work_item) -> list[dict]:
     """List what finalize changed from the department's request, by line number.
 
