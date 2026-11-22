@@ -490,38 +490,36 @@ def test_order_page_reads_admin_notes_in_two_queries(app, client, seed_workflow_
 def test_order_page_shows_admin_line_controls_only_to_supply_admin(app, client, seed_workflow_data):
     env = _env(client, seed_workflow_data)
     body = client.get(env.order_url).get_data(as_text=True)
-    assert f"{env.admin_url}/lines/add" in body
-    assert f"{env.admin_url}/lines/1/remove" in body
-    assert 'name="return_to" value="order"' in body
+    assert f'href="{env.admin_url}/lines/add"' in body
+    assert f'href="{env.admin_url}/close"' in body
+    assert "/lines/1/quantity" not in body and "/lines/1/remove" not in body
     login(client, "test:reviewer")
     body = client.get(env.order_url).get_data(as_text=True)
-    assert "/lines/add" not in body
+    assert "/lines/add" not in body and f"{env.admin_url}/close" not in body
 
 
 def test_finalize_screen_has_line_controls_and_strikes_removed(app, client, seed_workflow_data):
     env = _env(client, seed_workflow_data, quantities=(100, 5))
     _remove(client, env, 2)
     body = client.get(f"{env.admin_url}/finalize").get_data(as_text=True)
-    assert f"{env.admin_url}/lines/add" in body
-    assert 'name="return_to" value="finalize"' in body
+    assert f'href="{env.admin_url}/lines/add?return_to=finalize"' in body
+    assert f'href="{env.admin_url}/close?return_to=finalize"' in body
+    assert f'href="{env.line_url}/1/review?return_to=finalize"' in body
+    assert f'href="{env.line_url}/2/review?return_to=finalize"' not in body
     assert 'name="approved_qty_2"' not in body
     assert "Removed by Supply admin" in body and "using venue boards" in body
     assert f"{env.admin_url}/lines/2/remove" not in body
-    assert "Foam Board" in body
 
 
-def test_finalize_marks_line_edit_forms_and_rendered_defaults(app, client, seed_workflow_data):
-    """The unsaved-input warning finds edit forms by data-line-edit and compares
+def test_finalize_marks_leaving_links_and_rendered_defaults(app, client, seed_workflow_data):
+    """The unsaved-input warning finds leaving links by data-line-edit and compares
     each finalize input with its data-default; the confirm itself is a browser check."""
     env = _env(client, seed_workflow_data, quantities=(100, 5))
     assert _reviewer_decides(client, env, 1, "approve", approved_quantity="40")["success"]
     body = client.get(f"{env.admin_url}/finalize").get_data(as_text=True)
-    edit_forms = re.findall(r'<form method="post" data-line-edit\s+action="([^"]+)"', body)
-    assert sorted(edit_forms) == sorted([
-        f"{env.admin_url}/lines/add",
-        f"{env.admin_url}/lines/1/quantity", f"{env.admin_url}/lines/1/remove",
-        f"{env.admin_url}/lines/2/quantity", f"{env.admin_url}/lines/2/remove",
-    ])
+    # Add line, Close order, and one Line page link per live row.
+    assert len(re.findall(r'<a [^>]*data-line-edit', body)) == 2 + 2
+    assert "<form method=\"post\" data-line-edit" not in body
     for number, default in ((1, "40"), (2, "5")):
         match = re.search(rf'<input type="number" name="approved_qty_{number}"[^>]*>', body)
         assert match, f"approved_qty_{number} not rendered"
@@ -529,7 +527,7 @@ def test_finalize_marks_line_edit_forms_and_rendered_defaults(app, client, seed_
         assert f'value="{default}"' in tag and f'data-default="{default}"' in tag
         note = re.search(rf'<input type="text" name="note_{number}"[^>]*>', body).group(0)
         assert 'data-default=""' in note
-    assert "form[data-line-edit]" in body
+    assert "a[data-line-edit]" in body
 
 
 def test_quick_review_and_line_review_strike_removed_line(app, client, seed_workflow_data):

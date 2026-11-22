@@ -35,8 +35,15 @@
         {% endif %}
       </div>
     </div>
-    <div>
+    <div class="btn-row">
       <a class="btn btn-muted" href="{{ url_for('work.supply_admin_queue') }}">Back to Queue</a>
+      {# The routes re-check status and closed state; these links only offer the pages. #}
+      {% if can_edit_lines %}
+        <a class="btn" data-line-edit href="{{ url_for('work.supply_admin_line_add_form', public_id=work_item.public_id, return_to='finalize') }}">Add line</a>
+        <a class="btn" data-line-edit href="{{ url_for('work.supply_admin_close_form', public_id=work_item.public_id, return_to='finalize') }}">Close order</a>
+      {% elif is_finalized %}
+        <a class="btn" href="{{ url_for('work.supply_admin_reopen_form', public_id=work_item.public_id, return_to='finalize') }}">Reopen order</a>
+      {% endif %}
     </div>
   </div>
 
@@ -57,9 +64,7 @@
   </section>
 
   {% if is_closed %}
-    {% with show_banner = true, show_forms = false, return_to = 'finalize' %}
-      {% include "supply/_order_close_reopen.html" %}
-    {% endwith %}
+    {% include "supply/_order_close_reopen.html" %}
   {% elif is_finalized %}
     <div class="callout callout-success mb-16">
       <strong>This order is finalized.</strong>
@@ -116,6 +121,11 @@
                 {% endif %}
                 {% if detail and detail.added_by_admin_user_id %}
                   <div class="small" style="margin-top: 4px;">Added by Supply admin</div>
+                {% endif %}
+                {% if can_edit_lines %}
+                  <div class="small" style="margin-top: 4px;">
+                    <a data-line-edit href="{{ url_for('approvals.line_review', event=event_cycle.code, dept=department.code, public_id=work_item.public_id, line_num=line.line_number, work_type_slug='supply', return_to='finalize') }}">Line page</a>
+                  </div>
                 {% endif %}
               </td>
               <td data-label="Requested" class="right num">
@@ -204,16 +214,6 @@
     {% endif %}
   </form>
 
-  {% if can_edit_lines %}
-    {% with return_to = 'finalize' %}
-      {% include "supply/_admin_line_edits.html" %}
-    {% endwith %}
-  {% endif %}
-
-  {% with show_banner = false, show_forms = true, return_to = 'finalize' %}
-    {% include "supply/_order_close_reopen.html" %}
-  {% endwith %}
-
 {% endblock %}
 
 {% block scripts %}
@@ -227,8 +227,8 @@
     }
   });
 
-  // A line edit reloads this page from the server, which drops unsaved
-  // finalize quantities and notes; warn rather than let Finalize use defaults.
+  // Leaving for a line edit drops unsaved finalize quantities and notes;
+  // warn rather than let Finalize use defaults.
   function hasUnsavedFinalizeInput() {
     var inputs = form.querySelectorAll('input[name^="approved_qty_"], input[name^="note_"]');
     for (var i = 0; i < inputs.length; i++) {
@@ -236,11 +236,12 @@
     }
     return false;
   }
-  document.addEventListener('submit', function(e) {
-    if (!e.target.matches('form[data-line-edit]')) return;
+  document.addEventListener('click', function(e) {
+    var link = e.target.closest && e.target.closest('a[data-line-edit]');
+    if (!link) return;
     if (hasUnsavedFinalizeInput() && !confirm(
-      'You have typed finalize quantities or notes that are not saved yet. ' +
-      'Adding, changing or removing a line reloads this page and clears them. Continue?'
+      'You have typed final quantities or notes that are not saved yet. ' +
+      'Leaving this page clears them. Continue?'
     )) {
       e.preventDefault();
     }

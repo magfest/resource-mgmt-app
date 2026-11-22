@@ -64,9 +64,7 @@
     </div>
   </div>
 
-  {% with show_banner = true, show_forms = false, return_to = 'order' %}
-    {% include "supply/_order_close_reopen.html" %}
-  {% endwith %}
+  {% include "supply/_order_close_reopen.html" %}
 
   {# A lock taken before Supply dropped review sessions blocks nothing and nobody can release it; hide its banner. #}
   {% if shows_checkout_banner is not defined or shows_checkout_banner %}
@@ -91,6 +89,13 @@
     {% endif %}
     {% if is_supply_admin and work_item.status == 'SUBMITTED' %}
       <a class="btn" href="{{ url_for('work.supply_admin_finalize_view', public_id=work_item.public_id) }}">Finalize</a>
+    {% endif %}
+    {# The routes re-check status and closed state; these links only offer the pages. #}
+    {% if is_supply_admin and can_admin_edit_lines %}
+      <a class="btn" href="{{ url_for('work.supply_admin_line_add_form', public_id=work_item.public_id) }}">Add line</a>
+      <a class="btn" href="{{ url_for('work.supply_admin_close_form', public_id=work_item.public_id) }}">Close order</a>
+    {% elif is_supply_admin and work_item.status == 'FINALIZED' %}
+      <a class="btn" href="{{ url_for('work.supply_admin_reopen_form', public_id=work_item.public_id) }}">Reopen order</a>
     {% endif %}
     {% if can_quick_review %}
       <a class="btn btn-primary" href="{{ url_for('work.quick_review', event=ctx.event_cycle.code, dept=ctx.department.code, public_id=work_item.public_id, work_type_slug='supply') }}">
@@ -326,16 +331,6 @@
       </div>
     {% endif %}
   </section>
-
-  {% if can_admin_edit_lines %}
-    {% with return_to = 'order' %}
-      {% include "supply/_admin_line_edits.html" %}
-    {% endwith %}
-  {% endif %}
-
-  {% with show_banner = false, show_forms = true, return_to = 'order' %}
-    {% include "supply/_order_close_reopen.html" %}
-  {% endwith %}
 
   {% endif %}
 

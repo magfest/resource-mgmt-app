@@ -568,8 +568,6 @@ def _render_finalize(work_item: WorkItem, user_ctx, *, is_finalized: bool):
         # The finalize screen is reached only by Supply admins.
         is_supply_admin=True,
         can_edit_lines=can_edit_lines,
-        admin_items=admin_item_choices() if can_edit_lines else [],
-        edit_lines=[row["line"] for row in line_rows if not row["removed"]],
     )
 
 
