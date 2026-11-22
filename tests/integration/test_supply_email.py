@@ -14,6 +14,7 @@ from app.routes.work.supply.line_state import build_finalize_changes
 from app.services.email_templates import render_email_template
 from app.services.notifications import (
     notify_needs_attention,
+    notify_response_received,
     notify_supply_closed,
 )
 from migrations.versions.sm7p2c9x4f6b_supply_finalized_closed_email import (
@@ -166,6 +167,15 @@ def test_needs_attention_still_queues_for_supply(app, client, seed_workflow_data
     assert notify_needs_attention(WorkItem.query.get(env.order.id)) == 1
     db.session.commit()
     assert len(_rows("supply_needs_attention")) == 1
+
+
+def test_response_received_still_queues_for_supply(app, client, seed_workflow_data):
+    env = _ready(client, seed_workflow_data)
+    item = WorkItem.query.get(env.order.id)
+    assert notify_response_received(item, "test:reviewer") == 1
+    db.session.commit()
+    rows = _rows("supply_response_received")
+    assert [r.recipient_email for r in rows] == ["reviewer@test.local"]
 
 
 def test_build_finalize_changes_is_json_safe_and_ordered(app, client, seed_workflow_data):

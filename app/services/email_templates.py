@@ -359,6 +359,16 @@ def get_sample_context() -> dict[str, Any]:
         'line_count': 12,
         'total_requested_dollars': 4820.50,
         'reason': 'Ballroom A is listed twice; please merge the two room cards.',
+        # Supply finalized: one removed line and one cut line, so the preview
+        # shows the "What changed" block.
+        'changes': [
+            {'line_number': 1, 'item_name': 'Sample Markers', 'unit': 'box',
+             'kind': 'removed', 'department_quantity': None, 'requested': 4,
+             'final': 0, 'reason': 'Venue supplies these'},
+            {'line_number': 2, 'item_name': 'Sample Tape', 'unit': 'roll',
+             'kind': 'cut', 'department_quantity': None, 'requested': 10,
+             'final': 6, 'reason': ''},
+        ],
         # Supplied by the drainer on every send, undocumented but reachable.
         'work_type': MockWorkType(),
         'recipient_email': 'volunteer@example.org',
