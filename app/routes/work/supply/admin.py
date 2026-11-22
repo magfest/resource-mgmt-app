@@ -740,17 +740,27 @@ def supply_admin_finalize(public_id: str):
 # Line edits. Each route locks the order, re-checks it under the lock, and
 # commits once; admin_lines refuses by raising SupplyAdminError.
 
-def _line_edit_redirect(work_item: WorkItem, at_finalize: bool):
-    """Return to the finalize screen or the order page; never to a posted URL."""
+def _return_to_value(raw: str | None) -> str:
+    """Normalize a posted or queried origin to "finalize" or "order"."""
+    return "finalize" if raw == "finalize" else "order"
+
+
+def _origin_url(work_item: WorkItem, at_finalize: bool) -> str:
+    """Build the finalize screen or order page URL; never a URL from the request."""
     if at_finalize:
-        return redirect(url_for("work.supply_admin_finalize_view", public_id=work_item.public_id))
+        return url_for("work.supply_admin_finalize_view", public_id=work_item.public_id)
     portfolio = work_item.portfolio
-    return redirect(url_for(
+    return url_for(
         "work.supply_order_detail",
         event=portfolio.event_cycle.code,
         dept=portfolio.department.code,
         public_id=work_item.public_id,
-    ))
+    )
+
+
+def _line_edit_redirect(work_item: WorkItem, at_finalize: bool):
+    """Redirect to the finalize screen or the order page."""
+    return redirect(_origin_url(work_item, at_finalize))
 
 
 def _locked_line(work_item: WorkItem, line_number: int) -> WorkLine:
@@ -760,27 +770,59 @@ def _locked_line(work_item: WorkItem, line_number: int) -> WorkLine:
     return line
 
 
-def _run_line_edit(public_id: str, edit, success_message):
+def _flash_and_return(work_item: WorkItem, at_finalize: bool, message: str):
+    """Flash a refusal and return to the origin page."""
+    flash(message, "error")
+    return _line_edit_redirect(work_item, at_finalize)
+
+
+def _run_line_edit(public_id: str, edit, success_message, on_error):
     """Lock the order, apply one edit, and commit it or roll it back.
 
     `edit(work_item, user_ctx, at_finalize)` returns a value passed to
-    `success_message` for the flash.
+    `success_message` for the flash. A refusal rolls back and returns
+    `on_error(work_item, at_finalize, message)`.
     """
     user_ctx = get_user_ctx()
     supply_wt = _require_supply_admin(user_ctx)
     work_item = _lock_supply_order(public_id, supply_wt)
-    at_finalize = request.form.get("return_to") == "finalize"
-    back = _line_edit_redirect(work_item, at_finalize)
+    at_finalize = _return_to_value(request.form.get("return_to")) == "finalize"
     try:
         require_editable_order(work_item)
         result = edit(work_item, user_ctx, at_finalize)
     except SupplyAdminError as exc:
         db.session.rollback()
-        flash(str(exc), "error")
-        return back
+        return on_error(work_item, at_finalize, str(exc))
     db.session.commit()
     flash(success_message(result), "success")
-    return back
+    return _line_edit_redirect(work_item, at_finalize)
+
+
+def _render_add_form(work_item: WorkItem, return_to: str, *,
+                     error: str | None = None, values: dict | None = None):
+    """Render the Add line page for an order."""
+    return render_template(
+        "supply/admin_line_add.html",
+        work_item=work_item,
+        return_to=return_to,
+        cancel_url=_origin_url(work_item, return_to == "finalize"),
+        admin_items=admin_item_choices(),
+        error=error,
+        values=values or {},
+    )
+
+
+@work_bp.get("/admin/supply/order/<public_id>/lines/add")
+def supply_admin_line_add_form(public_id: str):
+    """Show the Add line page; a refused order returns to where the admin came from."""
+    supply_wt = _require_supply_admin(get_user_ctx())
+    work_item = _load_supply_order(public_id, supply_wt)
+    return_to = _return_to_value(request.args.get("return_to"))
+    try:
+        require_editable_order(work_item)
+    except SupplyAdminError as exc:
+        return _flash_and_return(work_item, return_to == "finalize", str(exc))
+    return _render_add_form(work_item, return_to)
 
 
 @work_bp.post("/admin/supply/order/<public_id>/lines/add")
@@ -798,6 +840,8 @@ def supply_admin_line_add(public_id: str):
     return _run_line_edit(
         public_id, edit,
         lambda line: f"Line {line.line_number} added: {line.supply_detail.item.item_name}.",
+        lambda wi, at_finalize, msg: _render_add_form(
+            wi, "finalize" if at_finalize else "order", error=msg, values=request.form),
     )
 
 
@@ -815,6 +859,7 @@ def supply_admin_line_quantity(public_id: str, line_number: int):
     return _run_line_edit(
         public_id, edit,
         lambda line: f"Line {line.line_number} now asks for {line.supply_detail.quantity_requested}.",
+        _flash_and_return,
     )
 
 
@@ -828,6 +873,7 @@ def supply_admin_line_remove(public_id: str, line_number: int):
 
     return _run_line_edit(
         public_id, edit, lambda line: f"Line {line.line_number} removed.",
+        _flash_and_return,
     )
 
 

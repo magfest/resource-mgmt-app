@@ -385,7 +385,7 @@ def test_actions_on_closed_order_refused(app, client, seed_workflow_data):
         client.post(f"{env.admin_url}/finalize", data={"approved_qty_1": "6"}),
         _close(client, env),
     ]
-    assert all(r.status_code in (302, 400, 403) for r in resps), [r.status_code for r in resps]
+    assert all(r.status_code in (200, 302, 400, 403) for r in resps), [r.status_code for r in resps]
     assert _snapshot(env) == before
     assert supply_display_status(_order(env)) == "CLOSED"
     assert len(_rows("supply_closed")) == 1
