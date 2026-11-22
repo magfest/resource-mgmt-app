@@ -47,6 +47,13 @@ from tests.integration.supply_helpers import (
 )
 
 
+
+def _use_review_sessions(wt):
+    """Turn the lock back on; these tests cover the checkout UI itself."""
+    wt.config.uses_review_sessions = True
+    db.session.commit()
+
+
 class TestSupplyLineReviewPage:
     """Test 1: reviewer sees item name, qty, requester notes, AND cost."""
 
@@ -55,6 +62,7 @@ class TestSupplyLineReviewPage:
             app, client, seed_workflow_data, quantity=3, notes="need for tech booth",
             unit_cost_cents=500,
         )
+        _use_review_sessions(wt)
 
         login(client, "test:reviewer")
         checkout_resp = client.post(
@@ -203,6 +211,7 @@ class TestSupplyCheckoutButton:
         wt, cycle, dept, group, item, work_item, line = setup_submitted_order(
             app, client, seed_workflow_data,
         )
+        _use_review_sessions(wt)
         work_item.checked_out_by_user_id = "test:admin"
         work_item.checked_out_at = datetime.utcnow()
         work_item.checked_out_expires_at = datetime.utcnow() + timedelta(minutes=30)
@@ -231,6 +240,7 @@ class TestSupplyCheckoutButton:
         wt, cycle, dept, group, item, work_item, line = setup_submitted_order(
             app, client, seed_workflow_data,
         )
+        _use_review_sessions(wt)
 
         login(client, "test:reviewer")
         url = (f"/{cycle.code}/{dept.code}/supply/item/{work_item.public_id}"

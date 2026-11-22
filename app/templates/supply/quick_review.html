@@ -52,7 +52,8 @@
   </div>
 
   {# Checkout Status #}
-  {% if is_checked_out %}
+  {% if not uses_sessions %}
+  {% elif is_checked_out %}
     {% if has_checkout %}
       <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
@@ -157,12 +158,10 @@
               {{ render_status_pill(status, label=status_label, extra_class="line-status-pill", extra_style="font-size: 11px;") }}
             </td>
             <td class="line-actions">
-              {# Note input + action buttons are gated on has_checkout
-                 only — typing without a checkout meant the user lost
-                 their note when the checkout POST replaced the page.
-                 See user feedback: prefer to prevent work over trying
-                 to preserve client state across redirects. #}
-              {% if status == 'PENDING' and has_checkout %}
+              {# Buttons render from can_decide alone, which already includes the
+                 lock when the work type uses one. Typing a note before
+                 checkout lost it when the checkout POST replaced the page. #}
+              {% if status == 'PENDING' and row.can_decide %}
                 <div class="quick-action-row" style="display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;">
                   <input type="text" class="line-note" placeholder="Note (required for reject/info)"
                          style="flex: 1; min-width: 120px; padding: 4px 8px; font-size: 12px;">
@@ -181,7 +180,7 @@
                     </button>
                   </div>
                 </div>
-              {% elif status == 'PENDING' %}
+              {% elif status == 'PENDING' and uses_sessions %}
                 <span class="muted small">Start a review session above to act on this line.</span>
               {% elif status in ['NEEDS_INFO', 'NEEDS_ADJUSTMENT'] %}
                 <span class="muted small">Awaiting requester response</span>

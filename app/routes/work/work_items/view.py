@@ -43,7 +43,7 @@ from app.routes.admin_final.helpers import (
 from .common import get_work_item_by_public_id
 from app.routes.approvals.helpers import can_decide_line
 from app.routes.work.helpers.checkout import STAFF_READ_WORK_TYPES, is_work_type_staffer
-from app.routes.work.helpers.review_state import is_group_final
+from app.routes.work.helpers.review_state import is_group_final, uses_review_sessions
 
 
 # ============================================================
@@ -373,6 +373,7 @@ def quick_review(event: str, dept: str, public_id: str, work_type_slug: str = "b
         summary=summary,
         is_checked_out=checked_out,
         has_checkout=has_checkout,
+        uses_sessions=uses_review_sessions(work_item),
         can_checkout=can_checkout,
         format_currency=format_currency,
         friendly_status=friendly_status,

@@ -294,11 +294,11 @@ def require_checkout_for_review(work_item: WorkItem, user_ctx: UserContext) -> N
 def decision_lock_satisfied(work_item: WorkItem, user_ctx: UserContext) -> bool:
     """Return whether the checkout rule allows this user to decide now.
 
-    Group-final work types have no review sessions; everywhere else the
+    Work types without review sessions need no lock; everywhere else the
     decider must hold the checkout.
     """
-    from app.routes.work.helpers.review_state import is_group_final
-    if is_group_final(work_item):
+    from app.routes.work.helpers.review_state import uses_review_sessions
+    if not uses_review_sessions(work_item):
         return True
     return work_item.checked_out_by_user_id == user_ctx.user_id
 
@@ -391,6 +391,30 @@ def get_review_for_line(line: WorkLine) -> Optional[WorkLineReview]:
 # Transition Validation
 # ============================================================
 
+def describe_decided_review(review: WorkLineReview, line: WorkLine) -> str:
+    """Say who decided this line, what they decided, and when (UTC)."""
+    verbs = {
+        REVIEW_STATUS_APPROVED: "approved",
+        REVIEW_STATUS_APPROVED_NEEDS_REVIEW: "recommended for approval",
+        REVIEW_STATUS_REJECTED: "rejected",
+        REVIEW_STATUS_NEEDS_INFO: "sent back for information",
+        REVIEW_STATUS_NEEDS_ADJUSTMENT: "sent back for adjustment",
+    }
+    text = f"Already {verbs.get(review.status, review.status.lower())}"
+    detail = get_line_detail(line)
+    quantity = getattr(detail, "quantity_reviewed", None)
+    if quantity is not None and review.status in (
+        REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW,
+    ):
+        text += f" (qty {quantity})"
+    user = db.session.get(User, review.decided_by_user_id) if review.decided_by_user_id else None
+    if user is not None:
+        text += f" by {user.display_name}"
+    if review.decided_at is not None:
+        text += f" at {review.decided_at:%Y-%m-%d %H:%M}"
+    return text + "."
+
+
 def validate_review_transition(
     current_status: str,
     action: str,
@@ -427,7 +451,7 @@ def validate_review_transition(
         if current_status in (
             REVIEW_STATUS_APPROVED, REVIEW_STATUS_APPROVED_NEEDS_REVIEW, REVIEW_STATUS_REJECTED,
         ):
-            return "", "This line was already decided."
+            return "", describe_decided_review(review, line)
         return "", f"Invalid transition: {current_status} -> {action}"
 
     new_status, note_required, allowed_role = VALID_TRANSITIONS[key]

@@ -55,7 +55,8 @@
   </div>
 
   {# Checkout Status Banner #}
-  {% if is_checked_out %}
+  {% if not uses_sessions %}
+  {% elif is_checked_out %}
     {% if has_checkout %}
       <div class="callout" style="margin-bottom: 16px; background: #fff3cd; border-left: 4px solid #ffc107;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">

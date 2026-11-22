@@ -43,7 +43,7 @@ from app.routes.work.helpers import (
 )
 from app.routes.work.helpers.checkout import is_work_type_staffer, user_holds_checkout
 from app.routes.work.helpers.review_state import (
-    get_line_review_state, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP, AWAITING_REQUESTER,
+    get_line_review_state, uses_review_sessions, AWAITING_ADMIN, AWAITING_REVIEWER_GROUP, AWAITING_REQUESTER,
 )
 from . import approvals_bp
 from .helpers import (
@@ -269,6 +269,7 @@ def line_review(event: str, dept: str, public_id: str, line_num: int, work_type_
         can_review=can_review,
         can_comment=_can_comment_on_line(line, work_item, user_ctx),
         has_checkout=has_checkout,
+        uses_sessions=uses_review_sessions(work_item),
         can_decide=can_decide,
         can_reopen=can_reopen_line(line, user_ctx),
         can_admin_decide=can_admin_decide,
